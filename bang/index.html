@@ -331,6 +331,22 @@ async function api(action, params = {}) {
   return r.json();
 }
 
+// ─── 캐시 유틸 ────────────────────────────────────────────
+const _lsc = {
+  get(k) {
+    try {
+      const r = localStorage.getItem('hc:' + k);
+      if (!r) return null;
+      const p = JSON.parse(r);
+      return Date.now() < p.e ? p.d : null;
+    } catch { return null; }
+  },
+  set(k, d, s) {
+    try { localStorage.setItem('hc:' + k, JSON.stringify({ d, e: Date.now() + s * 1000 })); } catch {}
+  },
+  del(...ks) { ks.forEach(k => { try { localStorage.removeItem('hc:' + k); } catch {} }); },
+};
+
 // ─── 상태 ──────────────────────────────────────────────────
 
 let user = null;
@@ -479,20 +495,29 @@ async function loadHomeTab(tab) {
     loadLeaderboard('seed-lb-body');
 
   } else if (tab === 'popular') {
-    let storiesRes, myRes;
-    try {
-      const p = [api('getStories', { page: 1 })];
-      if (user) p.push(api('getMyStories'));
-      [storiesRes, myRes] = await Promise.all(p);
-    } catch(e) {
-      content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('popular')">다시 시도</button></div>`;
-      return;
-    }
-    const myIds   = new Set((myRes?.ok ? myRes.stories : []).map(s => s.story_id));
-    const stories = (storiesRes.ok ? storiesRes.stories : []).filter(s => !myIds.has(s.story_id));
-    content.innerHTML = stories.length
-      ? stories.map(s => popularCardHtml(s)).join('')
-      : `<div class="empty" style="padding-top:40px">아직 이야기가 없어요.<br>씨앗 탭에서 첫 이야기를 시작해 보세요!</div>`;
+    const _renderPop = (storiesRes, myRes) => {
+      const myIds   = new Set((myRes?.ok ? myRes.stories : []).map(s => s.story_id));
+      const stories = (storiesRes?.ok ? storiesRes.stories : []).filter(s => !myIds.has(s.story_id));
+      content.innerHTML = stories.length
+        ? stories.map(s => popularCardHtml(s)).join('')
+        : `<div class="empty" style="padding-top:40px">아직 이야기가 없어요.<br>씨앗 탭에서 첫 이야기를 시작해 보세요!</div>`;
+    };
+    const _cachedPop = _lsc.get('pop');
+    if (_cachedPop) _renderPop(_cachedPop.storiesRes, _cachedPop.myRes);
+    const _fetchPop = async () => {
+      let storiesRes, myRes;
+      try {
+        const p = [api('getStories', { page: 1 })];
+        if (user) p.push(api('getMyStories'));
+        [storiesRes, myRes] = await Promise.all(p);
+      } catch(e) {
+        if (!_cachedPop) content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('popular')">다시 시도</button></div>`;
+        return;
+      }
+      _lsc.set('pop', { storiesRes, myRes }, 90);
+      if (currentRoute === 'popular') _renderPop(storiesRes, myRes);
+    };
+    if (!_cachedPop) await _fetchPop(); else _fetchPop();
 
   } else if (tab === 'mine') {
     if (!user) {
@@ -511,16 +536,25 @@ async function loadHomeTab(tab) {
       : `<div class="empty" style="padding-top:40px">참여한 이야기가 없어요.<br>씨앗 탭에서 이야기를 시작해 보세요!</div>`;
 
   } else if (tab === 'done') {
-    let res;
-    try { res = await api('getStories', { page: 2 }); } catch(e) {
-      content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('done')">다시 시도</button></div>`;
-      return;
-    }
-    if (!res.ok || !res.stories.length) {
-      content.innerHTML = `<div class="empty" style="padding-top:40px">아직 완결된 이야기가 없어요.<br>이야기에 참여해 함께 만들어 가요!</div>`;
-      return;
-    }
-    content.innerHTML = res.stories.map(doneCardHtml).join('');
+    const _renderDone = (res) => {
+      if (!res?.ok || !res.stories.length) {
+        content.innerHTML = `<div class="empty" style="padding-top:40px">아직 완결된 이야기가 없어요.<br>이야기에 참여해 함께 만들어 가요!</div>`;
+        return;
+      }
+      content.innerHTML = res.stories.map(doneCardHtml).join('');
+    };
+    const _cachedDone = _lsc.get('done');
+    if (_cachedDone) _renderDone(_cachedDone);
+    const _fetchDone = async () => {
+      let res;
+      try { res = await api('getStories', { page: 2 }); } catch(e) {
+        if (!_cachedDone) content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('done')">다시 시도</button></div>`;
+        return;
+      }
+      _lsc.set('done', res, 300);
+      if (currentRoute === 'done') _renderDone(res);
+    };
+    if (!_cachedDone) await _fetchDone(); else _fetchDone();
   }
 }
 
@@ -567,6 +601,7 @@ async function startSeedStory() {
   if (btn) { btn.disabled = true; btn.textContent = '시작 중...'; }
   const res = await api('createStory', { opening: text });
   if (!res.ok) { toast(res.error, true); if (btn) { btn.disabled = false; btn.textContent = '이 문장으로 시작하기'; } return; }
+  _lsc.del('pop', 'done', 'lb');
   toast('이야기가 시작됐습니다!');
   nav('story', res.story_id);
 }
@@ -666,6 +701,7 @@ async function submitStory() {
   btn.disabled = true; btn.textContent = '생성 중...';
   const res = await api('createStory', { opening });
   if (!res.ok) { toast(res.error, true); btn.disabled = false; btn.textContent = '이야기 시작'; return; }
+  _lsc.del('pop', 'done', 'lb');
   toast('이야기가 시작됐습니다!');
   nav('story', res.story_id);
 }
@@ -968,13 +1004,20 @@ function renderVoteCard(sub, mySubId, maxVotes) {
 let _lbData = null;
 
 async function loadLeaderboard(targetId) {
-  if (!_lbData) {
+  if (!_lbData) _lbData = _lsc.get('lb');
+  if (_lbData && targetId) renderLbInto(targetId);
+  const _refresh = async () => {
     try {
       const res = await api('getLeaderboard', {});
-      _lbData = res.ok ? res : null;
-    } catch(e) { _lbData = null; }
-  }
-  if (targetId) renderLbInto(targetId);
+      if (!res.ok) return;
+      _lbData = res;
+      _lsc.set('lb', res, 300);
+      if (targetId) renderLbInto(targetId);
+      const modal = document.getElementById('modal-lb-body');
+      if (modal) modal.innerHTML = lbBodyHtml(10);
+    } catch(e) {}
+  };
+  if (!_lbData) await _refresh(); else _refresh();
 }
 
 function renderLbInto(containerId) {
@@ -1118,6 +1161,7 @@ async function submitSubInStory(episode_id) {
   const res = await api('createSubmission', { episode_id, content, derived_from, closing });
   if (!res.ok) { toast(res.error, true); return; }
   window._polishFrom = null;
+  _lsc.del('pop', 'done');
   toast(closing ? '제출 완료! 이야기 마무리 투표가 시작됩니다.' : '제출 완료!');
   story();
 }
@@ -1150,6 +1194,7 @@ async function submitVoteInStory(episode_id) {
   if (btn) { btn.disabled = true; btn.textContent = '투표 중...'; }
   const res = await api('vote', { episode_id, sub_ids: selectedSubs });
   if (!res.ok) { toast(res.error, true); if (btn) btn.disabled = false; return; }
+  _lsc.del('pop', 'done');
   toast(`투표 완료! 현재 ${res.total_voters}명 참여`);
   story();
 }
@@ -1297,6 +1342,7 @@ async function submitSub(episode_id) {
   if (content.length > 50) { toast('조금 더 짧게 써주세요.', true); return; }
   const res = await api('createSubmission', { episode_id, content, derived_from: '' });
   if (!res.ok) { toast(res.error, true); return; }
+  _lsc.del('pop', 'done');
   toast('제출 완료!');
   episode();
 }
@@ -1307,6 +1353,7 @@ async function submitVote(episode_id) {
   btn.disabled = true; btn.textContent = '투표 중...';
   const res = await api('vote', { episode_id, sub_ids: selectedSubs });
   if (!res.ok) { toast(res.error, true); btn.disabled = false; return; }
+  _lsc.del('pop', 'done');
   toast(`투표 완료! 현재 ${res.total_voters}명 참여`);
   episode();
 }

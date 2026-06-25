@@ -361,20 +361,32 @@ const _lsc = {
   del(...ks) { ks.forEach(k => { try { localStorage.removeItem('hc:' + k); } catch {} }); },
 };
 
-// ─── 참여 중인 이야기 정렬 ─────────────────────────────────
-let _mineSort  = 'latest';
+// ─── 탭 정렬 상태 ──────────────────────────────────────────
+let _mineSort  = 'activity';
 let _mineCache = null; // { active, snapshot }
+let _popSort   = 'activity';
+let _popCache  = null; // { stories }
+let _doneSort  = 'activity';
+let _doneCache = null; // { stories }
 
-function sortMineStories(stories, key) {
+function _sortStories(stories, key) {
   const arr = [...stories];
   if (key === 'activity') return arr.sort((a, b) => (Number(b.activity_count)||0) - (Number(a.activity_count)||0));
   if (key === 'step')     return arr.sort((a, b) => (Number(b.current_step)||0)   - (Number(a.current_step)||0));
   return arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
+function _sortBtns(prefix, keys, current) {
+  return `<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+    ${keys.map(([k,l]) =>
+      `<button id="${prefix}-${k}" class="sort-btn ${current===k?'active':''}" onclick="${prefix==='ms'?'setMineSort':prefix==='ps'?'setPopSort':'setDoneSort'}('${k}')">${l}</button>`
+    ).join('')}
+  </div>`;
+}
+
 function setMineSort(key) {
   _mineSort = key;
-  ['latest','activity','step'].forEach(k => {
+  ['activity','step','latest'].forEach(k => {
     const el = document.getElementById('ms-' + k);
     if (el) el.classList.toggle('active', k === key);
   });
@@ -385,16 +397,49 @@ function renderMineCards() {
   const content = document.getElementById('home-content');
   if (!content || !_mineCache) return;
   const { active, snapshot } = _mineCache;
-  const sorted   = sortMineStories(active, _mineSort);
-  const sortHtml = `
-    <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
-      ${[['latest','최신 순'],['activity','참여도 순'],['step','진행도 순']].map(([k,l]) =>
-        `<button id="ms-${k}" class="sort-btn ${_mineSort===k?'active':''}" onclick="setMineSort('${k}')">${l}</button>`
-      ).join('')}
-    </div>`;
-  content.innerHTML = sortHtml + (sorted.length
-    ? sorted.map(s => myStoryCardHtml(s, snapshot)).join('')
-    : `<div class="empty" style="padding-top:30px">참여 중인 이야기가 없어요.<br>씨앗 탭에서 이야기를 시작해 보세요!</div>`);
+  const sorted = _sortStories(active, _mineSort);
+  content.innerHTML = _sortBtns('ms', [['activity','참여도 순'],['step','진행도 순'],['latest','최신 순']], _mineSort)
+    + (sorted.length
+      ? sorted.map(s => myStoryCardHtml(s, snapshot)).join('')
+      : `<div class="empty" style="padding-top:30px">참여 중인 이야기가 없어요.<br>씨앗 탭에서 이야기를 시작해 보세요!</div>`);
+}
+
+function setPopSort(key) {
+  _popSort = key;
+  ['activity','step','latest'].forEach(k => {
+    const el = document.getElementById('ps-' + k);
+    if (el) el.classList.toggle('active', k === key);
+  });
+  renderPopCards();
+}
+
+function renderPopCards() {
+  const content = document.getElementById('home-content');
+  if (!content || !_popCache) return;
+  const sorted = _sortStories(_popCache.stories, _popSort);
+  content.innerHTML = _sortBtns('ps', [['activity','참여도 순'],['step','진행도 순'],['latest','최신 순']], _popSort)
+    + (sorted.length
+      ? sorted.map(s => popularCardHtml(s)).join('')
+      : `<div class="empty" style="padding-top:40px">아직 이야기가 없어요.<br>씨앗 탭에서 첫 이야기를 시작해 보세요!</div>`);
+}
+
+function setDoneSort(key) {
+  _doneSort = key;
+  ['activity','latest'].forEach(k => {
+    const el = document.getElementById('ds-' + k);
+    if (el) el.classList.toggle('active', k === key);
+  });
+  renderDoneCards();
+}
+
+function renderDoneCards() {
+  const content = document.getElementById('home-content');
+  if (!content || !_doneCache) return;
+  const sorted = _sortStories(_doneCache.stories, _doneSort);
+  content.innerHTML = _sortBtns('ds', [['activity','참여도 순'],['latest','최신 순']], _doneSort)
+    + (sorted.length
+      ? sorted.map(s => doneCardHtml(s)).join('')
+      : `<div class="empty" style="padding-top:40px">아직 완결된 이야기가 없어요.<br>이야기에 참여해 함께 만들어 가요!</div>`);
 }
 
 // ─── 상태 ──────────────────────────────────────────────────
@@ -546,15 +591,14 @@ async function loadHomeTab(tab) {
     loadLeaderboard('seed-lb-body');
 
   } else if (tab === 'popular') {
-    const _renderPop = (storiesRes, myRes) => {
+    const _applyPop = (storiesRes, myRes) => {
       const myIds   = new Set((myRes?.ok ? myRes.stories : []).map(s => s.story_id));
       const stories = (storiesRes?.ok ? storiesRes.stories : []).filter(s => !myIds.has(s.story_id));
-      content.innerHTML = stories.length
-        ? stories.map(s => popularCardHtml(s)).join('')
-        : `<div class="empty" style="padding-top:40px">아직 이야기가 없어요.<br>씨앗 탭에서 첫 이야기를 시작해 보세요!</div>`;
+      _popCache = { stories };
+      if (currentRoute === 'popular') renderPopCards();
     };
     const _cachedPop = _lsc.get('pop');
-    if (_cachedPop) _renderPop(_cachedPop.storiesRes, _cachedPop.myRes);
+    if (_cachedPop) _applyPop(_cachedPop.storiesRes, _cachedPop.myRes);
     const _fetchPop = async () => {
       let storiesRes, myRes;
       try {
@@ -566,7 +610,7 @@ async function loadHomeTab(tab) {
         return;
       }
       _lsc.set('pop', { storiesRes, myRes }, 90);
-      if (currentRoute === 'popular') _renderPop(storiesRes, myRes);
+      _applyPop(storiesRes, myRes);
     };
     if (!_cachedPop) await _fetchPop(); else _fetchPop();
 
@@ -590,15 +634,13 @@ async function loadHomeTab(tab) {
     renderMineCards();
 
   } else if (tab === 'done') {
-    const _renderDone = (res) => {
-      if (!res?.ok || !res.stories.length) {
-        content.innerHTML = `<div class="empty" style="padding-top:40px">아직 완결된 이야기가 없어요.<br>이야기에 참여해 함께 만들어 가요!</div>`;
-        return;
-      }
-      content.innerHTML = res.stories.map(doneCardHtml).join('');
+    const _applyDone = (res) => {
+      const stories = res?.ok ? res.stories : [];
+      _doneCache = { stories };
+      if (currentRoute === 'done') renderDoneCards();
     };
     const _cachedDone = _lsc.get('done');
-    if (_cachedDone) _renderDone(_cachedDone);
+    if (_cachedDone) _applyDone(_cachedDone);
     const _fetchDone = async () => {
       let res;
       try { res = await api('getStories', { page: 2 }); } catch(e) {
@@ -606,7 +648,7 @@ async function loadHomeTab(tab) {
         return;
       }
       _lsc.set('done', res, 300);
-      if (currentRoute === 'done') _renderDone(res);
+      _applyDone(res);
     };
     if (!_cachedDone) await _fetchDone(); else _fetchDone();
   }

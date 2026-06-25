@@ -903,7 +903,7 @@ async function story() {
         ${user ? `
         <button id="like-btn" class="btn ${is_liked ? 'btn-primary' : 'btn-ghost'} btn-sm"
           onclick="doToggleStoryLike('${esc(s.story_id)}')">
-          👍 추천해요${like_count > 0 ? ` (${like_count})` : ''}
+          👍 이 이야기 추천해요${like_count > 0 ? ` (${like_count})` : ''}
         </button>` : ''}
         <button class="btn btn-ghost btn-sm" onclick="shareStory()">🔗 공유하기</button>
       </div>`;
@@ -1643,8 +1643,9 @@ async function profile() {
             ${Number(h.points)>=0?'+':''}${h.points}
           </div>
         </div>`).join('')}
-    <div style="margin-top:32px;text-align:center">
+    <div style="margin-top:32px;display:flex;flex-direction:column;align-items:center;gap:10px">
       <button class="btn btn-ghost btn-sm" onclick="logout()" style="color:var(--muted)">로그아웃</button>
+      <button class="btn btn-ghost btn-sm" onclick="doDeleteAccount()" style="color:var(--accent2);font-size:12px">회원탈퇴</button>
     </div>`;
 }
 
@@ -1998,6 +1999,14 @@ function reasonLabel(r) {
   }[r] || r;
 }
 
+async function doDeleteAccount() {
+  if (!confirm('정말 탈퇴하시겠습니까?\n작성한 글은 이야기에 남지만 계정 정보는 삭제됩니다.')) return;
+  const res = await api('deleteAccount');
+  if (!res.ok) { toast(res.error, true); return; }
+  logout();
+  toast('탈퇴가 완료됐습니다.');
+}
+
 async function doToggleStoryLike(story_id) {
   if (!user) { toast('로그인이 필요합니다.', true); return; }
   const res = await api('toggleStoryLike', { story_id });
@@ -2005,7 +2014,7 @@ async function doToggleStoryLike(story_id) {
   const btn = document.getElementById('like-btn');
   if (btn) {
     btn.className = `btn ${res.liked ? 'btn-primary' : 'btn-ghost'} btn-sm`;
-    btn.textContent = `👍 추천해요${res.like_count > 0 ? ` (${res.like_count})` : ''}`;
+    btn.textContent = `👍 이 이야기 추천해요${res.like_count > 0 ? ` (${res.like_count})` : ''}`;
   }
   _lsc.del('done');
   _doneCache = null;

@@ -220,6 +220,14 @@
   .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
   .section-title { font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .06em; }
 
+  /* ── MVP 따봉 */
+  .mvp-section { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-top: 16px; }
+  .mvp-author-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; border: 1.5px solid var(--border); margin-bottom: 8px; cursor: pointer; transition: border-color .15s, background .15s; }
+  .mvp-author-card.selected { border-color: var(--accent); background: #162218; }
+  .mvp-author-card.result { cursor: default; }
+  .mvp-bar { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .mvp-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .4s; }
+
   /* ── 산문 이야기 */
   .story-prose { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px 24px; }
   .prose-opening {
@@ -836,6 +844,9 @@ async function story() {
           ${renderHistoryPanel(episodes, submissions)}
         </div>
       </div>
+      <div id="mvp-section" style="margin-top:16px">
+        <div style="font-size:12px;color:var(--muted);text-align:center">불러오는 중...</div>
+      </div>
       <div style="margin-top:32px">
         <h3 style="margin-bottom:14px;font-size:16px">이야기 감상 나누기</h3>
         <div id="story-comment-list">
@@ -849,7 +860,10 @@ async function story() {
           </div>` : `<div style="font-size:13px;color:var(--muted);margin-top:12px">로그인 후 감상을 남길 수 있어요.</div>`}
       </div>` : ''}`;
 
-  if (isFinished) loadStoryComments(currentParam);
+  if (isFinished) {
+    loadStoryComments(currentParam);
+    loadMvpSection(currentParam, submissions);
+  }
 }
 
 function toggleHistory() {
@@ -1370,16 +1384,25 @@ function auth() {
       <div class="tabs">
         <div class="tab ${tab==='login'?'active':''}" onclick="nav('auth','login')">로그인</div>
         <div class="tab ${tab==='register'?'active':''}" onclick="nav('auth','register')">회원가입</div>
+        <div class="tab ${tab==='recover'?'active':''}" onclick="nav('auth','recover')">비밀번호 찾기</div>
       </div>
       ${tab === 'login' ? `
         <div class="form-group"><label>닉네임</label><input id="a-nick" type="text" placeholder="닉네임"></div>
         <div class="form-group"><label>비밀번호</label><input id="a-pw" type="password" placeholder="비밀번호" onkeydown="if(event.key==='Enter')doLogin()"></div>
         <button class="btn btn-primary" style="width:100%" onclick="doLogin()">로그인</button>
-      ` : `
+      ` : tab === 'register' ? `
         <div class="form-group"><label>닉네임 (2~12자, 한글·영문·숫자만)</label><input id="a-nick" type="text" placeholder="닉네임" maxlength="12"></div>
+        <div class="form-group"><label>이름 (비밀번호 찾기에 사용)</label><input id="a-name" type="text" placeholder="실명 또는 별칭" maxlength="20"></div>
         <div class="form-group"><label>비밀번호 (6자 이상)</label><input id="a-pw" type="password" placeholder="비밀번호"></div>
         <div class="form-group"><label>비밀번호 확인</label><input id="a-pw2" type="password" placeholder="비밀번호 재입력" onkeydown="if(event.key==='Enter')doRegister()"></div>
         <button class="btn btn-primary" style="width:100%" onclick="doRegister()">가입하기</button>
+      ` : `
+        <p style="font-size:13px;color:var(--muted);margin-bottom:20px">가입 시 입력한 닉네임과 이름이 일치하면 비밀번호를 재설정할 수 있어요.</p>
+        <div class="form-group"><label>닉네임</label><input id="a-nick" type="text" placeholder="닉네임"></div>
+        <div class="form-group"><label>가입 시 입력한 이름</label><input id="a-name" type="text" placeholder="이름"></div>
+        <div class="form-group"><label>새 비밀번호 (6자 이상)</label><input id="a-pw" type="password" placeholder="새 비밀번호"></div>
+        <div class="form-group"><label>새 비밀번호 확인</label><input id="a-pw2" type="password" placeholder="비밀번호 재입력" onkeydown="if(event.key==='Enter')doRecover()"></div>
+        <button class="btn btn-primary" style="width:100%" onclick="doRecover()">비밀번호 재설정</button>
       `}
     </div>`;
 }
@@ -1403,11 +1426,15 @@ async function doLogin() {
 }
 
 async function doRegister() {
-  const nickname = document.getElementById('a-nick').value.trim();
-  const password = document.getElementById('a-pw').value;
+  const nickname  = document.getElementById('a-nick').value.trim();
+  const nameVal   = (document.getElementById('a-name')?.value || '').trim();
+  const password  = document.getElementById('a-pw').value;
   const password2 = document.getElementById('a-pw2').value;
   if (!/^[가-힣a-zA-Z0-9]{2,12}$/.test(nickname)) {
     toast('닉네임은 2~12자, 한글·영문·숫자만 사용할 수 있어요.', true); return;
+  }
+  if (!nameVal) {
+    toast('이름을 입력해주세요. (비밀번호 찾기에 사용됩니다)', true); return;
   }
   if (password.length < 6) {
     toast('비밀번호는 6자 이상이어야 해요.', true); return;
@@ -1415,11 +1442,25 @@ async function doRegister() {
   if (password !== password2) {
     toast('비밀번호가 일치하지 않아요.', true); return;
   }
-  const res = await api('register', { nickname, password });
+  const res = await api('register', { nickname, password, name: nameVal });
   if (!res.ok) { toast(res.error, true); return; }
   saveUser(res);
   toast(`가입 완료! 환영합니다, ${res.nickname}님!`);
   nav('seed');
+}
+
+async function doRecover() {
+  const nickname    = document.getElementById('a-nick').value.trim();
+  const nameVal     = (document.getElementById('a-name')?.value || '').trim();
+  const new_password  = document.getElementById('a-pw').value;
+  const new_password2 = document.getElementById('a-pw2').value;
+  if (!nickname || !nameVal) { toast('닉네임과 이름을 모두 입력해주세요.', true); return; }
+  if (new_password.length < 6) { toast('새 비밀번호는 6자 이상이어야 해요.', true); return; }
+  if (new_password !== new_password2) { toast('비밀번호가 일치하지 않아요.', true); return; }
+  const res = await api('resetPassword', { nickname, name: nameVal, new_password });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast('비밀번호가 재설정됐어요. 로그인해주세요.');
+  nav('auth', 'login');
 }
 
 // ─── 프로필 ───────────────────────────────────────────────
@@ -1643,6 +1684,104 @@ function chooseBranch(episode_id, sub_id) {
     const tree = getEpisodeTree(episodes, submissions);
     el.innerHTML = tree ? renderEpisodeTreeHtml(tree, window._branchChoice) : '';
   }
+}
+
+// ─── MVP 따봉 ─────────────────────────────────────────
+
+let _mvpSelected = [];
+
+async function loadMvpSection(story_id, submissions) {
+  const el = document.getElementById('mvp-section');
+  if (!el) return;
+
+  // 채택된 제출의 고유 작성자 목록 (SYSTEM 제외)
+  const winners = submissions.filter(s => s.is_adopted === true || s.is_adopted === 'TRUE');
+  const seenIds = new Set();
+  const authors = [];
+  winners.forEach(s => {
+    if (!seenIds.has(s.author_id) && s.author_id && s.author_id !== 'SYSTEM') {
+      seenIds.add(s.author_id);
+      authors.push({ user_id: s.author_id, nickname: s.author_nickname || '익명', badge: s.author_badge || 'seed' });
+    }
+  });
+
+  if (authors.length < 2) { el.innerHTML = ''; return; }
+
+  const res = await api('getMvpVotes', { story_id });
+  _mvpSelected = [];
+
+  if (!res.ok) { el.innerHTML = ''; return; }
+
+  el.innerHTML = renderMvpHtml(story_id, authors, res);
+}
+
+function renderMvpHtml(story_id, authors, res) {
+  const canVote = user && !res.has_voted;
+  const maxCount = Math.max(...res.votes.map(v => v.count), 1);
+
+  const authorHtml = authors.map(a => {
+    const voteData = res.votes.find(v => v.user_id === a.user_id);
+    const count    = voteData ? voteData.count : 0;
+    if (canVote) {
+      return `
+        <div class="mvp-author-card" id="mvp-${a.user_id}" onclick="toggleMvpVote('${story_id}','${a.user_id}','${esc(a.nickname)}')">
+          <span class="badge badge-${a.badge}" style="font-size:9px;padding:1px 5px">${badgeLabel(a.badge)}</span>
+          <span style="font-size:14px;font-weight:600;flex:1">${esc(a.nickname)}</span>
+          <span style="font-size:20px">🤍</span>
+        </div>`;
+    } else {
+      return `
+        <div class="mvp-author-card result">
+          <span class="badge badge-${a.badge}" style="font-size:9px;padding:1px 5px">${badgeLabel(a.badge)}</span>
+          <span style="font-size:14px;font-weight:600;flex:1">${esc(a.nickname)}</span>
+          ${count > 0 ? `
+            <div class="mvp-bar" style="max-width:80px"><div class="mvp-bar-fill" style="width:${Math.round(count/maxCount*100)}%"></div></div>
+            <span style="font-size:12px;color:var(--accent);font-weight:700;min-width:28px;text-align:right">${count}</span>` : ''}
+        </div>`;
+    }
+  }).join('');
+
+  return `
+    <div class="mvp-section">
+      <div style="font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:4px">✦ 이 이야기에서 빛났어요</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px">
+        ${canVote ? '가장 기억에 남는 참여자를 최대 2명 선택해주세요.' : `${res.total_voters}명이 투표했어요.`}
+      </div>
+      ${authorHtml}
+      ${canVote ? `<button id="mvp-submit-btn" class="btn btn-primary" style="width:100%;margin-top:8px" onclick="submitMvpVote('${story_id}')" disabled>선택 완료 (0명)</button>` : ''}
+      ${!user ? `<div style="font-size:12px;color:var(--muted);text-align:center;margin-top:8px">로그인 후 투표할 수 있어요.</div>` : ''}
+    </div>`;
+}
+
+function toggleMvpVote(story_id, user_id, nickname) {
+  const idx = _mvpSelected.indexOf(user_id);
+  if (idx >= 0) {
+    _mvpSelected.splice(idx, 1);
+    document.getElementById('mvp-' + user_id)?.classList.remove('selected');
+  } else {
+    if (_mvpSelected.length >= 2) {
+      const oldest = _mvpSelected.shift();
+      document.getElementById('mvp-' + oldest)?.classList.remove('selected');
+    }
+    _mvpSelected.push(user_id);
+    document.getElementById('mvp-' + user_id)?.classList.add('selected');
+  }
+  const btn = document.getElementById('mvp-submit-btn');
+  if (btn) {
+    btn.disabled = _mvpSelected.length === 0;
+    btn.textContent = `선택 완료 (${_mvpSelected.length}명)`;
+  }
+}
+
+async function submitMvpVote(story_id) {
+  if (!_mvpSelected.length) return;
+  const btn = document.getElementById('mvp-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '투표 중...'; }
+  const res = await api('voteMvp', { story_id, nominated_user_ids: _mvpSelected });
+  if (!res.ok) { toast(res.error, true); if (btn) btn.disabled = false; return; }
+  toast('투표 완료! 감사합니다 ✦');
+  // 결과 새로 불러오기
+  if (window._storyData) loadMvpSection(story_id, window._storyData.submissions);
 }
 
 // ─── 공유 ──────────────────────────────────────────────

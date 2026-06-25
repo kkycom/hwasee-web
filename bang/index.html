@@ -374,6 +374,7 @@ function _sortStories(stories, key) {
   const arr = [...stories];
   if (key === 'activity') return arr.sort((a, b) => (Number(b.activity_count)||0) - (Number(a.activity_count)||0));
   if (key === 'step')     return arr.sort((a, b) => (Number(b.current_step)||0)   - (Number(a.current_step)||0));
+  if (key === 'likes')    return arr.sort((a, b) => (Number(b.like_count)||0)     - (Number(a.like_count)||0));
   return arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
@@ -426,7 +427,7 @@ function renderPopCards() {
 
 function setDoneSort(key) {
   _doneSort = key;
-  ['activity','latest'].forEach(k => {
+  ['activity','likes','latest'].forEach(k => {
     const el = document.getElementById('ds-' + k);
     if (el) el.classList.toggle('active', k === key);
   });
@@ -437,7 +438,7 @@ function renderDoneCards() {
   const content = document.getElementById('home-content');
   if (!content || !_doneCache) return;
   const sorted = _sortStories(_doneCache.stories, _doneSort);
-  content.innerHTML = _sortBtns('ds', [['activity','참여도 순'],['latest','최신 순']], _doneSort)
+  content.innerHTML = _sortBtns('ds', [['activity','참여도 순'],['likes','추천순'],['latest','최신 순']], _doneSort)
     + (sorted.length
       ? sorted.map(s => doneCardHtml(s)).join('')
       : `<div class="empty" style="padding-top:40px">아직 완결된 이야기가 없어요.<br>이야기에 참여해 함께 만들어 가요!</div>`);
@@ -723,12 +724,14 @@ function popularCardHtml(s) {
 
 // 완결된 이야기 카드
 function doneCardHtml(s) {
-  const step = Number(s.current_step) || 0;
+  const step  = Number(s.current_step) || 0;
+  const likes = Number(s.like_count) || 0;
   return `
     <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
       <div class="story-card-title">"${esc(s.opening)}"</div>
       <div class="story-card-footer">
         <span class="step-pill">${step}단계 완성</span>
+        ${likes > 0 ? `<span style="font-size:12px;color:var(--accent);margin-left:8px">👍 ${likes}</span>` : ''}
         <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
       </div>
     </div>`;
@@ -818,7 +821,7 @@ async function story() {
   }
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
 
-  const { story: s, episodes, submissions, is_bookmarked } = res;
+  const { story: s, episodes, submissions, is_bookmarked, is_liked = false, like_count = 0 } = res;
 
   // 분기 트리 산문 (전역 저장 → chooseBranch 재렌더용)
   window._storyData = { episodes, submissions, story: s };
@@ -896,10 +899,13 @@ async function story() {
   } else if (s.status === 'completed' || s.status === 'inactive') {
     actionHtml = `
       <div class="prose-divider">완결된 이야기입니다</div>
-      <div style="text-align:center;margin-bottom:8px">
-        <button class="btn btn-ghost btn-sm" onclick="shareStory()" style="font-size:13px">
-          🔗 이야기 공유하기
-        </button>
+      <div style="display:flex;gap:10px;justify-content:center;margin-bottom:8px;flex-wrap:wrap">
+        ${user ? `
+        <button id="like-btn" class="btn ${is_liked ? 'btn-primary' : 'btn-ghost'} btn-sm"
+          onclick="doToggleStoryLike('${esc(s.story_id)}')">
+          👍 추천해요${like_count > 0 ? ` (${like_count})` : ''}
+        </button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="shareStory()">🔗 공유하기</button>
       </div>`;
   }
 
@@ -1990,6 +1996,19 @@ function reasonLabel(r) {
     submit:'제출 참여', vote:'투표 참여', daily_login:'오늘의 보너스', mvp_nomination:'MVP 선정',
     boost_story:'이야기 주목 사용', extra_submit:'추가 제출권 사용',
   }[r] || r;
+}
+
+async function doToggleStoryLike(story_id) {
+  if (!user) { toast('로그인이 필요합니다.', true); return; }
+  const res = await api('toggleStoryLike', { story_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  const btn = document.getElementById('like-btn');
+  if (btn) {
+    btn.className = `btn ${res.liked ? 'btn-primary' : 'btn-ghost'} btn-sm`;
+    btn.textContent = `👍 추천해요${res.like_count > 0 ? ` (${res.like_count})` : ''}`;
+  }
+  _lsc.del('done');
+  _doneCache = null;
 }
 
 async function doBoostStory(story_id) {

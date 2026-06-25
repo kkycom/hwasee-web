@@ -334,16 +334,24 @@ const API_URL = typeof google !== 'undefined'
 async function api(action, params = {}) {
   const token = localStorage.getItem('hwasee_token');
   const body  = JSON.stringify({ action, token, ...params });
+  let result;
   if (typeof google !== 'undefined') {
-    return new Promise((res, rej) => {
+    result = await new Promise((res, rej) => {
       google.script.run
         .withSuccessHandler(raw => res(JSON.parse(raw)))
         .withFailureHandler(e  => rej(new Error(e.message)))
         .handleRequest(body);
     });
+  } else {
+    const r = await fetch(API_URL, { method: 'POST', body });
+    result = await r.json();
   }
-  const r = await fetch(API_URL, { method: 'POST', body });
-  return r.json();
+  // 세션 만료 시 자동 로그아웃
+  if (!result.ok && result.error === '로그인이 필요합니다.' && token) {
+    logout();
+    toast('세션이 만료됐습니다. 다시 로그인해주세요.', true);
+  }
+  return result;
 }
 
 // ─── 캐시 유틸 ────────────────────────────────────────────

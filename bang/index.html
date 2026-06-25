@@ -1134,13 +1134,13 @@ async function loadLeaderboard(targetId) {
   const _refresh = async () => {
     try {
       const res = await api('getLeaderboard', {});
-      if (!res.ok) return;
+      if (!res.ok) { if (targetId) renderLbInto(targetId); return; }
       _lbData = res;
       _lsc.set('lb', res, 360);
       if (targetId) renderLbInto(targetId);
       const modal = document.getElementById('modal-lb-body');
       if (modal) modal.innerHTML = lbBodyHtml(10);
-    } catch(e) {}
+    } catch(e) { if (targetId) renderLbInto(targetId); }
   };
   if (!_lbData) await _refresh(); else _refresh();
 }

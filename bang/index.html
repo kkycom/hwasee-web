@@ -772,9 +772,9 @@ function myStoryCardHtml(s, snapshot) {
         </div>` : ''}
       <div class="story-card-footer">
         <span class="step-pill"><span class="step-dot"></span>${step+1}단계 · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
-        ${s.has_pending ? `<span class="pending-tag">⏳ 곧 채택 예정</span>` : ''}
         ${hasVoted ? `<span style="font-size:11px;color:var(--success);font-weight:700">✓ 투표완료</span>`
           : canVoteNow ? `<span style="font-size:11px;color:var(--accent2);font-weight:700">▲ 투표가능</span>` : ''}
+        ${s.has_pending ? `<span class="pending-tag pending-countdown" data-expires="${s.pending_expires_at||''}">⏳ 곧 채택 예정</span>` : ''}
         <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
       </div>
     </div>`;
@@ -854,9 +854,12 @@ async function story() {
   if (openEp) {
     const curStep   = Number(openEp.step) + 1;
     const isPending = openEp.status === 'pending';
+    const _pendingExp = isPending && openEp.pending_at
+      ? new Date(new Date(openEp.pending_at).getTime() + 15 * 60000).toISOString()
+      : '';
     actionHtml = `
       <div class="prose-divider">${isPending ? '곧 채택될 예정이에요 · 아직 투표할 수 있어요' : '이 이야기의 다음 문장을 결정합니다'}</div>
-      ${isPending ? `<div style="text-align:center;margin-bottom:12px"><span class="pending-tag">⏳ 곧 채택 예정</span></div>` : ''}
+      ${isPending ? `<div style="text-align:center;margin-bottom:12px"><span class="pending-tag pending-countdown" data-expires="${_pendingExp}">⏳ 곧 채택 예정</span></div>` : ''}
       <div style="font-size:12px;color:var(--muted);margin-bottom:16px;text-align:center">
         ${curStep}단계 · 최대 2개 선택
         ${curStep < 3 ? `<span style="color:var(--border)"> · </span><span style="color:var(--muted)">3단계부터 이야기 마무리 가능</span>` : ''}
@@ -2093,11 +2096,28 @@ function parseHash() {
 
 window.addEventListener('hashchange', () => { parseHash(); render(); renderNav(); });
 
+function _startCountdowns() {
+  setInterval(() => {
+    document.querySelectorAll('.pending-countdown[data-expires]').forEach(el => {
+      const exp = el.dataset.expires;
+      if (!exp) return;
+      const ms = new Date(exp) - Date.now();
+      if (ms <= 0) { el.textContent = '⏳ 채택 임박!'; return; }
+      const m = Math.floor(ms / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      el.textContent = m > 0
+        ? `⏳ ${m}분 ${String(s).padStart(2,'0')}초 후 채택`
+        : `⏳ ${s}초 후 채택`;
+    });
+  }, 1000);
+}
+
 window.onload = () => {
   loadUser();
   renderNav();
   parseHash();
   render();
+  _startCountdowns();
 };
 </script>
 </body>

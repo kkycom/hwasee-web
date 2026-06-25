@@ -986,40 +986,48 @@ function renderLbInto(containerId) {
     : '<div style="font-size:12px;color:var(--muted)">랭킹을 불러올 수 없습니다.</div>';
 }
 
-function lbBodyHtml(limit, stacked) {
+const LB_TABS = [
+  { key: 'points',         label: '포인트', unit: 'p'  },
+  { key: 'participations', label: '참여',   unit: '회' },
+  { key: 'adoptions',      label: '채택',   unit: '편' },
+];
+let _lbTab = 'points';
+
+function lbBodyHtml(limit) {
   if (!_lbData) return '<div style="font-size:12px;color:var(--muted)">아직 기록이 없어요.</div>';
   const n = limit || 5;
-  const sections = [
-    { key: 'adoptions',      label: '채택 랭킹',   unit: '편' },
-    { key: 'points',         label: '포인트 랭킹', unit: 'p'  },
-    { key: 'participations', label: '참여 랭킹',   unit: '회' },
-  ];
-  const cols = sections.map(({ key, label, unit }) => {
-    const rows = (_lbData[key] || []).slice(0, n);
-    const rowsHtml = rows.length
-      ? rows.map((r, i) => `
-          <div class="lb-row">
-            <span class="lb-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</span>
-            <span class="lb-name">
-              <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(r.badge||'seed')}</span>${esc(r.nickname)}
-            </span>
-            <span class="lb-value">${r.value}${unit}</span>
-          </div>`).join('')
-      : '<div style="font-size:12px;color:var(--muted);padding:6px 0;text-align:center">아직 기록이 없어요.</div>';
-    return `
-      <div>
-        <div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:10px;text-align:center">${label}</div>
-        ${rowsHtml}
-      </div>`;
-  });
-  if (stacked) return cols.join('');
-  const styled = cols.map((col, i) =>
-    `<div style="padding:0 14px;${i < cols.length-1 ? 'border-right:1px solid var(--border)' : ''}">${col}</div>`
-  );
-  return `<div style="display:grid;grid-template-columns:1fr 1fr 1fr">${styled.join('')}</div>`;
+  const tabHtml = LB_TABS.map(t => `
+    <button onclick="switchLbTab('${t.key}')" id="lbtab-${t.key}"
+      style="flex:1;padding:6px 4px;font-size:11px;font-weight:700;background:none;border:none;
+             border-bottom:2px solid ${_lbTab===t.key?'var(--accent)':'transparent'};
+             color:${_lbTab===t.key?'var(--accent)':'var(--muted)'};cursor:pointer;transition:.15s">
+      ${t.label}
+    </button>`).join('');
+  const cur = LB_TABS.find(t => t.key === _lbTab);
+  const rows = (_lbData[cur.key] || []).slice(0, n);
+  const rowsHtml = rows.length
+    ? rows.map((r, i) => `
+        <div class="lb-row">
+          <span class="lb-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</span>
+          <span class="lb-name">
+            <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(r.badge||'seed')}</span>${esc(r.nickname)}
+          </span>
+          <span class="lb-value">${r.value}${cur.unit}</span>
+        </div>`).join('')
+    : '<div style="font-size:12px;color:var(--muted);padding:12px 0;text-align:center">아직 기록이 없어요.</div>';
+  return `
+    <div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:10px">${tabHtml}</div>
+    <div id="lb-rows">${rowsHtml}</div>`;
 }
 
-function switchLbTab() {} // 탭 미사용 — 호환성 유지용
+function switchLbTab(key, limit) {
+  _lbTab = key;
+  const containers = ['seed-lb-body', 'modal-lb-body'];
+  containers.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = lbBodyHtml(limit || (id === 'modal-lb-body' ? 10 : 5));
+  });
+}
 
 function openRankingModal() {
   const existing = document.getElementById('ranking-modal');
@@ -1041,7 +1049,7 @@ function openRankingModal() {
   // 모달에서는 10위까지 보여줌
   loadLeaderboard().then(() => {
     const el = document.getElementById('modal-lb-body');
-    if (el && _lbData) el.innerHTML = lbBodyHtml(10, true);
+    if (el && _lbData) el.innerHTML = lbBodyHtml(10);
   });
 }
 

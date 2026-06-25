@@ -237,12 +237,12 @@
   /* ── 산문 이야기 */
   .story-prose { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px 24px; }
   .prose-opening {
-    font-family: var(--serif); font-size: 19px; font-weight: 700; line-height: 1.9;
+    font-family: var(--serif); font-size: 16px; line-height: 1.8;
     margin-bottom: 20px; padding-bottom: 18px; border-bottom: 1px solid var(--border);
   }
-  .prose-line { margin-bottom: 14px; display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
-  .prose-sentence { font-family: var(--serif); font-size: 16px; line-height: 1.8; }
-  .prose-author { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+  .prose-line { margin-bottom: 18px; }
+  .prose-sentence { font-family: var(--serif); font-size: 16px; line-height: 1.8; display: block; }
+  .prose-author { font-size: 11px; color: var(--muted); display: block; text-align: right; margin-top: 4px; }
   .prose-branch { font-size: 10px; font-weight: 700; color: var(--accent2); flex-shrink: 0; }
   .prose-divider {
     display: flex; align-items: center; gap: 12px; margin: 24px 0;
@@ -718,7 +718,7 @@ function popularCardHtml(s) {
   return `
     <div class="story-card${s.has_pending ? ' story-card-pending' : ''}" onclick="nav('story','${esc(s.story_id)}')">
       <div class="story-card-title">
-        "${esc(s.opening)}"
+        ${esc(s.opening)}
         ${s.is_boosted ? '<span class="boost-tag">주목</span>' : ''}
       </div>
       <div class="story-card-footer">
@@ -735,7 +735,7 @@ function doneCardHtml(s) {
   const likes = Number(s.like_count) || 0;
   return `
     <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
-      <div class="story-card-title">"${esc(s.opening)}"</div>
+      <div class="story-card-title">${esc(s.opening)}</div>
       <div class="story-card-footer">
         <span class="step-pill">${step}단계 완성</span>
         ${likes > 0 ? `<span style="font-size:12px;color:var(--accent);margin-left:8px">👍 ${likes}</span>` : ''}
@@ -758,7 +758,7 @@ function myStoryCardHtml(s, snapshot) {
   return `
     <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
       <div class="story-card-title">
-        "${esc(s.opening)}"
+        ${esc(s.opening)}
         ${isNew ? '<span class="new-tag">NEW</span>' : ''}
       </div>
       ${mySubs.length ? `
@@ -930,7 +930,7 @@ async function story() {
         <button class="admin-btn admin-delete" style="margin-left:auto" onclick="adminCloseStory('${esc(s.story_id)}')">✕ 이야기 종료</button>` : ''}
     </div>
     <div class="story-prose">
-      <div class="prose-opening">"${esc(s.opening)}"</div>
+      <div class="prose-opening">${esc(s.opening)}</div>
       ${confirmedHtml || ''}
     </div>
     ${actionHtml}
@@ -1596,7 +1596,7 @@ async function profile() {
       <h2 style="margin-bottom:12px">★ 책갈피한 이야기</h2>
       ${bookmarks.map(s => `
         <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
-          <div class="story-card-title">"${esc(s.opening)}"</div>
+          <div class="story-card-title">${esc(s.opening)}</div>
           <div class="story-card-footer">
             <span class="step-pill">${Number(s.current_step)}단계</span>
             <span class="story-status ${s.status==='active'?'status-active':'status-completed'}">${s.status==='active'?'진행 중':'완결'}</span>
@@ -1756,7 +1756,7 @@ function renderEpisodeTreeHtml(node, choices) {
     const childHtml = children.length === 1 ? renderEpisodeTreeHtml(children[0], choices) : '';
     return `
       <div class="prose-line">
-        <span class="prose-sentence">"${esc(sub.content)}"</span>
+        <span class="prose-sentence">${esc(sub.content)}</span>
         <span class="prose-author">— ${sub.author_badge?`<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(sub.author_badge)}</span>`:''}${esc(sub.author_nickname || '익명')}</span>
       </div>${childHtml}`;
   }
@@ -1776,7 +1776,7 @@ function renderEpisodeTreeHtml(node, choices) {
               ${String.fromCharCode(65+i)}갈래</button>`).join('')}
         </div>
         <div class="prose-line">
-          <span class="prose-sentence">"${esc(chosenSub ? chosenSub.content : '')}"</span>
+          <span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span>
           <span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>
         </div>
       </div>

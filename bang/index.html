@@ -828,7 +828,8 @@ async function story() {
   }
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
 
-  const { story: s, episodes, submissions, is_bookmarked, is_liked = false, like_count = 0 } = res;
+  const { story: s, episodes, submissions, is_bookmarked, is_liked = false, like_count = 0, my_voted_sub_ids = [] } = res;
+  const myVotedSet = new Set(my_voted_sub_ids);
 
   // 분기 트리 산문 (전역 저장 → chooseBranch 재렌더용)
   window._storyData = { episodes, submissions, story: s };
@@ -863,7 +864,7 @@ async function story() {
         <div style="flex:1;max-width:160px;height:4px;border-radius:2px;background:var(--border);overflow:hidden">
           <div style="height:100%;width:${Math.min(openEp.vote_total,3)*100/3}%;background:var(--accent);border-radius:2px;transition:.3s"></div>
         </div>
-        <span style="font-size:12px;color:${openEp.vote_total>=3?'var(--accent2)':'var(--muted)'};font-weight:600">${openEp.vote_total}/3표 ${openEp.vote_total>=3?'· 채택 대기 중':''}</span>
+        <span style="font-size:12px;color:${openEp.vote_total>=3?'var(--accent2)':'var(--muted)'};font-weight:600">${openEp.vote_total}/3명 참여 ${openEp.vote_total>=3?'· 채택 대기 중':''}</span>
       </div>
       ${user && !mySubId ? `
         <div class="card" style="margin-bottom:20px">
@@ -896,7 +897,7 @@ async function story() {
         </div>` : ''}
       ${openSubs.length === 0
         ? `<div class="empty" style="padding:20px 0">아직 제출된 문장이 없습니다.</div>`
-        : renderSubsWithReplies(openSubs, mySubId, maxVotes)}
+        : renderSubsWithReplies(openSubs, mySubId, maxVotes, myVotedSet)}
       ${user && openSubs.length > 0 ? `
         <div class="vote-sticky">
           <button class="btn btn-primary" id="vote-btn" onclick="submitVoteInStory('${esc(openEp.episode_id)}')">
@@ -1043,7 +1044,7 @@ async function submitStoryComment(story_id) {
   loadStoryComments(story_id);
 }
 
-function renderSubsWithReplies(subs, mySubId, maxVotes) {
+function renderSubsWithReplies(subs, mySubId, maxVotes, myVotedSet = new Set()) {
   const subIds = new Set(subs.map(s => s.sub_id));
   const roots  = subs.filter(s => !s.derived_from || !subIds.has(s.derived_from));
   const childMap = {};
@@ -1055,30 +1056,33 @@ function renderSubsWithReplies(subs, mySubId, maxVotes) {
   });
   return roots.map(root => {
     const children = childMap[root.sub_id] || [];
-    return renderVoteCard(root, mySubId, maxVotes) +
+    return renderVoteCard(root, mySubId, maxVotes, myVotedSet) +
       children.map(child => `
         <div style="display:flex;gap:8px;margin-top:-8px;margin-bottom:10px;padding-left:12px">
           <div style="display:flex;flex-direction:column;align-items:center;padding-top:8px;flex-shrink:0">
             <div style="width:1px;height:12px;background:var(--border)"></div>
             <span style="font-size:13px;color:var(--muted);line-height:1">↳</span>
           </div>
-          <div style="flex:1">${renderVoteCard(child, mySubId, maxVotes)}</div>
+          <div style="flex:1">${renderVoteCard(child, mySubId, maxVotes, myVotedSet)}</div>
         </div>`).join('');
   }).join('');
 }
 
-function renderVoteCard(sub, mySubId, maxVotes) {
+function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set()) {
   const isAdopted   = sub.is_adopted === true || sub.is_adopted === 'TRUE';
+  const iVoted      = myVotedSet.has(sub.sub_id);
   const barPct      = maxVotes > 0 ? Math.round((Number(sub.vote_count) / maxVotes) * 100) : 0;
   const isClickable = user && sub.sub_id !== mySubId && !isAdopted;
 
   return `
     <div class="vote-card ${isAdopted?'adopted':''} ${isClickable?'clickable':''}" id="sc-${sub.sub_id}"
+      style="${iVoted?'border-color:var(--accent);':''}"
       ${isClickable ? `onclick="toggleSub('${sub.sub_id}')"` : ''}>
       <div class="vote-content">"${esc(sub.content)}"</div>
       <div class="vote-meta">
         <span>✍ ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeLabel(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
-        <span class="vote-count">▲ ${sub.vote_count}표</span>
+        <span class="vote-count">▲ ${sub.vote_count}명 선택</span>
+        ${iVoted ? '<span style="font-size:11px;color:var(--accent);font-weight:700">✓ 내가 투표함</span>' : ''}
         ${sub.sub_id === mySubId ? '<span class="tag">내 제출</span>' : ''}
         ${sub.derived_from ? '<span class="tag">손본 글</span>' : ''}
         ${isAdopted ? '<span style="color:var(--success)">✓ 채택됨</span>' : ''}

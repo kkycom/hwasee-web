@@ -772,6 +772,7 @@ function myStoryCardHtml(s, snapshot) {
         </div>` : ''}
       <div class="story-card-footer">
         <span class="step-pill"><span class="step-dot"></span>${step+1}단계 · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
+        ${s.has_pending ? `<span class="pending-tag">⏳ 곧 채택 예정</span>` : ''}
         ${hasVoted ? `<span style="font-size:11px;color:var(--success);font-weight:700">✓ 투표완료</span>`
           : canVoteNow ? `<span style="font-size:11px;color:var(--accent2);font-weight:700">▲ 투표가능</span>` : ''}
         <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>

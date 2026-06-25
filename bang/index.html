@@ -1625,7 +1625,7 @@ async function profile() {
           ['투표 참여','+1p','earn'],
           ['내 글 채택됨 (직접 제출)','+20p','earn'],
           ['내 글 채택됨 (다듬기)','+10p','earn'],
-          ['완결 이야기 MVP 선정','+30p','earn'],
+          ['완결 이야기 MVP 선정','+10p','earn'],
           ['이야기 주목 (24시간 상단 노출)','-30p','spend'],
           ['에피소드 추가 제출권','-20p','spend'],
         ].map(([label, pts, type]) => `
@@ -1866,10 +1866,10 @@ function renderMvpHtml(story_id, authors, res) {
     <div class="mvp-section">
       <div style="font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:4px">✦ 이 이야기에서 빛났어요</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:14px">
-        ${canVote ? '가장 기억에 남는 참여자를 최대 2명 선택해주세요. 선정된 분께 30p가 지급됩니다.' : `${res.total_voters}명이 투표했어요.`}
+        ${canVote ? '가장 기억에 남는 참여자 1명을 선택해주세요. 선정된 분께 10p가 지급됩니다.' : `${res.total_voters}명이 투표했어요.`}
       </div>
       ${authorHtml}
-      ${canVote ? `<button id="mvp-submit-btn" class="btn btn-primary" style="width:100%;margin-top:8px" onclick="submitMvpVote('${story_id}')" disabled>선택 완료 (0명)</button>` : ''}
+      ${canVote ? `<button id="mvp-submit-btn" class="btn btn-primary" style="width:100%;margin-top:8px" onclick="submitMvpVote('${story_id}')" disabled>선택 완료</button>` : ''}
       ${!user ? `<div style="font-size:12px;color:var(--muted);text-align:center;margin-top:8px">로그인 후 투표할 수 있어요.</div>` : ''}
     </div>`;
 }
@@ -1880,18 +1880,15 @@ function toggleMvpVote(story_id, user_id, nickname) {
     _mvpSelected.splice(idx, 1);
     document.getElementById('mvp-' + user_id)?.classList.remove('selected');
   } else {
-    if (_mvpSelected.length >= 2) {
-      const oldest = _mvpSelected.shift();
-      document.getElementById('mvp-' + oldest)?.classList.remove('selected');
+    if (_mvpSelected.length >= 1) {
+      const prev = _mvpSelected.shift();
+      document.getElementById('mvp-' + prev)?.classList.remove('selected');
     }
     _mvpSelected.push(user_id);
     document.getElementById('mvp-' + user_id)?.classList.add('selected');
   }
   const btn = document.getElementById('mvp-submit-btn');
-  if (btn) {
-    btn.disabled = _mvpSelected.length === 0;
-    btn.textContent = `선택 완료 (${_mvpSelected.length}명)`;
-  }
+  if (btn) btn.disabled = _mvpSelected.length === 0;
 }
 
 async function submitMvpVote(story_id) {

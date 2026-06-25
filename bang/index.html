@@ -610,7 +610,7 @@ async function loadHomeTab(tab) {
         if (!_cachedPop) content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('popular')">다시 시도</button></div>`;
         return;
       }
-      _lsc.set('pop', { storiesRes, myRes }, 90);
+      _lsc.set('pop', { storiesRes, myRes }, 150);
       _applyPop(storiesRes, myRes);
     };
     if (!_cachedPop) await _fetchPop(); else _fetchPop();
@@ -648,7 +648,7 @@ async function loadHomeTab(tab) {
         if (!_cachedDone) content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('done')">다시 시도</button></div>`;
         return;
       }
-      _lsc.set('done', res, 300);
+      _lsc.set('done', res, 660);
       _applyDone(res);
     };
     if (!_cachedDone) await _fetchDone(); else _fetchDone();
@@ -1115,7 +1115,7 @@ async function loadLeaderboard(targetId) {
       const res = await api('getLeaderboard', {});
       if (!res.ok) return;
       _lbData = res;
-      _lsc.set('lb', res, 300);
+      _lsc.set('lb', res, 360);
       if (targetId) renderLbInto(targetId);
       const modal = document.getElementById('modal-lb-body');
       if (modal) modal.innerHTML = lbBodyHtml(10);

@@ -52,6 +52,9 @@
   .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
   .btn-ghost:hover { color: var(--text); border-color: var(--accent); }
   .btn-sm { padding: 5px 12px; font-size: 13px; }
+  .btn-nav { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px 8px; font-size: 13px; font-weight: 500; border-radius: 6px; }
+  .btn-nav:hover { color: var(--text); background: var(--surface); }
+  .new-tag { display:inline-block; background:#1a1a08; color:#facc15; font-size:10px; font-weight:700; padding:1px 5px; border-radius:8px; letter-spacing:.3px; margin-left:4px; vertical-align:middle; }
 
   /* ── 레이아웃 */
   main { max-width: 720px; margin: 0 auto; padding: 32px 16px 48px; }
@@ -407,10 +410,10 @@ function render() {
 
 function renderNav() {
   const el = document.getElementById('nav-right');
-  const rankBtn = `<button class="btn btn-ghost btn-sm" onclick="openRankingModal()" title="명예의 전당" style="font-size:14px;padding:4px 8px">🏆</button>`;
+  const rankBtn = `<button class="btn-nav" onclick="openRankingModal()" title="명예의 전당" style="font-size:15px">🏆</button>`;
   if (user) {
     el.innerHTML = `
-      <span class="badge badge-${user.badge}" style="margin-right:4px">${badgeLabel(user.badge)}</span>
+      <span class="badge badge-${user.badge}" style="margin-right:2px">${badgeLabel(user.badge)}</span>
       ${rankBtn}
       <div id="notif-wrapper">
         <button class="bell-btn" onclick="toggleNotifPanel()" id="bell-btn" title="알림">🔔
@@ -418,9 +421,9 @@ function renderNav() {
         </button>
         <div id="notif-panel" style="display:none" class="notif-panel"></div>
       </div>
-      ${isAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="adminPanel()" title="신고 관리" style="font-size:13px">⚠️ 신고</button>` : ''}
-      <button class="btn btn-ghost btn-sm" onclick="nav('profile')">${esc(user.nickname)}</button>
-      <button class="btn btn-ghost btn-sm" onclick="logout()">로그아웃</button>`;
+      ${isAdmin() ? `<button class="btn-nav" onclick="adminPanel()" title="신고 관리">⚠️</button>` : ''}
+      <button class="btn-nav" onclick="nav('profile')" style="font-weight:600;color:var(--text)">${esc(user.nickname)}</button>
+      <button class="btn-nav" onclick="logout()">로그아웃</button>`;
     loadNotifCount();
   } else {
     el.innerHTML = `
@@ -541,9 +544,15 @@ async function loadHomeTab(tab) {
       return;
     }
     const active = res.ok ? res.stories.filter(s => s.status === 'active') : [];
+    // snapshot: 이전 로드 시 저장값 비교로 NEW 태그 계산
+    const mineSnap = (() => { try { return JSON.parse(localStorage.getItem('mine_snap') || '{}'); } catch { return {}; } })();
     content.innerHTML = active.length
-      ? active.map(s => myStoryCardHtml(s)).join('')
+      ? active.map(s => myStoryCardHtml(s, mineSnap)).join('')
       : `<div class="empty" style="padding-top:40px">참여한 이야기가 없어요.<br>씨앗 탭에서 이야기를 시작해 보세요!</div>`;
+    // 현재 값을 다음 로드의 baseline으로 저장
+    const newSnap = {};
+    active.forEach(s => { newSnap[s.story_id] = { activity: Number(s.activity_count) || 0, step: Number(s.current_step) || 0 }; });
+    try { localStorage.setItem('mine_snap', JSON.stringify(newSnap)); } catch {}
 
   } else if (tab === 'done') {
     const _renderDone = (res) => {
@@ -661,12 +670,22 @@ function storyCardHtml(s) {
     </div>`;
 }
 
-function myStoryCardHtml(s) {
-  const step = Number(s.current_step) || 0;
-  const mySubs = s.mySubmissions || [];
+function myStoryCardHtml(s, snapshot) {
+  const step    = Number(s.current_step) || 0;
+  const mySubs  = s.mySubmissions || [];
+  const stored  = snapshot && snapshot[s.story_id];
+  const isNew   = stored && (
+    Number(s.activity_count) > (stored.activity || 0) ||
+    step > (stored.step || 0)
+  );
+  const hasVoted    = s.has_voted_current === true;
+  const canVoteNow  = s.has_voted_current === false; // false = 진행 중이나 아직 미투표
   return `
     <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
-      <div class="story-card-title">"${esc(s.opening)}"</div>
+      <div class="story-card-title">
+        "${esc(s.opening)}"
+        ${isNew ? '<span class="new-tag">NEW</span>' : ''}
+      </div>
       ${mySubs.length ? `
         <div style="margin-bottom:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">
           ${mySubs.map(sub => `
@@ -678,6 +697,8 @@ function myStoryCardHtml(s) {
         </div>` : ''}
       <div class="story-card-footer">
         <span class="step-pill"><span class="step-dot"></span>${step+1}단계 · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
+        ${hasVoted ? `<span style="font-size:11px;color:var(--success);font-weight:700">✓ 투표완료</span>`
+          : canVoteNow ? `<span style="font-size:11px;color:var(--accent2);font-weight:700">▲ 투표가능</span>` : ''}
         <span class="story-status ${s.status==='active'?'status-active':'status-completed'}">
           ${s.status==='active'?'진행 중':'완결'}
         </span>
@@ -1517,6 +1538,25 @@ async function profile() {
         </div>`).join('')}
       <hr style="margin:20px 0">` : ''}
     <h2>포인트 내역</h2>
+    <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <button onclick="const b=this.nextElementSibling;b.style.display=b.style.display==='none'?'block':'none'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600">
+        ✦ 포인트 획득 방법
+      </button>
+      <div style="display:none;padding:12px 16px;font-size:13px">
+        ${[
+          ['매일 첫 로그인','+10p'],
+          ['글 제출','+5p'],
+          ['투표 참여','+1p'],
+          ['내 글 채택됨 (직접 제출)','+20p'],
+          ['내 글 채택됨 (다듬기)','+10p'],
+          ['완결 이야기 MVP 선정','+30p'],
+        ].map(([label, pts]) => `
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+            <span style="color:var(--muted)">${label}</span>
+            <span style="color:var(--accent);font-weight:700">${pts}</span>
+          </div>`).join('')}
+      </div>
+    </div>
     ${res.history.length === 0 ? `<div class="empty">내역이 없습니다.</div>` :
       res.history.map(h => `
         <div class="card" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
@@ -1745,7 +1785,7 @@ function renderMvpHtml(story_id, authors, res) {
     <div class="mvp-section">
       <div style="font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:4px">✦ 이 이야기에서 빛났어요</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:14px">
-        ${canVote ? '가장 기억에 남는 참여자를 최대 2명 선택해주세요.' : `${res.total_voters}명이 투표했어요.`}
+        ${canVote ? '가장 기억에 남는 참여자를 최대 2명 선택해주세요. 선정된 분께 30p가 지급됩니다.' : `${res.total_voters}명이 투표했어요.`}
       </div>
       ${authorHtml}
       ${canVote ? `<button id="mvp-submit-btn" class="btn btn-primary" style="width:100%;margin-top:8px" onclick="submitMvpVote('${story_id}')" disabled>선택 완료 (0명)</button>` : ''}
@@ -1876,7 +1916,7 @@ async function dismissReportItem(report_id) {
 function reasonLabel(r) {
   return {
     direct:'채택 (직접 제출)', source:'다듬기 원저자 보상', mid:'중간 다듬기 보상', derived:'다듬기 채택 보상',
-    submit:'제출 참여', vote:'투표 참여', daily_login:'오늘의 보너스',
+    submit:'제출 참여', vote:'투표 참여', daily_login:'오늘의 보너스', mvp_nomination:'MVP 선정',
   }[r] || r;
 }
 

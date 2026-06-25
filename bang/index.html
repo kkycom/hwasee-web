@@ -1057,7 +1057,8 @@ function renderSubsWithReplies(subs, mySubId, maxVotes, myVotedSet = new Set()) 
 function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set()) {
   const isAdopted   = sub.is_adopted === true || sub.is_adopted === 'TRUE';
   const iVoted      = myVotedSet.has(sub.sub_id);
-  const barPct      = maxVotes > 0 ? Math.round((Number(sub.vote_count) / maxVotes) * 100) : 0;
+  const voteCount   = Number(sub.vote_count) || 0;
+  const barPct      = Math.min(Math.round(voteCount / 2 * 100), 100);
   const isClickable = user && sub.sub_id !== mySubId && !isAdopted;
 
   return `
@@ -1067,7 +1068,7 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set()) {
       <div class="vote-content">${esc(sub.content)}</div>
       <div class="vote-meta">
         <span>✍ ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeLabel(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
-        <span class="vote-count">▲ ${sub.vote_count}명 선택</span>
+        <span class="vote-count">▲ ${voteCount}/2표</span>
         ${iVoted ? '<span style="font-size:11px;color:var(--accent);font-weight:700">✓ 내가 투표함</span>' : ''}
         ${sub.sub_id === mySubId ? '<span class="tag">내 제출</span>' : ''}
         ${sub.derived_from ? '<span class="tag">손본 글</span>' : ''}
@@ -1429,16 +1430,17 @@ async function episode() {
 
 function renderSubCard(s, isClosed, mySubId, maxVotes) {
   const isAdopted  = s.is_adopted === true || s.is_adopted === 'TRUE';
-  const barPct     = maxVotes > 0 ? Math.round((s.vote_count / maxVotes) * 100) : 0;
+  const sVoteCount = Number(s.vote_count) || 0;
+  const barPct     = Math.min(Math.round(sVoteCount / 2 * 100), 100);
   const isClickable = !isClosed && s.sub_id !== mySubId;
   return `
     <div class="vote-card ${isAdopted?'adopted':''}" id="sc-${s.sub_id}"
       ${isClickable ? `onclick="toggleSub('${s.sub_id}')"` : ''} style="${isClickable?'cursor:pointer':''}">
       ${isAdopted ? `<div style="font-size:11px;color:var(--success);margin-bottom:4px">✓ 채택됨</div>` : ''}
-      <div class="vote-content">"${esc(s.content)}"</div>
+      <div class="vote-content">${esc(s.content)}</div>
       <div class="vote-meta">
         <span>✍ ${esc(s.author_id.slice(0,6))}...</span>
-        <span class="vote-count">▲ ${s.vote_count}표</span>
+        <span class="vote-count">▲ ${sVoteCount}/2표</span>
         ${s.sub_id === mySubId ? '<span class="tag">내 제출</span>' : ''}
       </div>
       <div class="vote-bar"><div class="vote-fill" style="width:${barPct}%"></div></div>

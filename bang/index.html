@@ -939,7 +939,7 @@ function renderVoteCard(sub, mySubId, maxVotes) {
         ${user && !mySubId && !isAdopted && !sub.derived_from ? `
           <button class="btn btn-ghost btn-sm" style="font-size:12px;padding:3px 10px;color:var(--accent2)"
             onclick="event.stopPropagation();polishSub('${sub.sub_id}','${esc(sub.content).replace(/'/g,"\\'")}','${esc(sub.author_nickname||'익명')}')">
-            ✏ 손보기
+            ✏ 다듬어서 제안하기
           </button>` : ''}
       </div>
       ${user && sub.sub_id !== mySubId ? `
@@ -1699,7 +1699,7 @@ async function dismissReportItem(report_id) {
 
 function reasonLabel(r) {
   return {
-    direct:'채택 (직접 제출)', source:'손보기 원저자 보상', mid:'중간 손보기 보상', derived:'손보기 채택 보상',
+    direct:'채택 (직접 제출)', source:'다듬기 원저자 보상', mid:'중간 다듬기 보상', derived:'다듬기 채택 보상',
     submit:'제출 참여', vote:'투표 참여', daily_login:'오늘의 보너스',
   }[r] || r;
 }

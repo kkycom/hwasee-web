@@ -578,7 +578,7 @@ function popularCardHtml(s) {
     <div class="story-card${s.has_pending ? ' story-card-pending' : ''}" onclick="nav('story','${esc(s.story_id)}')">
       <div class="story-card-title">"${esc(s.opening)}"</div>
       <div class="story-card-footer">
-        <span class="step-pill"><span class="step-dot"></span>${step} / ${max}단계</span>
+        <span class="step-pill"><span class="step-dot"></span>${step}단계 진행 중</span>
         ${s.has_pending ? `<span class="pending-tag">⏳ 곧 채택 예정</span>` : ''}
         ${count ? `<span style="font-size:12px;color:var(--accent)">✍ ${count}명 참여</span>` : ''}
         <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
@@ -605,7 +605,7 @@ function storyCardHtml(s) {
     <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
       <div class="story-card-title">"${esc(s.opening)}"</div>
       <div class="story-card-footer">
-        <span class="step-pill"><span class="step-dot"></span>${step+1} / 10단계</span>
+        <span class="step-pill"><span class="step-dot"></span>${step+1}단계 진행 중</span>
         <span class="story-status ${s.status==='active'?'status-active':'status-completed'}">
           ${s.status==='active'?'진행 중':'완결'}
         </span>
@@ -630,7 +630,7 @@ function myStoryCardHtml(s) {
             </div>`).join('')}
         </div>` : ''}
       <div class="story-card-footer">
-        <span class="step-pill"><span class="step-dot"></span>${step+1} / 10단계</span>
+        <span class="step-pill"><span class="step-dot"></span>${step+1}단계 진행 중</span>
         <span class="story-status ${s.status==='active'?'status-active':'status-completed'}">
           ${s.status==='active'?'진행 중':'완결'}
         </span>
@@ -716,6 +716,7 @@ async function story() {
       ${isPending ? `<div style="text-align:center;margin-bottom:12px"><span class="pending-tag">⏳ 곧 채택 예정</span></div>` : ''}
       <div style="font-size:12px;color:var(--muted);margin-bottom:16px;text-align:center">
         ${curStep}단계 · 최대 2개 선택
+        ${curStep < 5 ? `<span style="color:var(--border)"> · </span><span style="color:var(--muted)">5단계부터 이야기 마무리 가능</span>` : ''}
       </div>
       <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:16px">
         <div style="flex:1;max-width:160px;height:4px;border-radius:2px;background:var(--border);overflow:hidden">
@@ -729,7 +730,7 @@ async function story() {
           <div id="polish-indicator" style="display:none;font-size:12px;color:var(--accent2);margin-bottom:8px;padding:6px 10px;background:var(--surface);border-radius:6px;border-left:2px solid var(--accent2)"></div>
           <input type="text" id="sub-input" maxlength="50" placeholder="한 문장으로 이어가세요" oninput="updateCount('sub-input','sub-cc')">
           <div class="char-count" id="sub-cc" style="margin-bottom:10px">0자</div>
-          ${Number(openEp.step) >= 6 ? `
+          ${Number(openEp.step) >= 4 ? `
             <div style="display:flex;gap:16px;margin-bottom:12px">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
                 <input type="radio" name="ep-closing" value="continue" checked style="accent-color:var(--accent)">

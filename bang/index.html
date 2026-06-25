@@ -54,7 +54,8 @@
   .btn-sm { padding: 5px 12px; font-size: 13px; }
   .btn-nav { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px 8px; font-size: 13px; font-weight: 500; border-radius: 6px; }
   .btn-nav:hover { color: var(--text); background: var(--surface); }
-  .new-tag { display:inline-block; background:#1a1a08; color:#facc15; font-size:10px; font-weight:700; padding:1px 5px; border-radius:8px; letter-spacing:.3px; margin-left:4px; vertical-align:middle; }
+  .new-tag   { display:inline-block; background:#1a1a08; color:#facc15; font-size:10px; font-weight:700; padding:1px 5px; border-radius:8px; letter-spacing:.3px; margin-left:4px; vertical-align:middle; }
+  .boost-tag { display:inline-block; background:#1a0f1e; color:#c084fc; font-size:10px; font-weight:700; padding:1px 5px; border-radius:8px; letter-spacing:.3px; margin-left:4px; vertical-align:middle; }
   .sort-btn { background:var(--surface); border:none; color:var(--muted); padding:5px 12px; border-radius:16px; font-size:12px; font-weight:600; cursor:pointer; transition:.15s; }
   .sort-btn.active { background:var(--accent); color:#fff; }
 
@@ -705,11 +706,13 @@ async function startSeedStory() {
 // 관심받는 이야기 카드
 function popularCardHtml(s) {
   const step  = Number(s.current_step) || 0;
-  const max   = Number(s.max_steps) || 10;
   const count = Number(s.activity_count || s.participant_count) || 0;
   return `
     <div class="story-card${s.has_pending ? ' story-card-pending' : ''}" onclick="nav('story','${esc(s.story_id)}')">
-      <div class="story-card-title">"${esc(s.opening)}"</div>
+      <div class="story-card-title">
+        "${esc(s.opening)}"
+        ${s.is_boosted ? '<span class="boost-tag">주목</span>' : ''}
+      </div>
       <div class="story-card-footer">
         <span class="step-pill"><span class="step-dot"></span>${step}단계 · 참여자 ${count}명</span>
         ${s.has_pending ? `<span class="pending-tag">⏳ 곧 채택 예정</span>` : ''}
@@ -890,8 +893,10 @@ async function story() {
           <button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}')">제출</button>
         </div>` : ''}
       ${user && mySubId ? `
-        <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px">
-          ✓ 이미 제출하셨습니다. 다른 글에 투표할 수 있습니다.
+        <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <span>✓ 이미 제출하셨습니다. 다른 글에 투표할 수 있습니다.</span>
+          <button class="btn btn-ghost btn-sm" style="font-size:12px;white-space:nowrap"
+            onclick="doBuyExtraSubmit('${esc(openEp.episode_id)}')">추가 제출 (20P)</button>
         </div>` : ''}
       ${!user ? `
         <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px">
@@ -926,6 +931,9 @@ async function story() {
           onclick="toggleBookmark('${esc(s.story_id)}', this)">
           ${is_bookmarked ? '★ 책갈피됨' : '☆ 책갈피'}
         </button>` : ''}
+      ${user && s.status === 'active' ? `
+        <button class="btn btn-ghost btn-sm" style="color:var(--muted)"
+          onclick="doBoostStory('${esc(s.story_id)}')">⭐ 주목 (30P)</button>` : ''}
       ${isAdmin() && s.status === 'active' ? `
         <button class="admin-btn admin-delete" style="margin-left:auto" onclick="adminCloseStory('${esc(s.story_id)}')">✕ 이야기 종료</button>` : ''}
     </div>
@@ -1621,16 +1629,18 @@ async function profile() {
       </button>
       <div style="display:none;padding:12px 16px;font-size:13px">
         ${[
-          ['매일 첫 로그인','+10p'],
-          ['글 제출','+5p'],
-          ['투표 참여','+1p'],
-          ['내 글 채택됨 (직접 제출)','+20p'],
-          ['내 글 채택됨 (다듬기)','+10p'],
-          ['완결 이야기 MVP 선정','+30p'],
-        ].map(([label, pts]) => `
+          ['매일 첫 로그인','+10p','earn'],
+          ['글 제출','+5p','earn'],
+          ['투표 참여','+1p','earn'],
+          ['내 글 채택됨 (직접 제출)','+20p','earn'],
+          ['내 글 채택됨 (다듬기)','+10p','earn'],
+          ['완결 이야기 MVP 선정','+30p','earn'],
+          ['이야기 주목 (24시간 상단 노출)','-30p','spend'],
+          ['에피소드 추가 제출권','-20p','spend'],
+        ].map(([label, pts, type]) => `
           <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
             <span style="color:var(--muted)">${label}</span>
-            <span style="color:var(--accent);font-weight:700">${pts}</span>
+            <span style="color:${type==='spend'?'var(--accent2)':'var(--accent)'};font-weight:700">${pts}</span>
           </div>`).join('')}
       </div>
     </div>
@@ -1641,7 +1651,9 @@ async function profile() {
             <div style="font-size:14px">${reasonLabel(h.reason)}</div>
             <div style="font-size:12px;color:var(--muted)">${timeAgo(h.created_at)}</div>
           </div>
-          <div style="font-size:18px;font-weight:700;color:var(--accent)">+${h.points}</div>
+          <div style="font-size:18px;font-weight:700;color:${Number(h.points)<0?'var(--accent2)':'var(--accent)'}">
+            ${Number(h.points)>=0?'+':''}${h.points}
+          </div>
         </div>`).join('')}
     <div style="margin-top:32px;text-align:center">
       <button class="btn btn-ghost btn-sm" onclick="logout()" style="color:var(--muted)">로그아웃</button>
@@ -1994,7 +2006,26 @@ function reasonLabel(r) {
   return {
     direct:'채택 (직접 제출)', source:'다듬기 원저자 보상', mid:'중간 다듬기 보상', derived:'다듬기 채택 보상',
     submit:'제출 참여', vote:'투표 참여', daily_login:'오늘의 보너스', mvp_nomination:'MVP 선정',
+    boost_story:'이야기 주목 사용', extra_submit:'추가 제출권 사용',
   }[r] || r;
+}
+
+async function doBoostStory(story_id) {
+  if (!user) { toast('로그인이 필요합니다.', true); return; }
+  if (!confirm('30P를 소모해 이 이야기를 24시간 동안 주목 표시합니다.\n계속할까요?')) return;
+  const res = await api('boostStory', { story_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast('주목 설정 완료! 관심받는 이야기 상단에 노출됩니다.');
+  _lsc.del('pop');
+}
+
+async function doBuyExtraSubmit(episode_id) {
+  if (!user) { toast('로그인이 필요합니다.', true); return; }
+  if (!confirm('20P를 소모해 이 에피소드에 추가 제출을 합니다.\n계속할까요?')) return;
+  const res = await api('buyExtraSubmit', { episode_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast('추가 제출권 사용 완료! 문장을 입력해 주세요.');
+  story(); // 페이지 새로고침으로 입력창 표시
 }
 
 // ─── 유틸 ─────────────────────────────────────────────────

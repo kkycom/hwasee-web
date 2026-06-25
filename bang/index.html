@@ -438,7 +438,7 @@ function renderDoneCards() {
   const content = document.getElementById('home-content');
   if (!content || !_doneCache) return;
   const sorted = _sortStories(_doneCache.stories, _doneSort);
-  content.innerHTML = _sortBtns('ds', [['activity','참여도 순'],['likes','추천순'],['latest','최신 순']], _doneSort)
+  content.innerHTML = _sortBtns('ds', [['activity','참여도 순'],['likes','추천 순'],['latest','최신 순']], _doneSort)
     + (sorted.length
       ? sorted.map(s => doneCardHtml(s)).join('')
       : `<div class="empty" style="padding-top:40px">아직 완결된 이야기가 없어요.<br>이야기에 참여해 함께 만들어 가요!</div>`);

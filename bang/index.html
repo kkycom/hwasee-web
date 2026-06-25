@@ -876,18 +876,10 @@ async function story() {
           <div id="polish-indicator" style="display:none;font-size:12px;color:var(--accent2);margin-bottom:8px;padding:6px 10px;background:var(--surface);border-radius:6px;border-left:2px solid var(--accent2)"></div>
           <input type="text" id="sub-input" maxlength="50" placeholder="한 문장으로 이어가세요" oninput="updateCount('sub-input','sub-cc')">
           <div class="char-count" id="sub-cc" style="margin-bottom:10px">0자</div>
-          ${Number(openEp.step) >= 2 ? `
-            <div style="display:flex;gap:16px;margin-bottom:12px">
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
-                <input type="radio" name="ep-closing" value="continue" checked style="accent-color:var(--accent)">
-                이야기 열어두기
-              </label>
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--accent2)">
-                <input type="radio" name="ep-closing" value="close" style="accent-color:var(--accent2)">
-                이야기 마무리하기
-              </label>
-            </div>` : ''}
-          <button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}')">제출</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">이야기를 열어두고 제출</button>
+            ${Number(openEp.step) >= 2 ? `<button class="btn btn-ghost btn-sm" style="color:var(--accent2);border-color:var(--accent2)" onclick="submitSubInStory('${esc(openEp.episode_id)}', true)">이야기를 끝맺고 제출</button>` : ''}
+          </div>
         </div>` : ''}
       ${user && mySubId ? `
         <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
@@ -1276,12 +1268,10 @@ function toggleSub(sub_id) {
   if (btn) btn.textContent = `투표하기 (${selectedSubs.length}개 선택됨)`;
 }
 
-async function submitSubInStory(episode_id) {
+async function submitSubInStory(episode_id, closing = false) {
   const content = document.getElementById('sub-input').value.trim();
   if (!content) { toast('문장을 입력해주세요.', true); return; }
   if (content.length > 50) { toast('조금 더 짧게 써주세요.', true); return; }
-  const closingEl  = document.querySelector('input[name="ep-closing"]:checked');
-  const closing    = closingEl ? closingEl.value === 'close' : false;
   const derived_from = window._polishFrom || '';
   const res = await api('createSubmission', { episode_id, content, derived_from, closing });
   if (!res.ok) { toast(res.error, true); return; }

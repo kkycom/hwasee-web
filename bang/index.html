@@ -1,0 +1,1715 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>화씨.방</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #0d0f0e;
+    --surface: #151a16;
+    --card:    #1c2320;
+    --border:  #283029;
+    --accent:  #68a882;
+    --accent2: #c8a96e;
+    --text:    #e4ebe6;
+    --muted:   #6b7d6e;
+    --success: #4ade80;
+    --radius:  12px;
+    --font:    'Noto Sans KR', system-ui, sans-serif;
+    --serif:   'Gowun Batang', Georgia, serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+
+  /* ── 헤더 */
+  header {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(14,14,18,.88); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px; height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo {
+    font-size: 20px; font-weight: 700; letter-spacing: .5px;
+    font-family: var(--serif); color: var(--text); cursor: pointer;
+  }
+  .nav-right { display: flex; gap: 12px; align-items: center; }
+
+  /* ── 버튼 */
+  .btn { padding: 8px 18px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: .15s; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #6855e0; }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--accent); }
+  .btn-sm { padding: 5px 12px; font-size: 13px; }
+
+  /* ── 레이아웃 */
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 48px; }
+
+  /* ── 랭킹 (씨앗 탭 하단 인라인 + 모달 공용) */
+  .lb-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .lb-row:last-child { border-bottom: none; }
+  .lb-rank { font-size: 12px; font-weight: 800; color: var(--muted); min-width: 20px; text-align: center; }
+  .lb-rank.r1 { color: #ffd700; }
+  .lb-rank.r2 { color: #b0b0b8; }
+  .lb-rank.r3 { color: #cd7f32; }
+  .lb-name { flex: 1; font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-value { font-size: 11px; color: var(--accent); font-weight: 700; white-space: nowrap; }
+
+  /* ── 랭킹 모달 */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 300; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .modal-box { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; width: 100%; max-width: 360px; max-height: 80vh; overflow-y: auto; }
+
+  /* ── 카드 */
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+
+  /* ── 배지 */
+  .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .badge-seed    { background: #1a2219; color: #5a7a5a; }
+  .badge-seed1   { background: #1a2219; color: #7a9a7a; }
+  .badge-seed2   { background: #172a1c; color: #4ade80; }
+  .badge-sprout  { background: #172a1c; color: var(--success); }
+  .badge-sprout1 { background: #1a2a20; color: var(--accent); }
+  .badge-leaf    { background: #1a2a20; color: #68a882; }
+  .badge-leaf1   { background: #1a3020; color: #8ecfa8; }
+  .badge-bud     { background: #28221a; color: #d4a847; }
+  .badge-flower  { background: #2a1e14; color: var(--accent2); }
+  .badge-fruit   { background: #2a1a08; color: #f0b840; }
+  /* 레거시 뱃지 (기존 가입자) */
+  .badge-new     { background: #1a2219; color: #5a7a5a; }
+  .badge-rookie  { background: #172a1c; color: var(--success); }
+  .badge-writer  { background: #1a2a20; color: var(--accent); }
+  .badge-expert  { background: #28221a; color: #d4a847; }
+  .badge-master  { background: #2a1e14; color: var(--accent2); }
+
+  /* ── 폼 */
+  .form-group { margin-bottom: 16px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  input, textarea {
+    width: 100%; padding: 10px 14px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-family: var(--font); font-size: 15px;
+    outline: none; transition: .15s;
+  }
+  input:focus, textarea:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 80px; }
+  .char-count { font-size: 12px; color: var(--muted); text-align: right; margin-top: 4px; }
+  .char-count.warn { color: #e0a040; }
+  .char-count.over { color: var(--accent2); }
+
+  /* ── 홈 스토리 카드 */
+  .story-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px 20px; margin-bottom: 12px; cursor: pointer; transition: .15s;
+  }
+  .story-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(124,106,255,.12); }
+  .story-card-pending { border-color: rgba(255,170,0,.3); box-shadow: 0 0 0 1px rgba(255,170,0,.1); }
+  .story-card-title { font-size: 15px; line-height: 1.6; margin-bottom: 10px; font-family: var(--serif); }
+  .story-card-footer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .step-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 600;
+  }
+  .step-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .story-status { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+  .status-active    { background: #0f2a1a; color: var(--success); }
+  .status-completed { background: #1a1a2a; color: var(--muted); }
+
+  /* ── 스토리 뷰 타임라인 */
+  .story-timeline { position: relative; }
+  .tl-item { display: flex; gap: 0; margin-bottom: 6px; }
+  .tl-spine {
+    display: flex; flex-direction: column; align-items: center;
+    min-width: 40px; flex-shrink: 0;
+  }
+  .tl-spine-line { width: 2px; background: var(--border); flex: 1; min-height: 8px; }
+  .tl-spine-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    border: 2px solid var(--bg);
+  }
+  .tl-body { flex: 1; padding: 0 0 16px 12px; }
+  .tl-label { font-size: 11px; font-weight: 700; margin-bottom: 5px; }
+  .tl-bubble {
+    border-radius: 10px; padding: 13px 16px;
+    font-size: 15px; line-height: 1.7; font-family: var(--serif);
+  }
+  .tl-meta { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  /* ── 투표 제출 카드 */
+  .vote-card {
+    background: var(--surface); border: 2px solid var(--border);
+    border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; transition: .15s;
+  }
+  .vote-card.clickable { cursor: pointer; }
+  .vote-card.clickable:hover { border-color: var(--accent); }
+  .vote-card.selected { border-color: var(--accent); background: #1a1830; }
+  .vote-card.adopted  { border-color: var(--success); }
+  .vote-content { font-size: 15px; line-height: 1.7; margin-bottom: 8px; }
+  .vote-meta { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .vote-count { color: var(--accent); font-weight: 700; }
+  .vote-bar { height: 4px; background: var(--border); border-radius: 2px; margin-bottom: 10px; overflow: hidden; }
+  .vote-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 2px; transition: width .4s; }
+
+  /* ── 댓글 */
+  .comment-list { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px; }
+  .comment-item { padding: 7px 0; font-size: 13px; border-bottom: 1px solid var(--border); line-height: 1.5; }
+  .comment-item:last-child { border-bottom: none; }
+  .comment-author { color: var(--muted); font-size: 11px; margin-right: 6px; }
+  .comment-time   { color: var(--muted); font-size: 11px; margin-left: 8px; }
+  .comment-input-row { display: flex; gap: 8px; margin-top: 10px; }
+  .comment-input-row input { font-size: 13px; padding: 7px 12px; }
+
+  /* ── 현재 투표 섹션 */
+  .voting-header {
+    background: linear-gradient(135deg,#1a1a30,#1a2030);
+    border-radius: var(--radius); padding: 14px 18px; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+
+  /* ── 알림 */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 20px; font-size: 14px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.5); z-index: 9999;
+    opacity: 0; transition: opacity .2s; pointer-events: none; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; }
+  .toast.err { border-color: var(--accent2); }
+
+  /* ── 홈 탭 (4개, 가로 스크롤) */
+  .home-tabs {
+    display: flex; justify-content: center; overflow-x: auto;
+    border-bottom: 1px solid var(--border); margin-bottom: 20px;
+    scrollbar-width: none; -ms-overflow-style: none;
+  }
+  .home-tabs::-webkit-scrollbar { display: none; }
+  .home-tab {
+    flex-shrink: 0; padding: 12px 18px; font-size: 13px; font-weight: 600;
+    background: none; border: none; border-bottom: 2px solid transparent;
+    color: var(--muted); cursor: pointer; transition: .15s;
+    white-space: nowrap; margin-bottom: -1px;
+  }
+  .home-tab:hover { color: var(--text); }
+  .home-tab.active { color: var(--accent); border-color: var(--accent); }
+
+  /* ── 씨앗 피처 카드 */
+  .seed-feature {
+    background: linear-gradient(135deg,#1a1530,#161e30);
+    border: 1px solid #3a2a5a; border-radius: var(--radius);
+    padding: 32px 24px; text-align: center; margin-top: 4px;
+  }
+  .seed-feature-label { font-size: 12px; color: var(--accent2); font-weight: 700; letter-spacing: .06em; margin-bottom: 18px; }
+  .seed-feature-text  { font-size: 20px; font-weight: 700; line-height: 1.7; margin-bottom: 24px; font-family: var(--serif); }
+
+  /* ── 섹션 헤더 */
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .section-title { font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .06em; }
+
+  /* ── 산문 이야기 */
+  .story-prose { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px 24px; }
+  .prose-opening {
+    font-family: var(--serif); font-size: 19px; font-weight: 700; line-height: 1.9;
+    margin-bottom: 20px; padding-bottom: 18px; border-bottom: 1px solid var(--border);
+  }
+  .prose-line { margin-bottom: 14px; display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+  .prose-sentence { font-family: var(--serif); font-size: 16px; line-height: 1.8; }
+  .prose-author { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+  .prose-branch { font-size: 10px; font-weight: 700; color: var(--accent2); flex-shrink: 0; }
+  .prose-divider {
+    display: flex; align-items: center; gap: 12px; margin: 24px 0;
+    font-size: 12px; font-weight: 600; color: var(--muted);
+  }
+  .prose-divider::before, .prose-divider::after { content:''; flex:1; height:1px; background:var(--border); }
+
+  /* ── 탭 */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+  .tab { padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted); margin-bottom: -1px; transition: .15s; }
+  .tab.active { color: var(--accent); border-color: var(--accent); }
+
+  /* ── 기타 */
+  hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+  h2 { font-size: 18px; margin-bottom: 16px; }
+  p.desc { color: var(--muted); font-size: 14px; margin-bottom: 24px; line-height: 1.6; }
+  .loading { text-align: center; padding: 40px; color: var(--muted); }
+  .empty   { text-align: center; padding: 48px 0; color: var(--muted); }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--border); font-size: 12px; color: var(--muted); margin-right: 6px; }
+  .section-label { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .08em; margin-bottom: 10px; }
+  .participated-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent2); display: inline-block; margin-right: 6px; }
+
+  /* ── 투표 고정 버튼 */
+  .vote-sticky {
+    position: sticky; bottom: 16px; text-align: center; margin-top: 16px; z-index: 10;
+  }
+
+  /* ── 알림 bell */
+  .bell-btn { position:relative; background:none; border:none; cursor:pointer; color:var(--text); font-size:18px; padding:4px 6px; border-radius:6px; }
+  .bell-btn:hover { background:var(--surface); }
+  .bell-badge { position:absolute; top:2px; right:2px; min-width:16px; height:16px; border-radius:8px; background:var(--accent2); color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 3px; pointer-events:none; }
+  .notif-panel { position:absolute; top:calc(100% + 6px); right:0; width:300px; background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.5); z-index:100; overflow:hidden; }
+  .notif-item { padding:12px 14px; border-bottom:1px solid var(--border); font-size:13px; line-height:1.4; cursor:pointer; }
+  .notif-item:hover { background:var(--surface); }
+  .notif-item.unread { border-left:3px solid var(--accent2); padding-left:11px; }
+  .notif-time { font-size:11px; color:var(--muted); margin-top:3px; }
+  #notif-wrapper { position:relative; }
+
+  /* ── 분기 뷰 */
+  .branch-chooser { border:1px solid var(--accent2); border-radius:10px; padding:16px; margin:12px 0; }
+  .branch-chooser-label { font-size:11px; color:var(--muted); text-align:center; letter-spacing:1px; margin-bottom:12px; }
+  .branch-choices { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .branch-choice-card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:12px; cursor:pointer; text-align:left; font-size:13px; line-height:1.5; transition:border-color .15s; width:100%; }
+  .branch-choice-card:hover { border-color:var(--accent2); }
+  .branch-choice-label { font-size:10px; color:var(--accent2); font-weight:700; margin-bottom:6px; }
+  .branch-indicator { display:flex; gap:4px; margin:2px 0 -4px; align-items:center; }
+  .branch-tab { background:var(--card); border:1px solid var(--border); border-radius:4px; padding:2px 8px; font-size:11px; cursor:pointer; color:var(--muted); }
+  .branch-tab.active { border-color:var(--accent2); color:var(--accent2); font-weight:700; }
+
+  /* ── 곧 채택 예정 태그 */
+  .pending-tag { display:inline-flex; align-items:center; gap:3px; padding:2px 7px; border-radius:10px; font-size:10px; font-weight:700; background:#1a1000; color:var(--accent2); border:1px solid var(--accent2); }
+  .admin-btn { padding:4px 10px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--text); transition:opacity .15s; }
+  .admin-btn:hover { opacity:.8; }
+  .admin-delete { background:#2a0a0a; color:#ff6b6b; border-color:#ff6b6b44; }
+
+  /* ── 관리자 */
+  .admin-row { display:flex; gap:6px; margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
+  .admin-btn { padding:3px 9px; border-radius:4px; border:none; font-size:11px; font-weight:700; cursor:pointer; transition:.1s; }
+  .admin-adopt  { background:#2a1e0a; color:var(--accent2); }
+  .admin-adopt:hover  { background:#3a2a10; }
+  .admin-delete { background:#2a1010; color:#e07070; }
+  .admin-delete:hover { background:#3a1818; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo" onclick="nav('seed')">화씨.방</div>
+  <div class="nav-right" id="nav-right"></div>
+</header>
+
+<main id="app"><div class="loading">불러오는 중...</div></main>
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  설정
+// ═══════════════════════════════════════════════════════════
+const API_URL = typeof google !== 'undefined'
+  ? ''
+  : 'YOUR_GAS_WEB_APP_URL_HERE';
+
+// ─── API ──────────────────────────────────────────────────
+
+async function api(action, params = {}) {
+  const token = localStorage.getItem('hwasee_token');
+  const body  = JSON.stringify({ action, token, ...params });
+  if (typeof google !== 'undefined') {
+    return new Promise((res, rej) => {
+      google.script.run
+        .withSuccessHandler(raw => res(JSON.parse(raw)))
+        .withFailureHandler(e  => rej(new Error(e.message)))
+        .handleRequest(body);
+    });
+  }
+  const r = await fetch(API_URL, { method: 'POST', body });
+  return r.json();
+}
+
+// ─── 상태 ──────────────────────────────────────────────────
+
+let user = null;
+
+function loadUser() {
+  const raw = localStorage.getItem('hwasee_user');
+  if (raw) try { user = JSON.parse(raw); } catch {}
+}
+function saveUser(u) {
+  user = u;
+  if (u) {
+    localStorage.setItem('hwasee_token', u.token);
+    localStorage.setItem('hwasee_user', JSON.stringify(u));
+  } else {
+    localStorage.removeItem('hwasee_token');
+    localStorage.removeItem('hwasee_user');
+  }
+  renderNav();
+}
+
+// ─── 토스트 ───────────────────────────────────────────────
+
+let toastTimer;
+function toast(msg, isErr) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = 'toast show' + (isErr ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = 'toast'; }, 2800);
+}
+
+// ─── 네비게이션 ───────────────────────────────────────────
+
+let currentRoute = 'home';
+let currentParam = null;
+
+function nav(route, param) {
+  currentRoute = route;
+  currentParam = param || null;
+  location.hash = param ? `${route}/${param}` : route;
+  window.scrollTo(0, 0);
+  render();
+}
+
+function render() {
+  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, create };
+  (routes[currentRoute] || home)();
+}
+
+function renderNav() {
+  const el = document.getElementById('nav-right');
+  const rankBtn = `<button class="btn btn-ghost btn-sm" onclick="openRankingModal()" title="명예의 전당" style="font-size:14px;padding:4px 8px">🏆</button>`;
+  if (user) {
+    el.innerHTML = `
+      <span class="badge badge-${user.badge}" style="margin-right:4px">${badgeLabel(user.badge)}</span>
+      ${rankBtn}
+      <div id="notif-wrapper">
+        <button class="bell-btn" onclick="toggleNotifPanel()" id="bell-btn" title="알림">🔔
+          <span class="bell-badge" id="bell-badge" style="display:none"></span>
+        </button>
+        <div id="notif-panel" style="display:none" class="notif-panel"></div>
+      </div>
+      ${isAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="adminPanel()" title="신고 관리" style="font-size:13px">⚠️ 신고</button>` : ''}
+      <button class="btn btn-ghost btn-sm" onclick="nav('profile')">${esc(user.nickname)}</button>
+      <button class="btn btn-ghost btn-sm" onclick="logout()">로그아웃</button>`;
+    loadNotifCount();
+  } else {
+    el.innerHTML = `
+      ${rankBtn}
+      <button class="btn btn-ghost btn-sm" onclick="nav('auth','login')">로그인</button>
+      <button class="btn btn-primary btn-sm" onclick="nav('auth','register')">회원가입</button>`;
+  }
+}
+
+function badgeLabel(b) {
+  return {
+    seed:'씨앗', seed1:'금간 씨앗', seed2:'발아하는 씨앗',
+    sprout:'새싹', sprout1:'무성한 새싹',
+    leaf:'잎', leaf1:'넓은 잎',
+    bud:'꽃봉오리', flower:'꽃', fruit:'열매',
+    new:'씨앗', rookie:'새싹', writer:'잎', expert:'꽃', master:'열매',
+  }[b] || b;
+}
+function isAdmin() { return !!(user && user.is_admin); }
+function logout() { saveUser(null); toast('로그아웃됐습니다.'); nav('seed'); }
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── 홈 (4탭) ────────────────────────────────────────────
+
+const HOME_TABS = [
+  { key: 'seed',    label: '씨앗이 될 이야기' },
+  { key: 'popular', label: '관심받는 이야기'  },
+  { key: 'mine',    label: '내가 쓴 이야기'   },
+  { key: 'done',    label: '완결된 이야기'     },
+];
+
+async function home() {
+  const tab = ['seed','popular','mine','done'].includes(currentRoute) ? currentRoute : 'seed';
+
+  const tabHtml = HOME_TABS.map(t => `
+    <button class="home-tab ${t.key === tab ? 'active' : ''}"
+            onclick="switchHomeTab('${t.key}')"
+            id="htab-${t.key}">${t.label}</button>`).join('');
+
+  document.getElementById('app').innerHTML = `
+    <div class="home-tabs">${tabHtml}</div>
+    <div id="home-content"><div class="loading">불러오는 중...</div></div>`;
+
+  await loadHomeTab(tab);
+}
+
+async function switchHomeTab(tab) {
+  currentRoute = tab;
+  location.hash = tab;
+  HOME_TABS.forEach(t => {
+    const el = document.getElementById('htab-' + t.key);
+    if (el) el.classList.toggle('active', t.key === tab);
+  });
+  const content = document.getElementById('home-content');
+  if (content) content.innerHTML = `<div class="loading">불러오는 중...</div>`;
+  await loadHomeTab(tab);
+}
+
+async function loadHomeTab(tab) {
+  const content = document.getElementById('home-content');
+  if (!content) return;
+
+  if (tab === 'seed') {
+    let res;
+    try { res = await api('getSeeds'); } catch(e) {
+      content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('seed')">다시 시도</button></div>`;
+      return;
+    }
+    window._seeds   = res.ok ? res.seeds : [];
+    window._seedIdx = 0;
+    renderSeedCard();
+    // 씨앗 탭 하단 랭킹
+    const lbSection = document.createElement('div');
+    lbSection.style.cssText = 'margin-top:32px;border-top:1px solid var(--border);padding-top:24px';
+    lbSection.innerHTML = `
+      <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:14px;letter-spacing:.5px">✦ 명예의 전당</div>
+      <div id="seed-lb-body"><div style="font-size:12px;color:var(--muted)">불러오는 중...</div></div>`;
+    content.appendChild(lbSection);
+    loadLeaderboard('seed-lb-body');
+
+  } else if (tab === 'popular') {
+    let storiesRes, myRes;
+    try {
+      const p = [api('getStories', { page: 1 })];
+      if (user) p.push(api('getMyStories'));
+      [storiesRes, myRes] = await Promise.all(p);
+    } catch(e) {
+      content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('popular')">다시 시도</button></div>`;
+      return;
+    }
+    const myIds   = new Set((myRes?.ok ? myRes.stories : []).map(s => s.story_id));
+    const stories = (storiesRes.ok ? storiesRes.stories : []).filter(s => !myIds.has(s.story_id));
+    content.innerHTML = stories.length
+      ? stories.map(s => popularCardHtml(s)).join('')
+      : `<div class="empty" style="padding-top:40px">아직 이야기가 없어요.<br>씨앗 탭에서 첫 이야기를 시작해 보세요!</div>`;
+
+  } else if (tab === 'mine') {
+    if (!user) {
+      content.innerHTML = `<div class="empty" style="padding-top:60px">로그인하면 내가 쓴 이야기를 볼 수 있어요.<br>
+        <button class="btn btn-primary" style="margin-top:20px" onclick="nav('auth','login')">로그인</button></div>`;
+      return;
+    }
+    let res;
+    try { res = await api('getMyStories'); } catch(e) {
+      content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('mine')">다시 시도</button></div>`;
+      return;
+    }
+    const active = res.ok ? res.stories.filter(s => s.status === 'active') : [];
+    content.innerHTML = active.length
+      ? active.map(s => myStoryCardHtml(s)).join('')
+      : `<div class="empty" style="padding-top:40px">참여한 이야기가 없어요.<br>씨앗 탭에서 이야기를 시작해 보세요!</div>`;
+
+  } else if (tab === 'done') {
+    let res;
+    try { res = await api('getStories', { page: 2 }); } catch(e) {
+      content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('done')">다시 시도</button></div>`;
+      return;
+    }
+    if (!res.ok || !res.stories.length) {
+      content.innerHTML = `<div class="empty" style="padding-top:40px">아직 완결된 이야기가 없어요.<br>이야기에 참여해 함께 만들어 가요!</div>`;
+      return;
+    }
+    content.innerHTML = res.stories.map(doneCardHtml).join('');
+  }
+}
+
+// 씨앗 카드 렌더
+function renderSeedCard() {
+  const content = document.getElementById('home-content');
+  if (!content) return;
+  const text = (window._seeds || [])[window._seedIdx || 0];
+  if (!text) {
+    content.innerHTML = `<div class="empty">씨앗 문장이 모두 소진됐어요.<br><span style="font-size:13px">새 문장 세트가 곧 추가됩니다.</span></div>`;
+    return;
+  }
+  content.innerHTML = `
+    <p style="font-family:var(--serif);font-size:16px;line-height:1.9;color:var(--muted);text-align:center;margin-bottom:28px">
+      당신의 한 문장을 기다리는<br>이야기들이 있어요.
+    </p>
+    <div class="seed-feature">
+      <div class="seed-feature-label">이런 이야기는 어때요?</div>
+      <div class="seed-feature-text">"${esc(text)}"</div>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="startSeedStory()">이 문장으로 시작하기</button>
+        <button class="btn btn-ghost"   onclick="nextSeed()">다른 문장 ↻</button>
+      </div>
+    </div>
+    ${!user ? `<p style="margin-top:16px;text-align:center;font-size:13px;color:var(--muted)">
+      시작하려면 <button class="btn btn-ghost btn-sm" onclick="nav('auth','login')">로그인</button>이 필요해요</p>` : ''}`;
+}
+
+function nextSeed() {
+  const seeds = window._seeds || [];
+  if (!seeds.length) return;
+  window._seedIdx = ((window._seedIdx || 0) + 1) % seeds.length;
+  renderSeedCard();
+}
+
+async function startSeedStory() {
+  if (!user) { nav('auth', 'register'); return; }
+  const text = (window._seeds || [])[window._seedIdx || 0];
+  if (!text) return;
+  const btn = document.querySelector('.seed-feature .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '시작 중...'; }
+  const res = await api('createStory', { opening: text });
+  if (!res.ok) { toast(res.error, true); if (btn) { btn.disabled = false; btn.textContent = '이 문장으로 시작하기'; } return; }
+  toast('이야기가 시작됐습니다!');
+  nav('story', res.story_id);
+}
+
+// 관심받는 이야기 카드
+function popularCardHtml(s) {
+  const step  = Number(s.current_step) || 0;
+  const max   = Number(s.max_steps) || 10;
+  const count = Number(s.participant_count) || 0;
+  return `
+    <div class="story-card${s.has_pending ? ' story-card-pending' : ''}" onclick="nav('story','${esc(s.story_id)}')">
+      <div class="story-card-title">"${esc(s.opening)}"</div>
+      <div class="story-card-footer">
+        <span class="step-pill"><span class="step-dot"></span>${step} / ${max}단계</span>
+        ${s.has_pending ? `<span class="pending-tag">⏳ 곧 채택 예정</span>` : ''}
+        ${count ? `<span style="font-size:12px;color:var(--accent)">✍ ${count}명 참여</span>` : ''}
+        <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
+      </div>
+    </div>`;
+}
+
+// 완결된 이야기 카드
+function doneCardHtml(s) {
+  const step = Number(s.current_step) || 0;
+  return `
+    <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
+      <div class="story-card-title">"${esc(s.opening)}"</div>
+      <div class="story-card-footer">
+        <span class="step-pill">${step}단계 완성</span>
+        <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
+      </div>
+    </div>`;
+}
+
+function storyCardHtml(s) {
+  const step = Number(s.current_step) || 0;
+  return `
+    <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
+      <div class="story-card-title">"${esc(s.opening)}"</div>
+      <div class="story-card-footer">
+        <span class="step-pill"><span class="step-dot"></span>${step+1} / 10단계</span>
+        <span class="story-status ${s.status==='active'?'status-active':'status-completed'}">
+          ${s.status==='active'?'진행 중':'완결'}
+        </span>
+        <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
+      </div>
+    </div>`;
+}
+
+function myStoryCardHtml(s) {
+  const step = Number(s.current_step) || 0;
+  const mySubs = s.mySubmissions || [];
+  return `
+    <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
+      <div class="story-card-title">"${esc(s.opening)}"</div>
+      ${mySubs.length ? `
+        <div style="margin-bottom:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">
+          ${mySubs.map(sub => `
+            <div style="font-size:13px;line-height:1.6;margin-bottom:2px">"${esc(sub.content)}"</div>
+            <div style="font-size:12px;color:var(--muted)">
+              ▲ ${sub.vote_count}표
+              ${sub.is_adopted===true||sub.is_adopted==='TRUE'?'<span style="color:var(--success);margin-left:6px">✓ 채택됨</span>':''}
+            </div>`).join('')}
+        </div>` : ''}
+      <div class="story-card-footer">
+        <span class="step-pill"><span class="step-dot"></span>${step+1} / 10단계</span>
+        <span class="story-status ${s.status==='active'?'status-active':'status-completed'}">
+          ${s.status==='active'?'진행 중':'완결'}
+        </span>
+        <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
+      </div>
+    </div>`;
+}
+
+// ─── 새 이야기 만들기 ─────────────────────────────────────
+
+function create() {
+  if (!user) { nav('auth','login'); return; }
+  document.getElementById('app').innerHTML = `
+    <button class="btn btn-ghost btn-sm" onclick="nav('seed')" style="margin-bottom:20px">← 목록으로</button>
+    <h2>새 이야기 시작</h2>
+    <p class="desc">첫 문장을 쓰세요. 이 문장이 이야기의 씨앗이 됩니다.</p>
+    <div class="card">
+      <div class="form-group">
+        <label>시작 문장</label>
+        <textarea id="opening" rows="3" placeholder="예: 그날 밤, 버스는 오지 않았다." oninput="updateCount('opening','oc')"></textarea>
+        <div class="char-count" id="oc">0자</div>
+      </div>
+      <button class="btn btn-primary" style="width:100%" onclick="submitStory()">이야기 시작</button>
+    </div>`;
+}
+
+async function submitStory() {
+  const opening = document.getElementById('opening').value.trim();
+  if (!opening) { toast('시작 문장을 입력해주세요.', true); return; }
+  const btn = document.querySelector('#app .btn-primary');
+  btn.disabled = true; btn.textContent = '생성 중...';
+  const res = await api('createStory', { opening });
+  if (!res.ok) { toast(res.error, true); btn.disabled = false; btn.textContent = '이야기 시작'; return; }
+  toast('이야기가 시작됐습니다!');
+  nav('story', res.story_id);
+}
+
+// ─── 이야기 상세 페이지 ───────────────────────────────────
+
+let selectedSubs = [];
+const commentCache = {}; // sub_id → comments 캐시
+
+async function story() {
+  const story_id = currentParam;
+  selectedSubs = [];
+  document.getElementById('app').innerHTML = `<div class="loading">불러오는 중...</div>`;
+
+  let res;
+  try {
+    res = await api('getStory', { story_id });
+  } catch(e) {
+    document.getElementById('app').innerHTML = `<div class="empty">불러오기 실패.<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="story()">다시 시도</button></div>`;
+    return;
+  }
+  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+
+  const { story: s, episodes, submissions, is_bookmarked } = res;
+
+  // 분기 트리 산문 (전역 저장 → chooseBranch 재렌더용)
+  window._storyData = { episodes, submissions, story: s };
+  window._branchChoice = window._branchChoice || {};
+
+  // 열린/대기 에피소드
+  const openEp    = episodes.find(e => e.status === 'open' || e.status === 'pending') || null;
+  const openSubs  = openEp ? submissions.filter(sub => sub.episode_id === openEp.episode_id) : [];
+  const mySubId   = user && openEp ? (openSubs.find(sub => sub.author_id === user.user_id) || {}).sub_id || null : null;
+  const maxVotes  = openSubs.length ? Math.max(...openSubs.map(sub => Number(sub.vote_count)||0)) : 0;
+
+  // 분기 트리 HTML (closed 에피소드들의 채택 내용만)
+  const tree = getEpisodeTree(
+    episodes.filter(e => e.status === 'closed'),
+    submissions
+  );
+  const confirmedHtml = `<div id="story-prose-content">${tree ? renderEpisodeTreeHtml(tree, window._branchChoice) : ''}</div>`;
+
+  // ── 다음 단계 액션 ──
+  let actionHtml = '';
+  if (openEp) {
+    const curStep   = Number(openEp.step) + 1;
+    const isPending = openEp.status === 'pending';
+    actionHtml = `
+      <div class="prose-divider">${isPending ? '곧 채택될 예정이에요 · 아직 투표할 수 있어요' : '이 이야기의 다음 문장을 결정합니다'}</div>
+      ${isPending ? `<div style="text-align:center;margin-bottom:12px"><span class="pending-tag">⏳ 곧 채택 예정</span></div>` : ''}
+      <div style="font-size:12px;color:var(--muted);margin-bottom:16px;text-align:center">
+        ${curStep}단계 · ${openEp.vote_total}명 참여 · 최대 2개 선택
+      </div>
+      ${user && !mySubId ? `
+        <div class="card" style="margin-bottom:20px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:10px">✏️ 이어 쓰기</div>
+          <div id="polish-indicator" style="display:none;font-size:12px;color:var(--accent2);margin-bottom:8px;padding:6px 10px;background:var(--surface);border-radius:6px;border-left:2px solid var(--accent2)"></div>
+          <input type="text" id="sub-input" maxlength="50" placeholder="한 문장으로 이어가세요" oninput="updateCount('sub-input','sub-cc')">
+          <div class="char-count" id="sub-cc" style="margin-bottom:10px">0자</div>
+          ${Number(openEp.step) >= 6 ? `
+            <div style="display:flex;gap:16px;margin-bottom:12px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+                <input type="radio" name="ep-closing" value="continue" checked style="accent-color:var(--accent)">
+                이야기 열어두기
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--accent2)">
+                <input type="radio" name="ep-closing" value="close" style="accent-color:var(--accent2)">
+                이야기 마무리하기
+              </label>
+            </div>` : ''}
+          <button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}')">제출</button>
+        </div>` : ''}
+      ${user && mySubId ? `
+        <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px">
+          ✓ 이미 제출하셨습니다. 다른 글에 투표할 수 있습니다.
+        </div>` : ''}
+      ${!user ? `
+        <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px">
+          참여하려면 <button class="btn btn-ghost btn-sm" onclick="nav('auth','login')">로그인</button>이 필요합니다.
+        </div>` : ''}
+      ${openSubs.length === 0
+        ? `<div class="empty" style="padding:20px 0">아직 제출된 문장이 없습니다.</div>`
+        : renderSubsWithReplies(openSubs, mySubId, maxVotes)}
+      ${user && mySubId ? `
+        <div class="vote-sticky">
+          <button class="btn btn-primary" id="vote-btn" onclick="submitVoteInStory('${esc(openEp.episode_id)}')">
+            투표하기 (0개 선택됨)
+          </button>
+        </div>` : ''}`;
+  } else if (s.status === 'completed' || s.status === 'inactive') {
+    actionHtml = `
+      <div class="prose-divider">완결된 이야기입니다</div>
+      <div style="text-align:center;margin-bottom:8px">
+        <button class="btn btn-ghost btn-sm" onclick="shareStory()" style="font-size:13px">
+          🔗 이야기 공유하기
+        </button>
+      </div>`;
+  }
+
+  const isFinished = s.status === 'completed' || s.status === 'inactive';
+
+  document.getElementById('app').innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:24px">
+      <button class="btn btn-ghost btn-sm" onclick="nav('popular')">← 목록으로</button>
+      ${user ? `
+        <button id="bm-btn" class="btn btn-ghost btn-sm" style="color:${is_bookmarked?'var(--accent2)':'var(--muted)'}"
+          onclick="toggleBookmark('${esc(s.story_id)}', this)">
+          ${is_bookmarked ? '★ 책갈피됨' : '☆ 책갈피'}
+        </button>` : ''}
+      ${isAdmin() && s.status === 'active' ? `
+        <button class="admin-btn admin-delete" style="margin-left:auto" onclick="adminCloseStory('${esc(s.story_id)}')">✕ 이야기 종료</button>` : ''}
+    </div>
+    <div class="story-prose">
+      <div class="prose-opening">"${esc(s.opening)}"</div>
+      ${confirmedHtml || ''}
+    </div>
+    ${actionHtml}
+    ${isFinished ? `
+      <div style="margin-top:8px">
+        <button class="btn btn-ghost btn-sm" style="width:100%;color:var(--muted);font-size:12px"
+          onclick="toggleHistory()">만들어진 과정 보기 ▾</button>
+        <div id="history-body" style="display:none;margin-top:12px">
+          ${renderHistoryPanel(episodes, submissions)}
+        </div>
+      </div>
+      <div style="margin-top:32px">
+        <h3 style="margin-bottom:14px;font-size:16px">이야기 감상 나누기</h3>
+        <div id="story-comment-list">
+          <div style="color:var(--muted);font-size:13px">불러오는 중...</div>
+        </div>
+        ${user ? `
+          <div class="comment-input-row" style="margin-top:12px">
+            <input type="text" id="sc-input" maxlength="300" placeholder="감상을 남겨보세요..."
+              onkeydown="if(event.key==='Enter')submitStoryComment('${esc(s.story_id)}')">
+            <button class="btn btn-primary btn-sm" onclick="submitStoryComment('${esc(s.story_id)}')">등록</button>
+          </div>` : `<div style="font-size:13px;color:var(--muted);margin-top:12px">로그인 후 감상을 남길 수 있어요.</div>`}
+      </div>` : ''}`;
+
+  if (isFinished) loadStoryComments(currentParam);
+}
+
+function toggleHistory() {
+  const el = document.getElementById('history-body');
+  if (!el) return;
+  const btn = el.previousElementSibling;
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    if (btn) btn.textContent = '만들어진 과정 접기 ▴';
+  } else {
+    el.style.display = 'none';
+    if (btn) btn.textContent = '만들어진 과정 보기 ▾';
+  }
+}
+
+function renderHistoryPanel(episodes, submissions) {
+  const closedEps = episodes
+    .filter(e => e.status === 'closed')
+    .sort((a, b) => Number(a.step) - Number(b.step));
+  if (!closedEps.length) return '<div style="color:var(--muted);font-size:13px;padding:12px 0">기록이 없습니다.</div>';
+  return closedEps.map(ep => {
+    const epSubs = submissions
+      .filter(s => s.episode_id === ep.episode_id)
+      .sort((a, b) => Number(b.vote_count) - Number(a.vote_count));
+    return `
+      <div style="margin-bottom:20px">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;letter-spacing:1px">${Number(ep.step)+1}단계</div>
+        ${epSubs.map(sub => {
+          const adopted = sub.is_adopted === true || sub.is_adopted === 'TRUE';
+          return `
+            <div style="padding:10px 12px;margin-bottom:6px;border-radius:8px;border:1px solid ${adopted?'var(--success)':'var(--border)'};background:${adopted?'#0c1f12':'var(--card)'}">
+              <div style="font-size:13px;line-height:1.5">"${esc(sub.content)}"</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:6px;display:flex;gap:8px">
+                <span>✍ ${esc(sub.author_nickname || '익명')}</span>
+                <span>▲ ${sub.vote_count}표</span>
+                ${adopted ? '<span style="color:var(--success)">✓ 채택</span>' : ''}
+              </div>
+            </div>`;
+        }).join('')}
+      </div>`;
+  }).join('');
+}
+
+async function loadStoryComments(story_id) {
+  const el = document.getElementById('story-comment-list');
+  if (!el) return;
+  try {
+    const res = await api('getStoryComments', { story_id });
+    const comments = res.ok ? res.comments : [];
+    el.innerHTML = renderStoryCommentList(comments, story_id);
+  } catch(e) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--muted)">불러올 수 없습니다.</div>';
+  }
+}
+
+function renderStoryCommentList(comments, story_id) {
+  return `
+    <div class="comment-list">
+      ${comments.length === 0
+        ? '<div style="font-size:13px;color:var(--muted);padding:6px 0">첫 번째 감상을 남겨보세요.</div>'
+        : comments.map(c => `
+            <div class="comment-item">
+              <span class="comment-author">${esc(c.author_nickname || '익명')}</span>${esc(c.content)}<span class="comment-time">${timeAgo(c.created_at)}</span>
+            </div>`).join('')}
+    </div>`;
+}
+
+async function submitStoryComment(story_id) {
+  const input = document.getElementById('sc-input');
+  if (!input) return;
+  const content = input.value.trim();
+  if (!content) return;
+  const res = await api('addStoryComment', { story_id, content });
+  if (!res.ok) { toast(res.error, true); return; }
+  input.value = '';
+  loadStoryComments(story_id);
+}
+
+function renderSubsWithReplies(subs, mySubId, maxVotes) {
+  const subIds = new Set(subs.map(s => s.sub_id));
+  const roots  = subs.filter(s => !s.derived_from || !subIds.has(s.derived_from));
+  const childMap = {};
+  subs.forEach(s => {
+    if (s.derived_from && subIds.has(s.derived_from)) {
+      if (!childMap[s.derived_from]) childMap[s.derived_from] = [];
+      childMap[s.derived_from].push(s);
+    }
+  });
+  return roots.map(root => {
+    const children = childMap[root.sub_id] || [];
+    return renderVoteCard(root, mySubId, maxVotes) +
+      children.map(child => `
+        <div style="display:flex;gap:8px;margin-top:-8px;margin-bottom:10px;padding-left:12px">
+          <div style="display:flex;flex-direction:column;align-items:center;padding-top:8px;flex-shrink:0">
+            <div style="width:1px;height:12px;background:var(--border)"></div>
+            <span style="font-size:13px;color:var(--muted);line-height:1">↳</span>
+          </div>
+          <div style="flex:1">${renderVoteCard(child, mySubId, maxVotes)}</div>
+        </div>`).join('');
+  }).join('');
+}
+
+function renderVoteCard(sub, mySubId, maxVotes) {
+  const isAdopted   = sub.is_adopted === true || sub.is_adopted === 'TRUE';
+  const barPct      = maxVotes > 0 ? Math.round((Number(sub.vote_count) / maxVotes) * 100) : 0;
+  const isClickable = user && sub.sub_id !== mySubId && !isAdopted;
+
+  return `
+    <div class="vote-card ${isAdopted?'adopted':''} ${isClickable?'clickable':''}" id="sc-${sub.sub_id}"
+      ${isClickable ? `onclick="toggleSub('${sub.sub_id}')"` : ''}>
+      <div class="vote-content">"${esc(sub.content)}"</div>
+      <div class="vote-meta">
+        <span>✍ ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeLabel(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
+        <span class="vote-count">▲ ${sub.vote_count}표</span>
+        ${sub.sub_id === mySubId ? '<span class="tag">내 제출</span>' : ''}
+        ${sub.derived_from ? '<span class="tag">손본 글</span>' : ''}
+        ${isAdopted ? '<span style="color:var(--success)">✓ 채택됨</span>' : ''}
+      </div>
+      <div class="vote-bar"><div class="vote-fill" style="width:${barPct}%"></div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" style="font-size:12px;padding:3px 10px"
+          onclick="event.stopPropagation();toggleComments('${sub.sub_id}')">
+          💬 댓글
+        </button>
+        ${user && !mySubId && !isAdopted && !sub.derived_from ? `
+          <button class="btn btn-ghost btn-sm" style="font-size:12px;padding:3px 10px;color:var(--accent2)"
+            onclick="event.stopPropagation();polishSub('${sub.sub_id}','${esc(sub.content).replace(/'/g,"\\'")}','${esc(sub.author_nickname||'익명')}')">
+            ✏ 손보기
+          </button>` : ''}
+      </div>
+      ${user && sub.sub_id !== mySubId ? `
+        <div style="margin-top:2px">
+          <button style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;padding:0;opacity:0.6"
+            onclick="event.stopPropagation();toggleReport('${sub.sub_id}')">신고</button>
+          <div id="report-${sub.sub_id}" style="display:none;margin-top:6px">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">신고 사유를 선택해주세요</div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">
+              ${[['plagiarism','표절'],['sexual','성적 묘사'],['profanity','욕설·혐오'],['spam','스팸'],['other','기타']].map(([v,l])=>`
+                <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px"
+                  onclick="event.stopPropagation();submitReport('${sub.sub_id}','${v}')">${l}</button>`).join('')}
+            </div>
+          </div>
+        </div>` : ''}
+      ${isAdmin() ? `
+        <div class="admin-row">
+          ${!isAdopted ? `<button class="admin-btn admin-adopt" onclick="event.stopPropagation();adminForceAdopt('${sub.sub_id}')">✓ 채택 강행</button>` : ''}
+          <button class="admin-btn admin-delete" onclick="event.stopPropagation();adminDeleteSub('${sub.sub_id}')">✕ 삭제</button>
+        </div>` : ''}
+      <div id="comments-${sub.sub_id}" style="display:none"></div>
+    </div>`;
+}
+
+// ─── 랭킹 ─────────────────────────────────────────────────
+let _lbData = null;
+let _lbTab  = 'adoptions';
+
+async function loadLeaderboard(targetId) {
+  if (!_lbData) {
+    try {
+      const res = await api('getLeaderboard', {});
+      _lbData = res.ok ? res : null;
+    } catch(e) { _lbData = null; }
+  }
+  if (targetId) renderLbInto(targetId);
+}
+
+function renderLbInto(containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = _lbData
+    ? lbBodyHtml()
+    : '<div style="font-size:12px;color:var(--muted)">랭킹을 불러올 수 없습니다.</div>';
+}
+
+function lbBodyHtml(limit, stacked) {
+  if (!_lbData) return '<div style="font-size:12px;color:var(--muted)">아직 기록이 없어요.</div>';
+  const n = limit || 5;
+  const sections = [
+    { key: 'adoptions',      label: '채택 랭킹',   unit: '편' },
+    { key: 'points',         label: '포인트 랭킹', unit: 'p'  },
+    { key: 'participations', label: '참여 랭킹',   unit: '회' },
+  ];
+  const cols = sections.map(({ key, label, unit }) => {
+    const rows = (_lbData[key] || []).slice(0, n);
+    const rowsHtml = rows.length
+      ? rows.map((r, i) => `
+          <div class="lb-row">
+            <span class="lb-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</span>
+            <span class="lb-name">
+              <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(r.badge||'seed')}</span>${esc(r.nickname)}
+            </span>
+            <span class="lb-value">${r.value}${unit}</span>
+          </div>`).join('')
+      : '<div style="font-size:12px;color:var(--muted);padding:6px 0;text-align:center">아직 기록이 없어요.</div>';
+    return `
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:10px;text-align:center">${label}</div>
+        ${rowsHtml}
+      </div>`;
+  });
+  if (stacked) return cols.join('');
+  const styled = cols.map((col, i) =>
+    `<div style="padding:0 14px;${i < cols.length-1 ? 'border-right:1px solid var(--border)' : ''}">${col}</div>`
+  );
+  return `<div style="display:grid;grid-template-columns:1fr 1fr 1fr">${styled.join('')}</div>`;
+}
+
+function switchLbTab() {} // 탭 미사용 — 호환성 유지용
+
+function openRankingModal() {
+  const existing = document.getElementById('ranking-modal');
+  if (existing) { existing.remove(); return; }
+  const modal = document.createElement('div');
+  modal.id = 'ranking-modal';
+  modal.className = 'modal-overlay';
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div class="modal-box">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div style="font-size:15px;font-weight:700">✦ 명예의 전당</div>
+        <button onclick="document.getElementById('ranking-modal').remove()"
+          style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1">✕</button>
+      </div>
+      <div id="modal-lb-body"><div style="font-size:12px;color:var(--muted)">불러오는 중...</div></div>
+    </div>`;
+  document.body.appendChild(modal);
+  // 모달에서는 10위까지 보여줌
+  loadLeaderboard().then(() => {
+    const el = document.getElementById('modal-lb-body');
+    if (el && _lbData) el.innerHTML = lbBodyHtml(10, true);
+  });
+}
+
+function toggleReport(sub_id) {
+  const el = document.getElementById('report-' + sub_id);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function submitReport(sub_id, reason) {
+  const res = await api('addReport', { sub_id, reason });
+  const el = document.getElementById('report-' + sub_id);
+  if (el) el.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:2px 0">신고가 접수됐습니다.</div>';
+  if (!res.ok) toast(res.error, true);
+}
+
+async function toggleComments(sub_id) {
+  const el = document.getElementById('comments-' + sub_id);
+  if (!el) return;
+  if (el.style.display !== 'none') { el.style.display = 'none'; return; }
+
+  // 캐시 없으면 fetch
+  if (!commentCache[sub_id]) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0">불러오는 중...</div>';
+    el.style.display = 'block';
+    try {
+      const res = await api('getComments', { sub_id });
+      commentCache[sub_id] = res.ok ? res.comments : [];
+    } catch(e) {
+      commentCache[sub_id] = [];
+    }
+  }
+  el.innerHTML = renderCommentsInner(sub_id, commentCache[sub_id] || []);
+  el.style.display = 'block';
+}
+
+function renderCommentsInner(sub_id, comments) {
+  return `
+    <div class="comment-list">
+      ${comments.length === 0
+        ? '<div style="font-size:13px;color:var(--muted);padding:6px 0">첫 댓글을 남겨보세요.</div>'
+        : comments.map(c => `
+            <div class="comment-item">
+              <span class="comment-author">${esc(c.author_nickname || c.author_id.slice(0,6))}</span>${esc(c.content)}<span class="comment-time">${timeAgo(c.created_at)}</span>
+            </div>`).join('')}
+      ${user ? `
+        <div class="comment-input-row">
+          <input type="text" id="ci-${sub_id}" maxlength="100" placeholder="댓글 달기..."
+            onclick="event.stopPropagation()"
+            onkeydown="if(event.key==='Enter'){event.stopPropagation();addComment('${sub_id}')}">
+          <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();addComment('${sub_id}')">등록</button>
+        </div>` : ''}
+    </div>`;
+}
+
+function toggleSub(sub_id) {
+  const idx = selectedSubs.indexOf(sub_id);
+  if (idx >= 0) {
+    selectedSubs.splice(idx, 1);
+    document.getElementById('sc-' + sub_id).classList.remove('selected');
+  } else {
+    if (selectedSubs.length >= 2) { toast('최대 2개까지 선택할 수 있습니다.', true); return; }
+    selectedSubs.push(sub_id);
+    document.getElementById('sc-' + sub_id).classList.add('selected');
+  }
+  const btn = document.getElementById('vote-btn');
+  if (btn) btn.textContent = `투표하기 (${selectedSubs.length}개 선택됨)`;
+}
+
+async function submitSubInStory(episode_id) {
+  const content = document.getElementById('sub-input').value.trim();
+  if (!content) { toast('문장을 입력해주세요.', true); return; }
+  if (content.length > 50) { toast('조금 더 짧게 써주세요.', true); return; }
+  const closingEl  = document.querySelector('input[name="ep-closing"]:checked');
+  const closing    = closingEl ? closingEl.value === 'close' : false;
+  const derived_from = window._polishFrom || '';
+  const res = await api('createSubmission', { episode_id, content, derived_from, closing });
+  if (!res.ok) { toast(res.error, true); return; }
+  window._polishFrom = null;
+  toast(closing ? '제출 완료! 이야기 마무리 투표가 시작됩니다.' : '제출 완료!');
+  story();
+}
+
+function polishSub(sub_id, content, author_nickname) {
+  window._polishFrom = sub_id;
+  const input = document.getElementById('sub-input');
+  if (!input) { toast('먼저 이어 쓰기 칸을 찾을 수 없습니다.', true); return; }
+  input.value = content;
+  updateCount('sub-input', 'sub-cc');
+  const ind = document.getElementById('polish-indicator');
+  if (ind) { ind.style.display = 'block'; ind.textContent = `✏ "${author_nickname}"의 글을 손보는 중`; }
+  input.focus(); input.select();
+  input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function toggleBookmark(story_id, btn) {
+  if (!user) { toast('로그인이 필요합니다.', true); return; }
+  const isMarked = btn.textContent.includes('★');
+  const res = await api(isMarked ? 'removeBookmark' : 'addBookmark', { story_id });
+  if (!res.ok && !res.already) { toast(res.error, true); return; }
+  btn.textContent  = isMarked ? '☆ 책갈피' : '★ 책갈피됨';
+  btn.style.color  = isMarked ? 'var(--muted)' : 'var(--accent2)';
+  toast(isMarked ? '책갈피 해제됐습니다.' : '책갈피에 추가됐습니다.');
+}
+
+async function submitVoteInStory(episode_id) {
+  if (!selectedSubs.length) { toast('문장을 선택해주세요.', true); return; }
+  const btn = document.getElementById('vote-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '투표 중...'; }
+  const res = await api('vote', { episode_id, sub_ids: selectedSubs });
+  if (!res.ok) { toast(res.error, true); if (btn) btn.disabled = false; return; }
+  toast(`투표 완료! 현재 ${res.total_voters}명 참여`);
+  story();
+}
+
+async function addComment(sub_id) {
+  if (!user) { toast('로그인이 필요합니다.', true); return; }
+  const input = document.getElementById('ci-' + sub_id);
+  if (!input) return;
+  const content = input.value.trim();
+  if (!content) { toast('댓글 내용을 입력해주세요.', true); return; }
+  const res = await api('addComment', { sub_id, content });
+  if (!res.ok) { toast(res.error, true); return; }
+  input.value = '';
+  toast('댓글 등록!');
+  // 캐시 무효화 후 댓글 섹션만 새로고침
+  delete commentCache[sub_id];
+  const el = document.getElementById('comments-' + sub_id);
+  if (el && el.style.display !== 'none') {
+    try {
+      const r2 = await api('getComments', { sub_id });
+      commentCache[sub_id] = r2.ok ? r2.comments : [];
+      el.innerHTML = renderCommentsInner(sub_id, commentCache[sub_id]);
+    } catch(e) {}
+  }
+}
+
+// ─── 관리자 액션 ──────────────────────────────────────────
+
+async function adminForceAdopt(sub_id) {
+  if (!confirm('이 문장을 강제 채택하고 에피소드를 마감할까요?')) return;
+  const res = await api('adminForceAdopt', { sub_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast('채택 완료! 다음 단계가 열렸습니다.');
+  story();
+}
+
+async function adminDeleteSub(sub_id) {
+  if (!confirm('이 제출을 삭제할까요?')) return;
+  const res = await api('adminDeleteSubmission', { sub_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast('삭제됐습니다.');
+  story();
+}
+
+async function adminCloseStory(story_id) {
+  if (!confirm('이 이야기를 종료할까요?')) return;
+  const res = await api('adminCloseStory', { story_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast('이야기가 종료됐습니다.');
+  nav('popular');
+}
+
+// ─── 에피소드 단독 뷰 (직접 URL 접근용) ──────────────────
+
+async function episode() {
+  const episode_id = currentParam;
+  selectedSubs = [];
+  document.getElementById('app').innerHTML = `<div class="loading">불러오는 중...</div>`;
+
+  let res;
+  try {
+    res = await api('getEpisode', { episode_id });
+  } catch(e) {
+    document.getElementById('app').innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="episode()">다시 시도</button></div>`;
+    return;
+  }
+  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+
+  const ep           = res.episode;
+  const prevChain    = res.prevChain || [];
+  const storyOpening = res.story ? res.story.opening : '';
+  const subs         = ep.submissions || [];
+  const isClosed     = ep.status !== 'open';
+  const mySubId      = user ? (subs.find(s => s.author_id === user.user_id) || {}).sub_id : null;
+  const maxVotes     = subs.length ? Math.max(...subs.map(s => Number(s.vote_count)||0)) : 0;
+
+  // 이전 이야기 흐름
+  const chainLines = [];
+  if (storyOpening) chainLines.push(`<div style="display:flex;gap:10px;align-items:baseline;margin-bottom:8px"><span style="font-size:11px;color:var(--accent);font-weight:700;white-space:nowrap;min-width:36px">1단계</span><span style="font-size:14px;line-height:1.6">"${esc(storyOpening)}"</span></div>`);
+  prevChain.forEach(p => chainLines.push(`<div style="display:flex;gap:10px;align-items:baseline;margin-bottom:8px"><span style="font-size:11px;color:var(--muted);white-space:nowrap;min-width:36px">${p.step+1}단계</span><span style="font-size:14px;line-height:1.6">"${esc(p.content)}"</span></div>`));
+
+  document.getElementById('app').innerHTML = `
+    <button class="btn btn-ghost btn-sm" onclick="nav('story','${esc(ep.story_id)}')" style="margin-bottom:20px">← 스토리로</button>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <h2 style="margin:0">${Number(ep.step)+1}단계 이어쓰기</h2>
+      <span class="story-status ${isClosed?'status-completed':'status-active'}">${isClosed?'마감':'투표 중'}</span>
+      <span style="font-size:13px;color:var(--muted);margin-left:auto">참여자 ${ep.vote_total}명</span>
+    </div>
+
+    ${chainLines.length ? `
+    <div class="card" style="margin-bottom:20px;border-color:#2a2a50">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.06em;margin-bottom:12px">지금까지의 이야기</div>
+      ${chainLines.join('')}
+      <div style="display:flex;gap:10px;align-items:baseline;margin-top:4px;padding-top:10px;border-top:1px solid var(--border)">
+        <span style="font-size:11px;color:var(--accent);font-weight:700;white-space:nowrap;min-width:36px">${Number(ep.step)+1}단계</span>
+        <span style="font-size:13px;color:var(--muted)">← 지금 이어쓰는 단계</span>
+      </div>
+    </div>` : ''}
+
+    ${isClosed ? '' : user ? `
+    <div class="card" style="margin-bottom:24px">
+      <div style="font-size:14px;font-weight:700;margin-bottom:12px">📝 내 문장 제출</div>
+      ${mySubId ? `<div style="color:var(--muted);font-size:14px">이미 제출하셨습니다.</div>` : `
+        <input type="text" id="sub-input" maxlength="50" placeholder="한 문장으로 이어가세요" oninput="updateCount('sub-input','sub-cc')" style="margin-bottom:6px">
+        <div class="char-count" id="sub-cc" style="margin-bottom:10px">0자</div>
+        <button class="btn btn-primary btn-sm" onclick="submitSub('${esc(episode_id)}')">제출</button>`}
+    </div>` : `
+    <div class="card" style="margin-bottom:24px;text-align:center">
+      <span style="color:var(--muted)">참여하려면 </span>
+      <button class="btn btn-ghost btn-sm" onclick="nav('auth','login')">로그인</button>이 필요합니다.
+    </div>`}
+
+    <div style="font-size:14px;font-weight:700;margin-bottom:12px">
+      제출된 문장 ${subs.length}개
+      ${!isClosed && user && mySubId ? `<span style="font-size:12px;color:var(--muted);margin-left:8px">최대 2개 선택 후 투표</span>` : ''}
+    </div>
+    <div id="sub-list">
+      ${subs.length === 0 ? `<div class="empty" style="padding:32px 0">아직 제출된 문장이 없습니다.</div>` :
+        subs.map(s => renderSubCard(s, isClosed, mySubId, maxVotes)).join('')}
+    </div>
+    ${!isClosed && user && mySubId ? `
+    <div style="margin-top:16px;text-align:center">
+      <button class="btn btn-primary" id="vote-btn" onclick="submitVote('${esc(episode_id)}')">선택한 문장에 투표</button>
+    </div>` : ''}`;
+}
+
+function renderSubCard(s, isClosed, mySubId, maxVotes) {
+  const isAdopted  = s.is_adopted === true || s.is_adopted === 'TRUE';
+  const barPct     = maxVotes > 0 ? Math.round((s.vote_count / maxVotes) * 100) : 0;
+  const isClickable = !isClosed && s.sub_id !== mySubId;
+  return `
+    <div class="vote-card ${isAdopted?'adopted':''}" id="sc-${s.sub_id}"
+      ${isClickable ? `onclick="toggleSub('${s.sub_id}')"` : ''} style="${isClickable?'cursor:pointer':''}">
+      ${isAdopted ? `<div style="font-size:11px;color:var(--success);margin-bottom:4px">✓ 채택됨</div>` : ''}
+      <div class="vote-content">"${esc(s.content)}"</div>
+      <div class="vote-meta">
+        <span>✍ ${esc(s.author_id.slice(0,6))}...</span>
+        <span class="vote-count">▲ ${s.vote_count}표</span>
+        ${s.sub_id === mySubId ? '<span class="tag">내 제출</span>' : ''}
+      </div>
+      <div class="vote-bar"><div class="vote-fill" style="width:${barPct}%"></div></div>
+    </div>`;
+}
+
+async function submitSub(episode_id) {
+  const content = document.getElementById('sub-input').value.trim();
+  if (!content) { toast('문장을 입력해주세요.', true); return; }
+  if (content.length > 50) { toast('조금 더 짧게 써주세요.', true); return; }
+  const res = await api('createSubmission', { episode_id, content, derived_from: '' });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast('제출 완료!');
+  episode();
+}
+
+async function submitVote(episode_id) {
+  if (!selectedSubs.length) { toast('문장을 선택해주세요.', true); return; }
+  const btn = document.getElementById('vote-btn');
+  btn.disabled = true; btn.textContent = '투표 중...';
+  const res = await api('vote', { episode_id, sub_ids: selectedSubs });
+  if (!res.ok) { toast(res.error, true); btn.disabled = false; return; }
+  toast(`투표 완료! 현재 ${res.total_voters}명 참여`);
+  episode();
+}
+
+// ─── 인증 ─────────────────────────────────────────────────
+
+function auth() {
+  const tab = currentParam || 'login';
+  document.getElementById('app').innerHTML = `
+    <div style="max-width:400px;margin:40px auto">
+      <h2 style="margin-bottom:24px;text-align:center">HWASEE에 오신 것을 환영해요</h2>
+      <div class="tabs">
+        <div class="tab ${tab==='login'?'active':''}" onclick="nav('auth','login')">로그인</div>
+        <div class="tab ${tab==='register'?'active':''}" onclick="nav('auth','register')">회원가입</div>
+      </div>
+      ${tab === 'login' ? `
+        <div class="form-group"><label>닉네임</label><input id="a-nick" type="text" placeholder="닉네임"></div>
+        <div class="form-group"><label>비밀번호</label><input id="a-pw" type="password" placeholder="비밀번호" onkeydown="if(event.key==='Enter')doLogin()"></div>
+        <button class="btn btn-primary" style="width:100%" onclick="doLogin()">로그인</button>
+      ` : `
+        <div class="form-group"><label>닉네임 (2~12자)</label><input id="a-nick" type="text" placeholder="닉네임" maxlength="12"></div>
+        <div class="form-group"><label>비밀번호 (4자 이상)</label><input id="a-pw" type="password" placeholder="비밀번호" onkeydown="if(event.key==='Enter')doRegister()"></div>
+        <button class="btn btn-primary" style="width:100%" onclick="doRegister()">가입하기</button>
+      `}
+    </div>`;
+}
+
+async function doLogin() {
+  const nickname = document.getElementById('a-nick').value.trim();
+  const password = document.getElementById('a-pw').value;
+  const res = await api('login', { nickname, password });
+  if (!res.ok) { toast(res.error, true); return; }
+  saveUser(res);
+  if (res.daily_bonus && res.adoption_count > 0) {
+    toast(`반갑습니다, ${res.nickname}님! 보너스 +${res.daily_bonus}p · 채택된 글 ${res.adoption_count}개 — 프로필에서 확인해보세요`);
+  } else if (res.daily_bonus) {
+    toast(`반갑습니다, ${res.nickname}님! 오늘의 보너스 +${res.daily_bonus}p`);
+  } else if (res.adoption_count > 0) {
+    toast(`반갑습니다, ${res.nickname}님! 채택된 글 ${res.adoption_count}개가 있어요 — 프로필에서 확인해보세요`);
+  } else {
+    toast(`반갑습니다, ${res.nickname}님!`);
+  }
+  nav('seed');
+}
+
+async function doRegister() {
+  const nickname = document.getElementById('a-nick').value.trim();
+  const password = document.getElementById('a-pw').value;
+  const res = await api('register', { nickname, password });
+  if (!res.ok) { toast(res.error, true); return; }
+  saveUser(res);
+  toast(`가입 완료! 환영합니다, ${res.nickname}님!`);
+  nav('seed');
+}
+
+// ─── 프로필 ───────────────────────────────────────────────
+
+async function profile() {
+  if (!user) { nav('auth','login'); return; }
+  document.getElementById('app').innerHTML = `<div class="loading">불러오는 중...</div>`;
+  const [res, bmRes] = await Promise.all([api('getProfile'), api('getBookmarks')]);
+  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+
+  const u         = res.user;
+  const bookmarks = bmRes.ok ? bmRes.stories : [];
+
+  const nextBadge = { seed:'금간 씨앗(20p)', seed1:'발아하는 씨앗(60p)', seed2:'새싹(150p)', sprout:'무성한 새싹(350p)', sprout1:'잎(700p)', leaf:'넓은 잎(1200p)', leaf1:'꽃봉오리(2000p)', bud:'꽃(3000p)', flower:'열매(5000p)' }[u.badge] || '';
+
+  document.getElementById('app').innerHTML = `
+    <div class="card" style="margin-bottom:24px">
+      <div style="display:flex;align-items:center;gap:16px">
+        <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800">
+          ${esc(u.nickname[0].toUpperCase())}
+        </div>
+        <div>
+          <div style="font-size:20px;font-weight:700">${esc(u.nickname)}</div>
+          <span class="badge badge-${u.badge}">${badgeLabel(u.badge)}</span>
+          ${nextBadge ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">다음: ${nextBadge}</div>` : ''}
+        </div>
+        <div style="margin-left:auto;text-align:right">
+          <div style="font-size:26px;font-weight:800;color:var(--accent)">${u.total_points}</div>
+          <div style="font-size:12px;color:var(--muted)">포인트</div>
+        </div>
+      </div>
+    </div>
+    ${bookmarks.length ? `
+      <h2 style="margin-bottom:12px">★ 책갈피한 이야기</h2>
+      ${bookmarks.map(s => `
+        <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
+          <div class="story-card-title">"${esc(s.opening)}"</div>
+          <div class="story-card-footer">
+            <span class="step-pill">${Number(s.current_step)}단계</span>
+            <span class="story-status ${s.status==='active'?'status-active':'status-completed'}">${s.status==='active'?'진행 중':'완결'}</span>
+          </div>
+        </div>`).join('')}
+      <hr style="margin:20px 0">` : ''}
+    ${res.adoptions && res.adoptions.length ? `
+      <h2 style="margin-bottom:12px">✓ 채택된 글 <span style="font-size:14px;font-weight:400;color:var(--muted)">${res.adoptions.length}편</span></h2>
+      ${res.adoptions.map(a => `
+        <div class="card" style="padding:14px 16px;margin-bottom:8px;cursor:pointer;border-left:3px solid var(--success)"
+          onclick="nav('story','${a.story_id}')">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px">
+            ${a.step}단계 · "${esc(a.story_opening.slice(0,40))}${a.story_opening.length>40?'…':''}"
+          </div>
+          <div style="font-size:14px;line-height:1.6">"${esc(a.content)}"</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px">▲ ${a.vote_count}표 채택 · ${timeAgo(a.created_at)}</div>
+        </div>`).join('')}
+      <hr style="margin:20px 0">` : ''}
+    <h2>포인트 내역</h2>
+    ${res.history.length === 0 ? `<div class="empty">내역이 없습니다.</div>` :
+      res.history.map(h => `
+        <div class="card" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:14px">${reasonLabel(h.reason)}</div>
+            <div style="font-size:12px;color:var(--muted)">${timeAgo(h.created_at)}</div>
+          </div>
+          <div style="font-size:18px;font-weight:700;color:var(--accent)">+${h.points}</div>
+        </div>`).join('')}`;
+}
+
+// ─── 알림 ──────────────────────────────────────────────
+let _notifOpen = false;
+
+async function loadNotifCount() {
+  try {
+    const res = await api('getNotifications', {});
+    const count = res.ok ? res.unread_count : 0;
+    const badge = document.getElementById('bell-badge');
+    if (badge) {
+      badge.textContent = count > 9 ? '9+' : count;
+      badge.style.display = count > 0 ? 'flex' : 'none';
+    }
+  } catch(e) {}
+}
+
+async function toggleNotifPanel() {
+  const panel = document.getElementById('notif-panel');
+  if (!panel) return;
+  _notifOpen = !_notifOpen;
+  if (!_notifOpen) { panel.style.display = 'none'; return; }
+
+  panel.style.display = 'block';
+  panel.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--muted)">불러오는 중...</div>';
+
+  try {
+    const res = await api('getNotifications', {});
+    const notifs = res.ok ? res.notifications : [];
+    if (notifs.length === 0) {
+      panel.innerHTML = '<div style="padding:14px;font-size:13px;color:var(--muted);text-align:center">새 알림이 없습니다.</div>';
+    } else {
+      panel.innerHTML = `
+        <div style="padding:10px 14px;font-size:12px;font-weight:700;border-bottom:1px solid var(--border)">알림</div>
+        ${notifs.map(n => `
+          <div class="notif-item ${n.is_read === 'false' || n.is_read === false ? 'unread' : ''}"
+            onclick="notifClick('${esc(n.story_id)}')">
+            <div>${esc(n.message)}</div>
+            <div class="notif-time">${timeAgo(n.created_at)}</div>
+          </div>`).join('')}`;
+      // 읽음 처리
+      api('markNotificationsRead', {}).then(() => {
+        const badge = document.getElementById('bell-badge');
+        if (badge) badge.style.display = 'none';
+      });
+    }
+  } catch(e) {
+    panel.innerHTML = '<div style="padding:14px;font-size:13px;color:var(--muted)">불러오기 실패.</div>';
+  }
+}
+
+function notifClick(story_id) {
+  const panel = document.getElementById('notif-panel');
+  if (panel) panel.style.display = 'none';
+  _notifOpen = false;
+  if (story_id) nav('story', story_id);
+}
+
+// 패널 밖 클릭 시 닫기
+document.addEventListener('click', (e) => {
+  const wrapper = document.getElementById('notif-wrapper');
+  if (_notifOpen && wrapper && !wrapper.contains(e.target)) {
+    const panel = document.getElementById('notif-panel');
+    if (panel) panel.style.display = 'none';
+    _notifOpen = false;
+  }
+});
+
+// ─── 분기 읽기 트리 ─────────────────────────────────────
+window._branchChoice = {}; // episode_id → chosen sub_id
+window._storyData   = null;
+
+function getEpisodeTree(episodes, submissions) {
+  const subToChildEps = {};
+  episodes.forEach(ep => {
+    if (ep.parent_sub_id) {
+      if (!subToChildEps[ep.parent_sub_id]) subToChildEps[ep.parent_sub_id] = [];
+      subToChildEps[ep.parent_sub_id].push(ep);
+    }
+  });
+  const rootEp = episodes.find(ep => !ep.parent_sub_id || ep.parent_sub_id === '');
+  if (!rootEp) return null;
+
+  function buildNode(ep) {
+    const adoptedSubs = submissions.filter(s =>
+      s.episode_id === ep.episode_id && (s.is_adopted === true || s.is_adopted === 'TRUE')
+    );
+    const children = adoptedSubs.flatMap(sub => (subToChildEps[sub.sub_id] || []).map(buildNode));
+    return { ep, adoptedSubs, children };
+  }
+  return buildNode(rootEp);
+}
+
+function renderEpisodeTreeHtml(node, choices) {
+  if (!node) return '';
+  const { ep, adoptedSubs, children } = node;
+  if (ep.status !== 'closed') return '';
+  if (adoptedSubs.length === 0) return '';
+
+  if (adoptedSubs.length === 1) {
+    const sub = adoptedSubs[0];
+    const childHtml = children.length === 1 ? renderEpisodeTreeHtml(children[0], choices) : '';
+    return `
+      <div class="prose-line">
+        <span class="prose-sentence">"${esc(sub.content)}"</span>
+        <span class="prose-author">— ${sub.author_badge?`<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(sub.author_badge)}</span>`:''}${esc(sub.author_nickname || '익명')}</span>
+      </div>${childHtml}`;
+  }
+
+  // 분기 포인트 (동률 채택)
+  const chosenSubId = choices[ep.episode_id];
+  if (chosenSubId) {
+    const chosenSub   = adoptedSubs.find(s => s.sub_id === chosenSubId);
+    const chosenChild = children.find(c => c.ep.parent_sub_id === chosenSubId);
+    return `
+      <div style="margin:4px 0 -2px">
+        <div class="branch-indicator">
+          <span style="font-size:10px;color:var(--muted);margin-right:4px">분기</span>
+          ${adoptedSubs.map((sub, i) => `
+            <button class="branch-tab ${sub.sub_id === chosenSubId ? 'active' : ''}"
+              onclick="chooseBranch('${ep.episode_id}','${sub.sub_id}')">
+              ${String.fromCharCode(65+i)}갈래</button>`).join('')}
+        </div>
+        <div class="prose-line">
+          <span class="prose-sentence">"${esc(chosenSub ? chosenSub.content : '')}"</span>
+          <span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>
+        </div>
+      </div>
+      ${chosenChild ? renderEpisodeTreeHtml(chosenChild, choices) : ''}`;
+  }
+
+  // 아직 선택 안 한 갈림길 → chooser 표시
+  return `
+    <div class="branch-chooser">
+      <div class="branch-chooser-label">✦ 이야기의 갈림길 ✦</div>
+      <div class="branch-choices">
+        ${adoptedSubs.map((sub, i) => `
+          <button class="branch-choice-card" onclick="chooseBranch('${ep.episode_id}','${sub.sub_id}')">
+            <div class="branch-choice-label">${String.fromCharCode(65+i)}갈래</div>
+            <div>"${esc(sub.content)}"</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">▲ ${sub.vote_count}표</div>
+          </button>`).join('')}
+      </div>
+    </div>`;
+}
+
+function chooseBranch(episode_id, sub_id) {
+  window._branchChoice = window._branchChoice || {};
+  window._branchChoice[episode_id] = sub_id;
+  const el = document.getElementById('story-prose-content');
+  if (el && window._storyData) {
+    const { episodes, submissions } = window._storyData;
+    const tree = getEpisodeTree(episodes, submissions);
+    el.innerHTML = tree ? renderEpisodeTreeHtml(tree, window._branchChoice) : '';
+  }
+}
+
+// ─── 공유 ──────────────────────────────────────────────
+function shareStory() {
+  const d = window._storyData;
+  if (!d) return;
+  const { episodes, submissions, story } = d;
+
+  const tree = getEpisodeTree(episodes.filter(e => e.status === 'closed'), submissions);
+
+  function collectLines(node, choices) {
+    if (!node || node.ep.status !== 'closed' || !node.adoptedSubs.length) return [];
+    const chosenId = (choices || {})[node.ep.episode_id];
+    const sub = (chosenId && node.adoptedSubs.find(s => s.sub_id === chosenId))
+      || node.adoptedSubs[0];
+    const child = node.children.find(c => c.ep.parent_sub_id === sub.sub_id);
+    return [`"${sub.content}"`, ...collectLines(child, choices)];
+  }
+
+  const lines = collectLines(tree, window._branchChoice || {});
+  const opening = story ? `"${story.opening}"` : '';
+  const url = location.href;
+
+  const text = [
+    '화씨.방에서 함께 쓴 이야기',
+    '',
+    opening,
+    ...lines,
+    '',
+    `👉 ${url}`,
+  ].join('\n');
+
+  navigator.clipboard.writeText(text)
+    .then(() => toast('이야기가 클립보드에 복사됐습니다!'))
+    .catch(() => toast('복사 실패 — 브라우저 권한을 확인해주세요.', true));
+}
+
+// ─── 어드민 페이지 ──────────────────────────────────────
+async function adminPanel() {
+  if (!isAdmin()) { nav('seed'); return; }
+  document.getElementById('app').innerHTML = `<div class="loading">불러오는 중...</div>`;
+  const res = await api('getReports', {});
+  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+
+  const reports = res.reports;
+  document.getElementById('app').innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+      <button class="btn btn-ghost btn-sm" onclick="nav('seed')">← 돌아가기</button>
+      <h2 style="margin:0">신고 목록 <span style="font-size:14px;font-weight:400;color:var(--muted)">${reports.length}건</span></h2>
+    </div>
+    ${reports.length === 0
+      ? `<div class="empty">처리할 신고가 없습니다.</div>`
+      : reports.map(r => `
+          <div class="card" style="padding:14px 16px;margin-bottom:10px" id="report-card-${esc(r.report_id)}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+              <div style="flex:1">
+                <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
+                  <span style="color:var(--accent2);font-weight:700">${esc(r.reason)}</span>
+                  · ${esc(r.reporter_nickname)}님이 신고 · ${timeAgo(r.created_at)}
+                </div>
+                <div style="font-size:14px;line-height:1.5;margin-bottom:4px">"${esc(r.sub_content)}"</div>
+                <div style="font-size:12px;color:var(--muted)">작성자: ${esc(r.sub_author)}</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+                <button class="admin-btn admin-delete"
+                  onclick="adminDeleteFromReport('${esc(r.sub_id)}','${esc(r.report_id)}')">글 삭제</button>
+                <button class="admin-btn" style="background:var(--surface);color:var(--muted)"
+                  onclick="dismissReportItem('${esc(r.report_id)}')">무시</button>
+              </div>
+            </div>
+          </div>`).join('')}`;
+}
+
+async function adminDeleteFromReport(sub_id, report_id) {
+  const [d, r] = await Promise.all([
+    api('adminDeleteSubmission', { sub_id }),
+    api('dismissReport', { report_id }),
+  ]);
+  if (!d.ok) { toast(d.error, true); return; }
+  const card = document.getElementById('report-card-' + report_id);
+  if (card) card.remove();
+  toast('글이 삭제됐습니다.');
+}
+
+async function dismissReportItem(report_id) {
+  const res = await api('dismissReport', { report_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  const card = document.getElementById('report-card-' + report_id);
+  if (card) card.remove();
+}
+
+function reasonLabel(r) {
+  return {
+    direct:'채택 (직접 제출)', source:'손보기 원저자 보상', mid:'중간 손보기 보상', derived:'손보기 채택 보상',
+    submit:'제출 참여', vote:'투표 참여', daily_login:'오늘의 보너스',
+  }[r] || r;
+}
+
+// ─── 유틸 ─────────────────────────────────────────────────
+
+function updateCount(inputId, countId) {
+  const len = (document.getElementById(inputId).value || '').length;
+  const el  = document.getElementById(countId);
+  if (!el) return;
+  const limit = inputId.includes('opening') ? null : 50;
+  if (!limit) {
+    el.textContent = `${len}자`;
+    el.className = 'char-count';
+  } else if (len > limit) {
+    el.textContent = `${len} / ${limit}자`;
+    el.className = 'char-count over';
+  } else if (len >= 40) {
+    el.textContent = `${len} / ${limit}자`;
+    el.className = 'char-count warn';
+  } else {
+    el.textContent = `${len}자`;
+    el.className = 'char-count';
+  }
+}
+
+function timeAgo(dateStr) {
+  if (!dateStr) return '';
+  const diff = (Date.now() - new Date(dateStr)) / 1000;
+  if (diff < 60)    return '방금 전';
+  if (diff < 3600)  return Math.floor(diff/60) + '분 전';
+  if (diff < 86400) return Math.floor(diff/3600) + '시간 전';
+  return Math.floor(diff/86400) + '일 전';
+}
+
+// ─── 라우터 ───────────────────────────────────────────────
+
+function parseHash() {
+  const h     = location.hash.slice(1) || 'seed';
+  const parts = h.split('/');
+  const route = parts[0];
+  currentRoute = ['home','seed','popular','mine','done','story','episode','auth','profile','create'].includes(route) ? route : 'seed';
+  currentParam = parts[1] || null;
+}
+
+window.addEventListener('hashchange', () => { parseHash(); render(); renderNav(); });
+
+window.onload = () => {
+  loadUser();
+  renderNav();
+  parseHash();
+  render();
+};
+</script>
+</body>
+</html>

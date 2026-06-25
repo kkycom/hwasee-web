@@ -575,7 +575,7 @@ async function startSeedStory() {
 function popularCardHtml(s) {
   const step  = Number(s.current_step) || 0;
   const max   = Number(s.max_steps) || 10;
-  const count = Number(s.participant_count) || 0;
+  const count = Number(s.activity_count || s.participant_count) || 0;
   return `
     <div class="story-card${s.has_pending ? ' story-card-pending' : ''}" onclick="nav('story','${esc(s.story_id)}')">
       <div class="story-card-title">"${esc(s.opening)}"</div>
@@ -602,7 +602,7 @@ function doneCardHtml(s) {
 
 function storyCardHtml(s) {
   const step  = Number(s.current_step) || 0;
-  const count = Number(s.participant_count) || 0;
+  const count = Number(s.activity_count || s.participant_count) || 0;
   return `
     <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
       <div class="story-card-title">"${esc(s.opening)}"</div>
@@ -632,7 +632,7 @@ function myStoryCardHtml(s) {
             </div>`).join('')}
         </div>` : ''}
       <div class="story-card-footer">
-        <span class="step-pill"><span class="step-dot"></span>${step+1}단계 · ✍ ${Number(s.participant_count)||0}명</span>
+        <span class="step-pill"><span class="step-dot"></span>${step+1}단계 · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
         <span class="story-status ${s.status==='active'?'status-active':'status-completed'}">
           ${s.status==='active'?'진행 중':'완결'}
         </span>

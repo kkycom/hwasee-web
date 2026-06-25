@@ -860,16 +860,6 @@ async function story() {
     actionHtml = `
       <div class="prose-divider">${isPending ? '곧 채택될 예정이에요 · 아직 투표할 수 있어요' : '이 이야기의 다음 문장을 결정합니다'}</div>
       ${isPending ? `<div style="text-align:center;margin-bottom:12px"><span class="pending-tag pending-countdown" data-expires="${_pendingExp}">⏳ 곧 채택 예정</span></div>` : ''}
-      <div style="font-size:12px;color:var(--muted);margin-bottom:16px;text-align:center">
-        ${curStep}단계 · 최대 2개 선택
-        ${curStep < 3 ? `<span style="color:var(--border)"> · </span><span style="color:var(--muted)">3단계부터 이야기 마무리 가능</span>` : ''}
-      </div>
-      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:16px">
-        <div style="flex:1;max-width:160px;height:4px;border-radius:2px;background:var(--border);overflow:hidden">
-          <div style="height:100%;width:${Math.min(maxVotes,2)*100/2}%;background:var(--accent);border-radius:2px;transition:.3s"></div>
-        </div>
-        <span style="font-size:12px;color:${maxVotes>=2?'var(--accent2)':'var(--muted)'};font-weight:600">${maxVotes}/2표 ${maxVotes>=2?'· 채택 대기 중':''}</span>
-      </div>
       ${user && !mySubId ? `
         <div class="card" style="margin-bottom:20px">
           <div style="font-size:13px;font-weight:700;margin-bottom:10px">✏️ 이어 쓰기</div>
@@ -897,7 +887,7 @@ async function story() {
       ${user && openSubs.length > 0 ? `
         <div class="vote-sticky">
           <button class="btn btn-primary" id="vote-btn" onclick="submitVoteInStory('${esc(openEp.episode_id)}')">
-            투표하기 (0개 선택됨)
+            2개 선택 가능
           </button>
         </div>` : ''}`;
   } else if (s.status === 'completed' || s.status === 'inactive') {
@@ -1265,7 +1255,11 @@ function toggleSub(sub_id) {
     document.getElementById('sc-' + sub_id).classList.add('selected');
   }
   const btn = document.getElementById('vote-btn');
-  if (btn) btn.textContent = `투표하기 (${selectedSubs.length}개 선택됨)`;
+  if (btn) btn.textContent = selectedSubs.length === 0
+    ? '2개 선택 가능'
+    : selectedSubs.length >= 2
+      ? '투표하기'
+      : '투표하기 · 1개 더 고를 수 있어요';
 }
 
 async function submitSubInStory(episode_id, closing = false) {

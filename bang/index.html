@@ -235,12 +235,11 @@
 
   /* ── 탭 */
   .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
-  .tab { padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted); margin-bottom: -1px; transition: .15s; white-space: nowrap; }
+  .tab { flex: 1; text-align: center; padding: 10px 8px; font-size: 13px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted); margin-bottom: -1px; transition: .15s; white-space: nowrap; border-right: 1px solid var(--border); }
+  .tab:last-child { border-right: none; }
   .tab.active { color: var(--accent); border-color: var(--accent); }
   @media (max-width: 480px) {
-    .tabs { overflow-x: auto; scrollbar-width: none; }
-    .tabs::-webkit-scrollbar { display: none; }
-    .tab { padding: 8px 12px; font-size: 12px; }
+    .tab { padding: 8px 4px; font-size: 11px; }
   }
 
   /* ── 기타 */
@@ -713,7 +712,13 @@ async function story() {
       <div class="prose-divider">${isPending ? '곧 채택될 예정이에요 · 아직 투표할 수 있어요' : '이 이야기의 다음 문장을 결정합니다'}</div>
       ${isPending ? `<div style="text-align:center;margin-bottom:12px"><span class="pending-tag">⏳ 곧 채택 예정</span></div>` : ''}
       <div style="font-size:12px;color:var(--muted);margin-bottom:16px;text-align:center">
-        ${curStep}단계 · ${openEp.vote_total}명 참여 · 최대 2개 선택
+        ${curStep}단계 · 최대 2개 선택
+      </div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:16px">
+        <div style="flex:1;max-width:160px;height:4px;border-radius:2px;background:var(--border);overflow:hidden">
+          <div style="height:100%;width:${Math.min(openEp.vote_total,3)*100/3}%;background:var(--accent);border-radius:2px;transition:.3s"></div>
+        </div>
+        <span style="font-size:12px;color:${openEp.vote_total>=3?'var(--accent2)':'var(--muted)'};font-weight:600">${openEp.vote_total}/3표 ${openEp.vote_total>=3?'· 채택 대기 중':''}</span>
       </div>
       ${user && !mySubId ? `
         <div class="card" style="margin-bottom:20px">

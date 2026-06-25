@@ -756,7 +756,7 @@ async function story() {
       ${openSubs.length === 0
         ? `<div class="empty" style="padding:20px 0">아직 제출된 문장이 없습니다.</div>`
         : renderSubsWithReplies(openSubs, mySubId, maxVotes)}
-      ${user && mySubId ? `
+      ${user && openSubs.length > 0 ? `
         <div class="vote-sticky">
           <button class="btn btn-primary" id="vote-btn" onclick="submitVoteInStory('${esc(openEp.episode_id)}')">
             투표하기 (0개 선택됨)

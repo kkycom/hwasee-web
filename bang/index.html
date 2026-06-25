@@ -764,7 +764,7 @@ function myStoryCardHtml(s, snapshot) {
       ${mySubs.length ? `
         <div style="margin-bottom:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">
           ${mySubs.map(sub => `
-            <div style="font-size:13px;line-height:1.6;margin-bottom:2px">"${esc(sub.content)}"</div>
+            <div style="font-size:13px;line-height:1.6;margin-bottom:2px">${esc(sub.content)}</div>
             <div style="font-size:12px;color:var(--muted)">
               ▲ ${sub.vote_count}표
               ${sub.is_adopted===true||sub.is_adopted==='TRUE'?'<span style="color:var(--success);margin-left:6px">✓ 채택됨</span>':''}
@@ -983,7 +983,7 @@ function renderHistoryPanel(episodes, submissions) {
           const adopted = sub.is_adopted === true || sub.is_adopted === 'TRUE';
           return `
             <div style="padding:10px 12px;margin-bottom:6px;border-radius:8px;border:1px solid ${adopted?'var(--success)':'var(--border)'};background:${adopted?'#0c1f12':'var(--card)'}">
-              <div style="font-size:13px;line-height:1.5">"${esc(sub.content)}"</div>
+              <div style="font-size:13px;line-height:1.5">${esc(sub.content)}</div>
               <div style="font-size:11px;color:var(--muted);margin-top:6px;display:flex;gap:8px">
                 <span>✍ ${esc(sub.author_nickname || '익명')}</span>
                 <span>▲ ${sub.vote_count}표</span>
@@ -1064,7 +1064,7 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set()) {
     <div class="vote-card ${isAdopted?'adopted':''} ${isClickable?'clickable':''}" id="sc-${sub.sub_id}"
       style="${iVoted?'border-color:var(--accent);':''}"
       ${isClickable ? `onclick="toggleSub('${sub.sub_id}')"` : ''}>
-      <div class="vote-content">"${esc(sub.content)}"</div>
+      <div class="vote-content">${esc(sub.content)}</div>
       <div class="vote-meta">
         <span>✍ ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeLabel(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
         <span class="vote-count">▲ ${sub.vote_count}명 선택</span>
@@ -1785,7 +1785,7 @@ function renderEpisodeTreeHtml(node, choices) {
         ${adoptedSubs.map((sub, i) => `
           <button class="branch-choice-card" onclick="chooseBranch('${ep.episode_id}','${sub.sub_id}')">
             <div class="branch-choice-label">${String.fromCharCode(65+i)}갈래</div>
-            <div>"${esc(sub.content)}"</div>
+            <div>${esc(sub.content)}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px">▲ ${sub.vote_count}표</div>
           </button>`).join('')}
       </div>
@@ -1915,11 +1915,11 @@ function shareStory() {
     const sub = (chosenId && node.adoptedSubs.find(s => s.sub_id === chosenId))
       || node.adoptedSubs[0];
     const child = node.children.find(c => c.ep.parent_sub_id === sub.sub_id);
-    return [`"${sub.content}"`, ...collectLines(child, choices)];
+    return [sub.content, ...collectLines(child, choices)];
   }
 
   const lines = collectLines(tree, window._branchChoice || {});
-  const opening = story ? `"${story.opening}"` : '';
+  const opening = story ? story.opening : '';
   const url = location.href;
 
   const text = [
@@ -1959,7 +1959,7 @@ async function adminPanel() {
                   <span style="color:var(--accent2);font-weight:700">${esc(r.reason)}</span>
                   · ${esc(r.reporter_nickname)}님이 신고 · ${timeAgo(r.created_at)}
                 </div>
-                <div style="font-size:14px;line-height:1.5;margin-bottom:4px">"${esc(r.sub_content)}"</div>
+                <div style="font-size:14px;line-height:1.5;margin-bottom:4px">${esc(r.sub_content)}</div>
                 <div style="font-size:12px;color:var(--muted)">작성자: ${esc(r.sub_author)}</div>
               </div>
               <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">

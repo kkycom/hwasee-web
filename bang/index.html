@@ -153,7 +153,7 @@
   }
   .vote-card.clickable { cursor: pointer; }
   .vote-card.clickable:hover { border-color: var(--accent); }
-  .vote-card.selected { border-color: var(--accent); background: #1a1830; }
+  .vote-card.selected { border-color: var(--accent); background: #162218; box-shadow: 0 0 0 2px var(--accent); }
   .vote-card.adopted  { border-color: var(--success); }
   .vote-content { font-size: 15px; line-height: 1.7; margin-bottom: 8px; }
   .vote-meta { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
@@ -425,8 +425,8 @@ function esc(s) {
 const HOME_TABS = [
   { key: 'seed',    label: '씨앗이 될 이야기' },
   { key: 'popular', label: '관심받는 이야기'  },
-  { key: 'mine',    label: '내가 쓴 이야기'   },
-  { key: 'done',    label: '완결된 이야기'     },
+  { key: 'mine',    label: '참여한 이야기'   },
+  { key: 'done',    label: '완성된 이야기'     },
 ];
 
 async function home() {
@@ -718,7 +718,7 @@ async function story() {
       ${isPending ? `<div style="text-align:center;margin-bottom:12px"><span class="pending-tag">⏳ 곧 채택 예정</span></div>` : ''}
       <div style="font-size:12px;color:var(--muted);margin-bottom:16px;text-align:center">
         ${curStep}단계 · 최대 2개 선택
-        ${curStep < 5 ? `<span style="color:var(--border)"> · </span><span style="color:var(--muted)">5단계부터 이야기 마무리 가능</span>` : ''}
+        ${curStep < 3 ? `<span style="color:var(--border)"> · </span><span style="color:var(--muted)">3단계부터 이야기 마무리 가능</span>` : ''}
       </div>
       <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:16px">
         <div style="flex:1;max-width:160px;height:4px;border-radius:2px;background:var(--border);overflow:hidden">
@@ -732,7 +732,7 @@ async function story() {
           <div id="polish-indicator" style="display:none;font-size:12px;color:var(--accent2);margin-bottom:8px;padding:6px 10px;background:var(--surface);border-radius:6px;border-left:2px solid var(--accent2)"></div>
           <input type="text" id="sub-input" maxlength="50" placeholder="한 문장으로 이어가세요" oninput="updateCount('sub-input','sub-cc')">
           <div class="char-count" id="sub-cc" style="margin-bottom:10px">0자</div>
-          ${Number(openEp.step) >= 4 ? `
+          ${Number(openEp.step) >= 2 ? `
             <div style="display:flex;gap:16px;margin-bottom:12px">
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
                 <input type="radio" name="ep-closing" value="continue" checked style="accent-color:var(--accent)">
@@ -985,48 +985,35 @@ function renderLbInto(containerId) {
     : '<div style="font-size:12px;color:var(--muted)">랭킹을 불러올 수 없습니다.</div>';
 }
 
-const LB_TABS = [
-  { key: 'points',         label: '포인트', unit: 'p'  },
-  { key: 'participations', label: '참여',   unit: '회' },
-  { key: 'adoptions',      label: '채택',   unit: '편' },
+const LB_COLS = [
+  { key: 'points',    label: '포인트 랭킹', unit: 'p'  },
+  { key: 'adoptions', label: '채택 랭킹',   unit: '편' },
 ];
-let _lbTab = 'points';
 
 function lbBodyHtml(limit) {
   if (!_lbData) return '<div style="font-size:12px;color:var(--muted)">아직 기록이 없어요.</div>';
   const n = limit || 5;
-  const tabHtml = LB_TABS.map(t => `
-    <button onclick="switchLbTab('${t.key}')" id="lbtab-${t.key}"
-      style="flex:1;padding:6px 4px;font-size:11px;font-weight:700;background:none;border:none;
-             border-bottom:2px solid ${_lbTab===t.key?'var(--accent)':'transparent'};
-             color:${_lbTab===t.key?'var(--accent)':'var(--muted)'};cursor:pointer;transition:.15s">
-      ${t.label}
-    </button>`).join('');
-  const cur = LB_TABS.find(t => t.key === _lbTab);
-  const rows = (_lbData[cur.key] || []).slice(0, n);
-  const rowsHtml = rows.length
-    ? rows.map((r, i) => `
-        <div class="lb-row">
-          <span class="lb-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</span>
-          <span class="lb-name">
-            <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(r.badge||'seed')}</span>${esc(r.nickname)}
-          </span>
-          <span class="lb-value">${r.value}${cur.unit}</span>
-        </div>`).join('')
-    : '<div style="font-size:12px;color:var(--muted);padding:12px 0;text-align:center">아직 기록이 없어요.</div>';
-  return `
-    <div style="display:flex;border-bottom:1px solid var(--border);margin-bottom:10px">${tabHtml}</div>
-    <div id="lb-rows">${rowsHtml}</div>`;
+  const colHtml = (col) => {
+    const rows = (_lbData[col.key] || []).slice(0, n);
+    const rowsHtml = rows.length
+      ? rows.map((r, i) => `
+          <div class="lb-row">
+            <span class="lb-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</span>
+            <span class="lb-name">
+              <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(r.badge||'seed')}</span>${esc(r.nickname)}
+            </span>
+            <span class="lb-value">${r.value}${col.unit}</span>
+          </div>`).join('')
+      : '<div style="font-size:12px;color:var(--muted);padding:12px 0;text-align:center">아직 기록이 없어요.</div>';
+    return `<div style="flex:1;padding:0 12px;${col.key==='points'?'border-right:1px solid var(--border)':''}">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:10px;text-align:center">${col.label}</div>
+      ${rowsHtml}
+    </div>`;
+  };
+  return `<div style="display:flex">${LB_COLS.map(colHtml).join('')}</div>`;
 }
 
-function switchLbTab(key, limit) {
-  _lbTab = key;
-  const containers = ['seed-lb-body', 'modal-lb-body'];
-  containers.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = lbBodyHtml(limit || (id === 'modal-lb-body' ? 10 : 5));
-  });
-}
+function switchLbTab() {}
 
 function openRankingModal() {
   const existing = document.getElementById('ranking-modal');
@@ -1109,7 +1096,11 @@ function toggleSub(sub_id) {
     selectedSubs.splice(idx, 1);
     document.getElementById('sc-' + sub_id).classList.remove('selected');
   } else {
-    if (selectedSubs.length >= 2) { toast('최대 2개까지 선택할 수 있습니다.', true); return; }
+    if (selectedSubs.length >= 2) {
+      const oldest = selectedSubs.shift();
+      const oldEl = document.getElementById('sc-' + oldest);
+      if (oldEl) oldEl.classList.remove('selected');
+    }
     selectedSubs.push(sub_id);
     document.getElementById('sc-' + sub_id).classList.add('selected');
   }
@@ -1188,7 +1179,6 @@ async function addComment(sub_id) {
 // ─── 관리자 액션 ──────────────────────────────────────────
 
 async function adminForceAdopt(sub_id) {
-  if (!confirm('이 문장을 강제 채택하고 에피소드를 마감할까요?')) return;
   const res = await api('adminForceAdopt', { sub_id });
   if (!res.ok) { toast(res.error, true); return; }
   toast('채택 완료! 다음 단계가 열렸습니다.');
@@ -1196,7 +1186,6 @@ async function adminForceAdopt(sub_id) {
 }
 
 async function adminDeleteSub(sub_id) {
-  if (!confirm('이 제출을 삭제할까요?')) return;
   const res = await api('adminDeleteSubmission', { sub_id });
   if (!res.ok) { toast(res.error, true); return; }
   toast('삭제됐습니다.');
@@ -1204,7 +1193,6 @@ async function adminDeleteSub(sub_id) {
 }
 
 async function adminCloseStory(story_id) {
-  if (!confirm('이 이야기를 종료할까요?')) return;
   const res = await api('adminCloseStory', { story_id });
   if (!res.ok) { toast(res.error, true); return; }
   toast('이야기가 종료됐습니다.');

@@ -55,6 +55,8 @@
   .btn-nav { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px 8px; font-size: 13px; font-weight: 500; border-radius: 6px; }
   .btn-nav:hover { color: var(--text); background: var(--surface); }
   .new-tag { display:inline-block; background:#1a1a08; color:#facc15; font-size:10px; font-weight:700; padding:1px 5px; border-radius:8px; letter-spacing:.3px; margin-left:4px; vertical-align:middle; }
+  .sort-btn { background:var(--surface); border:none; color:var(--muted); padding:5px 12px; border-radius:16px; font-size:12px; font-weight:600; cursor:pointer; transition:.15s; }
+  .sort-btn.active { background:var(--accent); color:#fff; }
 
   /* ── 레이아웃 */
   main { max-width: 720px; margin: 0 auto; padding: 32px 16px 48px; }
@@ -359,6 +361,42 @@ const _lsc = {
   del(...ks) { ks.forEach(k => { try { localStorage.removeItem('hc:' + k); } catch {} }); },
 };
 
+// ─── 참여 중인 이야기 정렬 ─────────────────────────────────
+let _mineSort  = 'latest';
+let _mineCache = null; // { active, snapshot }
+
+function sortMineStories(stories, key) {
+  const arr = [...stories];
+  if (key === 'activity') return arr.sort((a, b) => (Number(b.activity_count)||0) - (Number(a.activity_count)||0));
+  if (key === 'step')     return arr.sort((a, b) => (Number(b.current_step)||0)   - (Number(a.current_step)||0));
+  return arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+}
+
+function setMineSort(key) {
+  _mineSort = key;
+  ['latest','activity','step'].forEach(k => {
+    const el = document.getElementById('ms-' + k);
+    if (el) el.classList.toggle('active', k === key);
+  });
+  renderMineCards();
+}
+
+function renderMineCards() {
+  const content = document.getElementById('home-content');
+  if (!content || !_mineCache) return;
+  const { active, snapshot } = _mineCache;
+  const sorted   = sortMineStories(active, _mineSort);
+  const sortHtml = `
+    <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+      ${[['latest','최신 순'],['activity','참여도 순'],['step','진행도 순']].map(([k,l]) =>
+        `<button id="ms-${k}" class="sort-btn ${_mineSort===k?'active':''}" onclick="setMineSort('${k}')">${l}</button>`
+      ).join('')}
+    </div>`;
+  content.innerHTML = sortHtml + (sorted.length
+    ? sorted.map(s => myStoryCardHtml(s, snapshot)).join('')
+    : `<div class="empty" style="padding-top:30px">참여 중인 이야기가 없어요.<br>씨앗 탭에서 이야기를 시작해 보세요!</div>`);
+}
+
 // ─── 상태 ──────────────────────────────────────────────────
 
 let user = null;
@@ -454,7 +492,7 @@ function esc(s) {
 const HOME_TABS = [
   { key: 'seed',    label: '씨앗이 될 이야기' },
   { key: 'popular', label: '관심받는 이야기'  },
-  { key: 'mine',    label: '참여한 이야기'   },
+  { key: 'mine',    label: '참여 중인 이야기' },
   { key: 'done',    label: '완성된 이야기'     },
 ];
 
@@ -534,7 +572,7 @@ async function loadHomeTab(tab) {
 
   } else if (tab === 'mine') {
     if (!user) {
-      content.innerHTML = `<div class="empty" style="padding-top:60px">로그인하면 내가 쓴 이야기를 볼 수 있어요.<br>
+      content.innerHTML = `<div class="empty" style="padding-top:60px">로그인하면 참여 중인 이야기를 볼 수 있어요.<br>
         <button class="btn btn-primary" style="margin-top:20px" onclick="nav('auth','login')">로그인</button></div>`;
       return;
     }
@@ -544,15 +582,12 @@ async function loadHomeTab(tab) {
       return;
     }
     const active = res.ok ? res.stories.filter(s => s.status === 'active') : [];
-    // snapshot: 이전 로드 시 저장값 비교로 NEW 태그 계산
     const mineSnap = (() => { try { return JSON.parse(localStorage.getItem('mine_snap') || '{}'); } catch { return {}; } })();
-    content.innerHTML = active.length
-      ? active.map(s => myStoryCardHtml(s, mineSnap)).join('')
-      : `<div class="empty" style="padding-top:40px">참여한 이야기가 없어요.<br>씨앗 탭에서 이야기를 시작해 보세요!</div>`;
-    // 현재 값을 다음 로드의 baseline으로 저장
     const newSnap = {};
     active.forEach(s => { newSnap[s.story_id] = { activity: Number(s.activity_count) || 0, step: Number(s.current_step) || 0 }; });
     try { localStorage.setItem('mine_snap', JSON.stringify(newSnap)); } catch {}
+    _mineCache = { active, snapshot: mineSnap };
+    renderMineCards();
 
   } else if (tab === 'done') {
     const _renderDone = (res) => {

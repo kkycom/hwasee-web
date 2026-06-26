@@ -468,7 +468,10 @@ let user = null;
 
 function loadUser() {
   const raw = localStorage.getItem('hwasee_user');
-  if (raw) try { user = JSON.parse(raw); } catch {}
+  if (raw) try {
+    user = JSON.parse(raw);
+    if (user && user.user_id) localStorage.setItem('hwasee_uid', user.user_id);
+  } catch {}
 }
 function saveUser(u) {
   user = u;

@@ -91,13 +91,13 @@
   main { max-width: 720px; margin: 0 auto; padding: 32px 16px 48px; }
 
   /* ── 랭킹 (씨앗 탭 하단 인라인 + 모달 공용) */
-  .lb-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .lb-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
   .lb-row:last-child { border-bottom: none; }
   .lb-rank { font-size: 12px; font-weight: 800; color: var(--muted); min-width: 20px; text-align: center; flex-shrink: 0; }
   .lb-rank.r1 { color: #ffd700; }
   .lb-rank.r2 { color: #b0b0b8; }
   .lb-rank.r3 { color: #cd7f32; }
-  .lb-name { font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-name { font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
   .lb-value { font-size: 11px; color: var(--accent); font-weight: 700; white-space: nowrap; }
 
   /* ── 랭킹 모달 */
@@ -1236,7 +1236,7 @@ function lbBodyHtml(limit) {
             </span>
           </div>`).join('')
       : '<div style="font-size:12px;color:var(--muted);padding:12px 0;text-align:center">아직 기록이 없어요.</div>';
-    return `<div style="flex:1;padding:0 12px;${col.key==='points'?'border-right:1px solid var(--border)':''}">
+    return `<div style="flex:1;max-width:160px;padding:0 12px;${col.key==='points'?'border-right:1px solid var(--border)':''}">
       <div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:10px;text-align:center">${col.label}</div>
       ${rowsHtml}
     </div>`;

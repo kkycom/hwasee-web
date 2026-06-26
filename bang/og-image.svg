@@ -7,19 +7,19 @@
         fill="#1c2320" stroke="#283029" stroke-width="1.5"/>
 
   <!--
-    화씨. → starts at x=175
-    방    → starts at x=175+104 (씨와 같은 열, 화 한 글자 너비만큼 들여쓰기)
-    두 줄 모두 흰색
+    화씨  → x=175
+    .방   → x=279 (씨 열 아래: 175+104)
+    씨와 . 가 같은 열에 위치 → .이 브랜드 구분자임을 시각적으로 강조
   -->
   <text x="175" y="295"
         font-family="Georgia, 'Gowun Batang', serif"
         font-size="104" font-weight="400"
-        fill="#e4ebe6">화씨.</text>
+        fill="#e4ebe6">화씨</text>
 
   <text x="279" y="407"
         font-family="Georgia, 'Gowun Batang', serif"
         font-size="104" font-weight="400"
-        fill="#e4ebe6">방</text>
+        fill="#e4ebe6">.방</text>
 
   <!-- tagline -->
   <text x="315" y="490"

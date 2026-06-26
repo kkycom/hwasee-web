@@ -44,7 +44,6 @@
     .nav-right { gap: 4px; }
     .nav-right .btn-sm { padding: 4px 8px; font-size: 12px; }
     .nav-right .badge { display: none; }
-    .nav-right button[onclick*="logout"] { display: none; }
   }
 
   /* ── 버튼 */
@@ -530,7 +529,8 @@ function renderNav() {
         <div id="notif-panel" style="display:none" class="notif-panel"></div>
       </div>
       ${isAdmin() ? `<button class="btn-nav" onclick="adminPanel()" title="신고 관리">⚠️</button>` : ''}
-      <button class="btn-nav" onclick="nav('profile')" style="font-weight:600;color:var(--text)">${esc(user.nickname)}</button>`;
+      <button class="btn-nav" onclick="nav('profile')" style="font-weight:600;color:var(--text)">${esc(user.nickname)}</button>
+      <button class="btn-nav" onclick="logout()" title="로그아웃" style="color:var(--muted);font-size:16px;padding:4px 6px">↩</button>`;
     loadNotifCount();
   } else {
     el.innerHTML = `

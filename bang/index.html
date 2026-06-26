@@ -85,11 +85,27 @@
   .story-card-wrap { position:relative; margin-bottom:12px; }
   .story-card-wrap.has-tabs { margin-top:20px; }
   .story-card-wrap > .story-card { margin-bottom:0; }
-  .card-tab-row { position:absolute; bottom:100%; left:0; display:flex; gap:4px; }
+  .card-tab-row { position:absolute; bottom:100%; left:0; right:0; display:flex; justify-content:space-between; align-items:flex-end; pointer-events:none; }
+  .card-tab-left  { display:flex; gap:4px; pointer-events:all; }
+  .card-tab-right { display:flex; gap:4px; pointer-events:all; }
   .card-tab { padding:4px 12px; font-size:10px; font-weight:700; letter-spacing:.04em; border-radius:6px 6px 0 0; border:1px solid transparent; border-bottom:none; }
   .card-tab-new    { background:#2a1e08; color:#c8a96e; border-color:rgba(200,169,110,.35); }
   .card-tab-branch { background:#0c1f15; color:#68a882; border-color:rgba(104,168,130,.35); }
   .card-tab-boost  { background:#1a0f1e; color:#c084fc; border-color:rgba(192,132,252,.35); }
+  @keyframes card-shine {
+    0%   { transform:translateX(-120%) skewX(-18deg); opacity:0; }
+    15%  { opacity:1; }
+    85%  { opacity:1; }
+    100% { transform:translateX(260%) skewX(-18deg); opacity:0; }
+  }
+  .story-card-wrap.has-boost > .story-card { overflow:hidden; }
+  .story-card-wrap.has-boost > .story-card::before {
+    content:''; position:absolute; inset:0; border-radius:var(--radius);
+    background:linear-gradient(105deg, transparent 35%, rgba(192,132,252,.07) 50%, transparent 65%);
+    transform:translateX(-120%) skewX(-18deg);
+    animation:card-shine 1.4s ease-out .2s 1 both;
+    pointer-events:none;
+  }
   .sort-btn { background:var(--surface); border:none; color:var(--muted); padding:5px 12px; border-radius:16px; font-size:12px; font-weight:600; cursor:pointer; transition:.15s; }
   .sort-btn.active { background:var(--accent); color:#fff; }
 
@@ -794,12 +810,12 @@ async function startSeedStory() {
 function popularCardHtml(s) {
   const step  = Number(s.current_step) || 0;
   const count = Number(s.activity_count || s.participant_count) || 0;
-  const tabs = [];
-  if (s.is_boosted) tabs.push('<span class="card-tab card-tab-boost">주목</span>');
-  if (s.has_branch) tabs.push('<span class="card-tab card-tab-branch">⑂ 분기</span>');
-  const tabRow = tabs.length ? `<div class="card-tab-row">${tabs.join('')}</div>` : '';
+  const leftTabs  = s.has_branch ? '<span class="card-tab card-tab-branch">⑂ 분기</span>' : '';
+  const rightTabs = s.is_boosted ? '<span class="card-tab card-tab-boost">주목</span>' : '';
+  const hasTabs = s.is_boosted || s.has_branch;
+  const tabRow = hasTabs ? `<div class="card-tab-row"><div class="card-tab-left">${leftTabs}</div><div class="card-tab-right">${rightTabs}</div></div>` : '';
   return `
-    <div class="story-card-wrap${tabs.length ? ' has-tabs' : ''}">
+    <div class="story-card-wrap${hasTabs ? ' has-tabs' : ''}${s.is_boosted ? ' has-boost' : ''}">
       ${tabRow}
       <div class="story-card${s.has_pending ? ' story-card-pending' : ''}" onclick="nav('story','${esc(s.story_id)}')">
         <div class="story-card-title">${esc(s.opening)}</div>
@@ -838,12 +854,14 @@ function myStoryCardHtml(s, snapshot) {
   );
   const hasVoted    = s.has_voted_current === true;
   const canVoteNow  = s.has_voted_current === false; // false = 진행 중이나 아직 미투표
-  const tabs = [];
-  if (isNew) tabs.push('<span class="card-tab card-tab-new">NEW</span>');
-  if (s.has_branch) tabs.push('<span class="card-tab card-tab-branch">⑂ 분기</span>');
-  const tabRow = tabs.length ? `<div class="card-tab-row">${tabs.join('')}</div>` : '';
+  const leftTabsHtml = [
+    isNew       ? '<span class="card-tab card-tab-new">NEW</span>'        : '',
+    s.has_branch? '<span class="card-tab card-tab-branch">⑂ 분기</span>' : '',
+  ].join('');
+  const hasTabs = isNew || s.has_branch;
+  const tabRow = hasTabs ? `<div class="card-tab-row"><div class="card-tab-left">${leftTabsHtml}</div><div class="card-tab-right"></div></div>` : '';
   return `
-    <div class="story-card-wrap${tabs.length ? ' has-tabs' : ''}">
+    <div class="story-card-wrap${hasTabs ? ' has-tabs' : ''}">
       ${tabRow}
       <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
       <div class="story-card-title">${esc(s.opening)}</div>

@@ -1,28 +1,28 @@
 <svg width="630" height="630" xmlns="http://www.w3.org/2000/svg">
   <!-- background -->
   <rect width="630" height="630" fill="#0d0f0e"/>
-
-  <!-- card -->
-  <rect x="55" y="80" width="520" height="470" rx="24" ry="24"
+  <!-- thin outer border -->
+  <rect x="22" y="22" width="586" height="586" rx="32" ry="32"
         fill="#1c2320" stroke="#283029" stroke-width="1.5"/>
 
   <!--
-    화씨  → x=175
-    .방   → x=279 (씨 열 아래: 175+104)
-    씨와 . 가 같은 열에 위치 → .이 브랜드 구분자임을 시각적으로 강조
+    text-anchor="end" at same x=448:
+    씨 spans 448-130=318 → 448
+    방 spans 448-130=318 → 448
+    씨와 방 좌우 모두 완벽히 정렬됨
   -->
-  <text x="175" y="295"
+  <text x="448" y="268"
         font-family="Georgia, 'Gowun Batang', serif"
-        font-size="104" font-weight="400"
-        fill="#e4ebe6">화씨</text>
+        font-size="130" font-weight="400"
+        fill="#e4ebe6" text-anchor="end">화씨</text>
 
-  <text x="279" y="407"
+  <text x="448" y="418"
         font-family="Georgia, 'Gowun Batang', serif"
-        font-size="104" font-weight="400"
-        fill="#e4ebe6">.방</text>
+        font-size="130" font-weight="400"
+        fill="#e4ebe6" text-anchor="end">.방</text>
 
   <!-- tagline -->
-  <text x="315" y="490"
+  <text x="315" y="510"
         font-family="'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif"
-        font-size="19" fill="#6b7d6e" text-anchor="middle">한 문장씩 이어가는 이야기 공간</text>
+        font-size="18" fill="#6b7d6e" text-anchor="middle">한 문장씩 이어가는 이야기 공간</text>
 </svg>

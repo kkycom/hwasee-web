@@ -1234,7 +1234,6 @@ function lbBodyHtml(limit) {
             <span class="lb-name">
               <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(r.badge||'seed')}</span>${esc(r.nickname)}
             </span>
-            <span class="lb-value">${r.value}${col.unit}</span>
           </div>`).join('')
       : '<div style="font-size:12px;color:var(--muted);padding:12px 0;text-align:center">아직 기록이 없어요.</div>';
     return `<div style="flex:1;padding:0 12px;${col.key==='points'?'border-right:1px solid var(--border)':''}">

@@ -1,23 +1,24 @@
-<svg width="480" height="580" xmlns="http://www.w3.org/2000/svg">
-  <rect width="480" height="580" rx="28" ry="28"
-        fill="#1c2320" stroke="#283029" stroke-width="1.5"/>
+<svg width="480" height="520" xmlns="http://www.w3.org/2000/svg">
+  <!-- 직각 도장, 전체 채움 -->
+  <rect width="480" height="520" fill="#1c2320"/>
+  <rect width="480" height="520" fill="none" stroke="#283029" stroke-width="1"/>
 
   <!--
-    textLength 제거 → 글자 자연 비율 유지
-    화씨: font-size=150, text-anchor=end, x=390 → 화씨 자연폭 ≈300px, 왼쪽 끝 ≈90
-    .방: text-anchor=end, x=408 → 방의 ㅣ=390과 일치, ㅏ 가로획이 390~408 삐져나옴
-    tagline: font-size=20, text-anchor=middle, x=240 → 자연폭 ≈300px, 화씨와 가로폭 근사
+    화씨 ends at x=390  →  씨의 ㅣ 우측 끝 = 390
+    .방  ends at x=390  →  방의 ㅀ 우측 끝 = 390 (씨의 ㅣ와 동일)
+                           방의 ㅣ는 그보다 약 20px 왼쪽 → ㄱ자 효과
+    tagline x=90 (화 시작) textLength=300 → x=90+300=390 (방 끝)까지
   -->
 
-  <text text-anchor="end" x="390" y="245"
+  <text text-anchor="end" x="390" y="195"
         font-family="Georgia, 'Gowun Batang', serif"
         font-size="150" font-weight="400" fill="#e4ebe6">화씨</text>
 
-  <text text-anchor="end" x="408" y="395"
+  <text text-anchor="end" x="390" y="355"
         font-family="Georgia, 'Gowun Batang', serif"
         font-size="150" font-weight="400" fill="#e4ebe6">.방</text>
 
-  <text text-anchor="middle" x="240" y="465"
+  <text x="90" y="422"
         font-family="'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif"
-        font-size="20" fill="#6b7d6e">한 문장씩 이어가는 이야기 공간</text>
+        font-size="22" fill="#6b7d6e">한 문장씩 이어가는 이야기 공간</text>
 </svg>

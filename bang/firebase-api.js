@@ -199,7 +199,7 @@ async function fbFindAccount(name) {
 
 async function fbResetPassword(nickname, name, new_password) {
   if (!nickname || !name || !new_password) return { ok: false, error: '모든 항목을 입력해주세요.' };
-  if (new_password.length < 6) return { ok: false, error: '비밀번호는 6자 이상이어야 합니다.' };
+  if (new_password.length < 8) return { ok: false, error: '비밀번호는 8자 이상이어야 합니다.' };
   const snap = await db.collection('users').where('nickname', '==', nickname).limit(1).get();
   if (snap.empty) return { ok: false, error: '닉네임 또는 이름이 일치하지 않습니다.' };
   const doc = snap.docs[0];

@@ -1590,14 +1590,14 @@ function auth() {
       ` : tab === 'register' ? `
         <div class="form-group"><label>닉네임 (2~12자, 한글·영문·숫자만)</label><input id="a-nick" type="text" placeholder="닉네임" maxlength="12"></div>
         <div class="form-group"><label>이름 (비밀번호 찾기에 사용)</label><input id="a-name" type="text" placeholder="실명 또는 별칭" maxlength="20"></div>
-        <div class="form-group"><label>비밀번호 (6자 이상)</label><input id="a-pw" type="password" placeholder="비밀번호"></div>
+        <div class="form-group"><label>비밀번호 (8자 이상)</label><input id="a-pw" type="password" placeholder="비밀번호"></div>
         <div class="form-group"><label>비밀번호 확인</label><input id="a-pw2" type="password" placeholder="비밀번호 재입력" onkeydown="if(event.key==='Enter')doRegister()"></div>
         <button class="btn btn-primary" style="width:100%" onclick="doRegister()">가입하기</button>
       ` : `
         <p style="font-size:13px;color:var(--muted);margin-bottom:20px">가입 시 입력한 닉네임과 이름이 일치하면 비밀번호를 재설정할 수 있어요.</p>
         <div class="form-group"><label>닉네임</label><input id="a-nick" type="text" placeholder="닉네임"></div>
         <div class="form-group"><label>가입 시 입력한 이름</label><input id="a-name" type="text" placeholder="이름"></div>
-        <div class="form-group"><label>새 비밀번호 (6자 이상)</label><input id="a-pw" type="password" placeholder="새 비밀번호"></div>
+        <div class="form-group"><label>새 비밀번호 (8자 이상)</label><input id="a-pw" type="password" placeholder="새 비밀번호"></div>
         <div class="form-group"><label>새 비밀번호 확인</label><input id="a-pw2" type="password" placeholder="비밀번호 재입력" onkeydown="if(event.key==='Enter')doRecover()"></div>
         <button class="btn btn-primary" style="width:100%" onclick="doRecover()">비밀번호 재설정</button>
       `}
@@ -1633,8 +1633,8 @@ async function doRegister() {
   if (!nameVal) {
     toast('이름을 입력해주세요. (비밀번호 찾기에 사용됩니다)', true); return;
   }
-  if (password.length < 6) {
-    toast('비밀번호는 6자 이상이어야 해요.', true); return;
+  if (password.length < 8) {
+    toast('비밀번호는 8자 이상이어야 해요.', true); return;
   }
   if (password !== password2) {
     toast('비밀번호가 일치하지 않아요.', true); return;
@@ -1652,7 +1652,7 @@ async function doRecover() {
   const new_password  = document.getElementById('a-pw').value;
   const new_password2 = document.getElementById('a-pw2').value;
   if (!nickname || !nameVal) { toast('닉네임과 이름을 모두 입력해주세요.', true); return; }
-  if (new_password.length < 6) { toast('새 비밀번호는 6자 이상이어야 해요.', true); return; }
+  if (new_password.length < 8) { toast('새 비밀번호는 8자 이상이어야 해요.', true); return; }
   if (new_password !== new_password2) { toast('비밀번호가 일치하지 않아요.', true); return; }
   const res = await api('resetPassword', { nickname, name: nameVal, new_password });
   if (!res.ok) { toast(res.error, true); return; }
@@ -1739,7 +1739,7 @@ async function profile() {
     <h2 style="margin-bottom:12px">비밀번호 변경</h2>
     <div class="card" style="margin-bottom:24px">
       <div class="form-group"><label>현재 비밀번호</label><input id="pw-cur" type="password" placeholder="현재 비밀번호"></div>
-      <div class="form-group"><label>새 비밀번호 (6자 이상)</label><input id="pw-new" type="password" placeholder="새 비밀번호"></div>
+      <div class="form-group"><label>새 비밀번호 (8자 이상)</label><input id="pw-new" type="password" placeholder="새 비밀번호"></div>
       <div class="form-group"><label>새 비밀번호 확인</label><input id="pw-new2" type="password" placeholder="새 비밀번호 재입력"></div>
       <button class="btn btn-primary" style="width:100%" onclick="doChangePw()">변경하기</button>
     </div>
@@ -2145,7 +2145,7 @@ async function doChangePw() {
   const nw   = document.getElementById('pw-new')?.value;
   const nw2  = document.getElementById('pw-new2')?.value;
   if (!cur || !nw || !nw2) { toast('모든 항목을 입력해주세요.', true); return; }
-  if (nw.length < 6) { toast('새 비밀번호는 6자 이상이어야 합니다.', true); return; }
+  if (nw.length < 8) { toast('새 비밀번호는 8자 이상이어야 합니다.', true); return; }
   if (nw !== nw2) { toast('새 비밀번호가 일치하지 않습니다.', true); return; }
   const res = await api('changePassword', { current_password: cur, new_password: nw });
   if (!res.ok) { toast(res.error, true); return; }

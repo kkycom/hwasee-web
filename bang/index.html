@@ -165,7 +165,7 @@
   .vote-card.clickable:hover { border-color: var(--accent); }
   .vote-card.selected { border-color: var(--accent); background: #162218; box-shadow: 0 0 0 2px var(--accent); }
   .vote-card.adopted  { border-color: var(--success); }
-  .vote-content { font-size: 15px; line-height: 1.7; margin-bottom: 8px; }
+  .vote-content { font-size: 15px; line-height: 1.75; margin-bottom: 8px; font-family: var(--serif); }
   .vote-meta { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
   .vote-count { color: var(--accent); font-weight: 700; }
   .vote-bar { height: 4px; background: var(--border); border-radius: 2px; margin-bottom: 10px; overflow: hidden; }
@@ -223,7 +223,7 @@
     padding: 32px 24px; text-align: center; margin-top: 4px;
   }
   .seed-feature-label { font-size: 12px; color: var(--accent2); font-weight: 700; letter-spacing: .06em; margin-bottom: 18px; }
-  .seed-feature-text  { font-size: 20px; font-weight: 700; line-height: 1.7; margin-bottom: 24px; font-family: var(--serif); }
+  .seed-feature-text  { font-size: 17px; font-weight: 400; line-height: 1.9; margin-bottom: 24px; font-family: var(--serif); }
 
   /* ── 섹션 헤더 */
   .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
@@ -238,20 +238,41 @@
   .mvp-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .4s; }
 
   /* ── 산문 이야기 */
-  .story-prose { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px 24px; }
-  .prose-opening {
-    font-family: var(--serif); font-size: 16px; line-height: 1.8;
-    margin-bottom: 20px; padding-bottom: 18px; border-bottom: 1px solid var(--border);
+  .story-prose {
+    background-color: #f5f0e6;
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 28px,
+      rgba(160,130,80,.18) 28px,
+      rgba(160,130,80,.18) 29px
+    );
+    border: 1px solid #ddd0b8;
+    border-left: 3px solid rgba(180,110,80,.25);
+    border-radius: var(--radius);
+    padding: 28px 24px 28px 28px;
   }
-  .prose-line { margin-bottom: 18px; }
-  .prose-sentence { font-family: var(--serif); font-size: 16px; line-height: 1.8; display: block; }
-  .prose-author { font-size: 11px; color: var(--muted); display: block; text-align: right; margin-top: 4px; }
-  .prose-branch { font-size: 10px; font-weight: 700; color: var(--accent2); flex-shrink: 0; }
+  .prose-opening {
+    font-family: var(--serif); font-size: 16px; line-height: 1.75;
+    color: #2c1a0e;
+    margin-bottom: 20px; padding-bottom: 18px; border-bottom: 1px solid #cfc0a0;
+  }
+  .prose-line { margin-bottom: 20px; }
+  .prose-sentence { font-family: var(--serif); font-size: 16px; line-height: 1.75; display: block; color: #2c1a0e; }
+  .prose-author { font-size: 11px; color: #9a7060; display: none; text-align: right; margin-top: 4px; }
+  .prose-author.visible { display: block; }
+  .prose-branch { font-size: 10px; font-weight: 700; color: #b07040; flex-shrink: 0; }
   .prose-divider {
     display: flex; align-items: center; gap: 12px; margin: 24px 0;
-    font-size: 12px; font-weight: 600; color: var(--muted);
+    font-size: 12px; font-weight: 600; color: #8a6a50;
   }
-  .prose-divider::before, .prose-divider::after { content:''; flex:1; height:1px; background:var(--border); }
+  .prose-divider::before, .prose-divider::after { content:''; flex:1; height:1px; background:#cfc0a0; }
+  .prose-author-toggle {
+    font-size: 11px; color: #9a7060; background: none; border: none; cursor: pointer;
+    padding: 2px 6px; border-radius: 4px; float: right; margin-bottom: 8px;
+    opacity: .7; transition: opacity .15s;
+  }
+  .prose-author-toggle:hover { opacity: 1; }
 
   /* ── 탭 */
   .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
@@ -913,6 +934,7 @@ async function story() {
         <button class="admin-btn admin-delete" style="margin-left:auto" onclick="adminCloseStory('${esc(s.story_id)}')">✕ 이야기 종료</button>` : ''}
     </div>
     <div class="story-prose">
+      <button class="prose-author-toggle" onclick="toggleProseAuthors(this)">글쓴이 보기 ▾</button>
       <div class="prose-opening">${esc(s.opening)}</div>
       ${confirmedHtml || ''}
     </div>
@@ -1468,7 +1490,7 @@ function auth() {
   const tab = currentParam || 'login';
   document.getElementById('app').innerHTML = `
     <div style="max-width:400px;margin:40px auto">
-      <h2 style="margin-bottom:24px;text-align:center">HWASEE에 오신 것을 환영해요</h2>
+      <h2 style="margin-bottom:24px;text-align:center;font-family:var(--serif)">화씨.방에 오신 것을 환영해요</h2>
       <div class="tabs">
         <div class="tab ${tab==='login'?'active':''}" onclick="nav('auth','login')">로그인</div>
         <div class="tab ${tab==='register'?'active':''}" onclick="nav('auth','register')">회원가입</div>
@@ -1785,6 +1807,15 @@ function renderEpisodeTreeHtml(node, choices) {
           </button>`).join('')}
       </div>
     </div>`;
+}
+
+function toggleProseAuthors(btn) {
+  const prose = btn.closest('.story-prose');
+  if (!prose) return;
+  const showing = btn.dataset.showing === '1';
+  prose.querySelectorAll('.prose-author').forEach(el => el.classList.toggle('visible', !showing));
+  btn.dataset.showing = showing ? '0' : '1';
+  btn.textContent = showing ? '글쓴이 보기 ▾' : '글쓴이 숨기기 ▴';
 }
 
 function chooseBranch(episode_id, sub_id) {

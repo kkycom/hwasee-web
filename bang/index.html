@@ -46,6 +46,32 @@
     .nav-right .badge { display: none; }
   }
 
+  /* ── 프로필 드롭다운 */
+  .profile-menu-wrap { position: relative; }
+  .profile-menu-btn  { background: none; border: none; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text); padding: 4px 8px; border-radius: 6px; display: flex; align-items: center; gap: 4px; }
+  .profile-menu-btn:hover { background: var(--surface); }
+  .profile-menu-btn .caret { font-size: 9px; color: var(--muted); transition: transform .15s; }
+  .profile-menu-btn.open .caret { transform: rotate(180deg); }
+  .profile-dropdown {
+    display: none; position: absolute; top: calc(100% + 8px); right: 0;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4); min-width: 168px; z-index: 200;
+    overflow: hidden;
+  }
+  .profile-dropdown.open { display: block; }
+  .profile-dropdown-header { padding: 12px 16px 8px; border-bottom: 1px solid var(--border); }
+  .profile-dropdown-nick { font-size: 13px; font-weight: 700; color: var(--text); }
+  .profile-dropdown-badge { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .profile-dropdown-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px; font-size: 13px; color: var(--text);
+    background: none; border: none; width: 100%; text-align: left; cursor: pointer;
+    transition: background .1s;
+  }
+  .profile-dropdown-item:hover { background: var(--surface); }
+  .profile-dropdown-item.danger { color: #f87171; }
+  .profile-dropdown-divider { height: 1px; background: var(--border); margin: 2px 0; }
+
   /* ── 버튼 */
   .btn { padding: 8px 18px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: .15s; }
   .btn-primary { background: var(--accent); color: #fff; }
@@ -529,8 +555,21 @@ function renderNav() {
         <div id="notif-panel" style="display:none" class="notif-panel"></div>
       </div>
       ${isAdmin() ? `<button class="btn-nav" onclick="adminPanel()" title="신고 관리">⚠️</button>` : ''}
-      <button class="btn-nav" onclick="nav('profile')" style="font-weight:600;color:var(--text)">${esc(user.nickname)}</button>
-      <button class="btn-nav" onclick="logout()" title="로그아웃" style="color:var(--muted);font-size:16px;padding:4px 6px">↩</button>`;
+      <div class="profile-menu-wrap" id="profile-menu-wrap">
+        <button class="profile-menu-btn" id="profile-menu-btn" onclick="toggleProfileMenu()">
+          ${esc(user.nickname)} <span class="caret">▼</span>
+        </button>
+        <div class="profile-dropdown" id="profile-dropdown">
+          <div class="profile-dropdown-header">
+            <div class="profile-dropdown-nick">${esc(user.nickname)}</div>
+            <div class="profile-dropdown-badge"><span class="badge badge-${user.badge}" style="font-size:10px">${badgeLabel(user.badge)}</span></div>
+          </div>
+          <button class="profile-dropdown-item" onclick="closeProfileMenu();nav('profile')">📊 포인트 내역</button>
+          <button class="profile-dropdown-item" onclick="closeProfileMenu();nav('profile','pw')">🔑 비밀번호 변경</button>
+          <div class="profile-dropdown-divider"></div>
+          <button class="profile-dropdown-item danger" onclick="closeProfileMenu();logout()">↩ 로그아웃</button>
+        </div>
+      </div>`;
     loadNotifCount();
   } else {
     el.innerHTML = `
@@ -552,6 +591,25 @@ function badgeLabel(b) {
 }
 function isAdmin() { return !!(user && user.is_admin); }
 function logout() { saveUser(null); toast('로그아웃됐습니다.'); nav('seed'); }
+
+function toggleProfileMenu() {
+  const btn  = document.getElementById('profile-menu-btn');
+  const drop = document.getElementById('profile-dropdown');
+  if (!btn || !drop) return;
+  const opening = !drop.classList.contains('open');
+  drop.classList.toggle('open', opening);
+  btn.classList.toggle('open', opening);
+}
+function closeProfileMenu() {
+  const btn  = document.getElementById('profile-menu-btn');
+  const drop = document.getElementById('profile-dropdown');
+  if (btn)  btn.classList.remove('open');
+  if (drop) drop.classList.remove('open');
+}
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('profile-menu-wrap');
+  if (wrap && !wrap.contains(e.target)) closeProfileMenu();
+});
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -1662,10 +1720,21 @@ async function profile() {
             ${Number(h.points)>=0?'+':''}${h.points}
           </div>
         </div>`).join('')}
+    <div id="pw-section" style="margin-top:24px">
+      <h2 style="margin-bottom:12px">🔑 비밀번호 변경</h2>
+      <div class="card">
+        <div class="form-group"><label>현재 비밀번호</label><input id="pw-cur" type="password" placeholder="현재 비밀번호"></div>
+        <div class="form-group"><label>새 비밀번호 (6자 이상)</label><input id="pw-new" type="password" placeholder="새 비밀번호"></div>
+        <div class="form-group"><label>새 비밀번호 확인</label><input id="pw-new2" type="password" placeholder="새 비밀번호 재입력"></div>
+        <button class="btn btn-primary" style="width:100%" onclick="doChangePw()">변경하기</button>
+      </div>
+    </div>
     <div style="margin-top:32px;display:flex;flex-direction:column;align-items:center;gap:10px">
-      <button class="btn btn-ghost btn-sm" onclick="logout()" style="color:var(--muted)">로그아웃</button>
       <button class="btn btn-ghost btn-sm" onclick="doDeleteAccount()" style="color:var(--accent2);font-size:12px">회원탈퇴</button>
     </div>`;
+  if (currentParam === 'pw') {
+    setTimeout(() => document.getElementById('pw-section')?.scrollIntoView({ behavior:'smooth', block:'start' }), 100);
+  }
 }
 
 // ─── 알림 ──────────────────────────────────────────────
@@ -2022,6 +2091,21 @@ function reasonLabel(r) {
     submit:'제출 참여', vote:'투표 참여', daily_login:'오늘의 보너스', mvp_nomination:'MVP 선정',
     boost_story:'이야기 주목 사용', extra_submit:'추가 제출권 사용',
   }[r] || r;
+}
+
+async function doChangePw() {
+  const cur  = document.getElementById('pw-cur')?.value;
+  const nw   = document.getElementById('pw-new')?.value;
+  const nw2  = document.getElementById('pw-new2')?.value;
+  if (!cur || !nw || !nw2) { toast('모든 항목을 입력해주세요.', true); return; }
+  if (nw.length < 6) { toast('새 비밀번호는 6자 이상이어야 합니다.', true); return; }
+  if (nw !== nw2) { toast('새 비밀번호가 일치하지 않습니다.', true); return; }
+  const res = await api('changePassword', { current_password: cur, new_password: nw });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast('비밀번호가 변경됐습니다.');
+  document.getElementById('pw-cur').value = '';
+  document.getElementById('pw-new').value = '';
+  document.getElementById('pw-new2').value = '';
 }
 
 async function doDeleteAccount() {

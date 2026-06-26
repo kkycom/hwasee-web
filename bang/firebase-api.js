@@ -159,6 +159,16 @@ async function _fbCheckDailyBonus(user_id) {
   return 0;
 }
 
+async function fbChangePassword(user_id, current_password, new_password) {
+  if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
+  const snap = await db.collection('users').doc(user_id).get();
+  if (!snap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
+  const u = snap.data();
+  if (u.pw_hash !== await fbHashPw(current_password)) return { ok: false, error: '현재 비밀번호가 올바르지 않습니다.' };
+  await snap.ref.update({ pw_hash: await fbHashPw(new_password) });
+  return { ok: true };
+}
+
 async function fbDeleteAccount(user_id) {
   if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
   if (user_id === FB_ADMIN_ID) return { ok: false, error: '관리자 계정은 탈퇴할 수 없습니다.' };
@@ -1072,6 +1082,7 @@ async function firebaseApi(action, params = {}) {
     case 'register':           return fbRegister(params.nickname, params.password, params.name);
     case 'login':              return fbLogin(params.nickname, params.password);
     case 'deleteAccount':      return fbDeleteAccount(need().user_id);
+    case 'changePassword':     return fbChangePassword(need().user_id, params.current_password, params.new_password);
     case 'findAccount':        return fbFindAccount(params.name);
     case 'resetPassword':      return fbResetPassword(params.nickname, params.name, params.new_password);
 

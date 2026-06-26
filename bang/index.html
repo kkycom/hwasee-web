@@ -529,6 +529,7 @@ let currentRoute = 'home';
 let currentParam = null;
 
 function nav(route, param) {
+  if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; }
   currentRoute = route;
   currentParam = param || null;
   location.hash = param ? `${route}/${param}` : route;
@@ -886,7 +887,8 @@ async function submitStory() {
 // ─── 이야기 상세 페이지 ───────────────────────────────────
 
 let selectedSubs = [];
-const commentCache = {}; // sub_id → comments 캐시
+const commentCache = {};
+let _epUnsubscribe = null; // 에피소드 실시간 리스너 정리용
 
 async function story() {
   const story_id = currentParam;
@@ -1502,6 +1504,26 @@ async function episode() {
     <div style="margin-top:16px;text-align:center">
       <button class="btn btn-primary" id="vote-btn" onclick="submitVote('${esc(episode_id)}')">선택한 문장에 투표</button>
     </div>` : ''}`;
+
+  // 에피소드가 열려 있을 때만 실시간 리스너 부착
+  if (!isClosed) {
+    if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; }
+    _epUnsubscribe = firebase.firestore()
+      .collection('submissions')
+      .where('episode_id', '==', episode_id)
+      .onSnapshot(snap => {
+        const list = document.getElementById('sub-list');
+        if (!list) { if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; } return; }
+        const freshSubs = snap.docs.map(d => ({ sub_id: d.id, ...d.data() }));
+        const freshMax  = freshSubs.length ? Math.max(...freshSubs.map(s => Number(s.vote_count)||0)) : 0;
+        list.innerHTML = freshSubs.length === 0
+          ? `<div class="empty" style="padding:32px 0">아직 제출된 문장이 없습니다.</div>`
+          : freshSubs.map(s => renderSubCard(s, false, mySubId, freshMax)).join('');
+        // 투표 버튼 카운트 동기화
+        const hdr = list.previousElementSibling;
+        if (hdr) hdr.querySelector?.('.sub-count-label') && (hdr.querySelector('.sub-count-label').textContent = `제출된 문장 ${freshSubs.length}개`);
+      }, () => { if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; } });
+  }
 }
 
 function renderSubCard(s, isClosed, mySubId, maxVotes) {

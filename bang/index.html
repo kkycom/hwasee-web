@@ -280,9 +280,8 @@
   .prose-opening {
     font-family: var(--serif); font-size: 16px; line-height: 1.75;
     color: #2c1a0e;
-    margin-bottom: 20px; padding-bottom: 18px; border-bottom: 1px solid #cfc0a0;
   }
-  .prose-line { margin-bottom: 20px; }
+  .prose-line { margin-top: 28px; }
   .prose-sentence { font-family: var(--serif); font-size: 16px; line-height: 1.75; display: block; color: #2c1a0e; }
   .prose-author { font-size: 11px; color: #9a7060; display: none; text-align: right; margin-top: 4px; }
   .prose-author.visible { display: block; }
@@ -1620,12 +1619,8 @@ async function doLogin() {
   const res = await api('login', { nickname, password });
   if (!res.ok) { toast(res.error, true); return; }
   saveUser(res);
-  if (res.daily_bonus && res.adoption_count > 0) {
-    toast(`반갑습니다, ${res.nickname}님! 보너스 +${res.daily_bonus}p · 채택된 글 ${res.adoption_count}개 — 프로필에서 확인해보세요`);
-  } else if (res.daily_bonus) {
+  if (res.daily_bonus) {
     toast(`반갑습니다, ${res.nickname}님! 오늘의 보너스 +${res.daily_bonus}p`);
-  } else if (res.adoption_count > 0) {
-    toast(`반갑습니다, ${res.nickname}님! 채택된 글 ${res.adoption_count}개가 있어요 — 프로필에서 확인해보세요`);
   } else {
     toast(`반갑습니다, ${res.nickname}님!`);
   }
@@ -1772,6 +1767,21 @@ async function profile() {
           <div style="font-size:26px;font-weight:800;color:var(--accent)">${u.total_points}</div>
           <div style="font-size:12px;color:var(--muted)">포인트</div>
         </div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:12px">✦ 등급 기준</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px">
+        ${[
+          ['seed','씨앗','0p~'],['seed1','금간 씨앗','20p~'],
+          ['seed2','발아하는 씨앗','60p~'],['sprout','새싹','150p~'],
+          ['sprout1','무성한 새싹','350p~'],['leaf','잎','700p~'],
+          ['leaf1','넓은 잎','1,200p~'],
+        ].map(([badge,label,pts]) => `
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="badge badge-${badge}" style="font-size:9px;padding:1px 5px">${label}</span>
+            <span style="font-size:11px;color:var(--muted)">${pts}</span>
+          </div>`).join('')}
       </div>
     </div>
     <div class="tabs" style="margin-bottom:20px">

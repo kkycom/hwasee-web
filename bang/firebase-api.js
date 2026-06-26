@@ -721,9 +721,10 @@ async function _fbCreateNotifications(user_ids, story_id, message) {
 async function fbGetNotifications(user_id) {
   if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
   const snap = await db.collection('notifications')
-    .where('user_id', '==', user_id)
-    .orderBy('created_at', 'desc').limit(30).get();
-  const notifications = snap.docs.map(d => d.data());
+    .where('user_id', '==', user_id).get();
+  const notifications = snap.docs.map(d => d.data())
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+    .slice(0, 30);
   const unread_count  = notifications.filter(n => n.is_read === false || n.is_read === 'false').length;
   return { ok: true, notifications, unread_count };
 }

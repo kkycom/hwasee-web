@@ -987,7 +987,7 @@ async function story() {
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             ${Number(openEp.step) >= 2
               ? `<button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">이야기를 열어두고 제출</button>
-                 <button class="btn btn-sm" style="background:var(--accent2);color:#0d0d0d;border:none;font-weight:700" onclick="submitSubInStory('${esc(openEp.episode_id)}', true)">이야기를 끝맺고 제출</button>`
+                 <button class="btn btn-sm" style="background:var(--accent2);color:#fff;border:none;font-weight:700" onclick="submitSubInStory('${esc(openEp.episode_id)}', true)">이야기를 끝맺고 제출</button>`
               : `<button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">제출</button>`}
           </div>
         </div>` : ''}

@@ -1,25 +1,23 @@
-<svg width="480" height="600" xmlns="http://www.w3.org/2000/svg">
-  <!-- stamp card — fills whole canvas -->
-  <rect width="480" height="600" rx="28" ry="28"
+<svg width="480" height="580" xmlns="http://www.w3.org/2000/svg">
+  <rect width="480" height="580" rx="28" ry="28"
         fill="#1c2320" stroke="#283029" stroke-width="1.5"/>
 
   <!--
-    화씨: x=110, textLength=260 → 오른쪽 끝 x=370 (씨의 ㅣ 오른쪽 끝)
-    .방: text-anchor=end, x=382 → 방의 ㅣ 오른쪽 끝=370과 일치, ㅏ 가로획은 370~382 삐져나옴
-    tagline: x=110, textLength=260 → 화씨와 가로폭 정확히 일치
+    textLength 제거 → 글자 자연 비율 유지
+    화씨: font-size=150, text-anchor=end, x=390 → 화씨 자연폭 ≈300px, 왼쪽 끝 ≈90
+    .방: text-anchor=end, x=408 → 방의 ㅣ=390과 일치, ㅏ 가로획이 390~408 삐져나옴
+    tagline: font-size=20, text-anchor=middle, x=240 → 자연폭 ≈300px, 화씨와 가로폭 근사
   -->
 
-  <text x="110" y="252"
+  <text text-anchor="end" x="390" y="245"
         font-family="Georgia, 'Gowun Batang', serif"
-        font-size="120" font-weight="400" fill="#e4ebe6"
-        textLength="260" lengthAdjust="spacingAndGlyphs">화씨</text>
+        font-size="150" font-weight="400" fill="#e4ebe6">화씨</text>
 
-  <text text-anchor="end" x="382" y="378"
+  <text text-anchor="end" x="408" y="395"
         font-family="Georgia, 'Gowun Batang', serif"
-        font-size="120" font-weight="400" fill="#e4ebe6">.방</text>
+        font-size="150" font-weight="400" fill="#e4ebe6">.방</text>
 
-  <text x="110" y="438"
+  <text text-anchor="middle" x="240" y="465"
         font-family="'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif"
-        font-size="17" fill="#6b7d6e"
-        textLength="260" lengthAdjust="spacingAndGlyphs">한 문장씩 이어가는 이야기 공간</text>
+        font-size="20" fill="#6b7d6e">한 문장씩 이어가는 이야기 공간</text>
 </svg>

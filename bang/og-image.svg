@@ -1,0 +1,24 @@
+<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+  <!-- background -->
+  <rect width="1200" height="630" fill="#0d0f0e"/>
+
+  <!-- center card -->
+  <rect x="350" y="140" width="500" height="350" rx="28" ry="28"
+        fill="#1c2320" stroke="#283029" stroke-width="1.5"/>
+
+  <!-- 화씨. 방  — right-anchored to same x, creates ㄱ shape -->
+  <text x="770" y="305"
+        font-family="Georgia, 'Gowun Batang', serif"
+        font-size="96" font-weight="400"
+        fill="#e4ebe6" text-anchor="end" dominant-baseline="auto">화씨.</text>
+
+  <text x="770" y="415"
+        font-family="Georgia, 'Gowun Batang', serif"
+        font-size="96" font-weight="400"
+        fill="#68a882" text-anchor="end" dominant-baseline="auto">방</text>
+
+  <!-- tagline -->
+  <text x="600" y="538"
+        font-family="'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif"
+        font-size="22" fill="#6b7d6e" text-anchor="middle">한 문장씩 이어가는 이야기</text>
+</svg>

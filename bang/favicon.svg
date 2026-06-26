@@ -1,0 +1,6 @@
+<svg width="64" height="64" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="64" rx="10" fill="#1c2320"/>
+  <!-- 화씨 at x=6, .방 at x=28 → 씨/방 같은 열 -->
+  <text x="6"  y="32" font-family="Georgia, serif" font-size="22" fill="#e4ebe6">화씨</text>
+  <text x="28" y="54" font-family="Georgia, serif" font-size="22" fill="#e4ebe6">.방</text>
+</svg>

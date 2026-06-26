@@ -1228,6 +1228,7 @@ function lbBodyHtml(limit) {
           <span class="lb-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</span>
           <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;flex-shrink:0">${badgeLabel(r.badge||'seed')}</span>
           <span class="lb-name">${esc(r.nickname)}</span>
+          <span class="lb-value">${r.value||0}p</span>
         </div>`).join('')
     : emptyHtml;
 

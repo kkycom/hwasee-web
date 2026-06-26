@@ -15,7 +15,7 @@ firebase.initializeApp(FB_CONFIG);
 const db = firebase.firestore();
 
 const FB_ADMIN_ID        = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
-const FB_VOTE_THRESHOLD  = 3;
+var FB_VOTE_THRESHOLD  = 3;
 const FB_PENDING_MINUTES = 15;
 
 // ─── 유틸 ────────────────────────────────────────────────

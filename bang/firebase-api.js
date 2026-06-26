@@ -440,13 +440,21 @@ async function _fbCheckPendingEpisodes(story_id) {
 }
 
 async function _fbCloseEpisode(episode_id, ep) {
+  const epRef = db.collection('episodes').doc(episode_id);
+  // 트랜잭션으로 pending 상태일 때만 closed로 변경 — 동시 호출 시 중복 처리 방지
+  const alreadyClosed = await db.runTransaction(async tx => {
+    const snap = await tx.get(epRef);
+    if (!snap.exists || snap.data().status !== 'pending') return true;
+    tx.update(epRef, { status: 'closed', closed_at: fbNow() });
+    return false;
+  });
+  if (alreadyClosed) return;
+
   if (!ep) {
-    const snap = await db.collection('episodes').doc(episode_id).get();
+    const snap = await epRef.get();
     if (!snap.exists) return;
     ep = snap.data();
   }
-
-  await db.collection('episodes').doc(episode_id).update({ status: 'closed', closed_at: fbNow() });
 
   const subsSnap = await db.collection('submissions').where('episode_id', '==', episode_id).get();
   if (subsSnap.empty) return;

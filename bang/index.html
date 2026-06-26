@@ -1243,12 +1243,12 @@ function lbBodyHtml(limit) {
         </div>`).join('')
     : emptyHtml;
 
-  return `<div style="display:flex;justify-content:center">
-    <div style="flex:1;max-width:190px;padding:0 14px;border-right:1px solid var(--border)">
+  return `<div style="display:flex;max-width:420px;margin:0 auto">
+    <div style="flex:1;padding:0 14px;border-right:1px solid var(--border)">
       <div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:10px;text-align:center">포인트 랭킹</div>
       ${pointHtml}
     </div>
-    <div style="flex:1;max-width:220px;padding:0 14px">
+    <div style="flex:1;padding:0 14px">
       <div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:10px;text-align:center">채택 랭킹</div>
       ${adoptHtml}
     </div>

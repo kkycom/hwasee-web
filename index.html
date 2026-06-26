@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>화씨 (Hwasee)</title>
+<meta name="description" content="모든 상상이 작품이 되는 곳, 화씨">
 <meta name="google-adsense-account" content="ca-pub-7828331174769963">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
@@ -29,20 +30,41 @@
   .tagline {
     font-size: 12px; color: #4a5a4d; letter-spacing: .05em;
   }
-  .products { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 360px; }
+
+  /* ── 제품 카드 */
+  .products { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 400px; }
+
   .product-card {
-    display: block; background: #1c2320; border: 1px solid #283029;
-    border-radius: 12px; padding: 20px 24px; text-decoration: none; color: #e4ebe6;
+    display: flex; align-items: center; gap: 20px;
+    background: #1c2320; border: 1px solid #283029;
+    border-radius: 14px; padding: 20px 24px; text-decoration: none; color: #e4ebe6;
     transition: border-color .15s, background .15s;
   }
   .product-card:hover { border-color: #68a882; background: #1e2922; }
-  .product-name { font-family: 'Gowun Batang', Georgia, serif; font-size: 22px; font-weight: 700; margin-bottom: 6px; }
-  .product-desc { font-size: 13px; color: #6b7d6e; line-height: 1.6; }
+
+  /* 비활성 카드 */
+  .product-card.inactive {
+    opacity: 0.35; pointer-events: none; cursor: default;
+  }
+
+  /* 좌측 로고 블록 — ㄱ 자 배치 */
+  .product-logo {
+    font-family: 'Gowun Batang', Georgia, serif;
+    font-size: 26px; font-weight: 400; line-height: 1.15;
+    flex-shrink: 0; min-width: 72px;
+  }
+  .logo-line2 { padding-left: 1em; } /* 씨 열에 . 맞춤 */
+
+  /* 우측 설명 */
+  .product-info { flex: 1; }
+  .product-desc { font-size: 13px; color: #6b7d6e; line-height: 1.65; }
+
   .product-tag {
     display: inline-block; font-size: 10px; font-weight: 700;
-    background: #172a1c; color: #4ade80; border: 1px solid #16a34a;
-    padding: 2px 8px; border-radius: 20px; margin-bottom: 8px;
+    background: #1a1a0a; color: #c8a96e; border: 1px solid rgba(200,169,110,.3);
+    padding: 2px 8px; border-radius: 20px; margin-bottom: 6px;
   }
+
   footer { margin-top: 64px; font-size: 12px; color: #3a4a3d; text-align: center; }
   footer a { color: #3a4a3d; text-decoration: none; }
   footer a:hover { color: #6b7d6e; }
@@ -56,11 +78,39 @@
   </div>
 
   <div class="products">
+
     <a class="product-card" href="/bang">
-      <div class="product-tag">서비스 중</div>
-      <div class="product-name">화씨.방</div>
-      <div class="product-desc">함께 써내려가는 이야기 플랫폼.<br>한 문장씩, 이야기를 완성합니다.</div>
+      <div class="product-logo">
+        <div class="logo-line1">화씨</div>
+        <div class="logo-line2">.방</div>
+      </div>
+      <div class="product-info">
+        <div class="product-desc">함께 써내려가는 이야기 공간.<br>한 문장씩, 이야기를 완성합니다.</div>
+      </div>
     </a>
+
+    <div class="product-card inactive">
+      <div class="product-logo">
+        <div class="logo-line1">화씨</div>
+        <div class="logo-line2">.네</div>
+      </div>
+      <div class="product-info">
+        <div class="product-tag">준비 중</div>
+        <div class="product-desc">곧 찾아옵니다.</div>
+      </div>
+    </div>
+
+    <div class="product-card inactive">
+      <div class="product-logo">
+        <div class="logo-line1">화씨</div>
+        <div class="logo-line2">.원</div>
+      </div>
+      <div class="product-info">
+        <div class="product-tag">준비 중</div>
+        <div class="product-desc">곧 찾아옵니다.</div>
+      </div>
+    </div>
+
   </div>
 
   <footer>

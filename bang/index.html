@@ -6,6 +6,9 @@
 <title>화씨.방</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="firebase-api.js"></script>
 <style>
   :root {
     --bg:      #0d0f0e;
@@ -325,33 +328,19 @@
 // ═══════════════════════════════════════════════════════════
 //  설정
 // ═══════════════════════════════════════════════════════════
-const API_URL = typeof google !== 'undefined'
-  ? ''
-  : 'https://script.google.com/macros/s/AKfycbyNSzviSXXkpzlycRycQst2mQhXxulBElE65m4SxgCPW7pIn0x7B_XtFFZfvCzEZ0w/exec';
-
-// ─── API ──────────────────────────────────────────────────
+// ─── API (Firebase) ───────────────────────────────────────
 
 async function api(action, params = {}) {
-  const token = localStorage.getItem('hwasee_token');
-  const body  = JSON.stringify({ action, token, ...params });
-  let result;
-  if (typeof google !== 'undefined') {
-    result = await new Promise((res, rej) => {
-      google.script.run
-        .withSuccessHandler(raw => res(JSON.parse(raw)))
-        .withFailureHandler(e  => rej(new Error(e.message)))
-        .handleRequest(body);
-    });
-  } else {
-    const r = await fetch(API_URL, { method: 'POST', body });
-    result = await r.json();
+  try {
+    const result = await firebaseApi(action, params);
+    if (!result.ok && result.error === '로그인이 필요합니다.' && localStorage.getItem('hwasee_token')) {
+      logout();
+      toast('세션이 만료됐습니다. 다시 로그인해주세요.', true);
+    }
+    return result;
+  } catch(e) {
+    return { ok: false, error: e.message };
   }
-  // 세션 만료 시 자동 로그아웃
-  if (!result.ok && result.error === '로그인이 필요합니다.' && token) {
-    logout();
-    toast('세션이 만료됐습니다. 다시 로그인해주세요.', true);
-  }
-  return result;
 }
 
 // ─── 캐시 유틸 ────────────────────────────────────────────
@@ -465,9 +454,11 @@ function saveUser(u) {
   if (u) {
     localStorage.setItem('hwasee_token', u.token);
     localStorage.setItem('hwasee_user', JSON.stringify(u));
+    if (u.user_id) localStorage.setItem('hwasee_uid', u.user_id);
   } else {
     localStorage.removeItem('hwasee_token');
     localStorage.removeItem('hwasee_user');
+    localStorage.removeItem('hwasee_uid');
   }
   renderNav();
 }

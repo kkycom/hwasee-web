@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 개발 중 테스트 모드 — 추후 강화 예정
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,24 +1,28 @@
-<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+<svg width="630" height="630" xmlns="http://www.w3.org/2000/svg">
   <!-- background -->
-  <rect width="1200" height="630" fill="#0d0f0e"/>
+  <rect width="630" height="630" fill="#0d0f0e"/>
 
-  <!-- center card -->
-  <rect x="350" y="140" width="500" height="350" rx="28" ry="28"
+  <!-- card -->
+  <rect x="55" y="80" width="520" height="470" rx="24" ry="24"
         fill="#1c2320" stroke="#283029" stroke-width="1.5"/>
 
-  <!-- 화씨. 방  — right-anchored to same x, creates ㄱ shape -->
-  <text x="770" y="305"
+  <!--
+    화씨. → starts at x=175
+    방    → starts at x=175+104 (씨와 같은 열, 화 한 글자 너비만큼 들여쓰기)
+    두 줄 모두 흰색
+  -->
+  <text x="175" y="295"
         font-family="Georgia, 'Gowun Batang', serif"
-        font-size="96" font-weight="400"
-        fill="#e4ebe6" text-anchor="end" dominant-baseline="auto">화씨.</text>
+        font-size="104" font-weight="400"
+        fill="#e4ebe6">화씨.</text>
 
-  <text x="770" y="415"
+  <text x="279" y="407"
         font-family="Georgia, 'Gowun Batang', serif"
-        font-size="96" font-weight="400"
-        fill="#68a882" text-anchor="end" dominant-baseline="auto">방</text>
+        font-size="104" font-weight="400"
+        fill="#e4ebe6">방</text>
 
   <!-- tagline -->
-  <text x="600" y="538"
+  <text x="315" y="490"
         font-family="'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif"
-        font-size="22" fill="#6b7d6e" text-anchor="middle">한 문장씩 이어가는 이야기</text>
+        font-size="19" fill="#6b7d6e" text-anchor="middle">한 문장씩 이어가는 이야기 공간</text>
 </svg>

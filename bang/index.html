@@ -1148,7 +1148,7 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set()) {
       <div class="vote-content">${esc(sub.content)}</div>
       <div class="vote-meta">
         <span>✍ ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeLabel(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
-        <span class="vote-count">▲ ${voteCount}/2표</span>
+        <span class="vote-count">▲ ${voteCount}/3표</span>
         ${iVoted ? '<span style="font-size:11px;color:var(--accent);font-weight:700">✓ 내가 투표함</span>' : ''}
         ${sub.sub_id === mySubId ? '<span class="tag">내 제출</span>' : ''}
         ${sub.derived_from ? '<span class="tag">손본 글</span>' : ''}
@@ -1552,7 +1552,7 @@ function renderSubCard(s, isClosed, mySubId, maxVotes) {
       <div class="vote-content">${esc(s.content)}</div>
       <div class="vote-meta">
         <span>✍ ${esc(s.author_id.slice(0,6))}...</span>
-        <span class="vote-count">▲ ${sVoteCount}/2표</span>
+        <span class="vote-count">▲ ${sVoteCount}/3표</span>
         ${s.sub_id === mySubId ? '<span class="tag">내 제출</span>' : ''}
       </div>
       <div class="vote-bar"><div class="vote-fill" style="width:${barPct}%"></div></div>

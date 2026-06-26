@@ -475,7 +475,9 @@ async function _fbCloseEpisode(episode_id, ep) {
     const ids = await _fbGetStoryParticipants(ep.story_id);
     await _fbCreateNotifications(ids, ep.story_id, `"${snippet}" 이야기가 완결됐어요!`);
   } else {
-    await storySnap.ref.update({ current_step: nextStep });
+    const storyUpdate = { current_step: nextStep };
+    if (winners.length > 1) storyUpdate.has_branch = true;
+    await storySnap.ref.update(storyUpdate);
     const epBatch = db.batch();
     for (const w of winners) {
       const newEpId = fbGenId();

@@ -293,11 +293,11 @@
   }
   .prose-divider::before, .prose-divider::after { content:''; flex:1; height:1px; background:#cfc0a0; }
   .prose-author-toggle {
-    font-size: 11px; color: #9a7060; background: none; border: none; cursor: pointer;
-    padding: 2px 6px; border-radius: 4px; float: right; margin-bottom: 8px;
-    opacity: .7; transition: opacity .15s;
+    font-size: 11px; color: var(--muted); background: none; border: 1px solid var(--border);
+    cursor: pointer; padding: 3px 10px; border-radius: 12px;
+    opacity: .8; transition: opacity .15s, border-color .15s;
   }
-  .prose-author-toggle:hover { opacity: 1; }
+  .prose-author-toggle:hover { opacity: 1; border-color: var(--accent); color: var(--text); }
 
   /* ── 탭 */
   .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
@@ -996,8 +996,10 @@ async function story() {
       ${isAdmin() && s.status === 'active' ? `
         <button class="admin-btn admin-delete" style="margin-left:auto" onclick="adminCloseStory('${esc(s.story_id)}')">✕ 이야기 종료</button>` : ''}
     </div>
-    <div class="story-prose">
-      <button class="prose-author-toggle" onclick="toggleProseAuthors(this)">글쓴이 보기 ▾</button>
+    <div style="text-align:right;margin-bottom:6px">
+      <button class="prose-author-toggle" id="prose-author-btn" onclick="toggleProseAuthors(this)">글쓴이 보기 ▾</button>
+    </div>
+    <div class="story-prose" id="story-prose-wrap">
       <div class="prose-opening">${esc(s.opening)}</div>
       ${confirmedHtml || ''}
     </div>
@@ -1925,7 +1927,7 @@ function renderEpisodeTreeHtml(node, choices) {
 }
 
 function toggleProseAuthors(btn) {
-  const prose = btn.closest('.story-prose');
+  const prose = document.getElementById('story-prose-wrap');
   if (!prose) return;
   const showing = btn.dataset.showing === '1';
   prose.querySelectorAll('.prose-author').forEach(el => el.classList.toggle('visible', !showing));

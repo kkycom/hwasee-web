@@ -351,7 +351,7 @@ async function fbGetMyStories(user_id) {
   const openEpMap = {};
   allEpsSnap.docs.forEach(d => {
     const e = d.data();
-    if (e.status === 'open' || e.status === 'pending') openEpMap[e.story_id] = e.episode_id;
+    if (e.status === 'open') openEpMap[e.story_id] = e.episode_id;
   });
 
   const myVotedEpIds  = new Set(myVotesSnap.docs.map(d => d.data().episode_id));

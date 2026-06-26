@@ -82,8 +82,14 @@
   .btn-sm { padding: 5px 12px; font-size: 13px; }
   .btn-nav { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px 8px; font-size: 13px; font-weight: 500; border-radius: 6px; }
   .btn-nav:hover { color: var(--text); background: var(--surface); }
-  .new-tag   { display:inline-block; background:#1a1a08; color:#facc15; font-size:10px; font-weight:700; padding:1px 5px; border-radius:8px; letter-spacing:.3px; margin-left:4px; vertical-align:middle; }
-  .boost-tag { display:inline-block; background:#1a0f1e; color:#c084fc; font-size:10px; font-weight:700; padding:1px 5px; border-radius:8px; letter-spacing:.3px; margin-left:4px; vertical-align:middle; }
+  .story-card-wrap { position:relative; margin-bottom:12px; }
+  .story-card-wrap.has-tabs { margin-top:20px; }
+  .story-card-wrap > .story-card { margin-bottom:0; }
+  .card-tab-row { position:absolute; bottom:100%; left:0; display:flex; gap:4px; }
+  .card-tab { padding:4px 12px; font-size:10px; font-weight:700; letter-spacing:.04em; border-radius:6px 6px 0 0; border:1px solid transparent; border-bottom:none; }
+  .card-tab-new    { background:#2a1e08; color:#c8a96e; border-color:rgba(200,169,110,.35); }
+  .card-tab-branch { background:#0c1f15; color:#68a882; border-color:rgba(104,168,130,.35); }
+  .card-tab-boost  { background:#1a0f1e; color:#c084fc; border-color:rgba(192,132,252,.35); }
   .sort-btn { background:var(--surface); border:none; color:var(--muted); padding:5px 12px; border-radius:16px; font-size:12px; font-weight:600; cursor:pointer; transition:.15s; }
   .sort-btn.active { background:var(--accent); color:#fff; }
 
@@ -145,7 +151,7 @@
   /* ── 홈 스토리 카드 */
   .story-card {
     background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 18px 20px; margin-bottom: 12px; cursor: pointer; transition: .15s;
+    padding: 18px 20px; margin-bottom: 12px; cursor: pointer; transition: .15s; position: relative;
   }
   .story-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(124,106,255,.12); }
   .story-card-pending { border-color: rgba(255,170,0,.3); box-shadow: 0 0 0 1px rgba(255,170,0,.1); }
@@ -788,16 +794,20 @@ async function startSeedStory() {
 function popularCardHtml(s) {
   const step  = Number(s.current_step) || 0;
   const count = Number(s.activity_count || s.participant_count) || 0;
+  const tabs = [];
+  if (s.is_boosted) tabs.push('<span class="card-tab card-tab-boost">주목</span>');
+  if (s.has_branch) tabs.push('<span class="card-tab card-tab-branch">⑂ 분기</span>');
+  const tabRow = tabs.length ? `<div class="card-tab-row">${tabs.join('')}</div>` : '';
   return `
-    <div class="story-card${s.has_pending ? ' story-card-pending' : ''}" onclick="nav('story','${esc(s.story_id)}')">
-      <div class="story-card-title">
-        ${esc(s.opening)}
-        ${s.is_boosted ? '<span class="boost-tag">주목</span>' : ''}
-      </div>
-      <div class="story-card-footer">
-        <span class="step-pill"><span class="step-dot"></span>${step}단계 · 참여자 ${count}명</span>
-        ${s.has_pending ? `<span class="pending-tag">⏳ 곧 채택 예정</span>` : ''}
-        <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
+    <div class="story-card-wrap${tabs.length ? ' has-tabs' : ''}">
+      ${tabRow}
+      <div class="story-card${s.has_pending ? ' story-card-pending' : ''}" onclick="nav('story','${esc(s.story_id)}')">
+        <div class="story-card-title">${esc(s.opening)}</div>
+        <div class="story-card-footer">
+          <span class="step-pill"><span class="step-dot"></span>${step}단계 · 참여자 ${count}명</span>
+          ${s.has_pending ? `<span class="pending-tag">⏳ 곧 채택 예정</span>` : ''}
+          <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
+        </div>
       </div>
     </div>`;
 }
@@ -828,12 +838,15 @@ function myStoryCardHtml(s, snapshot) {
   );
   const hasVoted    = s.has_voted_current === true;
   const canVoteNow  = s.has_voted_current === false; // false = 진행 중이나 아직 미투표
+  const tabs = [];
+  if (isNew) tabs.push('<span class="card-tab card-tab-new">NEW</span>');
+  if (s.has_branch) tabs.push('<span class="card-tab card-tab-branch">⑂ 분기</span>');
+  const tabRow = tabs.length ? `<div class="card-tab-row">${tabs.join('')}</div>` : '';
   return `
-    <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
-      <div class="story-card-title">
-        ${esc(s.opening)}
-        ${isNew ? '<span class="new-tag">NEW</span>' : ''}
-      </div>
+    <div class="story-card-wrap${tabs.length ? ' has-tabs' : ''}">
+      ${tabRow}
+      <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
+      <div class="story-card-title">${esc(s.opening)}</div>
       ${mySubs.length ? `
         <div style="margin-bottom:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">
           ${mySubs.map(sub => `
@@ -849,6 +862,7 @@ function myStoryCardHtml(s, snapshot) {
           : canVoteNow ? `<span style="font-size:11px;color:var(--accent2);font-weight:700">▲ 투표가능</span>` : ''}
         ${s.has_pending ? `<span class="pending-tag pending-countdown" data-expires="${s.pending_expires_at||''}">⏳ 곧 채택 예정</span>` : ''}
         <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
+      </div>
       </div>
     </div>`;
 }

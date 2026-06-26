@@ -820,7 +820,7 @@ function popularCardHtml(s) {
       <div class="story-card${s.has_pending ? ' story-card-pending' : ''}" onclick="nav('story','${esc(s.story_id)}')">
         <div class="story-card-title">${esc(s.opening)}</div>
         <div class="story-card-footer">
-          <span class="step-pill"><span class="step-dot"></span>${step}단계 · 참여자 ${count}명</span>
+          <span class="step-pill"><span class="step-dot"></span>${step+1}단계 · 참여자 ${count}명</span>
           ${s.has_pending ? `<span class="pending-tag">⏳ 곧 채택 예정</span>` : ''}
           <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
         </div>
@@ -2377,9 +2377,14 @@ function _startCountdowns() {
   }, 1000);
 }
 
-window.onload = () => {
+window.onload = async () => {
   loadUser();
   renderNav();
+  if (user) {
+    const token = localStorage.getItem('hwasee_token');
+    const session = await fbGetSession(token);
+    if (!session) saveUser(null);
+  }
   parseHash();
   render();
   _startCountdowns();

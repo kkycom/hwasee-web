@@ -57,7 +57,7 @@ async function fbGetSession(token) {
     const u = snap.data();
     if (u.token !== token) return null;
     if (new Date(u.token_exp) < new Date()) return null;
-    return { user_id: uid, nickname: u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed' };
+    return { user_id: uid, nickname: u.nickname, display_name: u.display_name || u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed' };
   } catch(e) { return null; }
 }
 
@@ -103,25 +103,32 @@ async function _fbSpendPoints(user_id, pts, reason) {
 
 // ─── 인증 ────────────────────────────────────────────────
 
-async function fbRegister(nickname, password, name) {
-  if (!nickname || !password) return { ok: false, error: '닉네임과 비밀번호를 입력해주세요.' };
-  if (nickname.length < 2 || nickname.length > 12) return { ok: false, error: '닉네임은 2~12자입니다.' };
-  if (password.length < 4) return { ok: false, error: '비밀번호는 4자 이상입니다.' };
+async function fbRegister(nickname, password, name, display_name) {
+  if (!nickname || !password) return { ok: false, error: '아이디와 비밀번호를 입력해주세요.' };
+  if (!/^[가-힣a-zA-Z0-9]{2,12}$/.test(nickname)) return { ok: false, error: '아이디는 2~12자, 한글·영문·숫자만 사용할 수 있어요.' };
+  if (password.length < 8) return { ok: false, error: '비밀번호는 8자 이상입니다.' };
 
-  const dup = await db.collection('users').where('nickname', '==', nickname).limit(1).get();
-  if (!dup.empty) return { ok: false, error: '이미 사용 중인 닉네임입니다.' };
+  const dn = (display_name || '').trim() || nickname;
+  if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(dn)) return { ok: false, error: '닉네임은 2~12자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
+
+  const [dupId, dupDn] = await Promise.all([
+    db.collection('users').where('nickname', '==', nickname).limit(1).get(),
+    db.collection('users').where('display_name', '==', dn).limit(1).get(),
+  ]);
+  if (!dupId.empty) return { ok: false, error: '이미 사용 중인 아이디입니다.' };
+  if (!dupDn.empty) return { ok: false, error: '이미 사용 중인 닉네임입니다.' };
 
   const user_id   = fbGenId();
   const token     = fbGenId();
   const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   await db.collection('users').doc(user_id).set({
-    user_id, nickname, pw_hash: await fbHashPw(password), token, token_exp,
+    user_id, nickname, display_name: dn, pw_hash: await fbHashPw(password), token, token_exp,
     total_points: 0, badge: 'seed', name: (name || '').trim(), created_at: fbNow()
   });
 
   localStorage.setItem('hwasee_uid', user_id);
-  return { ok: true, token, user_id, nickname, total_points: 0, badge: 'seed', is_admin: user_id === FB_ADMIN_ID };
+  return { ok: true, token, user_id, nickname, display_name: dn, total_points: 0, badge: 'seed', is_admin: user_id === FB_ADMIN_ID };
 }
 
 async function fbLogin(nickname, password) {
@@ -143,8 +150,12 @@ async function fbLogin(nickname, password) {
   const adoptSnap = await db.collection('submissions')
     .where('author_id', '==', u.user_id).where('is_adopted', '==', true).get();
 
+  // 기존 유저 display_name 자동 마이그레이션
+  if (!u.display_name) await doc.ref.update({ display_name: u.nickname });
+
   return {
     ok: true, token, user_id: u.user_id, nickname: u.nickname,
+    display_name: u.display_name || u.nickname,
     total_points: u.total_points || 0, badge: u.badge || 'seed',
     is_admin: u.user_id === FB_ADMIN_ID, daily_bonus, adoption_count: adoptSnap.size
   };
@@ -278,7 +289,7 @@ async function fbGetStory(story_id, user_id) {
   if (!storySnap.exists) return { ok: false, error: '스토리를 찾을 수 없습니다.' };
 
   const nickMap = {}, badgeMap = {};
-  usersSnap.docs.forEach(d => { nickMap[d.id] = d.data().nickname; badgeMap[d.id] = d.data().badge; });
+  usersSnap.docs.forEach(d => { nickMap[d.id] = d.data().display_name || d.data().nickname; badgeMap[d.id] = d.data().badge; });
 
   const story       = storySnap.data();
   const episodes    = episodesSnap.docs.map(d => d.data());
@@ -550,9 +561,13 @@ async function fbCreateSubmission(episode_id, content, author_id, derived_from, 
 
   const sub_id    = fbGenId();
   const is_closing = closing === true && Number(ep.step) >= 6;
+  const uDoc = await db.collection('users').doc(author_id).get();
+  const uData = uDoc.exists ? uDoc.data() : {};
   await db.collection('submissions').doc(sub_id).set({
     sub_id, episode_id, story_id: ep.story_id, content: text,
-    author_id, derived_from: derived_from || '', vote_count: 0,
+    author_id, author_nickname: uData.display_name || uData.nickname || '익명',
+    author_badge: uData.badge || 'seed',
+    derived_from: derived_from || '', vote_count: 0,
     is_adopted: false, created_at: fbNow(), is_closing
   });
   await _fbAddPoints(author_id, 5, 'submit', sub_id);
@@ -776,7 +791,7 @@ async function fbGetComments(sub_id) {
   const snap   = await db.collection('comments').where('sub_id','==',sub_id).orderBy('created_at').get();
   const uSnap  = await db.collection('users').get();
   const nickMap = {};
-  uSnap.docs.forEach(d => { nickMap[d.id] = d.data().nickname; });
+  uSnap.docs.forEach(d => { nickMap[d.id] = d.data().display_name || d.data().nickname; });
   const comments = snap.docs.map(d => ({ ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }));
   return { ok: true, comments };
 }
@@ -799,7 +814,7 @@ async function fbGetStoryComments(story_id) {
     .where('story_id','==',story_id).where('sub_id','==','').orderBy('created_at').get();
   const uSnap  = await db.collection('users').get();
   const nickMap = {};
-  uSnap.docs.forEach(d => { nickMap[d.id] = d.data().nickname; });
+  uSnap.docs.forEach(d => { nickMap[d.id] = d.data().display_name || d.data().nickname; });
   const comments = snap.docs.map(d => ({ ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }));
   return { ok: true, comments };
 }
@@ -829,7 +844,7 @@ async function fbGetReports(admin_id) {
     db.collection('submissions').get(),
   ]);
   const nickMap = {}, subMap = {};
-  uSnap.docs.forEach(d => { nickMap[d.id] = d.data().nickname; });
+  uSnap.docs.forEach(d => { nickMap[d.id] = d.data().display_name || d.data().nickname; });
   sSnap.docs.forEach(d => { subMap[d.id] = d.data(); });
   const label = { plagiarism:'표절', sexual:'성적 묘사', profanity:'욕설·혐오', spam:'스팸', other:'기타' };
   const reports = rSnap.docs.map(d => {
@@ -869,14 +884,14 @@ async function fbGetLeaderboard() {
     .filter(d => Number(d.data().total_points) > 0 && d.id !== FB_ADMIN_ID)
     .sort((a,b) => Number(b.data().total_points) - Number(a.data().total_points))
     .slice(0, 10)
-    .map(d => ({ nickname: d.data().nickname, badge: d.data().badge, value: Number(d.data().total_points) }));
+    .map(d => ({ nickname: d.data().display_name || d.data().nickname, badge: d.data().badge, value: Number(d.data().total_points) }));
 
   const adoptMap = {};
   sSnap.docs.filter(d => d.data().is_adopted === true && d.data().author_id !== FB_ADMIN_ID)
     .forEach(d => { adoptMap[d.data().author_id] = (adoptMap[d.data().author_id] || 0) + 1; });
   const adoptionsRank = Object.entries(adoptMap)
     .sort(([,a],[,b]) => b - a).slice(0, 10)
-    .map(([uid, cnt]) => ({ nickname: uMap[uid]?.nickname || '?', badge: uMap[uid]?.badge || 'seed', value: cnt }));
+    .map(([uid, cnt]) => ({ nickname: uMap[uid]?.display_name || uMap[uid]?.nickname || '?', badge: uMap[uid]?.badge || 'seed', value: cnt }));
 
   const partMap = {};
   sSnap.docs.filter(d => d.data().author_id !== FB_ADMIN_ID)
@@ -890,7 +905,7 @@ async function fbGetLeaderboard() {
   Object.entries(votedEps).forEach(([uid, eps]) => { partMap[uid] = (partMap[uid] || 0) + eps.size; });
   const partRank = Object.entries(partMap)
     .sort(([,a],[,b]) => b - a).slice(0, 10)
-    .map(([uid, cnt]) => ({ nickname: uMap[uid]?.nickname || '?', badge: uMap[uid]?.badge || 'seed', value: cnt }));
+    .map(([uid, cnt]) => ({ nickname: uMap[uid]?.display_name || uMap[uid]?.nickname || '?', badge: uMap[uid]?.badge || 'seed', value: cnt }));
 
   return { ok: true, points: pointsRank, adoptions: adoptionsRank, participations: partRank };
 }
@@ -1031,9 +1046,49 @@ async function fbGetProfile(user_id) {
 
   return {
     ok: true,
-    user: { user_id, nickname: u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed', created_at: u.created_at },
+    user: { user_id, nickname: u.nickname, display_name: u.display_name || u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed', created_at: u.created_at },
     history, adoptions,
   };
+}
+
+async function fbCheckDisplayName(display_name) {
+  const dn = (display_name || '').trim();
+  if (!dn) return { ok: true, available: false };
+  const snap = await db.collection('users').where('display_name', '==', dn).limit(1).get();
+  return { ok: true, available: snap.empty };
+}
+
+async function fbChangeDisplayName(user_id, new_display_name) {
+  const dn = (new_display_name || '').trim();
+  if (!dn || dn.length < 2) return { ok: false, error: '닉네임은 2자 이상이어야 합니다.' };
+  if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(dn)) return { ok: false, error: '닉네임은 2~12자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
+
+  const check = await db.collection('users').where('display_name', '==', dn).limit(1).get();
+  if (!check.empty) return { ok: false, error: '이미 사용 중인 닉네임입니다.' };
+
+  const uSnap = await db.collection('users').doc(user_id).get();
+  if (!uSnap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
+  const u = uSnap.data();
+  if ((u.total_points || 0) < 20) return { ok: false, error: '포인트가 부족합니다. 닉네임 변경에는 20p가 필요해요.' };
+
+  const old_name = u.display_name || u.nickname;
+  await db.collection('users').doc(user_id).update({
+    display_name: dn,
+    name_history: firebase.firestore.FieldValue.arrayUnion({ name: old_name, changed_at: fbNow() }),
+  });
+
+  const spendRes = await _fbSpendPoints(user_id, 20, 'nickname_change');
+  if (!spendRes.ok) return spendRes;
+
+  // 과거 제출 문장 닉네임 일괄 업데이트
+  const subsSnap = await db.collection('submissions').where('author_id', '==', user_id).get();
+  for (let i = 0; i < subsSnap.docs.length; i += 400) {
+    const batch = db.batch();
+    subsSnap.docs.slice(i, i + 400).forEach(doc => batch.update(doc.ref, { author_nickname: dn }));
+    await batch.commit();
+  }
+
+  return { ok: true, display_name: dn };
 }
 
 // ─── 어드민 ──────────────────────────────────────────────
@@ -1115,8 +1170,10 @@ async function firebaseApi(action, params = {}) {
     case 'getReports':         return fbGetReports(need().user_id);
     case 'dismissReport':      return fbDismissReport(params.report_id, need().user_id);
 
-    case 'getLeaderboard':     return fbGetLeaderboard();
-    case 'getProfile':         return fbGetProfile(need().user_id);
+    case 'getLeaderboard':       return fbGetLeaderboard();
+    case 'getProfile':           return fbGetProfile(need().user_id);
+    case 'checkDisplayName':     return fbCheckDisplayName(params.display_name);
+    case 'changeDisplayName':    return fbChangeDisplayName(need().user_id, params.display_name);
 
     case 'voteMvp':            return fbVoteMvp(params.story_id, params.nominated_user_ids, need().user_id);
     case 'getMvpVotes':        return fbGetMvpVotes(params.story_id, session?.user_id || null);

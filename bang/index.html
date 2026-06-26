@@ -1169,7 +1169,7 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set()) {
   const isAdopted   = sub.is_adopted === true || sub.is_adopted === 'TRUE';
   const iVoted      = myVotedSet.has(sub.sub_id);
   const voteCount   = Number(sub.vote_count) || 0;
-  const barPct      = Math.min(Math.round(voteCount / 2 * 100), 100);
+  const barPct      = Math.min(Math.round(voteCount / 3 * 100), 100);
   const isClickable = user && sub.sub_id !== mySubId && !isAdopted;
 
   return `
@@ -1574,7 +1574,7 @@ async function episode() {
 function renderSubCard(s, isClosed, mySubId, maxVotes) {
   const isAdopted  = s.is_adopted === true || s.is_adopted === 'TRUE';
   const sVoteCount = Number(s.vote_count) || 0;
-  const barPct     = Math.min(Math.round(sVoteCount / 2 * 100), 100);
+  const barPct     = Math.min(Math.round(sVoteCount / 3 * 100), 100);
   const isClickable = !isClosed && s.sub_id !== mySubId;
   return `
     <div class="vote-card ${isAdopted?'adopted':''}" id="sc-${s.sub_id}"

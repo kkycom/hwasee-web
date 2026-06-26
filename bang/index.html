@@ -565,8 +565,8 @@ function renderNav() {
             <div class="profile-dropdown-nick">${esc(user.nickname)}</div>
             <div class="profile-dropdown-badge"><span class="badge badge-${user.badge}" style="font-size:10px">${badgeLabel(user.badge)}</span></div>
           </div>
-          <button class="profile-dropdown-item" onclick="closeProfileMenu();nav('profile')">📊 포인트 내역</button>
-          <button class="profile-dropdown-item" onclick="closeProfileMenu();nav('profile','pw')">🔑 비밀번호 변경</button>
+          <button class="profile-dropdown-item" onclick="closeProfileMenu();nav('profile','points')">📊 포인트 내역</button>
+          <button class="profile-dropdown-item" onclick="closeProfileMenu();nav('profile','settings')">⚙️ 회원정보 수정</button>
           <div class="profile-dropdown-divider"></div>
           <button class="profile-dropdown-item danger" onclick="closeProfileMenu();logout()">↩ 로그아웃</button>
         </div>
@@ -1666,28 +1666,12 @@ async function profile() {
 
   const u         = res.user;
   const bookmarks = bmRes.ok ? bmRes.stories : [];
-
+  const tab       = currentParam === 'settings' ? 'settings' : 'points';
   const nextBadge = { seed:'금간 씨앗(20p)', seed1:'발아하는 씨앗(60p)', seed2:'새싹(150p)', sprout:'무성한 새싹(350p)', sprout1:'잎(700p)', leaf:'넓은 잎(1200p)', leaf1:'꽃봉오리(2000p)', bud:'꽃(3000p)', flower:'열매(5000p)' }[u.badge] || '';
 
-  document.getElementById('app').innerHTML = `
-    <div class="card" style="margin-bottom:24px">
-      <div style="display:flex;align-items:center;gap:16px">
-        <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800">
-          ${esc(u.nickname[0].toUpperCase())}
-        </div>
-        <div>
-          <div style="font-size:20px;font-weight:700">${esc(u.nickname)}</div>
-          <span class="badge badge-${u.badge}">${badgeLabel(u.badge)}</span>
-          ${nextBadge ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">다음: ${nextBadge}</div>` : ''}
-        </div>
-        <div style="margin-left:auto;text-align:right">
-          <div style="font-size:26px;font-weight:800;color:var(--accent)">${u.total_points}</div>
-          <div style="font-size:12px;color:var(--muted)">포인트</div>
-        </div>
-      </div>
-    </div>
+  const pointsTab = `
     ${bookmarks.length ? `
-      <h2 style="margin-bottom:12px">★ 책갈피한 이야기</h2>
+      <h2 style="margin-bottom:12px;margin-top:4px">★ 책갈피한 이야기</h2>
       ${bookmarks.map(s => `
         <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
           <div class="story-card-title">${esc(s.opening)}</div>
@@ -1696,7 +1680,7 @@ async function profile() {
             <span class="story-status ${s.status==='active'?'status-active':'status-completed'}">${s.status==='active'?'진행 중':'완결'}</span>
           </div>
         </div>`).join('')}
-      <hr style="margin:20px 0">` : ''}
+      <hr style="margin:20px 0;border-color:var(--border)">` : ''}
     ${res.adoptions && res.adoptions.length ? `
       <h2 style="margin-bottom:12px">✓ 채택된 글 <span style="font-size:14px;font-weight:400;color:var(--muted)">${res.adoptions.length}편</span></h2>
       ${res.adoptions.map(a => `
@@ -1708,8 +1692,7 @@ async function profile() {
           <div style="font-size:14px;line-height:1.6">"${esc(a.content)}"</div>
           <div style="font-size:12px;color:var(--muted);margin-top:6px">▲ ${a.vote_count}표 채택 · ${timeAgo(a.created_at)}</div>
         </div>`).join('')}
-      <hr style="margin:20px 0">` : ''}
-    <h2>포인트 내역</h2>
+      <hr style="margin:20px 0;border-color:var(--border)">` : ''}
     <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
       <button onclick="const b=this.nextElementSibling;b.style.display=b.style.display==='none'?'block':'none'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600">
         ✦ 포인트 획득 방법
@@ -1731,8 +1714,9 @@ async function profile() {
           </div>`).join('')}
       </div>
     </div>
-    ${res.history.length === 0 ? `<div class="empty">내역이 없습니다.</div>` :
-      res.history.map(h => `
+    ${res.history.length === 0
+      ? `<div class="empty">포인트 내역이 없습니다.</div>`
+      : res.history.map(h => `
         <div class="card" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
           <div>
             <div style="font-size:14px">${reasonLabel(h.reason)}</div>
@@ -1741,22 +1725,59 @@ async function profile() {
           <div style="font-size:18px;font-weight:700;color:${Number(h.points)<0?'var(--accent2)':'var(--accent)'}">
             ${Number(h.points)>=0?'+':''}${h.points}
           </div>
-        </div>`).join('')}
-    <div id="pw-section" style="margin-top:24px">
-      <h2 style="margin-bottom:12px">🔑 비밀번호 변경</h2>
-      <div class="card">
-        <div class="form-group"><label>현재 비밀번호</label><input id="pw-cur" type="password" placeholder="현재 비밀번호"></div>
-        <div class="form-group"><label>새 비밀번호 (6자 이상)</label><input id="pw-new" type="password" placeholder="새 비밀번호"></div>
-        <div class="form-group"><label>새 비밀번호 확인</label><input id="pw-new2" type="password" placeholder="새 비밀번호 재입력"></div>
-        <button class="btn btn-primary" style="width:100%" onclick="doChangePw()">변경하기</button>
-      </div>
+        </div>`).join('')}`;
+
+  const settingsTab = `
+    <div class="card" style="margin-bottom:16px">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:4px">닉네임</div>
+      <div style="font-size:18px;font-weight:700">${esc(u.nickname)}</div>
     </div>
-    <div style="margin-top:32px;display:flex;flex-direction:column;align-items:center;gap:10px">
+    <h2 style="margin-bottom:12px">비밀번호 변경</h2>
+    <div class="card" style="margin-bottom:24px">
+      <div class="form-group"><label>현재 비밀번호</label><input id="pw-cur" type="password" placeholder="현재 비밀번호"></div>
+      <div class="form-group"><label>새 비밀번호 (6자 이상)</label><input id="pw-new" type="password" placeholder="새 비밀번호"></div>
+      <div class="form-group"><label>새 비밀번호 확인</label><input id="pw-new2" type="password" placeholder="새 비밀번호 재입력"></div>
+      <button class="btn btn-primary" style="width:100%" onclick="doChangePw()">변경하기</button>
+    </div>
+    <div style="padding-top:16px;border-top:1px solid var(--border);text-align:center">
       <button class="btn btn-ghost btn-sm" onclick="doDeleteAccount()" style="color:var(--accent2);font-size:12px">회원탈퇴</button>
     </div>`;
-  if (currentParam === 'pw') {
-    setTimeout(() => document.getElementById('pw-section')?.scrollIntoView({ behavior:'smooth', block:'start' }), 100);
-  }
+
+  document.getElementById('app').innerHTML = `
+    <div class="card" style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:16px">
+        <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800">
+          ${esc(u.nickname[0].toUpperCase())}
+        </div>
+        <div>
+          <div style="font-size:20px;font-weight:700">${esc(u.nickname)}</div>
+          <span class="badge badge-${u.badge}">${badgeLabel(u.badge)}</span>
+          ${nextBadge ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">다음: ${nextBadge}</div>` : ''}
+        </div>
+        <div style="margin-left:auto;text-align:right">
+          <div style="font-size:26px;font-weight:800;color:var(--accent)">${u.total_points}</div>
+          <div style="font-size:12px;color:var(--muted)">포인트</div>
+        </div>
+      </div>
+    </div>
+    <div class="tabs" style="margin-bottom:20px">
+      <div class="tab ${tab==='points'?'active':''}" onclick="switchProfileTab('points')">📊 포인트 내역</div>
+      <div class="tab ${tab==='settings'?'active':''}" onclick="switchProfileTab('settings')">⚙️ 회원정보 수정</div>
+    </div>
+    <div id="profile-tab-content"></div>`;
+
+  window._profileData = { pointsTab, settingsTab };
+  document.getElementById('profile-tab-content').innerHTML = tab === 'settings' ? settingsTab : pointsTab;
+}
+
+function switchProfileTab(tab) {
+  if (!window._profileData) return;
+  currentParam = tab;
+  document.querySelectorAll('.tabs .tab').forEach((el, i) => {
+    el.classList.toggle('active', (i === 0 && tab === 'points') || (i === 1 && tab === 'settings'));
+  });
+  document.getElementById('profile-tab-content').innerHTML =
+    tab === 'settings' ? window._profileData.settingsTab : window._profileData.pointsTab;
 }
 
 // ─── 알림 ──────────────────────────────────────────────

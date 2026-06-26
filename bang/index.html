@@ -565,7 +565,7 @@ function render() {
 
 function renderNav() {
   const el = document.getElementById('nav-right');
-  const rankBtn = `<button class="btn-nav" onclick="openRankingModal()" title="명예의 전당" style="font-size:15px">🏆</button>`;
+  const rankBtn = `<button class="btn-nav" onclick="openRankingModal()" title="명예의 전당" style="font-size:12px">🏆</button>`;
   if (user) {
     el.innerHTML = `
       <span class="badge badge-${user.badge}" style="margin-right:2px">${badgeLabel(user.badge)}</span>
@@ -1187,7 +1187,7 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set()) {
         ${isAdopted ? '<span style="color:var(--success)">✓ 채택됨</span>' : ''}
       </div>
       <div class="vote-bar"><div class="vote-fill" style="width:${barPct}%"></div></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
         <button class="btn btn-ghost btn-sm" style="font-size:12px;padding:3px 10px"
           onclick="event.stopPropagation();toggleComments('${sub.sub_id}')">
           💬 댓글
@@ -1197,18 +1197,17 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set()) {
             onclick="event.stopPropagation();polishSub('${sub.sub_id}','${esc(sub.content).replace(/'/g,"\\'")}','${esc(sub.author_nickname||'익명')}')">
             ✏ 다듬어서 제안하기
           </button>` : ''}
+        ${user && sub.sub_id !== mySubId ? `
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px;color:var(--muted);margin-left:auto;opacity:0.7"
+            onclick="event.stopPropagation();toggleReport('${sub.sub_id}')">⚑ 신고</button>` : ''}
       </div>
       ${user && sub.sub_id !== mySubId ? `
-        <div style="margin-top:2px">
-          <button style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;padding:0;opacity:0.6"
-            onclick="event.stopPropagation();toggleReport('${sub.sub_id}')">신고</button>
-          <div id="report-${sub.sub_id}" style="display:none;margin-top:6px">
-            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">신고 사유를 선택해주세요</div>
-            <div style="display:flex;gap:4px;flex-wrap:wrap">
-              ${[['plagiarism','표절'],['sexual','성적 묘사'],['profanity','욕설·혐오'],['spam','스팸'],['other','기타']].map(([v,l])=>`
-                <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px"
-                  onclick="event.stopPropagation();submitReport('${sub.sub_id}','${v}')">${l}</button>`).join('')}
-            </div>
+        <div id="report-${sub.sub_id}" style="display:none;margin-top:6px">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">신고 사유를 선택해주세요</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            ${[['plagiarism','표절'],['sexual','성적 묘사'],['profanity','욕설·혐오'],['spam','스팸'],['other','기타']].map(([v,l])=>`
+              <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px"
+                onclick="event.stopPropagation();submitReport('${sub.sub_id}','${v}')">${l}</button>`).join('')}
           </div>
         </div>` : ''}
       ${isAdmin() ? `

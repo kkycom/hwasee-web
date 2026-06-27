@@ -242,11 +242,15 @@ async function fbGetStories(page) {
   const p = Number(page) || 1;
 
   if (p === 1) {
-    const [storiesSnap, episodesSnap, boostsSnap] = await Promise.all([
+    const [storiesSnap, episodesSnap, boostsSnap, usersSnap] = await Promise.all([
       db.collection('stories').where('status', '==', 'active').get(),
       db.collection('episodes').where('status', '==', 'open').get(),
       db.collection('boosts').where('expires_at', '>', fbNow()).get(),
+      db.collection('users').get(),
     ]);
+
+    const nickMap = {}, badgeMap = {};
+    usersSnap.docs.forEach(d => { nickMap[d.id] = d.data().display_name || d.data().nickname; badgeMap[d.id] = d.data().badge; });
 
     const openVoteMap = {};
     episodesSnap.docs.forEach(d => {
@@ -258,8 +262,10 @@ async function fbGetStories(page) {
 
     const stories = storiesSnap.docs.map(d => ({
       ...d.data(),
-      is_boosted:     boostSet.has(d.id),
-      activity_count: d.data().participant_count || 0,
+      is_boosted:       boostSet.has(d.id),
+      activity_count:   d.data().participant_count || 0,
+      creator_nickname: d.data().creator_nickname || nickMap[d.data().creator_id] || '익명',
+      creator_badge:    d.data().creator_badge    || badgeMap[d.data().creator_id] || 'seed',
     }));
 
     stories.sort((a, b) => {
@@ -404,10 +410,15 @@ async function fbGetStory(story_id, user_id) {
 async function fbCreateStory(opening, creator_id) {
   if (!opening || !opening.trim()) return { ok: false, error: '시작 문장을 입력해주세요.' };
   const story_id = fbGenId(), episode_id = fbGenId();
+  const uDoc = await db.collection('users').doc(creator_id).get();
+  const uData = uDoc.exists ? uDoc.data() : {};
+  const creator_nickname = uData.display_name || uData.nickname || '익명';
+  const creator_badge    = uData.badge || 'seed';
   const batch = db.batch();
   batch.set(db.collection('stories').doc(story_id), {
     story_id, opening: opening.trim(), max_steps: 10, current_step: 0,
-    status: 'active', creator_id, created_at: fbNow(), batch: '', participant_count: 0
+    status: 'active', creator_id, creator_nickname, creator_badge,
+    created_at: fbNow(), batch: '', participant_count: 0
   });
   batch.set(db.collection('episodes').doc(episode_id), {
     episode_id, story_id, step: 1, parent_sub_id: '',

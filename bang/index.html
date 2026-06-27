@@ -437,6 +437,37 @@
   .admin-adopt:hover  { background:#3a2a10; }
   .admin-delete { background:#2a1010; color:#e07070; }
   .admin-delete:hover { background:#3a1818; }
+
+  /* ── 온보딩 */
+  #onboarding-overlay {
+    display:none; position:fixed; inset:0; z-index:9000;
+    background:rgba(0,0,0,.72); backdrop-filter:blur(6px);
+    align-items:center; justify-content:center; padding:20px;
+  }
+  .ob-card {
+    background:var(--surface); border:1px solid var(--border); border-radius:20px;
+    width:100%; max-width:360px; padding:32px 28px 24px;
+    display:flex; flex-direction:column; gap:20px;
+    position:relative;
+  }
+  .ob-skip {
+    position:absolute; top:16px; right:16px;
+    background:none; border:none; font-size:12px; color:var(--muted);
+    cursor:pointer; padding:4px 8px; border-radius:6px;
+  }
+  .ob-skip:hover { color:var(--text); }
+  .ob-icon { font-size:36px; text-align:center; }
+  .ob-title { font-size:17px; font-weight:700; text-align:center; font-family:var(--serif); line-height:1.4; }
+  .ob-body { font-size:13px; color:var(--muted); line-height:1.8; text-align:center; }
+  .ob-body strong { color:var(--text); font-weight:600; }
+  .ob-dots { display:flex; gap:6px; justify-content:center; }
+  .ob-dot { width:6px; height:6px; border-radius:50%; background:var(--border); transition:background .2s; }
+  .ob-dot.active { background:var(--accent2); }
+  .ob-actions { display:flex; gap:8px; }
+  .ob-btn-prev { flex:0 0 auto; padding:10px 16px; background:none; border:1px solid var(--border); border-radius:10px; font-size:13px; color:var(--muted); cursor:pointer; }
+  .ob-btn-prev:hover { border-color:var(--accent); color:var(--text); }
+  .ob-btn-next { flex:1; padding:10px; background:var(--accent2); border:none; border-radius:10px; font-size:13px; font-weight:700; color:#0d0f0e; cursor:pointer; transition:opacity .15s; }
+  .ob-btn-next:hover { opacity:.85; }
 </style>
 </head>
 <body>
@@ -448,6 +479,21 @@
 
 <main id="app"><div class="loading">불러오는 중...</div></main>
 <div class="toast" id="toast"></div>
+
+<div id="onboarding-overlay">
+  <div class="ob-card">
+    <button class="ob-skip" onclick="closeOnboarding()">건너뛰기</button>
+    <div class="ob-icon" id="ob-icon"></div>
+    <div class="ob-title" id="ob-title"></div>
+    <div class="ob-body" id="ob-body"></div>
+    <div class="ob-dots">
+      <span class="ob-dot" id="ob-dot-0"></span>
+      <span class="ob-dot" id="ob-dot-1"></span>
+      <span class="ob-dot" id="ob-dot-2"></span>
+    </div>
+    <div class="ob-actions" id="ob-actions"></div>
+  </div>
+</div>
 
 <script>
 // ═══════════════════════════════════════════════════════════
@@ -1874,6 +1920,7 @@ async function doLogin() {
   toast(`반갑습니다, ${dn}님!`);
   if (res.daily_bonus) setTimeout(() => toast(`🌿 출석 점수 +${res.daily_bonus}p 지급됐어요!`), 600);
   nav('seed');
+  if (!localStorage.getItem('hwasee_onboarding_seen')) setTimeout(showOnboarding, 400);
 }
 
 let _dnCheckTimer;
@@ -1919,6 +1966,7 @@ async function doRegister() {
   saveUser(res);
   toast(`가입 완료! 환영합니다, ${res.display_name || res.nickname}님!`);
   nav('seed');
+  if (!localStorage.getItem('hwasee_onboarding_seen')) setTimeout(showOnboarding, 400);
 }
 
 async function doRecover() {
@@ -1958,6 +2006,10 @@ async function profile() {
   }[u.badge] || '';
 
   const pointsTab = `
+    <button onclick="showOnboarding()" style="width:100%;padding:11px 16px;margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+      <span>📖 화씨.방 이용 방법</span>
+      <span style="font-size:11px">→</span>
+    </button>
     <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
       <button onclick="const b=this.nextElementSibling,a=this.querySelector('.arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
         <span>✦ 등급 기준</span>
@@ -2397,6 +2449,53 @@ function enterProseSelMode(mode, story_id) {
     setTimeout(() => document.addEventListener('click', _proseSelOutsideClick, { capture: true }), 100);
   }
 }
+
+// ─── 온보딩 ───────────────────────────────────────────────
+const _OB_PAGES = [
+  {
+    icon: '✍️',
+    title: '한 문장씩 이어가는 이야기',
+    body: '홈에서 이야기를 골라 들어가면<br>지금까지 쌓인 문장들이 보여요.<br><strong>마음에 드는 이야기에 한 문장을 더해보세요.</strong><br>채택되면 포인트가 쌓여요.',
+  },
+  {
+    icon: '▲',
+    title: '공감으로 이야기가 완성돼요',
+    body: '다른 사람들이 쓴 문장에 공감을 보낼 수 있어요.<br><strong>가장 많은 공감을 받은 문장이 채택되어</strong><br>다음 이야기로 이어져요.',
+  },
+  {
+    icon: '📖',
+    title: '완성된 이야기를 즐겨요',
+    body: '완결된 이야기는 산문으로 읽을 수 있어요.<br><strong>으뜸 글을 뽑거나</strong>,<br>마음에 드는 지점에서 새로운 방향의<br>이야기를 시작할 수도 있어요.',
+  },
+];
+let _obPage = 0;
+
+function showOnboarding() {
+  _obPage = 0;
+  _renderObPage();
+  document.getElementById('onboarding-overlay').style.display = 'flex';
+}
+function closeOnboarding() {
+  localStorage.setItem('hwasee_onboarding_seen', '1');
+  document.getElementById('onboarding-overlay').style.display = 'none';
+}
+function _renderObPage() {
+  const p = _OB_PAGES[_obPage];
+  document.getElementById('ob-icon').textContent  = p.icon;
+  document.getElementById('ob-title').textContent = p.title;
+  document.getElementById('ob-body').innerHTML    = p.body;
+  [0,1,2].forEach(i => {
+    document.getElementById('ob-dot-'+i).className = 'ob-dot' + (i === _obPage ? ' active' : '');
+  });
+  const actions = document.getElementById('ob-actions');
+  const isLast  = _obPage === _OB_PAGES.length - 1;
+  actions.innerHTML = `
+    ${_obPage > 0 ? `<button class="ob-btn-prev" onclick="_obPrev()">이전</button>` : ''}
+    <button class="ob-btn-next" onclick="_obNext()">${isLast ? '시작하기' : '다음  →'}</button>
+  `;
+}
+function _obNext() { if (_obPage < _OB_PAGES.length - 1) { _obPage++; _renderObPage(); } else { closeOnboarding(); } }
+function _obPrev() { if (_obPage > 0) { _obPage--; _renderObPage(); } }
 
 function cancelProseSelMode() {
   document.removeEventListener('click', _proseSelOutsideClick, { capture: true });

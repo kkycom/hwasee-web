@@ -590,6 +590,16 @@ async function _fbCloseEpisode(episode_id, ep) {
     for (const uid of winnerAuthorIds) {
       await _fbCreateNotifications([uid], ep.story_id, `"${snippet}" 이야기에서 내 문장이 채택됐어요!`);
     }
+    const sourceAuthorIds = new Set();
+    for (const w of winners) {
+      const parent = allSubs.find(s => s.sub_id === w.derived_from);
+      if (parent && parent.author_id && !winnerAuthorIds.has(parent.author_id)) {
+        sourceAuthorIds.add(parent.author_id);
+      }
+    }
+    for (const uid of sourceAuthorIds) {
+      await _fbCreateNotifications([uid], ep.story_id, `"${snippet}" 이야기에서 내 글을 손본 문장이 채택됐어요! +10P`);
+    }
     const allPart  = await _fbGetStoryParticipants(ep.story_id);
     const otherIds = allPart.filter(id => !winnerAuthorIds.has(id));
     const msg = winners.length > 1

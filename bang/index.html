@@ -202,7 +202,6 @@
     padding: 18px 20px; margin-bottom: 12px; cursor: pointer; transition: .15s; position: relative;
   }
   .story-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(124,106,255,.12); }
-  .story-card-pending { border-color: rgba(255,170,0,.3); box-shadow: 0 0 0 1px rgba(255,170,0,.1); }
   .story-card-title { font-size: 15px; line-height: 1.6; margin-bottom: 10px; font-family: var(--serif); }
   .story-card-footer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .step-pill {
@@ -406,7 +405,6 @@
   .branch-tab.active { border-color:var(--accent2); color:var(--accent2); font-weight:700; }
 
   /* ── 곧 채택 예정 태그 */
-  .pending-tag { display:inline-flex; align-items:center; gap:3px; padding:2px 7px; border-radius:10px; font-size:10px; font-weight:700; background:#1a1000; color:var(--accent2); border:1px solid var(--accent2); }
   .admin-btn { padding:4px 10px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--text); transition:opacity .15s; }
   .admin-btn:hover { opacity:.8; }
   .admin-delete { background:#2a0a0a; color:#ff6b6b; border-color:#ff6b6b44; }
@@ -873,11 +871,10 @@ function popularCardHtml(s) {
   return `
     <div class="story-card-wrap${hasTabs ? ' has-tabs' : ''}${s.is_boosted ? ' has-boost' : ''}">
       ${tabRow}
-      <div class="story-card${s.has_pending ? ' story-card-pending' : ''}" onclick="nav('story','${esc(s.story_id)}')">
+      <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
         <div class="story-card-title">${esc(s.opening)}</div>
         <div class="story-card-footer">
           <span class="step-pill"><span class="step-dot"></span>${step+1}단계 · 참여자 ${count}명</span>
-          ${s.has_pending ? `<span class="pending-tag">⏳ 곧 채택 예정</span>` : ''}
           <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
         </div>
       </div>
@@ -934,7 +931,6 @@ function myStoryCardHtml(s, snapshot) {
         <span class="step-pill"><span class="step-dot"></span>${step+1}단계 · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
         ${hasVoted ? `<span style="font-size:11px;color:var(--success);font-weight:700">✓ 투표완료</span>`
           : canVoteNow ? `<span style="font-size:11px;color:var(--accent2);font-weight:700">▲ 투표가능</span>` : ''}
-        ${s.has_pending ? `<span class="pending-tag pending-countdown" data-expires="${s.pending_expires_at||''}">⏳ 곧 채택 예정</span>` : ''}
         <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
       </div>
       </div>
@@ -1010,7 +1006,7 @@ async function story() {
   window._branchChoice = window._branchChoice || {};
 
   // 열린/대기 에피소드
-  const openEp    = episodes.find(e => e.status === 'open' || e.status === 'pending') || null;
+  const openEp    = episodes.find(e => e.status === 'open') || null;
   const openSubs  = openEp ? submissions.filter(sub => sub.episode_id === openEp.episode_id) : [];
   const mySubId   = user && openEp ? (openSubs.find(sub => sub.author_id === user.user_id) || {}).sub_id || null : null;
   const maxVotes  = openSubs.length ? Math.max(...openSubs.map(sub => Number(sub.vote_count)||0)) : 0;
@@ -1026,13 +1022,8 @@ async function story() {
   let actionHtml = '';
   if (openEp) {
     const curStep   = Number(openEp.step) + 1;
-    const isPending = openEp.status === 'pending';
-    const _pendingExp = isPending && openEp.pending_at
-      ? new Date(new Date(openEp.pending_at).getTime() + 15 * 60000).toISOString()
-      : '';
     actionHtml = `
-      <div class="prose-divider">${isPending ? '곧 채택될 예정이에요 · 아직 투표할 수 있어요' : '이 이야기의 다음 문장을 결정합니다'}</div>
-      ${isPending ? `<div style="text-align:center;margin-bottom:12px"><span class="pending-tag pending-countdown" data-expires="${_pendingExp}">⏳ 곧 채택 예정</span></div>` : ''}
+      <div class="prose-divider">이 이야기의 다음 문장을 결정합니다</div>
       ${user && !mySubId ? `
         <div class="card" style="margin-bottom:20px">
           <div style="font-size:13px;font-weight:700;margin-bottom:10px">✏️ 이어 쓰기</div>
@@ -2545,21 +2536,6 @@ function parseHash() {
 
 window.addEventListener('hashchange', () => { parseHash(); render(); renderNav(); });
 
-function _startCountdowns() {
-  setInterval(() => {
-    document.querySelectorAll('.pending-countdown[data-expires]').forEach(el => {
-      const exp = el.dataset.expires;
-      if (!exp) return;
-      const ms = new Date(exp) - Date.now();
-      if (ms <= 0) { el.textContent = '⏳ 채택 임박!'; return; }
-      const m = Math.floor(ms / 60000);
-      const s = Math.floor((ms % 60000) / 1000);
-      el.textContent = m > 0
-        ? `⏳ ${m}분 ${String(s).padStart(2,'0')}초 후 채택`
-        : `⏳ ${s}초 후 채택`;
-    });
-  }, 1000);
-}
 
 window.onload = async () => {
   loadUser();
@@ -2577,7 +2553,6 @@ window.onload = async () => {
   }
   parseHash();
   render();
-  _startCountdowns();
 };
 </script>
 <footer style="text-align:center;padding:24px 16px;border-top:1px solid var(--border);margin-top:32px">

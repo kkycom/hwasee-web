@@ -16,7 +16,6 @@ const db = firebase.firestore();
 
 const FB_ADMIN_ID        = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
 var FB_VOTE_THRESHOLD  = 3;
-const FB_PENDING_MINUTES = 15;
 
 // ─── 유틸 ────────────────────────────────────────────────
 
@@ -245,13 +244,10 @@ async function fbGetStories(page) {
   if (p === 1) {
     const [storiesSnap, episodesSnap, boostsSnap] = await Promise.all([
       db.collection('stories').where('status', '==', 'active').get(),
-      db.collection('episodes').where('status', 'in', ['open', 'pending']).get(),
+      db.collection('episodes').where('status', '==', 'open').get(),
       db.collection('boosts').where('expires_at', '>', fbNow()).get(),
     ]);
 
-    const pendingSet = new Set(
-      episodesSnap.docs.filter(d => d.data().status === 'pending').map(d => d.data().story_id)
-    );
     const openVoteMap = {};
     episodesSnap.docs.forEach(d => {
       const e = d.data();
@@ -262,14 +258,12 @@ async function fbGetStories(page) {
 
     const stories = storiesSnap.docs.map(d => ({
       ...d.data(),
-      has_pending:    pendingSet.has(d.id),
       is_boosted:     boostSet.has(d.id),
       activity_count: d.data().participant_count || 0,
     }));
 
     stories.sort((a, b) => {
-      if (a.is_boosted  !== b.is_boosted)  return a.is_boosted  ? -1 : 1;
-      if (a.has_pending !== b.has_pending) return a.has_pending ? -1 : 1;
+      if (a.is_boosted !== b.is_boosted) return a.is_boosted ? -1 : 1;
       const vDiff = (openVoteMap[b.story_id] || 0) - (openVoteMap[a.story_id] || 0);
       if (vDiff !== 0) return vDiff;
       return new Date(a.created_at) - new Date(b.created_at);
@@ -343,14 +337,12 @@ async function fbGetStory(story_id, user_id) {
     const stuckSubs = submissions.filter(s => s.episode_id === stuckEp.episode_id);
     const maxV = stuckSubs.reduce((m, s) => Math.max(m, Number(s.vote_count) || 0), 0);
     if (maxV >= FB_VOTE_THRESHOLD) {
-      await db.collection('episodes').doc(stuckEp.episode_id).update({ status: 'pending', pending_at: fbNow() });
-      stuckEp.status = 'pending';
-      stuckEp.pending_at = new Date().toISOString();
+      await _fbCloseEpisode(stuckEp.episode_id, { ...stuckEp });
     }
   }
 
   if (user_id) {
-    const openEp = episodes.find(e => e.status === 'open' || e.status === 'pending');
+    const openEp = episodes.find(e => e.status === 'open');
     if (openEp) {
       const vSnap = await db.collection('votes')
         .where('episode_id','==',openEp.episode_id).where('voter_id','==',user_id).get();
@@ -403,14 +395,6 @@ async function fbGetMyStories(user_id) {
   });
 
   const myVotedEpIds  = new Set(myVotesSnap.docs.map(d => d.data().episode_id));
-  const pendingSet    = new Set(allEpsSnap.docs.filter(d => d.data().status === 'pending').map(d => d.data().story_id));
-  const pendingExpMap = {};
-  allEpsSnap.docs.forEach(d => {
-    const e = d.data();
-    if (e.status === 'pending' && e.pending_at) {
-      pendingExpMap[e.story_id] = new Date(new Date(e.pending_at).getTime() + FB_PENDING_MINUTES * 60000).toISOString();
-    }
-  });
 
   const mySubsArr = mySubsSnap.docs.map(d => d.data());
 
@@ -423,8 +407,6 @@ async function fbGetMyStories(user_id) {
         ...s,
         mySubmissions:      mySubsArr.filter(sub => sub.story_id === s.story_id),
         activity_count:     s.participant_count || 0,
-        has_pending:        pendingSet.has(s.story_id),
-        pending_expires_at: pendingExpMap[s.story_id] || null,
         has_voted_current:  openEpId != null ? myVotedEpIds.has(openEpId) : null,
       };
     })
@@ -465,23 +447,14 @@ async function fbGetEpisode(episode_id) {
   return { ok: true, episode: ep, story, prevChain };
 }
 
-async function _fbCheckPendingEpisodes(story_id) {
-  const snap = await db.collection('episodes')
-    .where('story_id', '==', story_id).where('status', '==', 'pending').get();
-  for (const doc of snap.docs) {
-    const ep = { episode_id: doc.id, ...doc.data() };
-    const base    = ep.pending_at || new Date(0).toISOString();
-    const elapsed = (new Date() - new Date(base)) / 60000;
-    if (elapsed >= FB_PENDING_MINUTES) await _fbCloseEpisode(ep.episode_id, ep);
-  }
-}
 
 async function _fbCloseEpisode(episode_id, ep) {
   const epRef = db.collection('episodes').doc(episode_id);
   // 트랜잭션으로 pending 상태일 때만 closed로 변경 — 동시 호출 시 중복 처리 방지
   const alreadyClosed = await db.runTransaction(async tx => {
     const snap = await tx.get(epRef);
-    if (!snap.exists || snap.data().status !== 'pending') return true;
+    const st = snap.data().status;
+    if (!snap.exists || (st !== 'open' && st !== 'pending')) return true;
     tx.update(epRef, { status: 'closed', closed_at: fbNow() });
     return false;
   });
@@ -647,7 +620,7 @@ async function fbVote(episode_id, sub_ids, voter_id) {
   const epSnap = await db.collection('episodes').doc(episode_id).get();
   if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
   const ep = epSnap.data();
-  if (ep.status !== 'open' && ep.status !== 'pending') return { ok: false, error: '투표가 마감됐습니다.' };
+  if (ep.status !== 'open') return { ok: false, error: '투표가 마감됐습니다.' };
 
   const prevVoteSnap = await db.collection('votes')
     .where('episode_id','==',episode_id).where('voter_id','==',voter_id).limit(1).get();
@@ -678,15 +651,11 @@ async function fbVote(episode_id, sub_ids, voter_id) {
   const updSubsSnap = await db.collection('submissions').where('episode_id','==',episode_id).get();
   const maxSubVotes = updSubsSnap.docs.reduce((m, d) => Math.max(m, Number(d.data().vote_count) || 0), 0);
 
-  if (maxSubVotes >= FB_VOTE_THRESHOLD && ep.status === 'open') {
-    await epSnap.ref.update({ status: 'pending', pending_at: fbNow() });
-  } else if (ep.status === 'pending') {
-    const base    = ep.pending_at || new Date(0).toISOString();
-    const elapsed = (new Date() - new Date(base)) / 60000;
-    if (elapsed >= FB_PENDING_MINUTES) await _fbCloseEpisode(episode_id, ep);
+  if (maxSubVotes >= FB_VOTE_THRESHOLD) {
+    await _fbCloseEpisode(episode_id, ep);
   }
 
-  return { ok: true, total_voters: newTotal, max_votes: maxSubVotes, is_pending: maxSubVotes >= FB_VOTE_THRESHOLD || ep.status === 'pending' };
+  return { ok: true, total_voters: newTotal, max_votes: maxSubVotes };
 }
 
 // ─── 씨앗 문장 ───────────────────────────────────────────
@@ -1219,9 +1188,9 @@ async function fbAdminForceAdopt(sub_id, admin_id) {
   const sub    = subSnap.data();
   const epSnap = await db.collection('episodes').doc(sub.episode_id).get();
   if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
-  if (epSnap.data().status !== 'open') return { ok: false, error: '이미 마감 처리 중인 에피소드입니다.' };
+  if (epSnap.data().status !== 'open') return { ok: false, error: '이미 마감된 에피소드입니다.' };
   await subSnap.ref.update({ vote_count: 9999 });
-  await epSnap.ref.update({ status: 'pending', pending_at: fbNow() });
+  await _fbCloseEpisode(sub.episode_id, { episode_id: sub.episode_id, ...epSnap.data() });
   return { ok: true };
 }
 

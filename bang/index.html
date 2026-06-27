@@ -114,13 +114,17 @@
   .card-tab { padding:4px 12px; font-size:10px; font-weight:700; letter-spacing:.04em; border-radius:6px 6px 0 0; border:1px solid transparent; border-bottom:none; }
   .card-tab-new    { background:#2a1e08; color:#c8a96e; border-color:rgba(200,169,110,.35); }
   .card-tab-boost  { background:#1a0f1e; color:#c084fc; border-color:rgba(192,132,252,.35); }
-  .card-branch-sticker {
-    position:absolute; top:0; right:16px;
+  .card-stickers {
+    position:absolute; top:0; right:12px;
+    display:flex; gap:4px; pointer-events:none;
+  }
+  .card-branch-sticker, .card-bookmark-sticker {
     background:#0d1a11; color:#6b7d6e;
     border:1px solid rgba(128,151,140,.35); border-top:none;
     font-size:9px; font-weight:700; padding:5px 8px 4px;
-    border-radius:0 0 5px 5px; letter-spacing:.04em; pointer-events:none;
+    border-radius:0 0 5px 5px; letter-spacing:.04em;
   }
+  .card-bookmark-sticker { color:var(--accent2); border-color:rgba(200,169,110,.25); }
   @keyframes card-shine {
     0%   { transform:translateX(-120%) skewX(-18deg); opacity:0; }
     15%  { opacity:1; }
@@ -546,6 +550,12 @@ let _popSort   = 'activity';
 let _popCache  = null; // { stories }
 let _doneSort  = 'activity';
 let _doneCache = null; // { stories }
+let _bmIds     = new Set();
+async function _loadBmIds() {
+  if (!user) { _bmIds = new Set(); return; }
+  const res = await api('getBookmarkIds');
+  if (res.ok) _bmIds = new Set(res.ids);
+}
 
 function _sortStories(stories, key) {
   const arr = [...stories];
@@ -951,6 +961,15 @@ async function startSeedStory() {
 }
 
 // 관심받는 이야기 카드
+function cardStickersHtml(s, alwaysBm) {
+  const hasBm = alwaysBm || _bmIds.has(s.story_id);
+  const parts = [
+    s.has_branch ? `<span class="card-branch-sticker">⑂ 분기</span>` : '',
+    hasBm ? `<span class="card-bookmark-sticker">★</span>` : '',
+  ].filter(Boolean).join('');
+  return parts ? `<div class="card-stickers">${parts}</div>` : '';
+}
+
 function popularCardHtml(s) {
   const step  = Number(s.current_step) || 0;
   const count = Number(s.activity_count || s.participant_count) || 0;
@@ -960,7 +979,7 @@ function popularCardHtml(s) {
     <div class="story-card-wrap${hasTabs ? ' has-tabs' : ''}${s.is_boosted ? ' has-boost' : ''}">
       ${tabRow}
       <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
-        ${s.has_branch ? `<span class="card-branch-sticker">⑂ 분기</span>` : ''}
+        ${cardStickersHtml(s)}
         <div class="story-card-title">${esc(s.opening)}</div>
         <div class="story-card-footer">
           <span class="step-pill"><span class="step-dot"></span>${step+1}단계 · 참여자 ${count}명</span>
@@ -976,6 +995,7 @@ function doneCardHtml(s) {
   const likes = Number(s.like_count) || 0;
   return `
     <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
+      ${cardStickersHtml(s)}
       <div class="story-card-title">${esc(s.opening)}</div>
       <div class="story-card-footer">
         <span class="step-pill">${step}단계 완성</span>
@@ -1001,7 +1021,7 @@ function myStoryCardHtml(s, snapshot) {
     <div class="story-card-wrap${hasTabs ? ' has-tabs' : ''}">
       ${tabRow}
       <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
-      ${s.has_branch ? `<span class="card-branch-sticker">⑂ 분기</span>` : ''}
+      ${cardStickersHtml(s)}
       <div class="story-card-title">${esc(s.opening)}</div>
       ${mySubs.length ? `
         <div style="margin-bottom:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">
@@ -1599,6 +1619,7 @@ async function toggleBookmark(story_id, btn) {
   const isMarked = btn.textContent.includes('★');
   const res = await api(isMarked ? 'removeBookmark' : 'addBookmark', { story_id });
   if (!res.ok && !res.already) { toast(res.error, true); return; }
+  if (isMarked) _bmIds.delete(story_id); else _bmIds.add(story_id);
   btn.textContent  = isMarked ? '☆ 책갈피' : '★ 책갈피됨';
   btn.style.color  = isMarked ? 'var(--muted)' : 'var(--accent2)';
   toast(isMarked ? '책갈피 해제됐습니다.' : '책갈피에 추가됐습니다.');
@@ -2083,6 +2104,7 @@ async function profile() {
         <div style="display:block;padding:12px 16px">
           ${bookmarks.map(s => `
             <div class="story-card" onclick="nav('story','${esc(s.story_id)}')" style="margin-bottom:8px">
+              ${cardStickersHtml(s, true)}
               <div class="story-card-title">${esc(s.opening)}</div>
               <div class="story-card-footer">
                 <span class="step-pill">${s.status==='active' ? Number(s.current_step) + 1 : Number(s.current_step)}단계</span>
@@ -3025,6 +3047,7 @@ window.onload = async () => {
   loadUser();
   renderNav();
   if (user) {
+    _loadBmIds();
     const token = localStorage.getItem('hwasee_token');
     const session = await fbGetSession(token);
     if (!session) { saveUser(null); }

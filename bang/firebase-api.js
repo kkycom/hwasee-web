@@ -883,6 +883,12 @@ async function fbRemoveBookmark(story_id, user_id) {
   return { ok: true };
 }
 
+async function fbGetBookmarkIds(user_id) {
+  if (!user_id) return { ok: true, ids: [] };
+  const snap = await db.collection('bookmarks').where('user_id','==',user_id).get();
+  return { ok: true, ids: snap.docs.map(d => d.data().story_id) };
+}
+
 async function fbGetBookmarks(user_id) {
   if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
   const snap   = await db.collection('bookmarks').where('user_id','==',user_id).get();
@@ -1435,6 +1441,7 @@ async function firebaseApi(action, params = {}) {
 
     case 'addBookmark':        return fbAddBookmark(params.story_id, need().user_id);
     case 'removeBookmark':     return fbRemoveBookmark(params.story_id, need().user_id);
+    case 'getBookmarkIds':     return fbGetBookmarkIds(need().user_id);
     case 'getBookmarks':       return fbGetBookmarks(need().user_id);
 
     case 'addComment':         return fbAddComment(params.sub_id, params.content, need().user_id);

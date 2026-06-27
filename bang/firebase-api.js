@@ -1267,6 +1267,7 @@ async function firebaseApi(action, params = {}) {
     case 'adminDeleteSubmission': return fbAdminDeleteSubmission(params.sub_id, need().user_id);
     case 'adminCloseStory':       return fbAdminCloseStory(params.story_id, need().user_id);
 
+    case 'checkDailyBonus': return { ok: true, bonus: await _fbCheckDailyBonus(need().user_id) };
     case 'pingWarm': return { ok: true };
     default:         return { ok: false, error: '알 수 없는 요청입니다.' };
   }

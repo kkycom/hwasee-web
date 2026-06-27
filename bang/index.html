@@ -1751,11 +1751,8 @@ async function doLogin() {
   if (!res.ok) { toast(res.error, true); return; }
   saveUser(res);
   const dn = res.display_name || res.nickname;
-  if (res.daily_bonus) {
-    toast(`반갑습니다, ${dn}님! 오늘의 보너스 +${res.daily_bonus}p`);
-  } else {
-    toast(`반갑습니다, ${dn}님!`);
-  }
+  toast(`반갑습니다, ${dn}님!`);
+  if (res.daily_bonus) setTimeout(() => toast(`🌿 오늘의 출석 보너스 +${res.daily_bonus}p 지급됐어요!`), 600);
   nav('seed');
 }
 
@@ -2560,7 +2557,13 @@ window.onload = async () => {
   if (user) {
     const token = localStorage.getItem('hwasee_token');
     const session = await fbGetSession(token);
-    if (!session) saveUser(null);
+    if (!session) { saveUser(null); }
+    else {
+      const br = await api('checkDailyBonus');
+      if (br.ok && br.bonus > 0) {
+        setTimeout(() => toast(`🌿 오늘의 출석 보너스 +${br.bonus}p 지급됐어요!`), 800);
+      }
+    }
   }
   parseHash();
   render();

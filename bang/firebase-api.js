@@ -455,7 +455,7 @@ async function fbGetMyStories(user_id) {
   }));
 
   const stories = allStoriesSnap.docs
-    .filter(d => storyIds.has(d.id) && d.data().status !== 'deleted')
+    .filter(d => storyIds.has(d.id) && d.data().status !== 'deleted' && d.data().status !== 'inactive')
     .map(d => {
       const s = d.data();
       const openEpId = openEpMap[s.story_id];
@@ -859,7 +859,7 @@ async function fbGetBookmarks(user_id) {
   const ids    = snap.docs.map(d => d.data().story_id);
   if (!ids.length) return { ok: true, stories: [] };
   const stSnap = await Promise.all(ids.map(id => db.collection('stories').doc(id).get()));
-  const stories = stSnap.filter(d => d.exists && d.data().status !== 'deleted').map(d => d.data());
+  const stories = stSnap.filter(d => d.exists && d.data().status !== 'deleted' && d.data().status !== 'inactive').map(d => d.data());
   return { ok: true, stories };
 }
 

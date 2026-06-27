@@ -498,9 +498,15 @@ async function _fbCloseEpisode(episode_id, ep) {
 
   const allSubs  = subsSnap.docs.map(d => ({ ...d.data(), _ref: d.ref }));
   const maxVotes = Math.max(...allSubs.map(s => Number(s.vote_count) || 0));
-  if (maxVotes === 0) return;
 
-  const winners = allSubs.filter(s => (Number(s.vote_count) || 0) === maxVotes);
+  let winners;
+  if (maxVotes === 0) {
+    // 투표 없이 마감되면 가장 먼저 제출된 글 채택
+    const sorted = [...allSubs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    winners = [sorted[0]];
+  } else {
+    winners = allSubs.filter(s => (Number(s.vote_count) || 0) === maxVotes);
+  }
   for (const w of winners) {
     await w._ref.update({ is_adopted: true });
     await _fbDistributePoints(w, allSubs);
@@ -1082,17 +1088,26 @@ async function fbGetProfile(user_id) {
   if (!uSnap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
   const u = uSnap.data();
 
-  const [histSnap, adoptSnap, epsSnap, storiesSnap] = await Promise.all([
+  const [histSnap, adoptSnap] = await Promise.all([
     db.collection('point_ledger').where('user_id','==',user_id).get(),
     db.collection('submissions').where('author_id','==',user_id).where('is_adopted','==',true).get(),
-    db.collection('episodes').get(),
-    db.collection('stories').get(),
   ]);
 
-  const epMap    = {};
-  const storyMap = {};
-  epsSnap.docs.forEach(d => { epMap[d.id] = d.data(); });
-  storiesSnap.docs.forEach(d => { storyMap[d.id] = d.data().opening; });
+  // 채택글에서 실제 참조하는 ID만 배치 조회 (전체 episodes/stories 조회 방지)
+  const epMap = {}, storyMap = {};
+  const _toChunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
+  const adoptedEpIds    = [...new Set(adoptSnap.docs.map(d => d.data().episode_id).filter(Boolean))];
+  const adoptedStoryIds = [...new Set(adoptSnap.docs.map(d => d.data().story_id).filter(Boolean))];
+  await Promise.all([
+    ..._toChunks(adoptedEpIds).map(ch =>
+      db.collection('episodes').where(firebase.firestore.FieldPath.documentId(), 'in', ch).get()
+        .then(s => s.docs.forEach(d => { epMap[d.id] = d.data(); }))
+    ),
+    ..._toChunks(adoptedStoryIds).map(ch =>
+      db.collection('stories').where(firebase.firestore.FieldPath.documentId(), 'in', ch).get()
+        .then(s => s.docs.forEach(d => { storyMap[d.id] = d.data().opening; }))
+    ),
+  ]);
 
   const history = histSnap.docs.map(d => d.data())
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 20);
@@ -1204,7 +1219,7 @@ async function fbAdminForceAdopt(sub_id, admin_id) {
   const sub    = subSnap.data();
   const epSnap = await db.collection('episodes').doc(sub.episode_id).get();
   if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
-  if (epSnap.data().status === 'closed') return { ok: false, error: '이미 마감된 에피소드입니다.' };
+  if (epSnap.data().status !== 'open') return { ok: false, error: '이미 마감 처리 중인 에피소드입니다.' };
   await subSnap.ref.update({ vote_count: 9999 });
   await epSnap.ref.update({ status: 'pending', pending_at: fbNow() });
   return { ok: true };

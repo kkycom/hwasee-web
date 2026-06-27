@@ -1196,7 +1196,7 @@ async function story() {
       ${isFinished && s.branch_from_step ? `<span class="prose-branch-tag">⑂ ${s.branch_from_step}단계 분기</span>` : ''}
       ${isFinished && user ? `
         <button class="prose-author-toggle" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">으뜸 글 뽑기</button>` : ''}
-      <button class="prose-author-toggle" onclick="enterProseSelMode('viewvotes','${esc(s.story_id)}')">📊 공감 현황</button>
+      <button class="prose-author-toggle" onclick="window._proseSelMode==='viewvotes'?cancelProseSelMode():enterProseSelMode('viewvotes','${esc(s.story_id)}')">📊 공감 현황</button>
     </div>
     <div id="prose-select-bar" class="prose-select-bar"></div>
     <div class="story-prose" id="story-prose-wrap">
@@ -2456,14 +2456,14 @@ function enterProseSelMode(mode, story_id) {
     const isViewVotes = mode === 'viewvotes';
     bar.innerHTML = `
       <div class="prose-select-bar-title">${isMvp ? '으뜸 글을 골라주세요' : isViewVotes ? '어느 단계의 공감 현황이 궁금하세요?' : '어디서부터 고치고 싶으세요?'}</div>
-      <div class="prose-select-bar-hint">${isMvp ? '선정된 글쓴이에게 10p가 지급됩니다' : isViewVotes ? '단계를 탭하면 이동해요 · 다른 곳 누르면 닫혀요' : '선택한 단계부터 새로운 경쟁이 시작됩니다 (30P 차감)'}</div>
+      <div class="prose-select-bar-hint">${isMvp ? '선정된 글쓴이에게 10p가 지급됩니다' : isViewVotes ? '단계를 탭하면 이동해요' : '선택한 단계부터 새로운 경쟁이 시작됩니다 (30P 차감)'}</div>
       ${isViewVotes ? '' : `<div style="margin-top:10px;display:flex;gap:8px">
         <button id="prose-sel-confirm" class="btn btn-primary btn-sm" onclick="confirmProseSelMode()" disabled>완료</button>
         <button class="btn btn-ghost btn-sm" onclick="cancelProseSelMode()">취소</button>
       </div>`}`;
     bar.classList.add('visible');
   }
-  if (mode === 'viewvotes') {
+  if (mode !== 'viewvotes') {
     setTimeout(() => document.addEventListener('click', _proseSelOutsideClick, { capture: true }), 100);
   }
 }

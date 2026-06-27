@@ -18,6 +18,18 @@
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7828331174769963" crossorigin="anonymous"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+@font-face {
+  font-family: 'GyelonggiBatang';
+  src: url('/bang/fonts/GyelonggiBatang-Regular.otf') format('opentype');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'GyelonggiBatang';
+  src: url('/bang/fonts/GyelonggiBatang-Bold.otf') format('opentype');
+  font-weight: 700; font-style: normal; font-display: swap;
+}
+</style>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="firebase-api.js"></script>
@@ -47,8 +59,10 @@
     padding: 0 24px; height: 56px;
     display: flex; align-items: center; justify-content: space-between;
   }
-  .logo { cursor: pointer; display: flex; align-items: center; }
-  .logo img { height: 36px; width: auto; display: block; }
+  .logo {
+    font-size: 20px; font-weight: 700; letter-spacing: .5px;
+    font-family: 'GyelonggiBatang', var(--serif); color: var(--text); cursor: pointer;
+  }
   .nav-right { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; }
   @media (max-width: 480px) {
     .nav-right { gap: 4px; }
@@ -401,7 +415,7 @@
 <body>
 
 <header>
-  <div class="logo" onclick="nav('seed')"><img src="/bang/hwaseebang_landscape.png" alt="화씨.방"></div>
+  <div class="logo" onclick="nav('seed')">화씨.방</div>
   <div class="nav-right" id="nav-right"></div>
 </header>
 

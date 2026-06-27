@@ -436,7 +436,8 @@ async function fbGetMyStories(user_id) {
 
   const mySubsArr = mySubsSnap.docs.map(d => ({
     ...d.data(),
-    step: epMap[d.data().episode_id] ? Number(epMap[d.data().episode_id].step) : 0,
+    step:      epMap[d.data().episode_id] ? Number(epMap[d.data().episode_id].step) : 0,
+    ep_status: epMap[d.data().episode_id]?.status || 'closed',
   }));
 
   const stories = allStoriesSnap.docs

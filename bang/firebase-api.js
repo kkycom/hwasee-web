@@ -264,8 +264,8 @@ async function fbGetStories(page) {
       ...d.data(),
       is_boosted:       boostSet.has(d.id),
       activity_count:   d.data().participant_count || 0,
-      creator_nickname: d.data().creator_nickname || nickMap[d.data().creator_id] || '익명',
-      creator_badge:    d.data().creator_badge    || badgeMap[d.data().creator_id] || 'seed',
+      creator_nickname: d.data().creator_nickname || '익명',
+      creator_badge:    d.data().creator_badge    || '',
     }));
 
     stories.sort((a, b) => {
@@ -406,20 +406,23 @@ async function fbGetStory(story_id, user_id) {
 
   const storyWithCreator = {
     ...story,
-    creator_nickname: story.creator_nickname || nickMap[story.creator_id] || '익명',
-    creator_badge:    story.creator_badge    || badgeMap[story.creator_id] || 'seed',
+    creator_nickname: story.creator_nickname || '익명',
+    creator_badge:    story.creator_badge    || '',
   };
 
   return { ok: true, story: storyWithCreator, episodes, submissions, is_bookmarked, is_liked, like_count, my_voted_sub_ids, branches, parent_chain, mvp_map, my_mvp_episode_id };
 }
 
-async function fbCreateStory(opening, creator_id) {
+async function fbCreateStory(opening, creator_id, is_ai_seed) {
   if (!opening || !opening.trim()) return { ok: false, error: '시작 문장을 입력해주세요.' };
   const story_id = fbGenId(), episode_id = fbGenId();
-  const uDoc = await db.collection('users').doc(creator_id).get();
-  const uData = uDoc.exists ? uDoc.data() : {};
-  const creator_nickname = uData.display_name || uData.nickname || '익명';
-  const creator_badge    = uData.badge || 'seed';
+  let creator_nickname = '익명', creator_badge = '';
+  if (!is_ai_seed) {
+    const uDoc = await db.collection('users').doc(creator_id).get();
+    const uData = uDoc.exists ? uDoc.data() : {};
+    creator_nickname = uData.display_name || uData.nickname || '익명';
+    creator_badge    = uData.badge || 'seed';
+  }
   const batch = db.batch();
   batch.set(db.collection('stories').doc(story_id), {
     story_id, opening: opening.trim(), max_steps: 10, current_step: 0,
@@ -1416,7 +1419,7 @@ async function firebaseApi(action, params = {}) {
 
     case 'getStories':         return fbGetStories(params.page);
     case 'getStory':           return fbGetStory(params.story_id, session?.user_id || null);
-    case 'createStory':        return fbCreateStory(params.opening, need().user_id);
+    case 'createStory':        return fbCreateStory(params.opening, need().user_id, params.is_ai_seed);
     case 'getMyStories':       return fbGetMyStories(need().user_id);
 
     case 'getEpisode':         return fbGetEpisode(params.episode_id);

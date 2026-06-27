@@ -121,11 +121,11 @@ async function _fbSpendPoints(user_id, pts, reason) {
 
 async function fbRegister(nickname, password, name, display_name) {
   if (!nickname || !password) return { ok: false, error: '아이디와 비밀번호를 입력해주세요.' };
-  if (!/^[가-힣a-zA-Z0-9]{2,8}$/.test(nickname)) return { ok: false, error: '아이디는 2~8자, 한글·영문·숫자만 사용할 수 있어요.' };
+  if (!/^[가-힣a-zA-Z0-9]{2,12}$/.test(nickname)) return { ok: false, error: '아이디는 2~12자, 한글·영문·숫자만 사용할 수 있어요.' };
   if (password.length < 8) return { ok: false, error: '비밀번호는 8자 이상입니다.' };
 
   const dn = (display_name || '').trim() || nickname;
-  if (!/^[가-힣a-zA-Z0-9 ._-]{2,8}$/.test(dn)) return { ok: false, error: '닉네임은 2~8자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
+  if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(dn)) return { ok: false, error: '닉네임은 2~12자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
 
   const [dupId, dupDn] = await Promise.all([
     db.collection('users').where('nickname', '==', nickname).limit(1).get(),
@@ -1259,7 +1259,7 @@ async function fbCheckDisplayName(display_name) {
 async function fbChangeDisplayName(user_id, new_display_name) {
   const dn = (new_display_name || '').trim();
   if (!dn || dn.length < 2) return { ok: false, error: '닉네임은 2자 이상이어야 합니다.' };
-  if (!/^[가-힣a-zA-Z0-9 ._-]{2,8}$/.test(dn)) return { ok: false, error: '닉네임은 2~8자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
+  if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(dn)) return { ok: false, error: '닉네임은 2~12자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
 
   const check = await db.collection('users').where('display_name', '==', dn).limit(1).get();
   if (!check.empty) return { ok: false, error: '이미 사용 중인 닉네임입니다.' };

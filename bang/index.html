@@ -1759,11 +1759,11 @@ function auth() {
         <div class="form-group"><label>비밀번호</label><input id="a-pw" type="password" placeholder="비밀번호" onkeydown="if(event.key==='Enter')doLogin()"></div>
         <button class="btn btn-primary" style="width:100%" onclick="doLogin()">로그인</button>
       ` : tab === 'register' ? `
-        <div class="form-group"><label>아이디 (로그인용, 2~8자)</label><input id="a-nick" type="text" placeholder="아이디" maxlength="8"></div>
+        <div class="form-group"><label>아이디 (로그인용, 2~12자)</label><input id="a-nick" type="text" placeholder="아이디" maxlength="12"></div>
         <div class="form-group">
-          <label>닉네임 (표시용, 2~8자)</label>
+          <label>닉네임 (표시용, 2~12자)</label>
           <div style="display:flex;gap:8px">
-            <input id="a-display" type="text" placeholder="닉네임" maxlength="8" style="flex:1" oninput="checkDnAvail()">
+            <input id="a-display" type="text" placeholder="닉네임" maxlength="12" style="flex:1" oninput="checkDnAvail()">
             <span id="dn-status" style="font-size:11px;align-self:center;min-width:48px;text-align:right"></span>
           </div>
         </div>
@@ -1944,7 +1944,7 @@ async function profile() {
       <div class="form-group">
         <label>새 닉네임</label>
         <div style="display:flex;gap:8px">
-          <input id="dn-new" type="text" placeholder="새 닉네임 (2~8자)" maxlength="8" style="flex:1" oninput="checkDnAvailProfile()">
+          <input id="dn-new" type="text" placeholder="새 닉네임 (2~12자)" maxlength="12" style="flex:1" oninput="checkDnAvailProfile()">
           <span id="dn-profile-status" style="font-size:11px;align-self:center;min-width:48px;text-align:right"></span>
         </div>
       </div>

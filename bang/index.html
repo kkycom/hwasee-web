@@ -925,8 +925,7 @@ function myStoryCardHtml(s, snapshot) {
     Number(s.activity_count) > (stored.activity || 0) ||
     step > (stored.step || 0)
   );
-  const hasVoted    = s.has_voted_current === true;
-  const canVoteNow  = s.has_voted_current === false; // false = 진행 중이나 아직 미투표
+  const voteCount   = typeof s.has_voted_current === 'number' ? s.has_voted_current : null;
   const leftTabsHtml = [
     isNew       ? '<span class="card-tab card-tab-new">NEW</span>'        : '',
     s.has_branch? '<span class="card-tab card-tab-branch">⑂ 분기</span>' : '',
@@ -949,8 +948,7 @@ function myStoryCardHtml(s, snapshot) {
         </div>` : ''}
       <div class="story-card-footer">
         <span class="step-pill"><span class="step-dot"></span>${step+1}단계 · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
-        ${hasVoted ? `<span style="font-size:11px;color:var(--success);font-weight:700">✓ 투표완료</span>`
-          : canVoteNow ? `<span style="font-size:11px;color:var(--accent2);font-weight:700">▲ 투표가능</span>` : ''}
+        ${(voteCount !== null && voteCount > 0) ? `<span style="font-size:11px;color:var(--success);font-weight:700">✓ ${voteCount}개 투표완료</span>` : ''}
         <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
       </div>
       </div>
@@ -1083,7 +1081,7 @@ async function story() {
       ${user && openSubs.length > 0 ? `
         <div class="vote-sticky">
           <button class="btn btn-primary" id="vote-btn" onclick="submitVoteInStory('${esc(openEp.episode_id)}')">
-            2개 선택 가능
+            ${my_voted_sub_ids.length > 0 ? (2 - my_voted_sub_ids.length > 0 ? `투표하기 · ${2 - my_voted_sub_ids.length}개 더 고를 수 있어요` : '투표하기') : '2개 선택 가능'}
           </button>
         </div>` : ''}`;
   } else if (s.status === 'completed' || s.status === 'inactive') {
@@ -1152,6 +1150,15 @@ async function story() {
 
   if (isFinished) {
     loadStoryComments(currentParam);
+  }
+
+  // 이미 투표한 항목 pre-select
+  if (openEp && my_voted_sub_ids.length > 0) {
+    selectedSubs = [...my_voted_sub_ids];
+    my_voted_sub_ids.forEach(sid => {
+      const el = document.getElementById('sc-' + sid);
+      if (el) el.classList.add('selected');
+    });
   }
 
   if (newBannerMsg) {
@@ -1524,12 +1531,13 @@ async function toggleBookmark(story_id, btn) {
 
 async function submitVoteInStory(episode_id) {
   if (!selectedSubs.length) { toast('문장을 선택해주세요.', true); return; }
+  const wasRevote = window._storyData?.my_voted_sub_ids?.length > 0;
   const btn = document.getElementById('vote-btn');
   if (btn) { btn.disabled = true; btn.textContent = '투표 중...'; }
   const res = await api('vote', { episode_id, sub_ids: selectedSubs });
   if (!res.ok) { toast(res.error, true); if (btn) btn.disabled = false; return; }
   _lsc.del('pop', 'done');
-  toast(`투표 완료! 현재 ${res.total_voters}명 참여`);
+  toast(wasRevote ? '투표가 변경됐어요!' : `투표 완료! 현재 ${res.total_voters}명 참여`);
   story();
 }
 

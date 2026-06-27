@@ -428,7 +428,11 @@ async function fbGetMyStories(user_id) {
     if (e.status === 'open') openEpMap[e.story_id] = e.episode_id;
   });
 
-  const myVotedEpIds  = new Set(myVotesSnap.docs.map(d => d.data().episode_id));
+  const myVoteCountMap = {};
+  myVotesSnap.docs.forEach(d => {
+    const epId = d.data().episode_id;
+    if (epId) myVoteCountMap[epId] = (myVoteCountMap[epId] || 0) + 1;
+  });
 
   const mySubsArr = mySubsSnap.docs.map(d => d.data());
 
@@ -441,7 +445,7 @@ async function fbGetMyStories(user_id) {
         ...s,
         mySubmissions:      mySubsArr.filter(sub => sub.story_id === s.story_id),
         activity_count:     s.participant_count || 0,
-        has_voted_current:  openEpId != null ? myVotedEpIds.has(openEpId) : null,
+        has_voted_current:  openEpId != null ? (myVoteCountMap[openEpId] || 0) : null,
       };
     })
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -657,29 +661,39 @@ async function fbVote(episode_id, sub_ids, voter_id) {
   if (ep.status !== 'open') return { ok: false, error: '투표가 마감됐습니다.' };
 
   const prevVoteSnap = await db.collection('votes')
-    .where('episode_id','==',episode_id).where('voter_id','==',voter_id).limit(1).get();
-  if (!prevVoteSnap.empty) return { ok: false, error: '이미 투표하셨습니다.' };
+    .where('episode_id','==',episode_id).where('voter_id','==',voter_id).get();
+  const isRevote = !prevVoteSnap.empty;
+  const prevVotedSubIds = prevVoteSnap.docs.map(d => d.data().sub_id);
 
   const subsSnap = await db.collection('submissions').where('episode_id','==',episode_id).get();
   const mySub    = subsSnap.docs.find(d => d.data().author_id === voter_id);
   if (mySub && sub_ids.includes(mySub.id)) return { ok: false, error: '본인 제출에는 투표할 수 없습니다.' };
 
-  // 투표 기록 + 득표 업데이트 배치
   const batch = db.batch();
+
+  if (isRevote) {
+    prevVoteSnap.docs.forEach(d => batch.delete(d.ref));
+    subsSnap.docs.forEach(d => {
+      if (prevVotedSubIds.includes(d.id))
+        batch.update(d.ref, { vote_count: firebase.firestore.FieldValue.increment(-1) });
+    });
+  }
+
   sub_ids.forEach(sid => {
     batch.set(db.collection('votes').doc(fbGenId()), {
       episode_id, sub_id: sid, voter_id, created_at: fbNow()
     });
   });
   subsSnap.docs.forEach(d => {
-    if (sub_ids.includes(d.id)) {
+    if (sub_ids.includes(d.id))
       batch.update(d.ref, { vote_count: firebase.firestore.FieldValue.increment(1) });
-    }
   });
-  const newTotal = (Number(ep.vote_total) || 0) + 1;
+
+  const newTotal = isRevote ? (Number(ep.vote_total) || 0) : (Number(ep.vote_total) || 0) + 1;
   batch.update(epSnap.ref, { vote_total: newTotal });
   await batch.commit();
-  await _fbAddPoints(voter_id, 1, 'vote', '');
+
+  if (!isRevote) await _fbAddPoints(voter_id, 1, 'vote', '');
 
   // 최고 득표 확인
   const updSubsSnap = await db.collection('submissions').where('episode_id','==',episode_id).get();

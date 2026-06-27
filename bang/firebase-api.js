@@ -404,7 +404,13 @@ async function fbGetStory(story_id, user_id) {
     parent_chain = { episodes: pEps, submissions: pSubs };
   }
 
-  return { ok: true, story, episodes, submissions, is_bookmarked, is_liked, like_count, my_voted_sub_ids, branches, parent_chain, mvp_map, my_mvp_episode_id };
+  const storyWithCreator = {
+    ...story,
+    creator_nickname: story.creator_nickname || nickMap[story.creator_id] || '익명',
+    creator_badge:    story.creator_badge    || badgeMap[story.creator_id] || 'seed',
+  };
+
+  return { ok: true, story: storyWithCreator, episodes, submissions, is_bookmarked, is_liked, like_count, my_voted_sub_ids, branches, parent_chain, mvp_map, my_mvp_episode_id };
 }
 
 async function fbCreateStory(opening, creator_id) {

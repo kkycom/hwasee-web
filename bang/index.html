@@ -1201,6 +1201,9 @@ async function story() {
     <div id="prose-select-bar" class="prose-select-bar"></div>
     <div class="story-prose" id="story-prose-wrap">
       <div class="prose-opening">${esc(s.opening)}</div>
+      <div style="text-align:right;font-size:11px;color:var(--muted);margin-top:6px;margin-bottom:4px">
+        ${s.creator_badge ? `<span class="badge badge-${s.creator_badge}" style="font-size:9px;padding:1px 4px;margin-right:3px">${badgeLabel(s.creator_badge)}</span>` : ''}${esc(s.creator_nickname || '익명')}
+      </div>
       ${confirmedHtml || ''}
     </div>
     ${actionHtml}

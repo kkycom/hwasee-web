@@ -1538,6 +1538,11 @@ async function toggleBookmark(story_id, btn) {
 async function submitVoteInStory(episode_id) {
   if (!selectedSubs.length) { toast('문장을 선택해주세요.', true); return; }
   const wasRevote = window._storyData?.my_voted_sub_ids?.length > 0;
+  if (wasRevote) {
+    const prev = window._storyData.my_voted_sub_ids;
+    const unchanged = selectedSubs.length === prev.length && selectedSubs.every(id => prev.includes(id));
+    if (unchanged) { toast('선택이 이전과 같아요. 다른 문장을 골라 변경할 수 있어요.', false); return; }
+  }
   const btn = document.getElementById('vote-btn');
   if (btn) { btn.disabled = true; btn.textContent = '투표 중...'; }
   const res = await api('vote', { episode_id, sub_ids: selectedSubs });

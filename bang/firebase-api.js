@@ -661,7 +661,7 @@ async function fbVote(episode_id, sub_ids, voter_id) {
   const epSnap = await db.collection('episodes').doc(episode_id).get();
   if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
   const ep = epSnap.data();
-  if (ep.status !== 'open') return { ok: false, error: '투표가 마감됐습니다.' };
+  if (ep.status !== 'open') return { ok: false, error: '공감이 마감됐습니다.' };
 
   const prevVoteSnap = await db.collection('votes')
     .where('episode_id','==',episode_id).where('voter_id','==',voter_id).get();
@@ -670,7 +670,7 @@ async function fbVote(episode_id, sub_ids, voter_id) {
 
   const subsSnap = await db.collection('submissions').where('episode_id','==',episode_id).get();
   const mySub    = subsSnap.docs.find(d => d.data().author_id === voter_id);
-  if (mySub && sub_ids.includes(mySub.id)) return { ok: false, error: '본인 제출에는 투표할 수 없습니다.' };
+  if (mySub && sub_ids.includes(mySub.id)) return { ok: false, error: '본인 제출에는 공감할 수 없습니다.' };
 
   const batch = db.batch();
 
@@ -1011,14 +1011,14 @@ async function fbVoteMvp(story_id, episode_id, voter_id) {
 
   const dup = await db.collection('story_mvp')
     .where('story_id','==',story_id).where('voter_id','==',voter_id).limit(1).get();
-  if (!dup.empty) return { ok: false, error: '이미 투표하셨습니다.' };
+  if (!dup.empty) return { ok: false, error: '이미 공감하셨습니다.' };
 
   const subSnap = await db.collection('submissions')
     .where('episode_id','==',episode_id).where('is_adopted','==',true).limit(1).get();
   if (subSnap.empty) return { ok: false, error: '채택된 문장을 찾을 수 없습니다.' };
   const sub = subSnap.docs[0].data();
-  if (sub.author_id === voter_id) return { ok: false, error: '본인 글에는 투표할 수 없습니다.' };
-  if (!sub.author_id || sub.author_id === 'SYSTEM') return { ok: false, error: '투표할 수 없는 글입니다.' };
+  if (sub.author_id === voter_id) return { ok: false, error: '본인 글에는 공감할 수 없습니다.' };
+  if (!sub.author_id || sub.author_id === 'SYSTEM') return { ok: false, error: '공감할 수 없는 글입니다.' };
 
   await db.collection('story_mvp').doc(fbGenId()).set({
     story_id, voter_id, nominated_user_id: sub.author_id, episode_id, created_at: fbNow()

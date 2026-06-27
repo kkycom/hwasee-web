@@ -4,15 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>화씨.방 — 함께 쓰는 이야기</title>
-<meta name="description" content="한 문장씩 이어가는 협업 소설 플랫폼. 씨앗 문장을 심고, 투표로 이야기를 완성하세요.">
+<meta name="description" content="한 문장씩 이어가는 협업 소설 플랫폼. 씨앗 문장을 심고, 공감으로 이야기를 완성하세요.">
 <meta property="og:type"        content="website">
 <meta property="og:url"         content="https://hwasee.me/bang">
 <meta property="og:title"       content="화씨.방 — 함께 쓰는 이야기">
-<meta property="og:description" content="한 문장씩 이어가는 협업 소설 플랫폼. 씨앗 문장을 심고, 투표로 이야기를 완성하세요.">
+<meta property="og:description" content="한 문장씩 이어가는 협업 소설 플랫폼. 씨앗 문장을 심고, 공감으로 이야기를 완성하세요.">
 <meta property="og:image"       content="https://hwasee.me/bang/hwaseebang_sub.png">
 <meta name="twitter:card"       content="summary_large_image">
 <meta name="twitter:title"      content="화씨.방 — 함께 쓰는 이야기">
-<meta name="twitter:description" content="한 문장씩 이어가는 협업 소설 플랫폼. 씨앗 문장을 심고, 투표로 이야기를 완성하세요.">
+<meta name="twitter:description" content="한 문장씩 이어가는 협업 소설 플랫폼. 씨앗 문장을 심고, 공감으로 이야기를 완성하세요.">
 <meta name="twitter:image"      content="https://hwasee.me/bang/hwaseebang_sub.png">
 <link rel="icon" type="image/png" href="/bang/hwaseebang_sum.png">
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7828331174769963" crossorigin="anonymous"></script>
@@ -619,7 +619,7 @@ function nav(route, param) {
 }
 
 function render() {
-  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, create };
+  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, create, 'episode-votes': episodeVotes };
   (routes[currentRoute] || home)();
 }
 
@@ -954,7 +954,7 @@ function myStoryCardHtml(s, snapshot) {
         </div>` : ''}
       <div class="story-card-footer">
         <span class="step-pill"><span class="step-dot"></span>${step+1}단계 · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
-        ${(voteCount !== null && voteCount > 0) ? `<span style="font-size:11px;color:var(--success);font-weight:700">✓ ${voteCount}개 투표완료</span>` : ''}
+        ${(voteCount !== null && voteCount > 0) ? `<span style="font-size:11px;color:var(--success);font-weight:700">✓ ${voteCount}개 공감</span>` : ''}
         <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
       </div>
       </div>
@@ -1073,7 +1073,7 @@ async function story() {
         </div>` : ''}
       ${user && mySubId ? `
         <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-          <span>✓ 이미 제출하셨습니다. 다른 글에 투표할 수 있습니다.</span>
+          <span>✓ 이미 제출하셨습니다. 다른 글에 공감할 수 있습니다.</span>
           <button class="btn btn-ghost btn-sm" style="font-size:12px;white-space:nowrap"
             onclick="doBuyExtraSubmit('${esc(openEp.episode_id)}')">추가 제출 (20P)</button>
         </div>` : ''}
@@ -1087,7 +1087,7 @@ async function story() {
       ${user && openSubs.length > 0 ? `
         <div class="vote-sticky">
           <button class="btn btn-primary" id="vote-btn" onclick="submitVoteInStory('${esc(openEp.episode_id)}')">
-            ${my_voted_sub_ids.length > 0 ? (2 - my_voted_sub_ids.length > 0 ? `투표하기 · ${2 - my_voted_sub_ids.length}개 더 고를 수 있어요` : '투표하기') : '2개 선택 가능'}
+            ${my_voted_sub_ids.length > 0 ? (2 - my_voted_sub_ids.length > 0 ? `공감하기 · ${2 - my_voted_sub_ids.length}개 더 고를 수 있어요` : '공감하기') : '2개 선택 가능'}
           </button>
         </div>` : ''}`;
   } else if (s.status === 'completed' || s.status === 'inactive') {
@@ -1125,7 +1125,7 @@ async function story() {
       <button class="prose-author-toggle" id="prose-author-btn" onclick="toggleProseAuthors(this)">글쓴이 보기 ▾</button>
       ${isFinished && user ? `
         <button class="btn btn-ghost btn-sm" style="font-size:12px" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">으뜸 글 뽑기</button>
-        <button class="btn btn-ghost btn-sm" style="font-size:12px" onclick="enterProseSelMode('branch','${esc(s.story_id)}')">분기 신청</button>` : ''}
+        <button class="btn btn-ghost btn-sm" style="font-size:12px" onclick="enterProseSelMode('viewvotes','${esc(s.story_id)}')">📊 공감 현황</button>` : ''}
     </div>
     <div id="prose-select-bar" class="prose-select-bar"></div>
     <div class="story-prose" id="story-prose-wrap">
@@ -1292,7 +1292,7 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1
       <div class="vote-meta">
         <span>✍ ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeLabel(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
         <span class="vote-count">▲ ${voteCount}/${FB_VOTE_THRESHOLD}표</span>
-        ${iVoted ? '<span style="font-size:11px;color:var(--accent);font-weight:700">✓ 내가 투표함</span>' : ''}
+        ${iVoted ? '<span style="font-size:11px;color:var(--accent);font-weight:700">✓ 내가 공감함</span>' : ''}
         ${sub.sub_id === mySubId ? '<span class="tag">내 제출</span>' : ''}
         ${sub.derived_from ? '<span class="tag">손본 글</span>' : ''}
         ${isAdopted ? '<span style="color:var(--success)">✓ 채택됨</span>' : ''}
@@ -1496,8 +1496,8 @@ function toggleSub(sub_id) {
   if (btn) btn.textContent = selectedSubs.length === 0
     ? '2개 선택 가능'
     : selectedSubs.length >= 2
-      ? '투표하기'
-      : '투표하기 · 1개 더 고를 수 있어요';
+      ? '공감하기'
+      : '공감하기 · 1개 더 고를 수 있어요';
 }
 
 async function submitSubInStory(episode_id, closing = false) {
@@ -1509,7 +1509,7 @@ async function submitSubInStory(episode_id, closing = false) {
   if (!res.ok) { toast(res.error, true); return; }
   window._polishFrom = null;
   _lsc.del('pop', 'done');
-  toast(closing ? '제출 완료! 이야기 마무리 투표가 시작됩니다.' : '제출 완료!');
+  toast(closing ? '제출 완료! 이야기 마무리 공감이 시작됩니다.' : '제출 완료!');
   story();
 }
 
@@ -1544,11 +1544,11 @@ async function submitVoteInStory(episode_id) {
     if (unchanged) { toast('선택이 이전과 같아요. 다른 문장을 골라 변경할 수 있어요.', false); return; }
   }
   const btn = document.getElementById('vote-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '투표 중...'; }
+  if (btn) { btn.disabled = true; btn.textContent = '공감 중...'; }
   const res = await api('vote', { episode_id, sub_ids: selectedSubs });
   if (!res.ok) { toast(res.error, true); if (btn) btn.disabled = false; return; }
   _lsc.del('pop', 'done');
-  toast(wasRevote ? '투표가 변경됐어요!' : `투표 완료! 현재 ${res.total_voters}명 참여`);
+  toast(wasRevote ? '공감이 변경됐어요!' : `공감 완료! 현재 ${res.total_voters}명 참여`);
   story();
 }
 
@@ -1643,7 +1643,7 @@ async function episode() {
     <button class="btn btn-ghost btn-sm" onclick="nav('story','${esc(ep.story_id)}')" style="margin-bottom:20px">← 스토리로</button>
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
       <h2 style="margin:0">${Number(ep.step)+1}단계 이어쓰기</h2>
-      <span class="story-status ${isClosed?'status-completed':'status-active'}">${isClosed?'마감':'투표 중'}</span>
+      <span class="story-status ${isClosed?'status-completed':'status-active'}">${isClosed?'마감':'공감 중'}</span>
       <span style="font-size:13px;color:var(--muted);margin-left:auto">참여자 ${ep.vote_total}명</span>
     </div>
 
@@ -1672,7 +1672,7 @@ async function episode() {
 
     <div style="font-size:14px;font-weight:700;margin-bottom:12px">
       제출된 문장 ${subs.length}개
-      ${!isClosed && user && mySubId ? `<span style="font-size:12px;color:var(--muted);margin-left:8px">최대 2개 선택 후 투표</span>` : ''}
+      ${!isClosed && user && mySubId ? `<span style="font-size:12px;color:var(--muted);margin-left:8px">최대 2개 선택 후 공감</span>` : ''}
     </div>
     <div id="sub-list">
       ${subs.length === 0 ? `<div class="empty" style="padding:32px 0">아직 제출된 문장이 없습니다.</div>` :
@@ -1680,7 +1680,7 @@ async function episode() {
     </div>
     ${!isClosed && user && mySubId ? `
     <div style="margin-top:16px;text-align:center">
-      <button class="btn btn-primary" id="vote-btn" onclick="submitVote('${esc(episode_id)}')">선택한 문장에 투표</button>
+      <button class="btn btn-primary" id="vote-btn" onclick="submitVote('${esc(episode_id)}')">선택한 문장에 공감</button>
     </div>` : ''}`;
 
   // 에피소드가 열려 있을 때만 실시간 리스너 부착
@@ -1739,12 +1739,73 @@ async function submitSub(episode_id) {
 async function submitVote(episode_id) {
   if (!selectedSubs.length) { toast('문장을 선택해주세요.', true); return; }
   const btn = document.getElementById('vote-btn');
-  btn.disabled = true; btn.textContent = '투표 중...';
+  btn.disabled = true; btn.textContent = '공감 중...';
   const res = await api('vote', { episode_id, sub_ids: selectedSubs });
   if (!res.ok) { toast(res.error, true); btn.disabled = false; return; }
   _lsc.del('pop', 'done');
-  toast(`투표 완료! 현재 ${res.total_voters}명 참여`);
+  toast(`공감 완료! 현재 ${res.total_voters}명 참여`);
   episode();
+}
+
+// ─── 공감 현황 뷰 ──────────────────────────────────────────
+
+async function episodeVotes() {
+  const episode_id = currentParam;
+  if (!episode_id) { nav('seed'); return; }
+  document.getElementById('app').innerHTML = `<div class="empty">불러오는 중...</div>`;
+
+  const epSnap = await firebase.firestore().collection('episodes').doc(episode_id).get();
+  if (!epSnap.exists) { toast('에피소드를 찾을 수 없습니다.', true); nav('seed'); return; }
+  const ep = epSnap.data();
+  const story_id = ep.story_id;
+
+  const [subsSnap, stSnap] = await Promise.all([
+    firebase.firestore().collection('submissions').where('episode_id', '==', episode_id).get(),
+    firebase.firestore().collection('stories').doc(story_id).get(),
+  ]);
+
+  const story = stSnap.data() || {};
+  const subs = subsSnap.docs.map(d => ({ sub_id: d.id, ...d.data() }))
+    .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0));
+  const stepNum = Number(ep.step) + 1;
+  const totalVoters = ep.vote_total || 0;
+  const canBranch = user && (story.status === 'completed' || story.status === 'inactive');
+
+  const subsHtml = subs.length === 0
+    ? `<div class="empty" style="padding:32px 0">제출된 문장이 없습니다.</div>`
+    : subs.map(sub => {
+        const isAdopted = sub.is_adopted === true || sub.is_adopted === 'TRUE';
+        return `<div class="card" style="margin-bottom:10px;${isAdopted ? 'border-color:var(--accent2)' : ''}">
+          ${isAdopted ? `<div style="font-size:10px;font-weight:700;color:var(--accent2);margin-bottom:6px;letter-spacing:.04em">✓ 채택됨</div>` : ''}
+          <div style="font-size:14px;line-height:1.6;margin-bottom:10px">${esc(sub.content)}</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted)">
+            <span>✍ ${esc(sub.author_nickname || '익명')}</span>
+            <span style="${isAdopted ? 'color:var(--accent2);font-weight:700' : ''}">▲ ${sub.vote_count || 0}개 공감</span>
+          </div>
+        </div>`;
+      }).join('');
+
+  document.getElementById('app').innerHTML = `
+    <button class="btn btn-ghost btn-sm" onclick="nav('story','${esc(story_id)}')" style="margin-bottom:20px">← 스토리로</button>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
+      <h2 style="margin:0">${stepNum}단계 공감 현황</h2>
+    </div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:20px">총 ${totalVoters}명 참여 · ${subs.length}편 경쟁</div>
+    ${subsHtml}
+    ${canBranch ? `
+    <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border);text-align:center">
+      <button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="startBranchFromHere('${esc(story_id)}','${ep.step}')">⑂ 여기서 새 이야기 시작하기</button>
+      <div style="font-size:12px;color:var(--muted);line-height:1.7">이 단계에서 새로운 이야기를 시작할까요?<br>(채택된 문구는 경쟁에서 빠져요!) · 30P 차감</div>
+    </div>` : ''}`;
+}
+
+async function startBranchFromHere(story_id, step) {
+  const branchStep = Number(step) + 1;
+  if (!confirm(`${branchStep}단계에서 새로운 이야기를 시작할까요?\n채택된 문구는 경쟁에서 빠져요!\n30P가 차감됩니다.`)) return;
+  const res = await api('createBranch', { story_id, branch_from_step: branchStep });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast('새로운 이야기가 시작됐어요!');
+  nav('story', res.new_story_id);
 }
 
 // ─── 인증 ─────────────────────────────────────────────────
@@ -1915,7 +1976,7 @@ async function profile() {
         ${[
           ['매일 첫 로그인','+10p','earn'],
           ['글 제출','+5p','earn'],
-          ['투표 참여','+1p','earn'],
+          ['공감 참여','+1p','earn'],
           ['내 글 채택됨 (직접 제출)','+20p','earn'],
           ['내 글 채택됨 (다듬기)','+10p','earn'],
           ['완결 이야기 MVP 선정','+10p','earn'],
@@ -2276,6 +2337,11 @@ function chooseBranch(episode_id, sub_id) {
 
 function onPrseLineClick(episode_id) {
   if (!window._proseSelMode) return;
+  if (window._proseSelMode === 'viewvotes') {
+    cancelProseSelMode();
+    nav('episode-votes', episode_id);
+    return;
+  }
   window._proseSelEpId = episode_id;
   document.querySelectorAll('#story-prose-wrap .prose-line').forEach(el => {
     el.classList.toggle('prose-selected', el.dataset.episodeId === episode_id);
@@ -2298,11 +2364,12 @@ function enterProseSelMode(mode, story_id) {
   const bar = document.getElementById('prose-select-bar');
   if (bar) {
     const isMvp = mode === 'mvp';
+    const isViewVotes = mode === 'viewvotes';
     bar.innerHTML = `
-      <div class="prose-select-bar-title">${isMvp ? '으뜸 글을 골라주세요' : '어디서부터 고치고 싶으세요?'}</div>
-      <div class="prose-select-bar-hint">${isMvp ? '선정된 글쓴이에게 10p가 지급됩니다' : '선택한 단계부터 새로운 경쟁이 시작됩니다 (30P 차감)'}</div>
+      <div class="prose-select-bar-title">${isMvp ? '으뜸 글을 골라주세요' : isViewVotes ? '어느 단계의 공감 현황이 궁금하세요?' : '어디서부터 고치고 싶으세요?'}</div>
+      <div class="prose-select-bar-hint">${isMvp ? '선정된 글쓴이에게 10p가 지급됩니다' : isViewVotes ? '단계를 탭하면 공감 현황으로 이동해요' : '선택한 단계부터 새로운 경쟁이 시작됩니다 (30P 차감)'}</div>
       <div style="margin-top:10px;display:flex;gap:8px">
-        <button id="prose-sel-confirm" class="btn btn-primary btn-sm" onclick="confirmProseSelMode()" disabled>완료</button>
+        ${isViewVotes ? '' : `<button id="prose-sel-confirm" class="btn btn-primary btn-sm" onclick="confirmProseSelMode()" disabled>완료</button>`}
         <button class="btn btn-ghost btn-sm" onclick="cancelProseSelMode()">취소</button>
       </div>`;
     bar.classList.add('visible');
@@ -2403,7 +2470,7 @@ function renderMvpHtml(story_id, authors, res) {
       </div>
       ${authorHtml}
       ${canVote ? `<button id="mvp-submit-btn" class="btn btn-primary" style="width:100%;margin-top:8px" onclick="submitMvpVote('${story_id}')" disabled>선택 완료</button>` : ''}
-      ${!user ? `<div style="font-size:12px;color:var(--muted);text-align:center;margin-top:8px">로그인 후 투표할 수 있어요.</div>` : ''}
+      ${!user ? `<div style="font-size:12px;color:var(--muted);text-align:center;margin-top:8px">로그인 후 공감할 수 있어요.</div>` : ''}
     </div>`;
 }
 
@@ -2427,10 +2494,10 @@ function toggleMvpVote(story_id, user_id, nickname) {
 async function submitMvpVote(story_id) {
   if (!_mvpSelected.length) return;
   const btn = document.getElementById('mvp-submit-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '투표 중...'; }
+  if (btn) { btn.disabled = true; btn.textContent = '공감 중...'; }
   const res = await api('voteMvp', { story_id, nominated_user_ids: _mvpSelected });
   if (!res.ok) { toast(res.error, true); if (btn) btn.disabled = false; return; }
-  toast('투표 완료! 감사합니다 ✦');
+  toast('공감 완료! 감사합니다 ✦');
   // 결과 새로 불러오기
   if (window._storyData) loadMvpSection(story_id, window._storyData.submissions);
 }
@@ -2527,7 +2594,7 @@ async function dismissReportItem(report_id) {
 function reasonLabel(r) {
   return {
     direct:'채택 (직접 제출)', source:'다듬기 원저자 보상', mid:'중간 다듬기 보상', derived:'다듬기 채택 보상',
-    submit:'제출 참여', vote:'투표 참여', daily_login:'출석 점수', mvp_nomination:'MVP 선정', bug_report:'버그 제보',
+    submit:'제출 참여', vote:'공감 참여', daily_login:'출석 점수', mvp_nomination:'MVP 선정', bug_report:'버그 제보',
     boost_story:'이야기 주목 사용', extra_submit:'추가 제출권 사용', buy_avatar:'아바타 아이콘 구매',
   }[r] || r;
 }
@@ -2756,7 +2823,7 @@ function parseHash() {
   const h     = location.hash.slice(1) || 'seed';
   const parts = h.split('/');
   const route = parts[0];
-  currentRoute = ['home','seed','popular','mine','done','story','episode','auth','profile','create'].includes(route) ? route : 'seed';
+  currentRoute = ['home','seed','popular','mine','done','story','episode','auth','profile','create','episode-votes'].includes(route) ? route : 'seed';
   currentParam = parts[1] || null;
 }
 

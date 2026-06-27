@@ -1876,6 +1876,54 @@ async function profile() {
   }[u.badge] || '';
 
   const pointsTab = `
+    <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <button onclick="const b=this.nextElementSibling,a=this.querySelector('.arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+        <span>✦ 등급 기준</span>
+        <span class="arrow" style="font-size:11px;transition:transform .2s;transform:rotate(180deg)">▼</span>
+      </button>
+      <div style="display:block;padding:12px 16px">
+        ${[
+          { emoji:'🌰', stages:[['seed','씨앗','0'],['seed1','금간 씨앗','20'],['seed2','발아하는 씨앗','60']] },
+          { emoji:'🌱', stages:[['sprout','여린 새싹','150'],['sprout1','새싹','350'],['sprout2','무성한 새싹','550']] },
+          { emoji:'🌿', stages:[['leaf','여린 잎','700'],['leaf1','잎','1,200'],['leaf2','무성한 잎','1,700']] },
+          { emoji:'🌺', stages:[['bud','꽃봉오리','2,000'],['flower','꽃','3,000'],['flower1','만개한 꽃','4,000']] },
+          { emoji:'🍎', stages:[['fruit','열매','5,000']] },
+        ].map(({emoji, stages}, i) => `
+          <div style="${i>0?'margin-top:8px;padding-top:8px;border-top:1px solid var(--border)':''}">
+            ${stages.map(([badge,label,pts]) => `
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:3px 0">
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span style="font-size:13px">${emoji}</span>
+                  <span class="badge badge-${badge}" style="font-size:9px;padding:1px 6px">${label}</span>
+                </div>
+                <span style="font-size:10px;color:var(--muted)">${pts}p</span>
+              </div>`).join('')}
+          </div>`).join('')}
+      </div>
+    </div>
+    <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <button onclick="const b=this.nextElementSibling,a=this.querySelector('.arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+        <span>✦ 포인트 획득 방법</span>
+        <span class="arrow" style="font-size:11px;transition:transform .2s">▼</span>
+      </button>
+      <div style="display:none;padding:12px 16px;font-size:13px">
+        ${[
+          ['매일 첫 로그인','+10p','earn'],
+          ['글 제출','+5p','earn'],
+          ['투표 참여','+1p','earn'],
+          ['내 글 채택됨 (직접 제출)','+20p','earn'],
+          ['내 글 채택됨 (다듬기)','+10p','earn'],
+          ['완결 이야기 MVP 선정','+10p','earn'],
+          ['버그 제보','+10p','earn'],
+          ['이야기 주목 (24시간 상단 노출)','-30p','spend'],
+          ['에피소드 추가 제출권','-20p','spend'],
+        ].map(([label, pts, type]) => `
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+            <span style="color:var(--muted)">${label}</span>
+            <span style="color:${type==='spend'?'var(--accent2)':'var(--accent)'};font-weight:700">${pts}</span>
+          </div>`).join('')}
+      </div>
+    </div>
     ${bookmarks.length ? `
       <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <button onclick="const b=this.nextElementSibling,a=this.querySelector('.bm-arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
@@ -2003,54 +2051,6 @@ async function profile() {
     </div>
     <div id="avatar-shop-card" class="card" style="display:none;margin-bottom:20px">
       <div id="avatar-shop-inner"></div>
-    </div>
-    <div style="margin-bottom:20px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-      <button onclick="const b=this.nextElementSibling,a=this.querySelector('.arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
-        <span>✦ 등급 기준</span>
-        <span class="arrow" style="font-size:11px;transition:transform .2s;transform:rotate(180deg)">▼</span>
-      </button>
-      <div style="display:block;padding:12px 16px">
-        ${[
-          { emoji:'🌰', stages:[['seed','씨앗','0'],['seed1','금간 씨앗','20'],['seed2','발아하는 씨앗','60']] },
-          { emoji:'🌱', stages:[['sprout','여린 새싹','150'],['sprout1','새싹','350'],['sprout2','무성한 새싹','550']] },
-          { emoji:'🌿', stages:[['leaf','여린 잎','700'],['leaf1','잎','1,200'],['leaf2','무성한 잎','1,700']] },
-          { emoji:'🌺', stages:[['bud','꽃봉오리','2,000'],['flower','꽃','3,000'],['flower1','만개한 꽃','4,000']] },
-          { emoji:'🍎', stages:[['fruit','열매','5,000']] },
-        ].map(({emoji, stages}, i) => `
-          <div style="${i>0?'margin-top:8px;padding-top:8px;border-top:1px solid var(--border)':''}">
-            ${stages.map(([badge,label,pts]) => `
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:3px 0">
-                <div style="display:flex;align-items:center;gap:6px">
-                  <span style="font-size:13px">${emoji}</span>
-                  <span class="badge badge-${badge}" style="font-size:9px;padding:1px 6px">${label}</span>
-                </div>
-                <span style="font-size:10px;color:var(--muted)">${pts}p</span>
-              </div>`).join('')}
-          </div>`).join('')}
-      </div>
-    </div>
-    <div style="margin-bottom:20px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-      <button onclick="const b=this.nextElementSibling,a=this.querySelector('.arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
-        <span>✦ 포인트 획득 방법</span>
-        <span class="arrow" style="font-size:11px;transition:transform .2s">▼</span>
-      </button>
-      <div style="display:none;padding:12px 16px;font-size:13px">
-        ${[
-          ['매일 첫 로그인','+10p','earn'],
-          ['글 제출','+5p','earn'],
-          ['투표 참여','+1p','earn'],
-          ['내 글 채택됨 (직접 제출)','+20p','earn'],
-          ['내 글 채택됨 (다듬기)','+10p','earn'],
-          ['완결 이야기 MVP 선정','+10p','earn'],
-          ['버그 제보','+10p','earn'],
-          ['이야기 주목 (24시간 상단 노출)','-30p','spend'],
-          ['에피소드 추가 제출권','-20p','spend'],
-        ].map(([label, pts, type]) => `
-          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
-            <span style="color:var(--muted)">${label}</span>
-            <span style="color:${type==='spend'?'var(--accent2)':'var(--accent)'};font-weight:700">${pts}</span>
-          </div>`).join('')}
-      </div>
     </div>
     <div id="profile-tab-content"></div>`;
 

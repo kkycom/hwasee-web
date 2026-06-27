@@ -1123,7 +1123,6 @@ async function story() {
     </div>
     <div style="text-align:right;margin-bottom:6px;display:flex;justify-content:flex-end;align-items:center;gap:6px;flex-wrap:wrap">
       ${isFinished && s.branch_from_step ? `<span class="prose-branch-tag">⑂ ${s.branch_from_step}단계 분기</span>` : ''}
-      <button class="prose-author-toggle" id="prose-author-btn" onclick="toggleProseAuthors(this)">글쓴이 보기 ▾</button>
       ${isFinished && user ? `
         <button class="prose-author-toggle" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">으뜸 글 뽑기</button>` : ''}
       <button class="prose-author-toggle" onclick="enterProseSelMode('viewvotes','${esc(s.story_id)}')">📊 공감 현황</button>
@@ -2370,7 +2369,10 @@ function enterProseSelMode(mode, story_id) {
   window._proseSelEpId  = null;
   window._proseSelStory = story_id;
   const wrap = document.getElementById('story-prose-wrap');
-  if (wrap) wrap.classList.add('selecting');
+  if (wrap) {
+    wrap.classList.add('selecting');
+    wrap.querySelectorAll('.prose-author').forEach(el => el.classList.add('visible'));
+  }
   const bar = document.getElementById('prose-select-bar');
   if (bar) {
     const isMvp = mode === 'mvp';
@@ -2394,7 +2396,7 @@ function cancelProseSelMode() {
   window._proseSelMode = null;
   window._proseSelEpId = null;
   const wrap = document.getElementById('story-prose-wrap');
-  if (wrap) { wrap.classList.remove('selecting'); wrap.querySelectorAll('.prose-selected').forEach(el => el.classList.remove('prose-selected')); }
+  if (wrap) { wrap.classList.remove('selecting'); wrap.querySelectorAll('.prose-selected').forEach(el => el.classList.remove('prose-selected')); wrap.querySelectorAll('.prose-author').forEach(el => el.classList.remove('visible')); }
   const bar = document.getElementById('prose-select-bar');
   if (bar) { bar.classList.remove('visible'); bar.innerHTML = ''; }
 }

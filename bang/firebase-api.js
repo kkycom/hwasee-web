@@ -337,6 +337,18 @@ async function fbGetStory(story_id, user_id) {
   like_count = extras[1].size;
   if (user_id) is_liked = extras[1].docs.some(d => d.data().user_id === user_id);
 
+  // open 상태인데 최고 득표가 임계값 이상이면 pending으로 자동 전환 (채택강행 후 stuck 복구)
+  const stuckEp = episodes.find(e => e.status === 'open');
+  if (stuckEp) {
+    const stuckSubs = submissions.filter(s => s.episode_id === stuckEp.episode_id);
+    const maxV = stuckSubs.reduce((m, s) => Math.max(m, Number(s.vote_count) || 0), 0);
+    if (maxV >= FB_VOTE_THRESHOLD) {
+      await db.collection('episodes').doc(stuckEp.episode_id).update({ status: 'pending', pending_at: fbNow() });
+      stuckEp.status = 'pending';
+      stuckEp.pending_at = new Date().toISOString();
+    }
+  }
+
   if (user_id) {
     const openEp = episodes.find(e => e.status === 'open' || e.status === 'pending');
     if (openEp) {
@@ -1192,9 +1204,9 @@ async function fbAdminForceAdopt(sub_id, admin_id) {
   const sub    = subSnap.data();
   const epSnap = await db.collection('episodes').doc(sub.episode_id).get();
   if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
-  if (epSnap.data().status !== 'open') return { ok: false, error: '이미 마감된 에피소드입니다.' };
+  if (epSnap.data().status === 'closed') return { ok: false, error: '이미 마감된 에피소드입니다.' };
   await subSnap.ref.update({ vote_count: 9999 });
-  await _fbCloseEpisode(sub.episode_id, epSnap.data());
+  await epSnap.ref.update({ status: 'pending', pending_at: fbNow() });
   return { ok: true };
 }
 

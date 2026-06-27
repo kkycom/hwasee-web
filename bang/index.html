@@ -1961,18 +1961,23 @@ async function profile() {
       <button class="btn btn-ghost btn-sm" onclick="doDeleteAccount()" style="color:var(--accent2);font-size:12px">회원탈퇴</button>
     </div>`;
 
-  const bugreportTab = `
-    <div style="margin-bottom:8px">
-      <h2 style="margin-bottom:6px">🐛 버그 제보</h2>
-      <p style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6">버그를 발견하셨나요? 내용을 알려주시면 확인 후 <strong style="color:var(--accent)">+10p</strong>를 드려요.</p>
-      <div class="card">
-        <div class="form-group">
-          <label>버그 내용</label>
-          <textarea id="bug-content" rows="5" placeholder="어떤 버그인지 자세히 알려주세요 (5자 이상)" style="width:100%;resize:vertical;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:14px;color:var(--text);font-family:inherit;line-height:1.6"></textarea>
+  const isAdmin = u.badge === 'treeguard';
+  const bugreportTab = isAdmin
+    ? `<div>
+        <h2 style="margin-bottom:12px">🐛 버그 제보 접수함</h2>
+        <div id="bug-report-list"><div class="empty">불러오는 중...</div></div>
+      </div>`
+    : `<div style="margin-bottom:8px">
+        <h2 style="margin-bottom:6px">🐛 버그 제보</h2>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6">버그를 발견하셨나요? 내용을 알려주시면 확인 후 <strong style="color:var(--accent)">+10p</strong>를 드려요.</p>
+        <div class="card">
+          <div class="form-group">
+            <label>버그 내용</label>
+            <textarea id="bug-content" rows="5" placeholder="어떤 버그인지 자세히 알려주세요 (5자 이상)" style="width:100%;resize:vertical;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:14px;color:var(--text);font-family:inherit;line-height:1.6"></textarea>
+          </div>
+          <button class="btn btn-primary" style="width:100%" onclick="doSubmitBugReport()">제보하기 (+10p)</button>
         </div>
-        <button class="btn btn-primary" style="width:100%" onclick="doSubmitBugReport()">제보하기 (+10p)</button>
-      </div>
-    </div>`;
+      </div>`;
 
   _profileUser = u;
   document.getElementById('app').innerHTML = `
@@ -2050,6 +2055,7 @@ async function profile() {
     <div id="profile-tab-content"></div>`;
 
   document.getElementById('profile-tab-content').innerHTML = tab === 'settings' ? settingsTab : tab === 'bugreport' ? bugreportTab : pointsTab;
+  if (tab === 'bugreport' && isAdmin) loadBugReportList();
 }
 
 function switchProfileTab(tab) {
@@ -2619,6 +2625,30 @@ async function doChangeDisplayName() {
   renderNav();
   toast(`닉네임이 "${res.display_name}"으로 변경됐어요!`);
   nav('profile', 'settings');
+}
+
+async function loadBugReportList() {
+  const res = await api('getBugReports');
+  const el = document.getElementById('bug-report-list');
+  if (!el) return;
+  if (!res.ok) { el.innerHTML = `<div class="empty">${res.error}</div>`; return; }
+  if (!res.reports.length) { el.innerHTML = `<div class="empty">접수된 버그 제보가 없습니다.</div>`; return; }
+  el.innerHTML = res.reports.map(r => `
+    <div style="padding:14px 16px;margin-bottom:8px;border:1px solid ${r.status==='resolved'?'var(--border)':'var(--accent2)'};border-radius:10px;background:var(--card)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:12px;font-weight:600;color:var(--muted)">${esc(r.reporter_nickname)} · ${timeAgo(r.created_at)}</span>
+        ${r.status==='resolved'
+          ? `<span style="font-size:11px;color:var(--success);font-weight:600">✓ 해결됨</span>`
+          : `<button onclick="doResolveBugReport('${r.id}')" style="font-size:11px;padding:3px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer">해결 완료</button>`}
+      </div>
+      <div style="font-size:14px;line-height:1.6;white-space:pre-wrap">${esc(r.content)}</div>
+    </div>`).join('');
+}
+
+async function doResolveBugReport(report_id) {
+  const res = await api('resolveBugReport', { report_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  loadBugReportList();
 }
 
 async function doSubmitBugReport() {

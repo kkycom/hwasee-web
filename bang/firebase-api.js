@@ -1324,6 +1324,25 @@ async function fbAdminCloseStory(story_id, admin_id) {
   return { ok: true };
 }
 
+async function fbGetBugReports(user_id) {
+  const uSnap = await db.collection('users').doc(user_id).get();
+  if (!uSnap.exists || uSnap.data().badge !== 'treeguard') return { ok: false, error: '권한이 없습니다.' };
+  const snap = await db.collection('bug_reports').orderBy('created_at', 'desc').limit(50).get();
+  const reports = await Promise.all(snap.docs.map(async d => {
+    const data = d.data();
+    const uDoc = await db.collection('users').doc(data.user_id).get();
+    return { id: d.id, ...data, reporter_nickname: uDoc.exists ? (uDoc.data().display_name || uDoc.data().nickname) : '알 수 없음' };
+  }));
+  return { ok: true, reports };
+}
+
+async function fbResolveBugReport(report_id, user_id) {
+  const uSnap = await db.collection('users').doc(user_id).get();
+  if (!uSnap.exists || uSnap.data().badge !== 'treeguard') return { ok: false, error: '권한이 없습니다.' };
+  await db.collection('bug_reports').doc(report_id).update({ status: 'resolved' });
+  return { ok: true };
+}
+
 async function fbSubmitBugReport(content, user_id) {
   if (!content || content.trim().length < 5) return { ok: false, error: '내용을 5자 이상 입력해주세요.' };
   const t = now();
@@ -1403,7 +1422,9 @@ async function firebaseApi(action, params = {}) {
     case 'adminCloseStory':       return fbAdminCloseStory(params.story_id, need().user_id);
 
     case 'checkDailyBonus': return { ok: true, bonus: await _fbCheckDailyBonus(need().user_id) };
-    case 'submitBugReport': return fbSubmitBugReport(params.content, need().user_id);
+    case 'submitBugReport':   return fbSubmitBugReport(params.content, need().user_id);
+    case 'getBugReports':     return fbGetBugReports(need().user_id);
+    case 'resolveBugReport':  return fbResolveBugReport(params.report_id, need().user_id);
     case 'pingWarm': return { ok: true };
     default:         return { ok: false, error: '알 수 없는 요청입니다.' };
   }

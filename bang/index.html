@@ -1877,7 +1877,7 @@ async function profile() {
   const pointsTab = `
     ${bookmarks.length ? `
       <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-        <button onclick="const b=this.nextElementSibling,a=this.querySelector('.bm-arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--text);text-align:left;cursor:pointer;font-size:14px;font-weight:700;display:flex;justify-content:space-between;align-items:center">
+        <button onclick="const b=this.nextElementSibling,a=this.querySelector('.bm-arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
           <span>★ 책갈피한 이야기 <span style="font-size:12px;font-weight:400;color:var(--muted)">${bookmarks.length}편</span></span>
           <span class="bm-arrow" style="font-size:11px;color:var(--muted);transition:transform .2s;transform:rotate(180deg)">▼</span>
         </button>
@@ -1893,31 +1893,45 @@ async function profile() {
         </div>
       </div>` : ''}
     ${res.adoptions && res.adoptions.length ? `
-      <h2 style="margin-bottom:12px">✓ 채택된 글 <span style="font-size:14px;font-weight:400;color:var(--muted)">${res.adoptions.length}편</span></h2>
-      ${res.adoptions.map(a => `
-        <div class="card" style="padding:14px 16px;margin-bottom:8px;cursor:pointer;border-left:3px solid var(--success)"
-          onclick="nav('story','${a.story_id}')">
-          <div style="font-size:11px;color:var(--muted);margin-bottom:6px">
-            ${a.step}단계 · "${esc(a.story_opening.slice(0,40))}${a.story_opening.length>40?'…':''}"
-          </div>
-          <div style="font-size:14px;line-height:1.6">"${esc(a.content)}"</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:6px">▲ ${a.vote_count}표 채택 · ${timeAgo(a.created_at)}</div>
-        </div>`).join('')}
-      <hr style="margin:20px 0;border-color:var(--border)">` : ''}
-    <h2 style="margin-bottom:10px">포인트 획득 내역</h2>
-    ${res.history.length === 0
-      ? `<div class="empty">포인트 내역이 없습니다.</div>`
-      : res.history.map(h => `
-        <div class="card" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center${h.story_id?';cursor:pointer':''}"
-          ${h.story_id ? `onclick="nav('story','${esc(h.story_id)}')"` : ''}>
-          <div>
-            <div style="font-size:14px">${reasonLabel(h.reason)}${h.story_id?` <span style="font-size:11px;color:var(--accent)">→ 이야기 보기</span>`:''}</div>
-            <div style="font-size:12px;color:var(--muted)">${timeAgo(h.created_at)}</div>
-          </div>
-          <div style="font-size:18px;font-weight:700;color:${Number(h.points)<0?'var(--accent2)':'var(--accent)'}">
-            ${Number(h.points)>=0?'+':''}${h.points}
-          </div>
-        </div>`).join('')}`;
+      <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <button onclick="const b=this.nextElementSibling,a=this.querySelector('.arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+          <span>✓ 채택된 글 <span style="font-size:12px;font-weight:400">${res.adoptions.length}편</span></span>
+          <span class="arrow" style="font-size:11px;transition:transform .2s">▼</span>
+        </button>
+        <div style="display:none;padding:12px 16px">
+          ${res.adoptions.map(a => `
+            <div style="padding:12px 14px;margin-bottom:8px;cursor:pointer;border-left:3px solid var(--success);border-radius:6px;background:var(--bg)"
+              onclick="nav('story','${a.story_id}')">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:6px">
+                ${a.step}단계 · "${esc(a.story_opening.slice(0,40))}${a.story_opening.length>40?'…':''}"
+              </div>
+              <div style="font-size:14px;line-height:1.6">"${esc(a.content)}"</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:6px">▲ ${a.vote_count}표 채택 · ${timeAgo(a.created_at)}</div>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
+    <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <button onclick="const b=this.nextElementSibling,a=this.querySelector('.arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+        <span>✦ 포인트 획득 내역</span>
+        <span class="arrow" style="font-size:11px;transition:transform .2s">▼</span>
+      </button>
+      <div style="display:none;padding:12px 16px">
+        ${res.history.length === 0
+          ? `<div class="empty">포인트 내역이 없습니다.</div>`
+          : res.history.map(h => `
+            <div style="padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;border-radius:6px;background:var(--bg)${h.story_id?';cursor:pointer':''}"
+              ${h.story_id ? `onclick="nav('story','${esc(h.story_id)}')"` : ''}>
+              <div>
+                <div style="font-size:14px">${reasonLabel(h.reason)}${h.story_id?` <span style="font-size:11px;color:var(--accent)">→ 이야기 보기</span>`:''}</div>
+                <div style="font-size:12px;color:var(--muted)">${timeAgo(h.created_at)}</div>
+              </div>
+              <div style="font-size:18px;font-weight:700;color:${Number(h.points)<0?'var(--accent2)':'var(--accent)'}">
+                ${Number(h.points)>=0?'+':''}${h.points}
+              </div>
+            </div>`).join('')}
+      </div>
+    </div>`;
+
 
   const settingsTab = `
     <div class="card" style="margin-bottom:16px">
@@ -1971,9 +1985,12 @@ async function profile() {
     <div id="avatar-shop-card" class="card" style="display:none;margin-bottom:20px">
       <div id="avatar-shop-inner"></div>
     </div>
-    <div class="card" style="margin-bottom:20px" id="grade-card">
-      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:12px">✦ 등급 기준</div>
-      <div id="grade-body">
+    <div style="margin-bottom:20px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <button onclick="const b=this.nextElementSibling,a=this.querySelector('.arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+        <span>✦ 등급 기준</span>
+        <span class="arrow" style="font-size:11px;transition:transform .2s;transform:rotate(180deg)">▼</span>
+      </button>
+      <div style="display:block;padding:12px 16px">
         ${[
           { emoji:'🌰', stages:[['seed','씨앗','0'],['seed1','금간 씨앗','20'],['seed2','발아하는 씨앗','60']] },
           { emoji:'🌱', stages:[['sprout','여린 새싹','150'],['sprout1','새싹','350'],['sprout2','무성한 새싹','550']] },
@@ -1991,9 +2008,6 @@ async function profile() {
                 <span style="font-size:10px;color:var(--muted)">${pts}p</span>
               </div>`).join('')}
           </div>`).join('')}
-        <div style="text-align:right;margin-top:10px">
-          <button onclick="const b=document.getElementById('grade-body'),btn=this;const show=b.style.display==='none';b.style.display=show?'block':'none';btn.textContent=show?'접기 ▴':'펼치기 ▾'" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;padding:2px 4px">접기 ▴</button>
-        </div>
       </div>
     </div>
     <div style="margin-bottom:20px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">

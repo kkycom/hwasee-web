@@ -1355,7 +1355,7 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1
     <div class="vote-card ${isAdopted?'adopted':''} ${isClickable?'clickable':''}" id="sc-${sub.sub_id}"
       style="${iVoted?'border-color:var(--accent);':''}"
       ${isClickable ? `onclick="toggleSub('${sub.sub_id}')"` : ''}>
-      ${showLabel ? (sub.closing ? `<div style="font-size:10px;font-weight:700;color:var(--accent2);margin-bottom:6px;letter-spacing:.04em">◼ 닫는 이야기</div>` : `<div style="font-size:10px;font-weight:700;color:#68c8a8;margin-bottom:6px;letter-spacing:.04em">▶ 열린 이야기</div>`) : ''}
+      ${showLabel ? (sub.is_closing ? `<div style="font-size:10px;font-weight:700;color:var(--accent2);margin-bottom:6px;letter-spacing:.04em">◼ 닫는 이야기</div>` : `<div style="font-size:10px;font-weight:700;color:#68c8a8;margin-bottom:6px;letter-spacing:.04em">▶ 열린 이야기</div>`) : ''}
       <div class="vote-content">${esc(sub.content)}</div>
       <div class="vote-meta">
         <span>✍ ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeLabel(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
@@ -1782,7 +1782,7 @@ function renderSubCard(s, isClosed, mySubId, maxVotes, step = 1) {
     <div class="vote-card ${isAdopted?'adopted':''}" id="sc-${s.sub_id}"
       ${isClickable ? `onclick="toggleSub('${s.sub_id}')"` : ''} style="${isClickable?'cursor:pointer':''}">
       ${isAdopted ? `<div style="font-size:11px;color:var(--success);margin-bottom:4px">✓ 채택됨</div>` : ''}
-      ${showLabel ? (s.closing ? `<div style="font-size:10px;font-weight:700;color:var(--accent2);margin-bottom:6px;letter-spacing:.04em">◼ 닫는 이야기</div>` : `<div style="font-size:10px;font-weight:700;color:#68c8a8;margin-bottom:6px;letter-spacing:.04em">▶ 열린 이야기</div>`) : ''}
+      ${showLabel ? (s.is_closing ? `<div style="font-size:10px;font-weight:700;color:var(--accent2);margin-bottom:6px;letter-spacing:.04em">◼ 닫는 이야기</div>` : `<div style="font-size:10px;font-weight:700;color:#68c8a8;margin-bottom:6px;letter-spacing:.04em">▶ 열린 이야기</div>`) : ''}
       <div class="vote-content">${esc(s.content)}</div>
       <div class="vote-meta">
         <span>✍ ${esc(s.author_id.slice(0,6))}...</span>

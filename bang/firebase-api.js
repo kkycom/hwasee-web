@@ -278,7 +278,7 @@ async function fbGetStories(page) {
     return { ok: true, stories, page: 1 };
   } else {
     const [storiesSnap, likesSnap] = await Promise.all([
-      db.collection('stories').where('status', 'in', ['completed', 'inactive']).get(),
+      db.collection('stories').where('status', '==', 'completed').get(),
       db.collection('story_likes').get(),
     ]);
     const likeCountMap = {};

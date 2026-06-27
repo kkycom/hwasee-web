@@ -409,9 +409,13 @@
   .prose-select-bar.visible { display:block; }
   .prose-select-bar-title { font-size:13px; font-weight:700; margin-bottom:2px; }
   .prose-select-bar-hint { font-size:12px; color:var(--muted); }
-  .story-prose.selecting .prose-line { cursor:pointer; padding:10px 12px; border-radius:8px; border:1.5px solid transparent; margin:4px 0; transition:border-color .15s, background .15s; }
-  .story-prose.selecting .prose-line:hover { border-color:var(--border); background:var(--surface); }
-  .story-prose.selecting .prose-line.prose-selected { border-color:var(--accent2); background:#0a1a12; }
+  .story-prose.selecting .prose-line { cursor:pointer; padding:8px 12px; border-radius:6px; border-left:2px solid transparent; margin-top:0; transition:border-left-color .15s, background .15s; }
+  .story-prose.selecting .prose-line + .prose-line { margin-top:20px; position:relative; }
+  .story-prose.selecting .prose-line + .prose-line::before { content:''; position:absolute; top:-13px; left:-4px; right:-4px; height:13px; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='8'%3E%3Cpath d='M0,4 Q2.5,1 5,4 T10,4 T15,4 T20,4' fill='none' stroke='%23283029' stroke-width='1.5'/%3E%3C/svg%3E"); background-size:20px 8px; background-repeat:repeat-x; background-position:0 center; pointer-events:none; opacity:.7; transition:opacity .15s; }
+  .story-prose.selecting .prose-line:hover { border-left-color:var(--accent2); background:rgba(200,169,110,0.04); }
+  .story-prose.selecting .prose-line:hover + .prose-line::before,
+  .story-prose.selecting .prose-line:hover::before { opacity:1; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='8'%3E%3Cpath d='M0,4 Q2.5,1 5,4 T10,4 T15,4 T20,4' fill='none' stroke='%23c8a96e' stroke-width='1.5'/%3E%3C/svg%3E"); }
+  .story-prose.selecting .prose-line.prose-selected { border-left-color:var(--accent2); background:#0a1a12; }
   .prose-line-mvp { font-size:11px; color:var(--accent); font-weight:700; margin-left:8px; }
   .prose-line-my-mvp { font-size:10px; color:var(--accent2); margin-left:6px; }
   /* ── 분기 이야기 잠금 산문 */
@@ -2367,22 +2371,33 @@ function enterProseSelMode(mode, story_id) {
     const isViewVotes = mode === 'viewvotes';
     bar.innerHTML = `
       <div class="prose-select-bar-title">${isMvp ? '으뜸 글을 골라주세요' : isViewVotes ? '어느 단계의 공감 현황이 궁금하세요?' : '어디서부터 고치고 싶으세요?'}</div>
-      <div class="prose-select-bar-hint">${isMvp ? '선정된 글쓴이에게 10p가 지급됩니다' : isViewVotes ? '단계를 탭하면 공감 현황으로 이동해요' : '선택한 단계부터 새로운 경쟁이 시작됩니다 (30P 차감)'}</div>
-      <div style="margin-top:10px;display:flex;gap:8px">
-        ${isViewVotes ? '' : `<button id="prose-sel-confirm" class="btn btn-primary btn-sm" onclick="confirmProseSelMode()" disabled>완료</button>`}
+      <div class="prose-select-bar-hint">${isMvp ? '선정된 글쓴이에게 10p가 지급됩니다' : isViewVotes ? '단계를 탭하면 이동해요 · 다른 곳 누르면 닫혀요' : '선택한 단계부터 새로운 경쟁이 시작됩니다 (30P 차감)'}</div>
+      ${isViewVotes ? '' : `<div style="margin-top:10px;display:flex;gap:8px">
+        <button id="prose-sel-confirm" class="btn btn-primary btn-sm" onclick="confirmProseSelMode()" disabled>완료</button>
         <button class="btn btn-ghost btn-sm" onclick="cancelProseSelMode()">취소</button>
-      </div>`;
+      </div>`}`;
     bar.classList.add('visible');
+  }
+  if (mode === 'viewvotes') {
+    setTimeout(() => document.addEventListener('click', _proseSelOutsideClick, { capture: true }), 100);
   }
 }
 
 function cancelProseSelMode() {
+  document.removeEventListener('click', _proseSelOutsideClick, { capture: true });
   window._proseSelMode = null;
   window._proseSelEpId = null;
   const wrap = document.getElementById('story-prose-wrap');
   if (wrap) { wrap.classList.remove('selecting'); wrap.querySelectorAll('.prose-selected').forEach(el => el.classList.remove('prose-selected')); }
   const bar = document.getElementById('prose-select-bar');
   if (bar) { bar.classList.remove('visible'); bar.innerHTML = ''; }
+}
+
+function _proseSelOutsideClick(e) {
+  const wrap = document.getElementById('story-prose-wrap');
+  const bar  = document.getElementById('prose-select-bar');
+  if ((wrap && wrap.contains(e.target)) || (bar && bar.contains(e.target))) return;
+  cancelProseSelMode();
 }
 
 async function confirmProseSelMode() {

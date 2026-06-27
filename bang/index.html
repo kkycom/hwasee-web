@@ -1768,6 +1768,14 @@ async function episodeVotes() {
   const story = stSnap.data() || {};
   const subs = subsSnap.docs.map(d => ({ sub_id: d.id, ...d.data() }))
     .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0));
+
+  const authorIds = [...new Set(subs.map(s => s.author_id).filter(Boolean))];
+  const nickMap = {};
+  await Promise.all(authorIds.map(async id => {
+    const uSnap = await firebase.firestore().collection('users').doc(id).get();
+    if (uSnap.exists) { const d = uSnap.data(); nickMap[id] = d.display_name || d.nickname || '익명'; }
+  }));
+
   const stepNum = Number(ep.step) + 1;
   const totalVoters = ep.vote_total || 0;
   const canBranch = user && (story.status === 'completed' || story.status === 'inactive');
@@ -1776,11 +1784,12 @@ async function episodeVotes() {
     ? `<div class="empty" style="padding:32px 0">제출된 문장이 없습니다.</div>`
     : subs.map(sub => {
         const isAdopted = sub.is_adopted === true || sub.is_adopted === 'TRUE';
+        const nickname = nickMap[sub.author_id] || sub.author_nickname || '익명';
         return `<div class="card" style="margin-bottom:10px;${isAdopted ? 'border-color:var(--accent2)' : ''}">
           ${isAdopted ? `<div style="font-size:10px;font-weight:700;color:var(--accent2);margin-bottom:6px;letter-spacing:.04em">✓ 채택됨</div>` : ''}
           <div style="font-size:14px;line-height:1.6;margin-bottom:10px">${esc(sub.content)}</div>
           <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted)">
-            <span>✍ ${esc(sub.author_nickname || '익명')}</span>
+            <span>✍ ${esc(nickname)}</span>
             <span style="${isAdopted ? 'color:var(--accent2);font-weight:700' : ''}">▲ ${sub.vote_count || 0}개 공감</span>
           </div>
         </div>`;

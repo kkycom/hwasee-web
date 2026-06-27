@@ -404,7 +404,27 @@
   .branch-tab { background:var(--card); border:1px solid var(--border); border-radius:4px; padding:2px 8px; font-size:11px; cursor:pointer; color:var(--muted); }
   .branch-tab.active { border-color:var(--accent2); color:var(--accent2); font-weight:700; }
 
-  /* ── 곧 채택 예정 태그 */
+  /* ── 산문 선택 모드 */
+  .prose-select-bar { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 16px; margin-bottom:12px; display:none; }
+  .prose-select-bar.visible { display:block; }
+  .prose-select-bar-title { font-size:13px; font-weight:700; margin-bottom:2px; }
+  .prose-select-bar-hint { font-size:12px; color:var(--muted); }
+  .story-prose.selecting .prose-line { cursor:pointer; padding:10px 12px; border-radius:8px; border:1.5px solid transparent; margin:4px 0; transition:border-color .15s, background .15s; }
+  .story-prose.selecting .prose-line:hover { border-color:var(--border); background:var(--surface); }
+  .story-prose.selecting .prose-line.prose-selected { border-color:var(--accent2); background:#0a1a12; }
+  .prose-line-mvp { font-size:11px; color:var(--accent); font-weight:700; margin-left:8px; }
+  .prose-line-my-mvp { font-size:10px; color:var(--accent2); margin-left:6px; }
+  /* ── 분기 이야기 잠금 산문 */
+  .prose-inherited { opacity:0.55; pointer-events:none; }
+  .prose-branch-tag { display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--accent2); font-weight:700; border:1px solid rgba(128,151,140,.4); border-radius:12px; padding:3px 10px; margin-bottom:10px; }
+  /* ── 외부 분기 포크 */
+  .ext-branch-fork { border:1px dashed rgba(128,151,140,.4); border-radius:10px; padding:12px; margin:10px 0; }
+  .ext-branch-fork-label { font-size:10px; color:var(--muted); text-align:center; letter-spacing:1px; margin-bottom:10px; }
+  .ext-branch-choices { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .ext-branch-card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:10px; cursor:pointer; text-align:left; font-size:13px; line-height:1.5; transition:border-color .15s; width:100%; }
+  .ext-branch-card:hover { border-color:var(--accent2); }
+  .ext-branch-card-label { font-size:10px; color:var(--accent2); font-weight:700; margin-bottom:4px; }
+
   .admin-btn { padding:4px 10px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--text); transition:opacity .15s; }
   .admin-btn:hover { opacity:.8; }
   .admin-delete { background:#2a0a0a; color:#ff6b6b; border-color:#ff6b6b44; }
@@ -1002,8 +1022,11 @@ async function story() {
   }
 
   // 분기 트리 산문 (전역 저장 → chooseBranch 재렌더용)
-  window._storyData = { episodes, submissions, story: s };
+  const { branches = [], parent_chain = null, mvp_map = {}, my_mvp_episode_id = null } = res;
+  window._storyData = { episodes, submissions, story: s, branches, parent_chain, mvp_map, my_mvp_episode_id };
   window._branchChoice = window._branchChoice || {};
+  window._proseSelMode = null; // 'mvp' | 'branch'
+  window._proseSelEpId = null;
 
   // 열린/대기 에피소드
   const openEp    = episodes.find(e => e.status === 'open') || null;
@@ -1011,12 +1034,19 @@ async function story() {
   const mySubId   = user && openEp ? (openSubs.find(sub => sub.author_id === user.user_id) || {}).sub_id || null : null;
   const maxVotes  = openSubs.length ? Math.max(...openSubs.map(sub => Number(sub.vote_count)||0)) : 0;
 
+  // 분기 이야기면 부모 단계 잠금 산문
+  let inheritedHtml = '';
+  if (parent_chain && parent_chain.episodes.length) {
+    const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions);
+    inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, {})}</div>` : '';
+  }
+
   // 분기 트리 HTML (closed 에피소드들의 채택 내용만)
   const tree = getEpisodeTree(
     episodes.filter(e => e.status === 'closed'),
     submissions
   );
-  const confirmedHtml = `<div id="story-prose-content">${tree ? renderEpisodeTreeHtml(tree, window._branchChoice) : ''}</div>`;
+  const confirmedHtml = `<div id="story-prose-content">${inheritedHtml}${tree ? renderEpisodeTreeHtml(tree, window._branchChoice, mvp_map, branches, my_mvp_episode_id) : ''}</div>`;
 
   // ── 다음 단계 액션 ──
   let actionHtml = '';
@@ -1086,9 +1116,14 @@ async function story() {
       ${isAdmin() && s.status === 'active' ? `
         <button class="admin-btn admin-delete" style="margin-left:auto" onclick="adminCloseStory('${esc(s.story_id)}')">✕ 이야기 종료</button>` : ''}
     </div>
-    <div style="text-align:right;margin-bottom:6px">
+    <div style="text-align:right;margin-bottom:6px;display:flex;justify-content:flex-end;align-items:center;gap:6px;flex-wrap:wrap">
+      ${isFinished && s.branch_from_step ? `<span class="prose-branch-tag">⑂ ${s.branch_from_step}단계 분기</span>` : ''}
       <button class="prose-author-toggle" id="prose-author-btn" onclick="toggleProseAuthors(this)">글쓴이 보기 ▾</button>
+      ${isFinished && user ? `
+        <button class="btn btn-ghost btn-sm" style="font-size:12px" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">으뜸 글 뽑기</button>
+        <button class="btn btn-ghost btn-sm" style="font-size:12px" onclick="enterProseSelMode('branch','${esc(s.story_id)}')">분기 신청</button>` : ''}
     </div>
+    <div id="prose-select-bar" class="prose-select-bar"></div>
     <div class="story-prose" id="story-prose-wrap">
       <div class="prose-opening">${esc(s.opening)}</div>
       ${confirmedHtml || ''}
@@ -1101,9 +1136,6 @@ async function story() {
         <div id="history-body" style="display:none;margin-top:12px">
           ${renderHistoryPanel(episodes, submissions)}
         </div>
-      </div>
-      <div id="mvp-section" style="margin-top:16px">
-        <div style="font-size:12px;color:var(--muted);text-align:center">불러오는 중...</div>
       </div>
       <div style="margin-top:32px">
         <h3 style="margin-bottom:14px;font-size:16px">이야기 감상 나누기</h3>
@@ -1120,7 +1152,6 @@ async function story() {
 
   if (isFinished) {
     loadStoryComments(currentParam);
-    loadMvpSection(currentParam, submissions);
   }
 
   if (newBannerMsg) {
@@ -2074,23 +2105,36 @@ function getEpisodeTree(episodes, submissions) {
   return buildNode(rootEp);
 }
 
-function renderEpisodeTreeHtml(node, choices) {
+function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
   if (!node) return '';
+  mvpMap   = mvpMap   || {};
+  branches = branches || [];
   const { ep, adoptedSubs, children } = node;
   if (ep.status !== 'closed') return '';
   if (adoptedSubs.length === 0) return '';
 
+  const mvpCount  = mvpMap[ep.episode_id] || 0;
+  const isMyMvp   = myMvpEpId === ep.episode_id;
+  const mvpBadge  = mvpCount > 0 ? `<span class="prose-line-mvp">👍 ${mvpCount}</span>` : '';
+  const myMvpMark = isMyMvp ? `<span class="prose-line-my-mvp">✦ 내가 선정함</span>` : '';
+
+  // 외부 분기: 이 에피소드의 다음 단계(step+2, 1-based)에 분기가 있으면 포크 표시
+  const extBranch = branches.find(b => b.branch_from_step === Number(ep.step) + 2);
+
   if (adoptedSubs.length === 1) {
     const sub = adoptedSubs[0];
-    const childHtml = children.length === 1 ? renderEpisodeTreeHtml(children[0], choices) : '';
+    const childHtml = children.length === 1
+      ? renderEpisodeTreeHtml(children[0], choices, mvpMap, branches, myMvpEpId) : '';
+    const forkHtml = extBranch ? renderExtBranchFork(ep, sub, extBranch) : '';
     return `
-      <div class="prose-line">
+      <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
         <span class="prose-sentence">${esc(sub.content)}</span>
         <span class="prose-author">— ${sub.author_badge?`<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(sub.author_badge)}</span>`:''}${esc(sub.author_nickname || '익명')}</span>
-      </div>${childHtml}`;
+        ${mvpBadge}${myMvpMark}
+      </div>${forkHtml}${childHtml}`;
   }
 
-  // 분기 포인트 (동률 채택)
+  // 동률 채택 분기 포인트
   const chosenSubId = choices[ep.episode_id];
   if (chosenSubId) {
     const chosenSub   = adoptedSubs.find(s => s.sub_id === chosenSubId);
@@ -2104,15 +2148,16 @@ function renderEpisodeTreeHtml(node, choices) {
               onclick="chooseBranch('${ep.episode_id}','${sub.sub_id}')">
               ${String.fromCharCode(65+i)}갈래</button>`).join('')}
         </div>
-        <div class="prose-line">
+        <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
           <span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span>
           <span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>
+          ${mvpBadge}${myMvpMark}
         </div>
       </div>
-      ${chosenChild ? renderEpisodeTreeHtml(chosenChild, choices) : ''}`;
+      ${chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId) : ''}`;
   }
 
-  // 아직 선택 안 한 갈림길 → chooser 표시
+  // 아직 선택 안 한 갈림길
   return `
     <div class="branch-chooser">
       <div class="branch-chooser-label">✦ 이야기의 갈림길 ✦</div>
@@ -2123,6 +2168,24 @@ function renderEpisodeTreeHtml(node, choices) {
             <div>${esc(sub.content)}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px">▲ ${sub.vote_count}표</div>
           </button>`).join('')}
+      </div>
+    </div>`;
+}
+
+function renderExtBranchFork(ep, originalSub, extBranch) {
+  const isActive = extBranch.status === 'active';
+  return `
+    <div class="ext-branch-fork">
+      <div class="ext-branch-fork-label">⑂ 이야기의 갈림길</div>
+      <div class="ext-branch-choices">
+        <button class="ext-branch-card" style="cursor:default;opacity:.7">
+          <div class="ext-branch-card-label">원본</div>
+          <div>${esc(originalSub.content)}</div>
+        </button>
+        <button class="ext-branch-card" onclick="nav('story','${extBranch.story_id}')">
+          <div class="ext-branch-card-label">분기 ${isActive ? '· 진행 중' : '· 완성됨'}</div>
+          <div style="font-size:12px;color:var(--muted)">${isActive ? '지금 참여해서 이야기를 이어가세요 →' : '분기된 이야기 보기 →'}</div>
+        </button>
       </div>
     </div>`;
 }
@@ -2141,15 +2204,86 @@ function chooseBranch(episode_id, sub_id) {
   window._branchChoice[episode_id] = sub_id;
   const el = document.getElementById('story-prose-content');
   if (el && window._storyData) {
-    const { episodes, submissions } = window._storyData;
-    const tree = getEpisodeTree(episodes, submissions);
-    el.innerHTML = tree ? renderEpisodeTreeHtml(tree, window._branchChoice) : '';
+    const { episodes, submissions, branches, mvp_map, my_mvp_episode_id, parent_chain } = window._storyData;
+    let inheritedHtml = '';
+    if (parent_chain && parent_chain.episodes.length) {
+      const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions);
+      inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, {})}</div>` : '';
+    }
+    const tree = getEpisodeTree(episodes.filter(e => e.status === 'closed'), submissions);
+    el.innerHTML = inheritedHtml + (tree ? renderEpisodeTreeHtml(tree, window._branchChoice, mvp_map, branches, my_mvp_episode_id) : '');
   }
+}
+
+function onPrseLineClick(episode_id) {
+  if (!window._proseSelMode) return;
+  window._proseSelEpId = episode_id;
+  document.querySelectorAll('#story-prose-wrap .prose-line').forEach(el => {
+    el.classList.toggle('prose-selected', el.dataset.episodeId === episode_id);
+  });
+  const btn = document.getElementById('prose-sel-confirm');
+  if (btn) btn.disabled = false;
 }
 
 // ─── MVP 따봉 ─────────────────────────────────────────
 
 let _mvpSelected = [];
+
+function enterProseSelMode(mode, story_id) {
+  if (!user) { nav('auth','login'); return; }
+  window._proseSelMode  = mode;
+  window._proseSelEpId  = null;
+  window._proseSelStory = story_id;
+  const wrap = document.getElementById('story-prose-wrap');
+  if (wrap) wrap.classList.add('selecting');
+  const bar = document.getElementById('prose-select-bar');
+  if (bar) {
+    const isMvp = mode === 'mvp';
+    bar.innerHTML = `
+      <div class="prose-select-bar-title">${isMvp ? '으뜸 글을 골라주세요' : '어디서부터 고치고 싶으세요?'}</div>
+      <div class="prose-select-bar-hint">${isMvp ? '선정된 글쓴이에게 10p가 지급됩니다' : '선택한 단계부터 새로운 경쟁이 시작됩니다 (30P 차감)'}</div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button id="prose-sel-confirm" class="btn btn-primary btn-sm" onclick="confirmProseSelMode()" disabled>완료</button>
+        <button class="btn btn-ghost btn-sm" onclick="cancelProseSelMode()">취소</button>
+      </div>`;
+    bar.classList.add('visible');
+  }
+}
+
+function cancelProseSelMode() {
+  window._proseSelMode = null;
+  window._proseSelEpId = null;
+  const wrap = document.getElementById('story-prose-wrap');
+  if (wrap) { wrap.classList.remove('selecting'); wrap.querySelectorAll('.prose-selected').forEach(el => el.classList.remove('prose-selected')); }
+  const bar = document.getElementById('prose-select-bar');
+  if (bar) { bar.classList.remove('visible'); bar.innerHTML = ''; }
+}
+
+async function confirmProseSelMode() {
+  const mode    = window._proseSelMode;
+  const ep_id   = window._proseSelEpId;
+  const story_id = window._proseSelStory;
+  if (!ep_id) return;
+  cancelProseSelMode();
+
+  if (mode === 'mvp') {
+    const res = await api('voteMvp', { story_id, episode_id: ep_id });
+    if (!res.ok) { toast(res.error, true); return; }
+    toast('으뜸 글 선정 완료! 글쓴이에게 +10p 지급됐어요');
+    story();
+  } else if (mode === 'branch') {
+    const d = window._storyData;
+    if (!d) return;
+    const ep = d.episodes.find(e => e.episode_id === ep_id);
+    if (!ep) return;
+    const branchStep = Number(ep.step) + 1; // 1-based display step
+    if (!confirm(`${branchStep}단계부터 분기 챌린지를 시작할까요?\n30P가 차감됩니다.`)) return;
+    const res = await api('createBranch', { story_id, branch_from_step: branchStep });
+    if (!res.ok) { toast(res.error, true); return; }
+    toast('분기 챌린지가 시작됐어요!');
+    nav('story', res.new_story_id);
+  }
+}
 
 async function loadMvpSection(story_id, submissions) {
   const el = document.getElementById('mvp-section');

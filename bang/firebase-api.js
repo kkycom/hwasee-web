@@ -288,14 +288,13 @@ async function fbGetStories(page) {
 }
 
 async function fbGetStory(story_id, user_id) {
-  try { await _fbCheckPendingEpisodes(story_id); } catch(e) {}
-
-  const [storySnap, episodesSnap, subsSnap, usersSnap, commSnap] = await Promise.all([
+  const [storySnap, episodesSnap, subsSnap, usersSnap, commSnap, mvpSnap] = await Promise.all([
     db.collection('stories').doc(story_id).get(),
     db.collection('episodes').where('story_id', '==', story_id).get(),
     db.collection('submissions').where('story_id', '==', story_id).get(),
     db.collection('users').get(),
     db.collection('comments').where('story_id', '==', story_id).get(),
+    db.collection('story_mvp').where('story_id', '==', story_id).get(),
   ]);
 
   if (!storySnap.exists) return { ok: false, error: '스토리를 찾을 수 없습니다.' };
@@ -350,7 +349,43 @@ async function fbGetStory(story_id, user_id) {
     }
   }
 
-  return { ok: true, story, episodes, submissions, is_bookmarked, is_liked, like_count, my_voted_sub_ids };
+  // MVP 투표 현황
+  const mvp_map = {};
+  let my_mvp_episode_id = null;
+  mvpSnap.docs.forEach(d => {
+    const m = d.data();
+    if (m.episode_id) mvp_map[m.episode_id] = (mvp_map[m.episode_id] || 0) + 1;
+    if (user_id && m.voter_id === user_id) my_mvp_episode_id = m.episode_id || null;
+  });
+
+  // 이 이야기의 외부 분기 목록
+  const branchSnap = await db.collection('stories').where('parent_story_id', '==', story_id).get();
+  const branches = branchSnap.docs.map(d => ({
+    story_id: d.data().story_id || d.id,
+    branch_from_step: Number(d.data().branch_from_step),
+    status: d.data().status,
+  }));
+
+  // 분기 이야기면 부모 단계 가져오기 (잠금 산문용)
+  let parent_chain = null;
+  const story = storySnap.data();
+  if (story.parent_story_id) {
+    const [pEpsSnap, pSubsSnap] = await Promise.all([
+      db.collection('episodes').where('story_id', '==', story.parent_story_id).get(),
+      db.collection('submissions').where('story_id', '==', story.parent_story_id).get(),
+    ]);
+    const pEps = pEpsSnap.docs
+      .map(d => ({ episode_id: d.id, ...d.data() }))
+      .filter(e => e.status === 'closed' && Number(e.step) < Number(story.branch_from_step) - 1);
+    const pSubs = pSubsSnap.docs.map(d => ({
+      ...d.data(),
+      author_nickname: nickMap[d.data().author_id] || '익명',
+      author_badge:    badgeMap[d.data().author_id] || 'seed',
+    }));
+    parent_chain = { episodes: pEps, submissions: pSubs };
+  }
+
+  return { ok: true, story, episodes, submissions, is_bookmarked, is_liked, like_count, my_voted_sub_ids, branches, parent_chain, mvp_map, my_mvp_episode_id };
 }
 
 async function fbCreateStory(opening, creator_id) {
@@ -948,10 +983,9 @@ async function fbGetLeaderboard() {
 
 // ─── MVP ────────────────────────────────────────────────
 
-async function fbVoteMvp(story_id, nominated_user_ids, voter_id) {
+async function fbVoteMvp(story_id, episode_id, voter_id) {
   if (!voter_id) return { ok: false, error: '로그인이 필요합니다.' };
-  if (!Array.isArray(nominated_user_ids) || nominated_user_ids.length !== 1)
-    return { ok: false, error: '1명을 선택해주세요.' };
+  if (!episode_id) return { ok: false, error: '잘못된 요청입니다.' };
 
   const stSnap = await db.collection('stories').doc(story_id).get();
   if (!stSnap.exists) return { ok: false, error: '이야기를 찾을 수 없습니다.' };
@@ -962,23 +996,18 @@ async function fbVoteMvp(story_id, nominated_user_ids, voter_id) {
   const dup = await db.collection('story_mvp')
     .where('story_id','==',story_id).where('voter_id','==',voter_id).limit(1).get();
   if (!dup.empty) return { ok: false, error: '이미 투표하셨습니다.' };
-  if (nominated_user_ids.includes(voter_id)) return { ok: false, error: '본인을 선택할 수 없습니다.' };
 
-  const winnerSnap = await db.collection('submissions')
-    .where('story_id','==',story_id).where('is_adopted','==',true).get();
-  const winnerIds = new Set(winnerSnap.docs.map(d => d.data().author_id));
-  for (const uid of nominated_user_ids) {
-    if (!winnerIds.has(uid)) return { ok: false, error: '이야기 참여자만 선택할 수 있습니다.' };
-  }
+  const subSnap = await db.collection('submissions')
+    .where('episode_id','==',episode_id).where('is_adopted','==',true).limit(1).get();
+  if (subSnap.empty) return { ok: false, error: '채택된 문장을 찾을 수 없습니다.' };
+  const sub = subSnap.docs[0].data();
+  if (sub.author_id === voter_id) return { ok: false, error: '본인 글에는 투표할 수 없습니다.' };
+  if (!sub.author_id || sub.author_id === 'SYSTEM') return { ok: false, error: '투표할 수 없는 글입니다.' };
 
-  const batch = db.batch();
-  nominated_user_ids.forEach(uid => {
-    batch.set(db.collection('story_mvp').doc(fbGenId()), {
-      story_id, voter_id, nominated_user_id: uid, created_at: fbNow()
-    });
+  await db.collection('story_mvp').doc(fbGenId()).set({
+    story_id, voter_id, nominated_user_id: sub.author_id, episode_id, created_at: fbNow()
   });
-  await batch.commit();
-  for (const uid of nominated_user_ids) await _fbAddPoints(uid, 10, 'mvp_nomination', '');
+  await _fbAddPoints(sub.author_id, 10, 'mvp_nomination', '');
   return { ok: true };
 }
 
@@ -997,6 +1026,71 @@ async function fbGetMvpVotes(story_id, voter_id) {
     .sort(([,a],[,b]) => b - a)
     .map(([uid, count]) => ({ user_id: uid, nickname: nickMap[uid] || '?', badge: badgeMap[uid] || 'seed', count }));
   return { ok: true, votes, has_voted, total_voters: new Set(snap.docs.map(d => d.data().voter_id)).size };
+}
+
+// ─── 분기 챌린지 ─────────────────────────────────────────
+
+async function fbCreateBranch(story_id, branch_from_step, user_id) {
+  if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
+  const step = Number(branch_from_step);
+  if (step < 2) return { ok: false, error: '1단계는 분기할 수 없습니다.' };
+
+  const stSnap = await db.collection('stories').doc(story_id).get();
+  if (!stSnap.exists) return { ok: false, error: '이야기를 찾을 수 없습니다.' };
+  const st = stSnap.data();
+  if (st.status !== 'completed' && st.status !== 'inactive')
+    return { ok: false, error: '완결된 이야기에서만 분기를 만들 수 있습니다.' };
+
+  const existSnap = await db.collection('stories').where('parent_story_id','==',story_id).get();
+  if (existSnap.docs.some(d => Number(d.data().branch_from_step) === step))
+    return { ok: false, error: '이 단계에는 이미 분기가 있습니다.' };
+
+  const spendRes = await _fbSpendPoints(user_id, 30, 'branch_create');
+  if (!spendRes.ok) return spendRes;
+
+  const epsSnap = await db.collection('episodes').where('story_id','==',story_id).get();
+  const targetEp = epsSnap.docs.map(d => ({ episode_id: d.id, ...d.data() }))
+    .find(e => Number(e.step) === step - 1);
+  if (!targetEp) return { ok: false, error: '해당 단계를 찾을 수 없습니다.' };
+
+  const subsSnap = await db.collection('submissions').where('episode_id','==',targetEp.episode_id).get();
+  const nonAdopted = subsSnap.docs.map(d => d.data())
+    .filter(s => s.is_adopted !== true && s.is_adopted !== 'TRUE');
+
+  const new_story_id = fbGenId();
+  const new_ep_id    = fbGenId();
+  const batch = db.batch();
+
+  batch.set(db.collection('stories').doc(new_story_id), {
+    story_id: new_story_id, parent_story_id: story_id, branch_from_step: step,
+    opening: st.opening, max_steps: st.max_steps || 10,
+    current_step: step - 1, status: 'active', creator_id: user_id,
+    created_at: fbNow(), participant_count: 0, batch: '',
+  });
+  batch.set(db.collection('episodes').doc(new_ep_id), {
+    episode_id: new_ep_id, story_id: new_story_id, step: step - 1,
+    status: 'open', vote_total: 0, created_at: fbNow(),
+    closed_at: '', pending_at: '', parent_sub_id: '',
+  });
+  nonAdopted.forEach(sub => {
+    const sid = fbGenId();
+    batch.set(db.collection('submissions').doc(sid), {
+      ...sub, sub_id: sid, episode_id: new_ep_id, story_id: new_story_id,
+      vote_count: 0, is_adopted: false, derived_from: '',
+    });
+  });
+  await batch.commit();
+
+  const votersSnap = await db.collection('votes').where('episode_id','==',targetEp.episode_id).get();
+  const notifyIds = [...new Set([
+    ...nonAdopted.map(s => s.author_id),
+    ...votersSnap.docs.map(d => d.data().voter_id),
+  ])].filter(id => id && id !== user_id);
+  const snippet = st.opening.slice(0, 15);
+  await _fbCreateNotifications(notifyIds, new_story_id,
+    `"${snippet}..." 이야기의 ${step}단계에서 분기 챌린지가 시작됐어요!`);
+
+  return { ok: true, new_story_id };
 }
 
 // ─── 부스트 / 추가제출 / 추천 ─────────────────────────────
@@ -1266,8 +1360,9 @@ async function firebaseApi(action, params = {}) {
     case 'checkDisplayName':     return fbCheckDisplayName(params.display_name);
     case 'changeDisplayName':    return fbChangeDisplayName(need().user_id, params.display_name);
 
-    case 'voteMvp':            return fbVoteMvp(params.story_id, params.nominated_user_ids, need().user_id);
+    case 'voteMvp':            return fbVoteMvp(params.story_id, params.episode_id, need().user_id);
     case 'getMvpVotes':        return fbGetMvpVotes(params.story_id, session?.user_id || null);
+    case 'createBranch':       return fbCreateBranch(params.story_id, params.branch_from_step, need().user_id);
 
     case 'boostStory':         return fbBoostStory(params.story_id, need().user_id);
     case 'buyExtraSubmit':     return fbBuyExtraSubmit(params.episode_id, need().user_id);

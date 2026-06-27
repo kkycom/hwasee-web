@@ -1865,9 +1865,10 @@ async function profile() {
     ${res.history.length === 0
       ? `<div class="empty">포인트 내역이 없습니다.</div>`
       : res.history.map(h => `
-        <div class="card" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
+        <div class="card" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center${h.story_id?';cursor:pointer':''}"
+          ${h.story_id ? `onclick="nav('story','${esc(h.story_id)}')"` : ''}>
           <div>
-            <div style="font-size:14px">${reasonLabel(h.reason)}</div>
+            <div style="font-size:14px">${reasonLabel(h.reason)}${h.story_id?` <span style="font-size:11px;color:var(--accent)">→ 이야기 보기</span>`:''}</div>
             <div style="font-size:12px;color:var(--muted)">${timeAgo(h.created_at)}</div>
           </div>
           <div style="font-size:18px;font-weight:700;color:${Number(h.points)<0?'var(--accent2)':'var(--accent)'}">

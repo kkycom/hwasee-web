@@ -1083,6 +1083,19 @@ async function fbGetProfile(user_id) {
 
   const history = histSnap.docs.map(d => d.data())
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 20);
+
+  const subIds = [...new Set(history.map(h => h.sub_id).filter(Boolean))];
+  const subStoryMap = {};
+  if (subIds.length) {
+    const chunks = [];
+    for (let i = 0; i < subIds.length; i += 30) chunks.push(subIds.slice(i, i + 30));
+    await Promise.all(chunks.map(async chunk => {
+      const snap = await db.collection('submissions')
+        .where(firebase.firestore.FieldPath.documentId(), 'in', chunk).get();
+      snap.docs.forEach(d => { subStoryMap[d.id] = d.data().story_id; });
+    }));
+  }
+  history.forEach(h => { if (h.sub_id && subStoryMap[h.sub_id]) h.story_id = subStoryMap[h.sub_id]; });
   const adoptions = adoptSnap.docs.map(d => {
     const s = d.data();
     return {

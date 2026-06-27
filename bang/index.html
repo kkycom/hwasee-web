@@ -1058,7 +1058,7 @@ async function story() {
         </div>` : ''}
       ${openSubs.length === 0
         ? `<div class="empty" style="padding:20px 0">아직 제출된 문장이 없습니다.</div>`
-        : renderSubsWithReplies(openSubs, mySubId, maxVotes, myVotedSet, openEp.step, s.max_steps)}
+        : renderSubsWithReplies(openSubs, mySubId, maxVotes, myVotedSet, openEp.step)}
       ${user && openSubs.length > 0 ? `
         <div class="vote-sticky">
           <button class="btn btn-primary" id="vote-btn" onclick="submitVoteInStory('${esc(openEp.episode_id)}')">
@@ -1216,7 +1216,7 @@ async function submitStoryComment(story_id) {
   loadStoryComments(story_id);
 }
 
-function renderSubsWithReplies(subs, mySubId, maxVotes, myVotedSet = new Set(), step = 1, maxSteps = 10) {
+function renderSubsWithReplies(subs, mySubId, maxVotes, myVotedSet = new Set(), step = 1) {
   const subIds = new Set(subs.map(s => s.sub_id));
   const roots  = subs.filter(s => !s.derived_from || !subIds.has(s.derived_from));
   const childMap = {};
@@ -1228,25 +1228,25 @@ function renderSubsWithReplies(subs, mySubId, maxVotes, myVotedSet = new Set(), 
   });
   return roots.map(root => {
     const children = childMap[root.sub_id] || [];
-    return renderVoteCard(root, mySubId, maxVotes, myVotedSet, step, maxSteps) +
+    return renderVoteCard(root, mySubId, maxVotes, myVotedSet, step) +
       children.map(child => `
         <div style="display:flex;gap:8px;margin-top:-8px;margin-bottom:10px;padding-left:12px">
           <div style="display:flex;flex-direction:column;align-items:center;padding-top:8px;flex-shrink:0">
             <div style="width:1px;height:12px;background:var(--border)"></div>
             <span style="font-size:13px;color:var(--muted);line-height:1">↳</span>
           </div>
-          <div style="flex:1">${renderVoteCard(child, mySubId, maxVotes, myVotedSet, step, maxSteps)}</div>
+          <div style="flex:1">${renderVoteCard(child, mySubId, maxVotes, myVotedSet, step)}</div>
         </div>`).join('');
   }).join('');
 }
 
-function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1, maxSteps = 10) {
+function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1) {
   const isAdopted   = sub.is_adopted === true || sub.is_adopted === 'TRUE';
   const iVoted      = myVotedSet.has(sub.sub_id);
   const voteCount   = Number(sub.vote_count) || 0;
   const barPct      = Math.min(Math.round(voteCount / FB_VOTE_THRESHOLD * 100), 100);
   const isClickable = user && sub.sub_id !== mySubId && !isAdopted;
-  const showLabel   = Number(step) > Number(maxSteps) - 3;
+  const showLabel   = Number(step) >= 3;
 
   return `
     <div class="vote-card ${isAdopted?'adopted':''} ${isClickable?'clickable':''}" id="sc-${sub.sub_id}"
@@ -1635,7 +1635,7 @@ async function episode() {
     </div>
     <div id="sub-list">
       ${subs.length === 0 ? `<div class="empty" style="padding:32px 0">아직 제출된 문장이 없습니다.</div>` :
-        subs.map(s => renderSubCard(s, isClosed, mySubId, maxVotes, ep.step, res.story?.max_steps || 10)).join('')}
+        subs.map(s => renderSubCard(s, isClosed, mySubId, maxVotes, ep.step)).join('')}
     </div>
     ${!isClosed && user && mySubId ? `
     <div style="margin-top:16px;text-align:center">
@@ -1655,7 +1655,7 @@ async function episode() {
         const freshMax  = freshSubs.length ? Math.max(...freshSubs.map(s => Number(s.vote_count)||0)) : 0;
         list.innerHTML = freshSubs.length === 0
           ? `<div class="empty" style="padding:32px 0">아직 제출된 문장이 없습니다.</div>`
-          : freshSubs.map(s => renderSubCard(s, false, mySubId, freshMax, ep.step, res.story?.max_steps || 10)).join('');
+          : freshSubs.map(s => renderSubCard(s, false, mySubId, freshMax, ep.step)).join('');
         // 투표 버튼 카운트 동기화
         const hdr = list.previousElementSibling;
         if (hdr) hdr.querySelector?.('.sub-count-label') && (hdr.querySelector('.sub-count-label').textContent = `제출된 문장 ${freshSubs.length}개`);
@@ -1663,12 +1663,12 @@ async function episode() {
   }
 }
 
-function renderSubCard(s, isClosed, mySubId, maxVotes, step = 1, maxSteps = 10) {
+function renderSubCard(s, isClosed, mySubId, maxVotes, step = 1) {
   const isAdopted  = s.is_adopted === true || s.is_adopted === 'TRUE';
   const sVoteCount = Number(s.vote_count) || 0;
   const barPct     = Math.min(Math.round(sVoteCount / FB_VOTE_THRESHOLD * 100), 100);
   const isClickable = !isClosed && s.sub_id !== mySubId;
-  const showLabel   = Number(step) > Number(maxSteps) - 3;
+  const showLabel   = Number(step) >= 3;
   return `
     <div class="vote-card ${isAdopted?'adopted':''}" id="sc-${s.sub_id}"
       ${isClickable ? `onclick="toggleSub('${s.sub_id}')"` : ''} style="${isClickable?'cursor:pointer':''}">

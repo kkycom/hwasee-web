@@ -1844,27 +1844,7 @@ async function profile() {
           <div style="font-size:12px;color:var(--muted);margin-top:6px">▲ ${a.vote_count}표 채택 · ${timeAgo(a.created_at)}</div>
         </div>`).join('')}
       <hr style="margin:20px 0;border-color:var(--border)">` : ''}
-    <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-      <button onclick="const b=this.nextElementSibling;b.style.display=b.style.display==='none'?'block':'none'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600">
-        ✦ 포인트 획득 방법
-      </button>
-      <div style="display:none;padding:12px 16px;font-size:13px">
-        ${[
-          ['매일 첫 로그인','+10p','earn'],
-          ['글 제출','+5p','earn'],
-          ['투표 참여','+1p','earn'],
-          ['내 글 채택됨 (직접 제출)','+20p','earn'],
-          ['내 글 채택됨 (다듬기)','+10p','earn'],
-          ['완결 이야기 MVP 선정','+10p','earn'],
-          ['이야기 주목 (24시간 상단 노출)','-30p','spend'],
-          ['에피소드 추가 제출권','-20p','spend'],
-        ].map(([label, pts, type]) => `
-          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
-            <span style="color:var(--muted)">${label}</span>
-            <span style="color:${type==='spend'?'var(--accent2)':'var(--accent)'};font-weight:700">${pts}</span>
-          </div>`).join('')}
-      </div>
-    </div>
+    <h2 style="margin-bottom:10px">포인트 획득 내역</h2>
     ${res.history.length === 0
       ? `<div class="empty">포인트 내역이 없습니다.</div>`
       : res.history.map(h => `
@@ -1945,6 +1925,27 @@ async function profile() {
             <span style="font-size:10px;color:var(--muted);padding-left:2px">5,000p</span>
           </div>
         </div>
+      </div>
+    </div>
+    <div style="margin-bottom:20px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <button onclick="const b=this.nextElementSibling;b.style.display=b.style.display==='none'?'block':'none'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600">
+        ✦ 포인트 획득 방법
+      </button>
+      <div style="display:none;padding:12px 16px;font-size:13px">
+        ${[
+          ['매일 첫 로그인','+10p','earn'],
+          ['글 제출','+5p','earn'],
+          ['투표 참여','+1p','earn'],
+          ['내 글 채택됨 (직접 제출)','+20p','earn'],
+          ['내 글 채택됨 (다듬기)','+10p','earn'],
+          ['완결 이야기 MVP 선정','+10p','earn'],
+          ['이야기 주목 (24시간 상단 노출)','-30p','spend'],
+          ['에피소드 추가 제출권','-20p','spend'],
+        ].map(([label, pts, type]) => `
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+            <span style="color:var(--muted)">${label}</span>
+            <span style="color:${type==='spend'?'var(--accent2)':'var(--accent)'};font-weight:700">${pts}</span>
+          </div>`).join('')}
       </div>
     </div>
     <div class="tabs" style="margin-bottom:20px">

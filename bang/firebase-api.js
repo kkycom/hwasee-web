@@ -803,9 +803,19 @@ async function fbGetComments(sub_id) {
   const uSnap  = await db.collection('users').get();
   const nickMap = {};
   uSnap.docs.forEach(d => { nickMap[d.id] = d.data().display_name || d.data().nickname; });
-  const comments = snap.docs.map(d => ({ ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }))
+  const comments = snap.docs.map(d => ({ comment_id: d.id, ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }))
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   return { ok: true, comments };
+}
+
+async function fbDeleteComment(comment_id, user_id) {
+  const snap = await db.collection('comments').doc(comment_id).get();
+  if (!snap.exists) return { ok: false, error: '댓글을 찾을 수 없습니다.' };
+  const data = snap.data();
+  if (data.author_id !== user_id && user_id !== FB_ADMIN_ID)
+    return { ok: false, error: '삭제 권한이 없습니다.' };
+  await db.collection('comments').doc(comment_id).update({ deleted: true });
+  return { ok: true };
 }
 
 async function fbAddStoryComment(story_id, content, author_id) {
@@ -827,7 +837,7 @@ async function fbGetStoryComments(story_id) {
   const uSnap  = await db.collection('users').get();
   const nickMap = {};
   uSnap.docs.forEach(d => { nickMap[d.id] = d.data().display_name || d.data().nickname; });
-  const comments = snap.docs.map(d => ({ ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }))
+  const comments = snap.docs.map(d => ({ comment_id: d.id, ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }))
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   return { ok: true, comments };
 }
@@ -1176,6 +1186,7 @@ async function firebaseApi(action, params = {}) {
     case 'getBookmarks':       return fbGetBookmarks(need().user_id);
 
     case 'addComment':         return fbAddComment(params.sub_id, params.content, need().user_id);
+    case 'deleteComment':      return fbDeleteComment(params.comment_id, need().user_id);
     case 'getComments':        return fbGetComments(params.sub_id);
     case 'addStoryComment':    return fbAddStoryComment(params.story_id, params.content, need().user_id);
     case 'getStoryComments':   return fbGetStoryComments(params.story_id);

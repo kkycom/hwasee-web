@@ -232,10 +232,13 @@
 
   /* ── 댓글 */
   .comment-list { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px; }
-  .comment-item { padding: 7px 0; font-size: 13px; border-bottom: 1px solid var(--border); line-height: 1.5; }
+  .comment-item { display:flex; align-items:baseline; gap:6px; padding: 7px 0; font-size: 13px; border-bottom: 1px solid var(--border); line-height: 1.5; }
   .comment-item:last-child { border-bottom: none; }
+  .comment-body { flex:1; }
   .comment-author { color: var(--muted); font-size: 11px; margin-right: 6px; }
   .comment-time   { color: var(--muted); font-size: 11px; margin-left: 8px; }
+  .comment-del-btn { background:none; border:none; color:var(--muted); font-size:11px; cursor:pointer; padding:0 2px; flex-shrink:0; }
+  .comment-del-btn:hover { color:#e57373; }
   .comment-input-row { display: flex; gap: 8px; margin-top: 10px; }
   .comment-input-row input { flex: 1; font-size: 13px; padding: 7px 12px; }
 
@@ -1361,9 +1364,13 @@ function renderCommentsInner(sub_id, comments) {
     <div class="comment-list">
       ${comments.length === 0
         ? '<div style="font-size:13px;color:var(--muted);padding:6px 0">첫 댓글을 남겨보세요.</div>'
-        : comments.map(c => `
+        : comments.map(c => c.deleted ? `
             <div class="comment-item">
-              <span class="comment-author">${esc(c.author_nickname || c.author_id.slice(0,6))}</span>${esc(c.content)}<span class="comment-time">${timeAgo(c.created_at)}</span>
+              <span class="comment-body" style="color:var(--muted);font-style:italic">삭제된 댓글입니다.</span>
+            </div>` : `
+            <div class="comment-item">
+              <span class="comment-body"><span class="comment-author">${esc(c.author_nickname || '익명')}</span>${esc(c.content)}<span class="comment-time">${timeAgo(c.created_at)}</span></span>
+              ${user && (c.author_id === user.user_id) ? `<button class="comment-del-btn" onclick="event.stopPropagation();deleteComment('${c.comment_id}','${sub_id}')">✕</button>` : ''}
             </div>`).join('')}
       ${user ? `
         <div class="comment-input-row">
@@ -1441,6 +1448,19 @@ async function submitVoteInStory(episode_id) {
   _lsc.del('pop', 'done');
   toast(`투표 완료! 현재 ${res.total_voters}명 참여`);
   story();
+}
+
+async function deleteComment(comment_id, sub_id) {
+  if (!confirm('댓글을 삭제할까요?')) return;
+  const res = await api('deleteComment', { comment_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  delete commentCache[sub_id];
+  const el = document.getElementById('comments-' + sub_id);
+  if (el && el.style.display !== 'none') {
+    const r2 = await api('getComments', { sub_id });
+    commentCache[sub_id] = r2.ok ? r2.comments : [];
+    el.innerHTML = renderCommentsInner(sub_id, commentCache[sub_id]);
+  }
 }
 
 async function addComment(sub_id) {

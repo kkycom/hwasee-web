@@ -324,10 +324,11 @@ async function fbGetStory(story_id, user_id) {
   const story       = storySnap.data();
   const episodes    = episodesSnap.docs.map(d => ({ episode_id: d.id, ...d.data() }));
   const submissions = subsSnap.docs.map(d => ({
+    sub_id: d.id,
     ...d.data(),
     author_nickname: nickMap[d.data().author_id] || '익명',
     author_badge:    badgeMap[d.data().author_id] || 'seed',
-    comment_count:   commentCountMap[d.data().sub_id] || 0,
+    comment_count:   commentCountMap[d.id] || 0,
   }));
 
   let is_bookmarked = false;

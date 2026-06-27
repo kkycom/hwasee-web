@@ -1040,7 +1040,7 @@ async function story() {
           <input type="text" id="sub-input" maxlength="50" placeholder="한 문장으로 이어가세요" oninput="updateCount('sub-input','sub-cc')">
           <div class="char-count" id="sub-cc" style="margin-bottom:10px">0자</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            ${Number(openEp.step) >= 2
+            ${Number(openEp.step) >= 3
               ? `<button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">이야기를 열어두고 제출</button>
                  <button class="btn btn-sm" style="background:var(--accent2);color:#fff;border:none;font-weight:700" onclick="submitSubInStory('${esc(openEp.episode_id)}', true)">이야기를 끝맺고 제출</button>`
               : `<button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">제출</button>`}

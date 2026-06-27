@@ -2367,11 +2367,11 @@ function refreshAvatarShop() {
     </div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-weight:600">구매 가능 아이콘</div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
-      ${AVATAR_SHOP_ITEMS.map(item => {
+      ${AVATAR_SHOP_ITEMS.map((item, idx) => {
         const owned = (u.owned_avatars||[]).includes(item.id);
         const selected = u.avatar === item.id;
         return `<div style="text-align:center">
-          <button onclick="${owned?`doSetAvatar('${item.id}')`:`doBuyAvatar('${item.id}')`}"
+          <button onclick="avatarShopClick(${idx})"
             style="width:100%;padding:10px 0;border-radius:10px;border:2px solid ${selected?'var(--accent)':'var(--border)'};background:${owned?'var(--bg)':'var(--surface)'};cursor:pointer;font-size:24px;display:block">
             ${item.id}
           </button>
@@ -2381,6 +2381,13 @@ function refreshAvatarShop() {
     </div>`;
 }
 
+function avatarShopClick(idx) {
+  const item = AVATAR_SHOP_ITEMS[idx];
+  if (!item) return;
+  const owned = (_profileUser?.owned_avatars || []).includes(item.id);
+  if (owned) doSetAvatar(item.id);
+  else doBuyAvatar(item.id);
+}
 function toggleAvatarShop() {
   const card = document.getElementById('avatar-shop-card');
   if (!card) return;

@@ -1883,33 +1883,6 @@ async function profile() {
       <div style="font-size:13px;color:var(--muted);margin-bottom:4px">아이디 (로그인용, 변경 불가)</div>
       <div style="font-size:18px;font-weight:700">${esc(u.nickname)}</div>
     </div>
-    <h2 style="margin-bottom:12px">아바타</h2>
-    <div class="card" style="margin-bottom:24px">
-      <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
-        <div style="width:52px;height:52px;border-radius:50%;background:var(--surface);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:28px">
-          ${u.avatar || badgeAvatar(u.badge)}
-        </div>
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:600">${u.avatar ? '커스텀 아이콘' : '배지 기본 아이콘'}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">${u.avatar ? '' : '등급에 따라 자동 변경'}</div>
-          ${u.avatar ? `<button onclick="doSetAvatar('')" style="margin-top:4px;font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">기본으로 되돌리기</button>` : ''}
-        </div>
-      </div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-weight:600">구매 가능 아이콘</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
-        ${AVATAR_SHOP_ITEMS.map(item => {
-          const owned = (u.owned_avatars||[]).includes(item.id);
-          const selected = u.avatar === item.id;
-          return `<div style="text-align:center">
-            <button onclick="${owned ? `doSetAvatar('${item.id}')` : `doBuyAvatar('${item.id}')`}"
-              style="width:100%;padding:10px 0;border-radius:10px;border:2px solid ${selected?'var(--accent)':'var(--border)'};background:${owned?'var(--bg)':'var(--surface)'};cursor:pointer;font-size:24px;display:block">
-              ${item.id}
-            </button>
-            <div style="font-size:10px;color:${selected?'var(--accent)':'var(--muted)'};margin-top:4px">${owned?(selected?'✓ 선택됨':'보유'):`-${item.price.toLocaleString()}p`}</div>
-          </div>`;
-        }).join('')}
-      </div>
-    </div>
     <h2 style="margin-bottom:12px">닉네임 변경 <span style="font-size:12px;color:var(--accent);font-weight:400">— 20p 차감</span></h2>
     <div class="card" style="margin-bottom:24px">
       <div class="form-group">
@@ -1932,11 +1905,15 @@ async function profile() {
       <button class="btn btn-ghost btn-sm" onclick="doDeleteAccount()" style="color:var(--accent2);font-size:12px">회원탈퇴</button>
     </div>`;
 
+  _profileUser = u;
   document.getElementById('app').innerHTML = `
     <div class="card" style="margin-bottom:20px">
       <div style="display:flex;align-items:center;gap:16px">
-        <div style="width:56px;height:56px;border-radius:50%;background:var(--surface);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:30px">
-          ${u.avatar || badgeAvatar(u.badge)}
+        <div style="display:flex;flex-direction:column;align-items:center;gap:5px">
+          <div id="profile-avatar-circle" style="width:56px;height:56px;border-radius:50%;background:var(--surface);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:30px">
+            ${u.avatar || badgeAvatar(u.badge)}
+          </div>
+          <button onclick="toggleAvatarShop()" style="font-size:10px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;cursor:pointer;padding:2px 7px;white-space:nowrap">아바타 변경</button>
         </div>
         <div>
           <div style="font-size:20px;font-weight:700">${esc(u.display_name || u.nickname)}</div>
@@ -1950,29 +1927,28 @@ async function profile() {
         </div>
       </div>
     </div>
+    <div id="avatar-shop-card" class="card" style="display:none;margin-bottom:20px">
+      <div id="avatar-shop-inner"></div>
+    </div>
     <div class="card" style="margin-bottom:20px">
-      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:14px">✦ 등급 기준</div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        ${[
-          [['seed','씨앗','0p'],['seed1','금간 씨앗','20p'],['seed2','발아하는 씨앗','60p']],
-          [['sprout','여린 새싹','150p'],['sprout1','새싹','350p'],['sprout2','무성한 새싹','550p']],
-          [['leaf','여린 잎','700p'],['leaf1','잎','1,200p'],['leaf2','무성한 잎','1,700p']],
-          [['bud','꽃봉오리','2,000p'],['flower','꽃','3,000p'],['flower1','만개한 꽃','4,000p']],
-        ].map(row => `
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px">
-            ${row.map(([badge,label,pts]) => `
-              <div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:12px">✦ 등급 기준</div>
+      ${[
+        { emoji:'🌰', stages:[['seed','씨앗','0'],['seed1','금간 씨앗','20'],['seed2','발아하는 씨앗','60']] },
+        { emoji:'🌱', stages:[['sprout','여린 새싹','150'],['sprout1','새싹','350'],['sprout2','무성한 새싹','550']] },
+        { emoji:'🌿', stages:[['leaf','여린 잎','700'],['leaf1','잎','1,200'],['leaf2','무성한 잎','1,700']] },
+        { emoji:'🌺', stages:[['bud','꽃봉오리','2,000'],['flower','꽃','3,000'],['flower1','만개한 꽃','4,000']] },
+        { emoji:'🍎', stages:[['fruit','열매','5,000']] },
+      ].map(({emoji, stages}, i) => `
+        <div style="${i>0?'margin-top:8px;padding-top:8px;border-top:1px solid var(--border)':''}">
+          ${stages.map(([badge,label,pts]) => `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:3px 0">
+              <div style="display:flex;align-items:center;gap:6px">
+                <span style="font-size:13px">${emoji}</span>
                 <span class="badge badge-${badge}" style="font-size:9px;padding:1px 6px">${label}</span>
-                <span style="font-size:10px;color:var(--muted);padding-left:2px">${pts}</span>
-              </div>`).join('')}
-          </div>`).join('')}
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px">
-          <div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px">
-            <span class="badge badge-fruit" style="font-size:9px;padding:1px 6px">열매</span>
-            <span style="font-size:10px;color:var(--muted);padding-left:2px">5,000p</span>
-          </div>
-        </div>
-      </div>
+              </div>
+              <span style="font-size:10px;color:var(--muted)">${pts}p</span>
+            </div>`).join('')}
+        </div>`).join('')}
     </div>
     <div style="margin-bottom:20px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
       <button onclick="const b=this.nextElementSibling;b.style.display=b.style.display==='none'?'block':'none'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600">
@@ -2371,12 +2347,55 @@ function reasonLabel(r) {
   }[r] || r;
 }
 
+let _profileUser = null;
+
+function refreshAvatarShop() {
+  const el = document.getElementById('avatar-shop-inner');
+  if (!el || !_profileUser) return;
+  const u = _profileUser;
+  const circle = document.getElementById('profile-avatar-circle');
+  if (circle) circle.textContent = u.avatar || badgeAvatar(u.badge);
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+      <div style="width:48px;height:48px;border-radius:50%;background:var(--surface);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:26px">
+        ${u.avatar || badgeAvatar(u.badge)}
+      </div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600">${u.avatar ? '커스텀 아이콘' : '배지 기본 아이콘'}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:1px">${u.avatar ? '' : '등급에 따라 자동 변경'}</div>
+        ${u.avatar ? `<button onclick="doSetAvatar('')" style="margin-top:3px;font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">기본으로 되돌리기</button>` : ''}
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-weight:600">구매 가능 아이콘</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      ${AVATAR_SHOP_ITEMS.map(item => {
+        const owned = (u.owned_avatars||[]).includes(item.id);
+        const selected = u.avatar === item.id;
+        return `<div style="text-align:center">
+          <button onclick="${owned?`doSetAvatar('${item.id}')`:`doBuyAvatar('${item.id}')`}"
+            style="width:100%;padding:10px 0;border-radius:10px;border:2px solid ${selected?'var(--accent)':'var(--border)'};background:${owned?'var(--bg)':'var(--surface)'};cursor:pointer;font-size:24px;display:block">
+            ${item.id}
+          </button>
+          <div style="font-size:10px;color:${selected?'var(--accent)':'var(--muted)'};margin-top:4px">${owned?(selected?'✓ 선택됨':'보유'):`-${item.price.toLocaleString()}p`}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function toggleAvatarShop() {
+  const card = document.getElementById('avatar-shop-card');
+  if (!card) return;
+  const opening = card.style.display === 'none';
+  card.style.display = opening ? 'block' : 'none';
+  if (opening) { refreshAvatarShop(); card.scrollIntoView({ behavior:'smooth', block:'nearest' }); }
+}
+
 async function doSetAvatar(emoji_id) {
   const val = emoji_id || null;
   const res = await api('setAvatar', { emoji_id: val });
   if (!res.ok) { toast(res.error, true); return; }
   if (user) { user.avatar = res.avatar; saveUser(user); renderNav(); }
-  profile('settings');
+  if (_profileUser) { _profileUser.avatar = res.avatar; refreshAvatarShop(); }
 }
 
 async function doBuyAvatar(emoji_id) {
@@ -2387,6 +2406,7 @@ async function doBuyAvatar(emoji_id) {
   if (!res.ok) { toast(res.error, true); return; }
   toast(`${item.id} 구매 완료!`);
   if (user) { user.total_points = res.total_points; user.badge = res.badge; user.owned_avatars = res.owned_avatars; saveUser(user); renderNav(); }
+  if (_profileUser) { _profileUser.total_points = res.total_points; _profileUser.owned_avatars = res.owned_avatars; }
   await doSetAvatar(emoji_id);
 }
 

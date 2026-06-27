@@ -799,11 +799,12 @@ async function fbAddComment(sub_id, content, author_id) {
 }
 
 async function fbGetComments(sub_id) {
-  const snap   = await db.collection('comments').where('sub_id','==',sub_id).orderBy('created_at').get();
+  const snap   = await db.collection('comments').where('sub_id','==',sub_id).get();
   const uSnap  = await db.collection('users').get();
   const nickMap = {};
   uSnap.docs.forEach(d => { nickMap[d.id] = d.data().display_name || d.data().nickname; });
-  const comments = snap.docs.map(d => ({ ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }));
+  const comments = snap.docs.map(d => ({ ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }))
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   return { ok: true, comments };
 }
 
@@ -822,11 +823,12 @@ async function fbAddStoryComment(story_id, content, author_id) {
 async function fbGetStoryComments(story_id) {
   if (!story_id) return { ok: false, error: '잘못된 요청입니다.' };
   const snap   = await db.collection('comments')
-    .where('story_id','==',story_id).where('sub_id','==','').orderBy('created_at').get();
+    .where('story_id','==',story_id).where('sub_id','==','').get();
   const uSnap  = await db.collection('users').get();
   const nickMap = {};
   uSnap.docs.forEach(d => { nickMap[d.id] = d.data().display_name || d.data().nickname; });
-  const comments = snap.docs.map(d => ({ ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }));
+  const comments = snap.docs.map(d => ({ ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }))
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   return { ok: true, comments };
 }
 

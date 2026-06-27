@@ -121,11 +121,11 @@ async function _fbSpendPoints(user_id, pts, reason) {
 
 async function fbRegister(nickname, password, name, display_name) {
   if (!nickname || !password) return { ok: false, error: '아이디와 비밀번호를 입력해주세요.' };
-  if (!/^[가-힣a-zA-Z0-9]{2,12}$/.test(nickname)) return { ok: false, error: '아이디는 2~12자, 한글·영문·숫자만 사용할 수 있어요.' };
+  if (!/^[가-힣a-zA-Z0-9]{2,8}$/.test(nickname)) return { ok: false, error: '아이디는 2~8자, 한글·영문·숫자만 사용할 수 있어요.' };
   if (password.length < 8) return { ok: false, error: '비밀번호는 8자 이상입니다.' };
 
   const dn = (display_name || '').trim() || nickname;
-  if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(dn)) return { ok: false, error: '닉네임은 2~12자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
+  if (!/^[가-힣a-zA-Z0-9 ._-]{2,8}$/.test(dn)) return { ok: false, error: '닉네임은 2~8자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
 
   const [dupId, dupDn] = await Promise.all([
     db.collection('users').where('nickname', '==', nickname).limit(1).get(),
@@ -1259,7 +1259,7 @@ async function fbCheckDisplayName(display_name) {
 async function fbChangeDisplayName(user_id, new_display_name) {
   const dn = (new_display_name || '').trim();
   if (!dn || dn.length < 2) return { ok: false, error: '닉네임은 2자 이상이어야 합니다.' };
-  if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(dn)) return { ok: false, error: '닉네임은 2~12자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
+  if (!/^[가-힣a-zA-Z0-9 ._-]{2,8}$/.test(dn)) return { ok: false, error: '닉네임은 2~8자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
 
   const check = await db.collection('users').where('display_name', '==', dn).limit(1).get();
   if (!check.empty) return { ok: false, error: '이미 사용 중인 닉네임입니다.' };
@@ -1321,6 +1321,20 @@ async function fbAdminDeleteSubmission(sub_id, admin_id) {
 async function fbAdminCloseStory(story_id, admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   await db.collection('stories').doc(story_id).update({ status: 'inactive' });
+  return { ok: true };
+}
+
+async function fbSubmitBugReport(content, user_id) {
+  if (!content || content.trim().length < 5) return { ok: false, error: '내용을 5자 이상 입력해주세요.' };
+  const t = now();
+  await db.collection('bug_reports').add({ user_id, content: content.trim(), created_at: t, status: 'open' });
+  await Promise.all([
+    db.collection('users').doc(user_id).update({
+      points: firebase.firestore.FieldValue.increment(10),
+      total_points: firebase.firestore.FieldValue.increment(10),
+    }),
+    db.collection('point_history').add({ user_id, points: 10, reason: 'bug_report', created_at: t }),
+  ]);
   return { ok: true };
 }
 
@@ -1389,6 +1403,7 @@ async function firebaseApi(action, params = {}) {
     case 'adminCloseStory':       return fbAdminCloseStory(params.story_id, need().user_id);
 
     case 'checkDailyBonus': return { ok: true, bonus: await _fbCheckDailyBonus(need().user_id) };
+    case 'submitBugReport': return fbSubmitBugReport(params.content, need().user_id);
     case 'pingWarm': return { ok: true };
     default:         return { ok: false, error: '알 수 없는 요청입니다.' };
   }

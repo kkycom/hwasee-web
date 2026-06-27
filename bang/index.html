@@ -648,6 +648,7 @@ function renderNav() {
           </div>
           <button class="profile-dropdown-item" onclick="closeProfileMenu();nav('profile','points')">📋 활동 내역</button>
           <button class="profile-dropdown-item" onclick="closeProfileMenu();nav('profile','settings')">⚙️ 회원정보 수정</button>
+          <button class="profile-dropdown-item" onclick="closeProfileMenu();nav('profile','bugreport')">🐛 버그 제보</button>
           <div class="profile-dropdown-divider"></div>
           <button class="profile-dropdown-item danger" onclick="closeProfileMenu();logout()">↩ 로그아웃</button>
         </div>
@@ -1758,11 +1759,11 @@ function auth() {
         <div class="form-group"><label>비밀번호</label><input id="a-pw" type="password" placeholder="비밀번호" onkeydown="if(event.key==='Enter')doLogin()"></div>
         <button class="btn btn-primary" style="width:100%" onclick="doLogin()">로그인</button>
       ` : tab === 'register' ? `
-        <div class="form-group"><label>아이디 (로그인용, 2~12자)</label><input id="a-nick" type="text" placeholder="아이디" maxlength="12"></div>
+        <div class="form-group"><label>아이디 (로그인용, 2~8자)</label><input id="a-nick" type="text" placeholder="아이디" maxlength="8"></div>
         <div class="form-group">
-          <label>닉네임 (표시용, 2~12자)</label>
+          <label>닉네임 (표시용, 2~8자)</label>
           <div style="display:flex;gap:8px">
-            <input id="a-display" type="text" placeholder="닉네임" maxlength="12" style="flex:1" oninput="checkDnAvail()">
+            <input id="a-display" type="text" placeholder="닉네임" maxlength="8" style="flex:1" oninput="checkDnAvail()">
             <span id="dn-status" style="font-size:11px;align-self:center;min-width:48px;text-align:right"></span>
           </div>
         </div>
@@ -1789,7 +1790,7 @@ async function doLogin() {
   saveUser(res);
   const dn = res.display_name || res.nickname;
   toast(`반갑습니다, ${dn}님!`);
-  if (res.daily_bonus) setTimeout(() => toast(`🌿 오늘의 출석 보너스 +${res.daily_bonus}p 지급됐어요!`), 600);
+  if (res.daily_bonus) setTimeout(() => toast(`🌿 출석 점수 +${res.daily_bonus}p 지급됐어요!`), 600);
   nav('seed');
 }
 
@@ -1943,7 +1944,7 @@ async function profile() {
       <div class="form-group">
         <label>새 닉네임</label>
         <div style="display:flex;gap:8px">
-          <input id="dn-new" type="text" placeholder="새 닉네임 (2~12자)" maxlength="12" style="flex:1" oninput="checkDnAvailProfile()">
+          <input id="dn-new" type="text" placeholder="새 닉네임 (2~8자)" maxlength="8" style="flex:1" oninput="checkDnAvailProfile()">
           <span id="dn-profile-status" style="font-size:11px;align-self:center;min-width:48px;text-align:right"></span>
         </div>
       </div>
@@ -1958,6 +1959,19 @@ async function profile() {
     </div>
     <div style="padding-top:16px;border-top:1px solid var(--border);text-align:center">
       <button class="btn btn-ghost btn-sm" onclick="doDeleteAccount()" style="color:var(--accent2);font-size:12px">회원탈퇴</button>
+    </div>`;
+
+  const bugreportTab = `
+    <div style="margin-bottom:8px">
+      <h2 style="margin-bottom:6px">🐛 버그 제보</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6">버그를 발견하셨나요? 내용을 알려주시면 확인 후 <strong style="color:var(--accent)">+10p</strong>를 드려요.</p>
+      <div class="card">
+        <div class="form-group">
+          <label>버그 내용</label>
+          <textarea id="bug-content" rows="5" placeholder="어떤 버그인지 자세히 알려주세요 (5자 이상)" style="width:100%;resize:vertical;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:14px;color:var(--text);font-family:inherit;line-height:1.6"></textarea>
+        </div>
+        <button class="btn btn-primary" style="width:100%" onclick="doSubmitBugReport()">제보하기 (+10p)</button>
+      </div>
     </div>`;
 
   _profileUser = u;
@@ -2023,6 +2037,7 @@ async function profile() {
           ['내 글 채택됨 (직접 제출)','+20p','earn'],
           ['내 글 채택됨 (다듬기)','+10p','earn'],
           ['완결 이야기 MVP 선정','+10p','earn'],
+          ['버그 제보','+10p','earn'],
           ['이야기 주목 (24시간 상단 노출)','-30p','spend'],
           ['에피소드 추가 제출권','-20p','spend'],
         ].map(([label, pts, type]) => `
@@ -2034,7 +2049,7 @@ async function profile() {
     </div>
     <div id="profile-tab-content"></div>`;
 
-  document.getElementById('profile-tab-content').innerHTML = tab === 'settings' ? settingsTab : pointsTab;
+  document.getElementById('profile-tab-content').innerHTML = tab === 'settings' ? settingsTab : tab === 'bugreport' ? bugreportTab : pointsTab;
 }
 
 function switchProfileTab(tab) {
@@ -2044,7 +2059,7 @@ function switchProfileTab(tab) {
     el.classList.toggle('active', (i === 0 && tab === 'points') || (i === 1 && tab === 'settings'));
   });
   document.getElementById('profile-tab-content').innerHTML =
-    tab === 'settings' ? window._profileData.settingsTab : window._profileData.pointsTab;
+    tab === 'settings' ? window._profileData.settingsTab : tab === 'bugreport' ? window._profileData.bugreportTab : window._profileData.pointsTab;
 }
 
 // ─── 알림 ──────────────────────────────────────────────
@@ -2501,7 +2516,7 @@ async function dismissReportItem(report_id) {
 function reasonLabel(r) {
   return {
     direct:'채택 (직접 제출)', source:'다듬기 원저자 보상', mid:'중간 다듬기 보상', derived:'다듬기 채택 보상',
-    submit:'제출 참여', vote:'투표 참여', daily_login:'오늘의 보너스', mvp_nomination:'MVP 선정',
+    submit:'제출 참여', vote:'투표 참여', daily_login:'출석 점수', mvp_nomination:'MVP 선정', bug_report:'버그 제보',
     boost_story:'이야기 주목 사용', extra_submit:'추가 제출권 사용', buy_avatar:'아바타 아이콘 구매',
   }[r] || r;
 }
@@ -2604,6 +2619,15 @@ async function doChangeDisplayName() {
   renderNav();
   toast(`닉네임이 "${res.display_name}"으로 변경됐어요!`);
   nav('profile', 'settings');
+}
+
+async function doSubmitBugReport() {
+  const content = document.getElementById('bug-content')?.value.trim();
+  if (!content || content.length < 5) { toast('내용을 5자 이상 입력해주세요.', true); return; }
+  const res = await api('submitBugReport', { content });
+  if (!res.ok) { toast(res.error, true); return; }
+  document.getElementById('bug-content').value = '';
+  toast('버그 제보 감사해요! 확인 후 +10p 지급됐어요 🌿');
 }
 
 async function doChangePw() {
@@ -2714,7 +2738,7 @@ window.onload = async () => {
     else {
       const br = await api('checkDailyBonus');
       if (br.ok && br.bonus > 0) {
-        setTimeout(() => toast(`🌿 오늘의 출석 보너스 +${br.bonus}p 지급됐어요!`), 800);
+        setTimeout(() => toast(`🌿 출석 점수 +${br.bonus}p 지급됐어요!`), 800);
       }
     }
   }

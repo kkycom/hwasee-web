@@ -1128,8 +1128,8 @@ async function story() {
       ${isFinished && s.branch_from_step ? `<span class="prose-branch-tag">⑂ ${s.branch_from_step}단계 분기</span>` : ''}
       <button class="prose-author-toggle" id="prose-author-btn" onclick="toggleProseAuthors(this)">글쓴이 보기 ▾</button>
       ${isFinished && user ? `
-        <button class="btn btn-ghost btn-sm" style="font-size:12px" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">으뜸 글 뽑기</button>` : ''}
-      <button class="btn btn-ghost btn-sm" style="font-size:12px" onclick="enterProseSelMode('viewvotes','${esc(s.story_id)}')">📊 공감 현황</button>
+        <button class="prose-author-toggle" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">으뜸 글 뽑기</button>` : ''}
+      <button class="prose-author-toggle" onclick="enterProseSelMode('viewvotes','${esc(s.story_id)}')">📊 공감 현황</button>
     </div>
     <div id="prose-select-bar" class="prose-select-bar"></div>
     <div class="story-prose" id="story-prose-wrap">

@@ -114,8 +114,14 @@
   .card-tab-right { display:flex; gap:4px; pointer-events:all; }
   .card-tab { padding:4px 12px; font-size:10px; font-weight:700; letter-spacing:.04em; border-radius:6px 6px 0 0; border:1px solid transparent; border-bottom:none; }
   .card-tab-new    { background:#2a1e08; color:#c8a96e; border-color:rgba(200,169,110,.35); }
-  .card-tab-branch { background:#0c1f15; color:#80978c; border-color:rgba(128,151,140,.35); }
   .card-tab-boost  { background:#1a0f1e; color:#c084fc; border-color:rgba(192,132,252,.35); }
+  .card-branch-sticker {
+    position:absolute; top:12px; right:-1px;
+    background:#0d1a11; color:#6b7d6e;
+    border:1px solid rgba(128,151,140,.35); border-right:none;
+    font-size:9px; font-weight:700; padding:3px 7px 3px 8px;
+    border-radius:4px 0 0 4px; letter-spacing:.04em; pointer-events:none;
+  }
   @keyframes card-shine {
     0%   { transform:translateX(-120%) skewX(-18deg); opacity:0; }
     15%  { opacity:1; }
@@ -939,14 +945,13 @@ async function startSeedStory() {
 function popularCardHtml(s) {
   const step  = Number(s.current_step) || 0;
   const count = Number(s.activity_count || s.participant_count) || 0;
-  const leftTabs  = s.has_branch ? '<span class="card-tab card-tab-branch">⑂ 분기</span>' : '';
-  const rightTabs = s.is_boosted ? '<span class="card-tab card-tab-boost">주목</span>' : '';
-  const hasTabs = s.is_boosted || s.has_branch;
-  const tabRow = hasTabs ? `<div class="card-tab-row"><div class="card-tab-left">${leftTabs}</div><div class="card-tab-right">${rightTabs}</div></div>` : '';
+  const hasTabs = s.is_boosted;
+  const tabRow = hasTabs ? `<div class="card-tab-row"><div class="card-tab-left"></div><div class="card-tab-right"><span class="card-tab card-tab-boost">주목</span></div></div>` : '';
   return `
     <div class="story-card-wrap${hasTabs ? ' has-tabs' : ''}${s.is_boosted ? ' has-boost' : ''}">
       ${tabRow}
       <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
+        ${s.has_branch ? `<span class="card-branch-sticker">⑂ 분기</span>` : ''}
         <div class="story-card-title">${esc(s.opening)}</div>
         <div class="story-card-footer">
           <span class="step-pill"><span class="step-dot"></span>${step+1}단계 · 참여자 ${count}명</span>
@@ -981,16 +986,13 @@ function myStoryCardHtml(s, snapshot) {
     step > (stored.step || 0)
   );
   const voteCount   = typeof s.has_voted_current === 'number' ? s.has_voted_current : null;
-  const leftTabsHtml = [
-    isNew       ? '<span class="card-tab card-tab-new">NEW</span>'        : '',
-    s.has_branch? '<span class="card-tab card-tab-branch">⑂ 분기</span>' : '',
-  ].join('');
-  const hasTabs = isNew || s.has_branch;
-  const tabRow = hasTabs ? `<div class="card-tab-row"><div class="card-tab-left">${leftTabsHtml}</div><div class="card-tab-right"></div></div>` : '';
+  const hasTabs = isNew;
+  const tabRow = hasTabs ? `<div class="card-tab-row"><div class="card-tab-left"><span class="card-tab card-tab-new">NEW</span></div><div class="card-tab-right"></div></div>` : '';
   return `
     <div class="story-card-wrap${hasTabs ? ' has-tabs' : ''}">
       ${tabRow}
       <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
+      ${s.has_branch ? `<span class="card-branch-sticker">⑂ 분기</span>` : ''}
       <div class="story-card-title">${esc(s.opening)}</div>
       ${mySubs.length ? `
         <div style="margin-bottom:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">

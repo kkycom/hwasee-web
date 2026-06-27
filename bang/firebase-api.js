@@ -288,7 +288,7 @@ async function fbGetStories(page) {
 }
 
 async function fbGetStory(story_id, user_id) {
-  const [storySnap, episodesSnap, subsSnap, usersSnap, commSnap, mvpSnap] = await Promise.all([
+  const [storySnap, episodesSnap, primarySubsSnap, usersSnap, commSnap, mvpSnap] = await Promise.all([
     db.collection('stories').doc(story_id).get(),
     db.collection('episodes').where('story_id', '==', story_id).get(),
     db.collection('submissions').where('story_id', '==', story_id).get(),
@@ -298,6 +298,19 @@ async function fbGetStory(story_id, user_id) {
   ]);
 
   if (!storySnap.exists) return { ok: false, error: '스토리를 찾을 수 없습니다.' };
+
+  // story_id 필드가 없는 구형 제출물 보완: episode_id 기준 병렬 조회 후 병합
+  const epIds = episodesSnap.docs.map(d => d.id);
+  const subMap = new Map(primarySubsSnap.docs.map(d => [d.id, d]));
+  if (epIds.length > 0) {
+    const batches = [];
+    for (let i = 0; i < epIds.length; i += 10) batches.push(epIds.slice(i, i + 10));
+    const fallbackSnaps = await Promise.all(
+      batches.map(b => db.collection('submissions').where('episode_id', 'in', b).get())
+    );
+    fallbackSnaps.forEach(snap => snap.docs.forEach(d => { if (!subMap.has(d.id)) subMap.set(d.id, d); }));
+  }
+  const subsSnap = { docs: [...subMap.values()] };
 
   const nickMap = {}, badgeMap = {};
   usersSnap.docs.forEach(d => { nickMap[d.id] = d.data().display_name || d.data().nickname; badgeMap[d.id] = d.data().badge; });

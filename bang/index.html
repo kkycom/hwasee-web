@@ -67,7 +67,6 @@
   @media (max-width: 480px) {
     .nav-right { gap: 4px; }
     .nav-right .btn-sm { padding: 4px 8px; font-size: 12px; }
-    .nav-right .badge { display: none; }
   }
 
   /* ── 프로필 드롭다운 */
@@ -685,7 +684,6 @@ function renderNav() {
   const rankBtn = `<button class="btn-nav" onclick="openRankingModal()" title="명예의 전당" style="font-size:18px">🏆</button>`;
   if (user) {
     el.innerHTML = `
-      <span class="badge badge-${user.badge}" style="margin-right:2px">${badgeLabel(user.badge)}</span>
       ${rankBtn}
       <div id="notif-wrapper">
         <button class="bell-btn" onclick="toggleNotifPanel()" id="bell-btn" title="알림">🔔
@@ -696,7 +694,7 @@ function renderNav() {
       ${isAdmin() ? `<button class="btn-nav" onclick="adminPanel()" title="신고 관리">⚠️</button>` : ''}
       <div class="profile-menu-wrap" id="profile-menu-wrap">
         <button class="profile-menu-btn" id="profile-menu-btn" onclick="toggleProfileMenu()">
-          ${esc(user.display_name || user.nickname)} <span class="caret">▼</span>
+          <span style="margin-right:3px;font-style:normal">${badgeEmoji(user.badge)}</span>${esc(user.display_name || user.nickname)} <span class="caret">▼</span>
         </button>
         <div class="profile-dropdown" id="profile-dropdown">
           <div class="profile-dropdown-header">
@@ -735,6 +733,17 @@ const AVATAR_SHOP_ITEMS = [
   { id:'⭐', label:'별',      price:1000 },
   { id:'🔥', label:'불꽃',   price:1000 },
 ];
+function badgeEmoji(b) {
+  return {
+    seed:'🌰', seed1:'🌱', seed2:'🌱',
+    sprout:'🌿', sprout1:'🌿', sprout2:'🌿',
+    leaf:'🍃', leaf1:'🍃', leaf2:'🍃',
+    bud:'🌸', flower:'🌸', flower1:'🌺',
+    fruit:'🍎',
+    treeguard:'🌳',
+    new:'🌰', rookie:'🌿', writer:'🍃', expert:'🌸', master:'🍎',
+  }[b] || '🌱';
+}
 function badgeLabel(b) {
   return {
     seed:'씨앗', seed1:'금간 씨앗', seed2:'발아하는 씨앗',

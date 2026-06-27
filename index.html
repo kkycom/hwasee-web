@@ -48,12 +48,11 @@
     opacity: 0.35; pointer-events: none; cursor: default;
   }
 
-  /* 좌측 로고 블록 — ㄱ 자 배치 */
   .product-logo {
-    font-family: 'Gowun Batang', Georgia, serif;
-    font-size: 26px; font-weight: 400; line-height: 1.15;
-    flex-shrink: 0; min-width: 72px;
-    text-align: right; /* 씨와 방을 우측 정렬로 맞춤 */
+    flex-shrink: 0;
+  }
+  .product-logo img {
+    height: 68px; width: auto; display: block;
   }
 
   /* 우측 설명 */
@@ -72,7 +71,7 @@
 </style>
 </head>
 <body>
-  <div class="logo"><img src="/hwasee_logo.png" alt="화씨"></div>
+  <div class="logo"><img src="/hwasee.png" alt="화씨"></div>
   <div class="copy-block">
     <p class="headline">모든 이야기는 누군가의 머릿속에 있었다.</p>
     <p class="tagline">모든 상상이 작품이 되는 곳, 화씨</p>
@@ -82,8 +81,7 @@
 
     <a class="product-card" href="/bang">
       <div class="product-logo">
-        <div class="logo-line1">화씨</div>
-        <div class="logo-line2">.방</div>
+        <img src="/bang/hwaseebang.png" alt="화씨.방">
       </div>
       <div class="product-info">
         <div class="product-desc">함께 써내려가는 이야기 공간.<br>한 문장씩, 이야기를 완성합니다.</div>
@@ -92,8 +90,7 @@
 
     <div class="product-card inactive">
       <div class="product-logo">
-        <div class="logo-line1">화씨</div>
-        <div class="logo-line2">.네</div>
+        <img src="/hwaseene.png" alt="화씨.네">
       </div>
       <div class="product-info">
         <div class="product-tag">준비 중</div>
@@ -103,8 +100,7 @@
 
     <div class="product-card inactive">
       <div class="product-logo">
-        <div class="logo-line1">화씨</div>
-        <div class="logo-line2">.원</div>
+        <img src="/hwaseewon.png" alt="화씨.원">
       </div>
       <div class="product-info">
         <div class="product-tag">준비 중</div>

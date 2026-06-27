@@ -34,10 +34,13 @@ async function fbHashPw(pw) {
 
 function fbCalcBadge(pts) {
   if (pts >= 5000) return 'fruit';
+  if (pts >= 4000) return 'flower1';
   if (pts >= 3000) return 'flower';
   if (pts >= 2000) return 'bud';
+  if (pts >= 1700) return 'leaf2';
   if (pts >= 1200) return 'leaf1';
   if (pts >= 700)  return 'leaf';
+  if (pts >= 550)  return 'sprout2';
   if (pts >= 350)  return 'sprout1';
   if (pts >= 150)  return 'sprout';
   if (pts >= 60)   return 'seed2';

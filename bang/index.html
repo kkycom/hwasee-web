@@ -155,23 +155,31 @@
 
   /* ── 배지 */
   .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; }
-  .badge-seed    { background: #1a2219; color: #5a7a5a; }
-  .badge-seed1   { background: #1a2219; color: #7a9a7a; }
-  .badge-seed2   { background: #172a1c; color: #4ade80; }
-  .badge-sprout  { background: #172a1c; color: var(--success); }
-  .badge-sprout1 { background: #1a2a20; color: var(--accent); }
-  .badge-leaf    { background: #1a2a20; color: #80978c; }
-  .badge-leaf1   { background: #1a3020; color: #8ecfa8; }
-  .badge-bud     { background: #28221a; color: #d4a847; }
-  .badge-flower  { background: #2a1e14; color: var(--accent2); }
-  .badge-fruit   { background: #2a1a08; color: #f0b840; }
+  /* 씨앗 — 베이지/갈색 */
+  .badge-seed    { background: #1e1810; color: #9e8060; }
+  .badge-seed1   { background: #221b0e; color: #b89460; }
+  .badge-seed2   { background: #271e0c; color: #d4a858; }
+  /* 새싹 — 연두 */
+  .badge-sprout  { background: #162516; color: #7dbf78; }
+  .badge-sprout1 { background: #173020; color: #5aac5a; }
+  .badge-sprout2 { background: #163818; color: #38d460; }
+  /* 잎 — 세이지 그린 */
+  .badge-leaf    { background: #182420; color: #6b887a; }
+  .badge-leaf1   { background: #1a2a20; color: #80978c; }
+  .badge-leaf2   { background: #183025; color: #5aaa8c; }
+  /* 꽃 — 핑크 */
+  .badge-bud     { background: #281520; color: #d48aaa; }
+  .badge-flower  { background: #2a1020; color: #e06898; }
+  .badge-flower1 { background: #2a0820; color: #e83a88; }
+  /* 열매 — 붉은 */
+  .badge-fruit   { background: #2a1010; color: #d45858; }
   .badge-treeguard { background: #0f2418; color: #4ade80; border: 1px solid #16a34a; }
   /* 레거시 뱃지 (기존 가입자) */
-  .badge-new     { background: #1a2219; color: #5a7a5a; }
-  .badge-rookie  { background: #172a1c; color: var(--success); }
-  .badge-writer  { background: #1a2a20; color: var(--accent); }
-  .badge-expert  { background: #28221a; color: #d4a847; }
-  .badge-master  { background: #2a1e14; color: var(--accent2); }
+  .badge-new     { background: #1e1810; color: #9e8060; }
+  .badge-rookie  { background: #162516; color: #7dbf78; }
+  .badge-writer  { background: #182420; color: #6b887a; }
+  .badge-expert  { background: #281520; color: #d48aaa; }
+  .badge-master  { background: #2a1010; color: #d45858; }
 
   /* ── 폼 */
   .form-group { margin-bottom: 16px; }
@@ -635,9 +643,10 @@ function renderNav() {
 function badgeLabel(b) {
   return {
     seed:'씨앗', seed1:'금간 씨앗', seed2:'발아하는 씨앗',
-    sprout:'새싹', sprout1:'무성한 새싹',
-    leaf:'잎', leaf1:'넓은 잎',
-    bud:'꽃봉오리', flower:'꽃', fruit:'열매',
+    sprout:'여린 새싹', sprout1:'새싹', sprout2:'무성한 새싹',
+    leaf:'여린 잎', leaf1:'잎', leaf2:'무성한 잎',
+    bud:'꽃봉오리', flower:'꽃', flower1:'만개한 꽃',
+    fruit:'열매',
     treeguard:'나무지기',
     new:'씨앗', rookie:'새싹', writer:'잎', expert:'꽃', master:'열매',
   }[b] || b;
@@ -1804,7 +1813,12 @@ async function profile() {
   const u         = res.user;
   const bookmarks = bmRes.ok ? bmRes.stories : [];
   const tab       = currentParam === 'settings' ? 'settings' : 'points';
-  const nextBadge = { seed:'금간 씨앗(20p)', seed1:'발아하는 씨앗(60p)', seed2:'새싹(150p)', sprout:'무성한 새싹(350p)', sprout1:'잎(700p)', leaf:'넓은 잎(1200p)', leaf1:'꽃봉오리(2000p)', bud:'꽃(3000p)', flower:'열매(5000p)' }[u.badge] || '';
+  const nextBadge = {
+    seed:'금간 씨앗(20p)', seed1:'발아하는 씨앗(60p)', seed2:'여린 새싹(150p)',
+    sprout:'새싹(350p)', sprout1:'무성한 새싹(550p)', sprout2:'여린 잎(700p)',
+    leaf:'잎(1,200p)', leaf1:'무성한 잎(1,700p)', leaf2:'꽃봉오리(2,000p)',
+    bud:'꽃(3,000p)', flower:'만개한 꽃(4,000p)', flower1:'열매(5,000p)',
+  }[u.badge] || '';
 
   const pointsTab = `
     ${bookmarks.length ? `
@@ -1910,18 +1924,27 @@ async function profile() {
       </div>
     </div>
     <div class="card" style="margin-bottom:20px">
-      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:12px">✦ 등급 기준</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:14px">✦ 등급 기준</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
         ${[
-          ['seed','씨앗','0p~'],['seed1','금간 씨앗','20p~'],
-          ['seed2','발아하는 씨앗','60p~'],['sprout','새싹','150p~'],
-          ['sprout1','무성한 새싹','350p~'],['leaf','잎','700p~'],
-          ['leaf1','넓은 잎','1,200p~'],
-        ].map(([badge,label,pts]) => `
-          <div style="display:flex;align-items:center;gap:6px">
-            <span class="badge badge-${badge}" style="font-size:9px;padding:1px 5px">${label}</span>
-            <span style="font-size:11px;color:var(--muted)">${pts}</span>
+          [['seed','씨앗','0p'],['seed1','금간 씨앗','20p'],['seed2','발아하는 씨앗','60p']],
+          [['sprout','여린 새싹','150p'],['sprout1','새싹','350p'],['sprout2','무성한 새싹','550p']],
+          [['leaf','여린 잎','700p'],['leaf1','잎','1,200p'],['leaf2','무성한 잎','1,700p']],
+          [['bud','꽃봉오리','2,000p'],['flower','꽃','3,000p'],['flower1','만개한 꽃','4,000p']],
+        ].map(row => `
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px">
+            ${row.map(([badge,label,pts]) => `
+              <div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px">
+                <span class="badge badge-${badge}" style="font-size:9px;padding:1px 6px">${label}</span>
+                <span style="font-size:10px;color:var(--muted);padding-left:2px">${pts}</span>
+              </div>`).join('')}
           </div>`).join('')}
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px">
+          <div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px">
+            <span class="badge badge-fruit" style="font-size:9px;padding:1px 6px">열매</span>
+            <span style="font-size:10px;color:var(--muted);padding-left:2px">5,000p</span>
+          </div>
+        </div>
       </div>
     </div>
     <div class="tabs" style="margin-bottom:20px">

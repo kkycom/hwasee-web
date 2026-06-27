@@ -47,10 +47,8 @@
     padding: 0 24px; height: 56px;
     display: flex; align-items: center; justify-content: space-between;
   }
-  .logo {
-    font-size: 20px; font-weight: 700; letter-spacing: .5px;
-    font-family: var(--serif); color: var(--text); cursor: pointer;
-  }
+  .logo { cursor: pointer; display: flex; align-items: center; }
+  .logo img { height: 36px; width: auto; display: block; }
   .nav-right { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; }
   @media (max-width: 480px) {
     .nav-right { gap: 4px; }
@@ -403,7 +401,7 @@
 <body>
 
 <header>
-  <div class="logo" onclick="nav('seed')">화씨.방</div>
+  <div class="logo" onclick="nav('seed')"><img src="/bang/hwaseebang_landscape.png" alt="화씨.방"></div>
   <div class="nav-right" id="nav-right"></div>
 </header>
 

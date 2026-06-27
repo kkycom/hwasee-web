@@ -1205,7 +1205,7 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set()) {
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
         <button class="btn btn-ghost btn-sm" style="font-size:12px;padding:3px 10px"
           onclick="event.stopPropagation();toggleComments('${sub.sub_id}')">
-          💬 댓글
+          💬 댓글${sub.comment_count > 0 ? ` <span style="color:var(--accent);font-weight:700">+${sub.comment_count}</span>` : ''}
         </button>
         ${user && !mySubId && !isAdopted && !sub.derived_from ? `
           <button class="btn btn-ghost btn-sm" style="font-size:12px;padding:3px 10px;color:var(--accent2)"

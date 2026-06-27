@@ -368,7 +368,6 @@ async function fbGetStory(story_id, user_id) {
 
   // 분기 이야기면 부모 단계 가져오기 (잠금 산문용)
   let parent_chain = null;
-  const story = storySnap.data();
   if (story.parent_story_id) {
     const [pEpsSnap, pSubsSnap] = await Promise.all([
       db.collection('episodes').where('story_id', '==', story.parent_story_id).get(),
@@ -555,8 +554,8 @@ async function _fbCloseEpisode(episode_id, ep) {
     const allPart  = await _fbGetStoryParticipants(ep.story_id);
     const otherIds = allPart.filter(id => !winnerAuthorIds.has(id));
     const msg = winners.length > 1
-      ? `"${snippet}" 이야기가 ${nextStep}단계에서 ${winners.length}개 갈림길로 나뉘었어요!`
-      : `"${snippet}" 이야기가 ${nextStep}단계로 이어졌어요!`;
+      ? `"${snippet}" 이야기가 ${nextStep + 1}단계에서 ${winners.length}개 갈림길로 나뉘었어요!`
+      : `"${snippet}" 이야기가 ${nextStep + 1}단계로 이어졌어요!`;
     await _fbCreateNotifications(otherIds, ep.story_id, msg);
   }
 }

@@ -1881,7 +1881,7 @@ async function profile() {
             <div class="story-card" onclick="nav('story','${esc(s.story_id)}')" style="margin-bottom:8px">
               <div class="story-card-title">${esc(s.opening)}</div>
               <div class="story-card-footer">
-                <span class="step-pill">${Number(s.current_step) + 1}단계</span>
+                <span class="step-pill">${s.status==='active' ? Number(s.current_step) + 1 : Number(s.current_step)}단계</span>
                 <span class="story-status ${s.status==='active'?'status-active':'status-completed'}">${s.status==='active'?'진행 중':'완결'}</span>
               </div>
             </div>`).join('')}

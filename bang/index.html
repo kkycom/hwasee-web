@@ -1867,7 +1867,7 @@ async function profile() {
     saveUser(user); renderNav();
   }
   const bookmarks = bmRes.ok ? bmRes.stories : [];
-  const tab       = currentParam === 'settings' ? 'settings' : 'points';
+  const tab       = currentParam === 'settings' ? 'settings' : currentParam === 'bugreport' ? 'bugreport' : 'points';
   const nextBadge = {
     seed:'금간 씨앗(20p)', seed1:'발아하는 씨앗(60p)', seed2:'여린 새싹(150p)',
     sprout:'새싹(350p)', sprout1:'무성한 새싹(550p)', sprout2:'여린 잎(700p)',

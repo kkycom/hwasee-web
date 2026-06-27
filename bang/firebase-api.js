@@ -297,7 +297,7 @@ async function fbGetStory(story_id, user_id) {
     db.collection('story_mvp').where('story_id', '==', story_id).get(),
   ]);
 
-  if (!storySnap.exists) return { ok: false, error: '스토리를 찾을 수 없습니다.' };
+  if (!storySnap.exists || storySnap.data().status === 'deleted') return { ok: false, error: '스토리를 찾을 수 없습니다.' };
 
   // story_id 필드가 없는 구형 제출물 보완: episode_id 기준 병렬 조회 후 병합
   const epIds = episodesSnap.docs.map(d => d.id);
@@ -859,7 +859,7 @@ async function fbGetBookmarks(user_id) {
   const ids    = snap.docs.map(d => d.data().story_id);
   if (!ids.length) return { ok: true, stories: [] };
   const stSnap = await Promise.all(ids.map(id => db.collection('stories').doc(id).get()));
-  const stories = stSnap.filter(d => d.exists).map(d => d.data());
+  const stories = stSnap.filter(d => d.exists && d.data().status !== 'deleted').map(d => d.data());
   return { ok: true, stories };
 }
 

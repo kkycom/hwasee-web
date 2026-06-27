@@ -640,6 +640,22 @@ function renderNav() {
   }
 }
 
+function badgeAvatar(b) {
+  return { seed:'🌰', seed1:'🌰', seed2:'🌰', sprout:'🌱', sprout1:'🌱', sprout2:'🌱', leaf:'🌿', leaf1:'🌿', leaf2:'🌿', bud:'🌸', flower:'🌺', flower1:'💐', fruit:'🍎', treeguard:'🌳' }[b] || '🌱';
+}
+const AVATAR_SHOP_ITEMS = [
+  { id:'🍂', label:'낙엽',    price: 300 },
+  { id:'🌾', label:'벼이삭',  price: 300 },
+  { id:'🍄', label:'버섯',    price: 500 },
+  { id:'🌵', label:'선인장',  price: 500 },
+  { id:'🎋', label:'대나무',  price: 500 },
+  { id:'🌻', label:'해바라기', price: 500 },
+  { id:'🦋', label:'나비',    price: 800 },
+  { id:'🌊', label:'파도',    price: 800 },
+  { id:'🌙', label:'달',      price: 800 },
+  { id:'⭐', label:'별',      price:1000 },
+  { id:'🔥', label:'불꽃',   price:1000 },
+];
 function badgeLabel(b) {
   return {
     seed:'씨앗', seed1:'금간 씨앗', seed2:'발아하는 씨앗',
@@ -1811,7 +1827,10 @@ async function profile() {
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
 
   const u         = res.user;
-  if (u.badge && user && u.badge !== user.badge) { user.badge = u.badge; saveUser(user); renderNav(); }
+  if (user && (u.badge !== user.badge || u.avatar !== user.avatar)) {
+    user.badge = u.badge; user.avatar = u.avatar; user.owned_avatars = u.owned_avatars || [];
+    saveUser(user); renderNav();
+  }
   const bookmarks = bmRes.ok ? bmRes.stories : [];
   const tab       = currentParam === 'settings' ? 'settings' : 'points';
   const nextBadge = {
@@ -1864,6 +1883,33 @@ async function profile() {
       <div style="font-size:13px;color:var(--muted);margin-bottom:4px">아이디 (로그인용, 변경 불가)</div>
       <div style="font-size:18px;font-weight:700">${esc(u.nickname)}</div>
     </div>
+    <h2 style="margin-bottom:12px">아바타</h2>
+    <div class="card" style="margin-bottom:24px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+        <div style="width:52px;height:52px;border-radius:50%;background:var(--surface);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:28px">
+          ${u.avatar || badgeAvatar(u.badge)}
+        </div>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:600">${u.avatar ? '커스텀 아이콘' : '배지 기본 아이콘'}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${u.avatar ? '' : '등급에 따라 자동 변경'}</div>
+          ${u.avatar ? `<button onclick="doSetAvatar('')" style="margin-top:4px;font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">기본으로 되돌리기</button>` : ''}
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-weight:600">구매 가능 아이콘</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+        ${AVATAR_SHOP_ITEMS.map(item => {
+          const owned = (u.owned_avatars||[]).includes(item.id);
+          const selected = u.avatar === item.id;
+          return `<div style="text-align:center">
+            <button onclick="${owned ? `doSetAvatar('${item.id}')` : `doBuyAvatar('${item.id}')`}"
+              style="width:100%;padding:10px 0;border-radius:10px;border:2px solid ${selected?'var(--accent)':'var(--border)'};background:${owned?'var(--bg)':'var(--surface)'};cursor:pointer;font-size:24px;display:block">
+              ${item.id}
+            </button>
+            <div style="font-size:10px;color:${selected?'var(--accent)':'var(--muted)'};margin-top:4px">${owned?(selected?'✓ 선택됨':'보유'):`-${item.price.toLocaleString()}p`}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
     <h2 style="margin-bottom:12px">닉네임 변경 <span style="font-size:12px;color:var(--accent);font-weight:400">— 20p 차감</span></h2>
     <div class="card" style="margin-bottom:24px">
       <div class="form-group">
@@ -1889,8 +1935,8 @@ async function profile() {
   document.getElementById('app').innerHTML = `
     <div class="card" style="margin-bottom:20px">
       <div style="display:flex;align-items:center;gap:16px">
-        <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800">
-          ${esc(u.nickname[0].toUpperCase())}
+        <div style="width:56px;height:56px;border-radius:50%;background:var(--surface);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:30px">
+          ${u.avatar || badgeAvatar(u.badge)}
         </div>
         <div>
           <div style="font-size:20px;font-weight:700">${esc(u.display_name || u.nickname)}</div>
@@ -2321,8 +2367,27 @@ function reasonLabel(r) {
   return {
     direct:'채택 (직접 제출)', source:'다듬기 원저자 보상', mid:'중간 다듬기 보상', derived:'다듬기 채택 보상',
     submit:'제출 참여', vote:'투표 참여', daily_login:'오늘의 보너스', mvp_nomination:'MVP 선정',
-    boost_story:'이야기 주목 사용', extra_submit:'추가 제출권 사용',
+    boost_story:'이야기 주목 사용', extra_submit:'추가 제출권 사용', buy_avatar:'아바타 아이콘 구매',
   }[r] || r;
+}
+
+async function doSetAvatar(emoji_id) {
+  const val = emoji_id || null;
+  const res = await api('setAvatar', { emoji_id: val });
+  if (!res.ok) { toast(res.error, true); return; }
+  if (user) { user.avatar = res.avatar; saveUser(user); renderNav(); }
+  profile('settings');
+}
+
+async function doBuyAvatar(emoji_id) {
+  const item = AVATAR_SHOP_ITEMS.find(x => x.id === emoji_id);
+  if (!item) return;
+  if (!confirm(`${item.id} ${item.label} 아이콘을 ${item.price.toLocaleString()}p에 구매할까요?`)) return;
+  const res = await api('buyAvatar', { emoji_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast(`${item.id} 구매 완료!`);
+  if (user) { user.total_points = res.total_points; user.badge = res.badge; user.owned_avatars = res.owned_avatars; saveUser(user); renderNav(); }
+  await doSetAvatar(emoji_id);
 }
 
 let _dnProfileTimer;

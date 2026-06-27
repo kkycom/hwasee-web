@@ -32,6 +32,20 @@ async function fbHashPw(pw) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
+const FB_AVATAR_SHOP = [
+  { id:'🍂', label:'낙엽',    price: 300 },
+  { id:'🌾', label:'벼이삭',  price: 300 },
+  { id:'🍄', label:'버섯',    price: 500 },
+  { id:'🌵', label:'선인장',  price: 500 },
+  { id:'🎋', label:'대나무',  price: 500 },
+  { id:'🌻', label:'해바라기', price: 500 },
+  { id:'🦋', label:'나비',    price: 800 },
+  { id:'🌊', label:'파도',    price: 800 },
+  { id:'🌙', label:'달',      price: 800 },
+  { id:'⭐', label:'별',      price:1000 },
+  { id:'🔥', label:'불꽃',   price:1000 },
+];
+
 function fbCalcBadge(pts) {
   if (pts >= 5000) return 'fruit';
   if (pts >= 4000) return 'flower1';
@@ -1081,9 +1095,38 @@ async function fbGetProfile(user_id) {
 
   return {
     ok: true,
-    user: { user_id, nickname: u.nickname, display_name: u.display_name || u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed', created_at: u.created_at },
+    user: { user_id, nickname: u.nickname, display_name: u.display_name || u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed', avatar: u.avatar || null, owned_avatars: u.owned_avatars || [], created_at: u.created_at },
     history, adoptions,
   };
+}
+
+async function fbBuyAvatar(emoji_id, user_id) {
+  const item = FB_AVATAR_SHOP.find(x => x.id === emoji_id);
+  if (!item) return { ok: false, error: '존재하지 않는 아이템입니다.' };
+  const uRef = db.collection('users').doc(user_id);
+  const ledgerRef = db.collection('point_ledger').doc();
+  return db.runTransaction(async tx => {
+    const uSnap = await tx.get(uRef);
+    const u = uSnap.data();
+    if ((u.owned_avatars || []).includes(emoji_id)) return { ok: false, error: '이미 보유한 아이템입니다.' };
+    const newPts = (u.total_points || 0) - item.price;
+    if (newPts < 0) return { ok: false, error: '포인트가 부족합니다.' };
+    const newOwned = [...(u.owned_avatars || []), emoji_id];
+    tx.update(uRef, { total_points: newPts, owned_avatars: newOwned, badge: fbCalcBadge(newPts) });
+    tx.set(ledgerRef, { user_id, points: -item.price, reason: 'buy_avatar', created_at: fbNow() });
+    return { ok: true, owned_avatars: newOwned, total_points: newPts, badge: fbCalcBadge(newPts) };
+  });
+}
+
+async function fbSetAvatar(emoji_id, user_id) {
+  const val = emoji_id || null;
+  const uRef = db.collection('users').doc(user_id);
+  if (val) {
+    const uSnap = await uRef.get();
+    if (!(uSnap.data().owned_avatars || []).includes(val)) return { ok: false, error: '보유하지 않은 아이템입니다.' };
+  }
+  await uRef.update({ avatar: val });
+  return { ok: true, avatar: val };
 }
 
 async function fbCheckDisplayName(display_name) {
@@ -1208,6 +1251,8 @@ async function firebaseApi(action, params = {}) {
 
     case 'getLeaderboard':       return fbGetLeaderboard();
     case 'getProfile':           return fbGetProfile(need().user_id);
+    case 'buyAvatar':            return fbBuyAvatar(params.emoji_id, need().user_id);
+    case 'setAvatar':            return fbSetAvatar(params.emoji_id, need().user_id);
     case 'checkDisplayName':     return fbCheckDisplayName(params.display_name);
     case 'changeDisplayName':    return fbChangeDisplayName(need().user_id, params.display_name);
 

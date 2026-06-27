@@ -434,7 +434,10 @@ async function fbGetMyStories(user_id) {
     if (epId) myVoteCountMap[epId] = (myVoteCountMap[epId] || 0) + 1;
   });
 
-  const mySubsArr = mySubsSnap.docs.map(d => d.data());
+  const mySubsArr = mySubsSnap.docs.map(d => ({
+    ...d.data(),
+    step: epMap[d.data().episode_id] ? Number(epMap[d.data().episode_id].step) : 0,
+  }));
 
   const stories = allStoriesSnap.docs
     .filter(d => storyIds.has(d.id) && d.data().status !== 'deleted')
@@ -443,7 +446,7 @@ async function fbGetMyStories(user_id) {
       const openEpId = openEpMap[s.story_id];
       return {
         ...s,
-        mySubmissions:      mySubsArr.filter(sub => sub.story_id === s.story_id),
+        mySubmissions:      mySubsArr.filter(sub => sub.story_id === s.story_id).sort((a,b) => a.step - b.step),
         activity_count:     s.participant_count || 0,
         has_voted_current:  openEpId != null ? (myVoteCountMap[openEpId] || 0) : null,
       };

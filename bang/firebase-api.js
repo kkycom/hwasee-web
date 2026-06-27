@@ -982,9 +982,9 @@ async function fbBoostStory(story_id, user_id) {
   const stSnap = await db.collection('stories').doc(story_id).get();
   if (!stSnap.exists || stSnap.data().status !== 'active')
     return { ok: false, error: '진행 중인 이야기만 주목할 수 있습니다.' };
-  const active = await db.collection('boosts')
-    .where('story_id','==',story_id).where('expires_at','>',fbNow()).limit(1).get();
-  if (!active.empty) return { ok: false, error: '이미 주목받고 있는 이야기입니다.' };
+  const boostSnap = await db.collection('boosts').where('story_id','==',story_id).get();
+  const isActive = boostSnap.docs.some(d => d.data().expires_at > fbNow());
+  if (isActive) return { ok: false, error: '이미 주목받고 있는 이야기입니다.' };
   const spend = await _fbSpendPoints(user_id, 30, 'boost_story');
   if (!spend.ok) return spend;
   await db.collection('boosts').doc(fbGenId()).set({
@@ -1035,7 +1035,7 @@ async function fbGetProfile(user_id) {
   const u = uSnap.data();
 
   const [histSnap, adoptSnap, epsSnap, storiesSnap] = await Promise.all([
-    db.collection('point_ledger').where('user_id','==',user_id).orderBy('created_at','desc').limit(20).get(),
+    db.collection('point_ledger').where('user_id','==',user_id).get(),
     db.collection('submissions').where('author_id','==',user_id).where('is_adopted','==',true).get(),
     db.collection('episodes').get(),
     db.collection('stories').get(),
@@ -1046,7 +1046,8 @@ async function fbGetProfile(user_id) {
   epsSnap.docs.forEach(d => { epMap[d.id] = d.data(); });
   storiesSnap.docs.forEach(d => { storyMap[d.id] = d.data().opening; });
 
-  const history = histSnap.docs.map(d => d.data());
+  const history = histSnap.docs.map(d => d.data())
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 20);
   const adoptions = adoptSnap.docs.map(d => {
     const s = d.data();
     return {

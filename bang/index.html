@@ -106,39 +106,24 @@
   .btn-nav { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px 8px; font-size: 13px; font-weight: 500; border-radius: 6px; }
   .btn-nav:hover { color: var(--text); background: var(--surface); }
   .story-card-wrap { position:relative; margin-bottom:12px; }
-  .story-card-wrap.has-tabs { margin-top:20px; }
   .story-card-wrap > .story-card { margin-bottom:0; }
-  .card-tab-row { position:absolute; bottom:100%; left:0; right:0; display:flex; justify-content:space-between; align-items:flex-end; pointer-events:none; }
-  .card-tab-left  { display:flex; gap:4px; pointer-events:all; }
-  .card-tab-right { display:flex; gap:4px; pointer-events:all; }
-  .card-tab { padding:4px 12px; font-size:10px; font-weight:700; letter-spacing:.04em; border-radius:6px 6px 0 0; border:1px solid transparent; border-bottom:none; }
-  .card-tab-new    { background:#2a1e08; color:#c8a96e; border-color:rgba(200,169,110,.35); }
-  .card-tab-boost  { background:#1a0f1e; color:#c084fc; border-color:rgba(192,132,252,.35); }
   .card-stickers {
     position:absolute; top:0; right:12px;
     display:flex; gap:4px; pointer-events:none;
   }
-  .card-branch-sticker, .card-bookmark-sticker {
+  .card-branch-sticker, .card-bookmark-sticker, .card-new-sticker {
     background:#0d1a11; color:#6b7d6e;
     border:1px solid rgba(128,151,140,.35); border-top:none;
     font-size:9px; font-weight:700; padding:5px 8px 4px;
     border-radius:0 0 5px 5px; letter-spacing:.04em;
   }
   .card-bookmark-sticker { color:var(--accent2); border-color:rgba(200,169,110,.25); }
-  @keyframes card-shine {
-    0%   { transform:translateX(-120%) skewX(-18deg); opacity:0; }
-    15%  { opacity:1; }
-    85%  { opacity:1; }
-    100% { transform:translateX(260%) skewX(-18deg); opacity:0; }
+  .card-new-sticker { color:#68c8e8; border-color:rgba(104,200,232,.25); }
+  @keyframes boost-glow {
+    0%, 100% { border-color:rgba(192,132,252,.35); box-shadow:0 0 10px rgba(192,132,252,.08); }
+    50%       { border-color:rgba(192,132,252,.7);  box-shadow:0 0 22px rgba(192,132,252,.18); }
   }
-  .story-card-wrap.has-boost > .story-card { overflow:hidden; }
-  .story-card-wrap.has-boost > .story-card::before {
-    content:''; position:absolute; inset:0; border-radius:var(--radius);
-    background:linear-gradient(105deg, transparent 35%, rgba(192,132,252,.07) 50%, transparent 65%);
-    transform:translateX(-120%) skewX(-18deg);
-    animation:card-shine 1.4s ease-out .2s 1 both;
-    pointer-events:none;
-  }
+  .story-card-wrap.has-boost > .story-card { animation:boost-glow 2.2s ease-in-out infinite; }
   .sort-btn { background:var(--surface); border:none; color:var(--muted); padding:5px 12px; border-radius:16px; font-size:12px; font-weight:600; cursor:pointer; transition:.15s; }
   .sort-btn.active { background:var(--accent); color:#fff; }
 
@@ -961,10 +946,11 @@ async function startSeedStory() {
 }
 
 // 관심받는 이야기 카드
-function cardStickersHtml(s, alwaysBm) {
+function cardStickersHtml(s, alwaysBm, isNew) {
   const hasBm = alwaysBm || _bmIds.has(s.story_id);
   const parts = [
     s.has_branch ? `<span class="card-branch-sticker">⑂ 분기</span>` : '',
+    isNew ? `<span class="card-new-sticker">N</span>` : '',
     hasBm ? `<span class="card-bookmark-sticker">★</span>` : '',
   ].filter(Boolean).join('');
   return parts ? `<div class="card-stickers">${parts}</div>` : '';
@@ -973,11 +959,8 @@ function cardStickersHtml(s, alwaysBm) {
 function popularCardHtml(s) {
   const step  = Number(s.current_step) || 0;
   const count = Number(s.activity_count || s.participant_count) || 0;
-  const hasTabs = s.is_boosted;
-  const tabRow = hasTabs ? `<div class="card-tab-row"><div class="card-tab-left"></div><div class="card-tab-right"><span class="card-tab card-tab-boost">주목</span></div></div>` : '';
   return `
-    <div class="story-card-wrap${hasTabs ? ' has-tabs' : ''}${s.is_boosted ? ' has-boost' : ''}">
-      ${tabRow}
+    <div class="story-card-wrap${s.is_boosted ? ' has-boost' : ''}">
       <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
         ${cardStickersHtml(s)}
         <div class="story-card-title">${esc(s.opening)}</div>
@@ -1015,13 +998,10 @@ function myStoryCardHtml(s, snapshot) {
     step > (stored.step || 0)
   );
   const voteCount   = typeof s.has_voted_current === 'number' ? s.has_voted_current : null;
-  const hasTabs = isNew;
-  const tabRow = hasTabs ? `<div class="card-tab-row"><div class="card-tab-left"><span class="card-tab card-tab-new">NEW</span></div><div class="card-tab-right"></div></div>` : '';
   return `
-    <div class="story-card-wrap${hasTabs ? ' has-tabs' : ''}">
-      ${tabRow}
+    <div class="story-card-wrap">
       <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
-      ${cardStickersHtml(s)}
+      ${cardStickersHtml(s, false, isNew)}
       <div class="story-card-title">${esc(s.opening)}</div>
       ${mySubs.length ? `
         <div style="margin-bottom:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">

@@ -1811,6 +1811,7 @@ async function profile() {
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
 
   const u         = res.user;
+  if (u.badge && user && u.badge !== user.badge) { user.badge = u.badge; saveUser(user); renderNav(); }
   const bookmarks = bmRes.ok ? bmRes.stories : [];
   const tab       = currentParam === 'settings' ? 'settings' : 'points';
   const nextBadge = {

@@ -316,7 +316,7 @@ async function fbGetStory(story_id, user_id) {
   });
 
   const story       = storySnap.data();
-  const episodes    = episodesSnap.docs.map(d => d.data());
+  const episodes    = episodesSnap.docs.map(d => ({ episode_id: d.id, ...d.data() }));
   const submissions = subsSnap.docs.map(d => ({
     ...d.data(),
     author_nickname: nickMap[d.data().author_id] || '익명',
@@ -457,7 +457,7 @@ async function _fbCheckPendingEpisodes(story_id) {
   const snap = await db.collection('episodes')
     .where('story_id', '==', story_id).where('status', '==', 'pending').get();
   for (const doc of snap.docs) {
-    const ep = doc.data();
+    const ep = { episode_id: doc.id, ...doc.data() };
     const base    = ep.pending_at || new Date(0).toISOString();
     const elapsed = (new Date() - new Date(base)) / 60000;
     if (elapsed >= FB_PENDING_MINUTES) await _fbCloseEpisode(ep.episode_id, ep);
@@ -607,10 +607,11 @@ async function fbCreateSubmission(episode_id, content, author_id, derived_from, 
   });
   await _fbAddPoints(author_id, 5, 'submit', sub_id);
 
-  // participant_count 증가 (첫 제출 시)
-  const myStorySubsSnap = await db.collection('submissions')
-    .where('story_id','==',ep.story_id).where('author_id','==',author_id).get();
-  if (myStorySubsSnap.size <= 1) {
+  // participant_count 증가 (첫 제출 시) — 복합 인덱스 없이 단일 필드 쿼리 후 클라이언트 필터
+  const mySubsSnap = await db.collection('submissions')
+    .where('author_id','==',author_id).get();
+  const prevCount = mySubsSnap.docs.filter(d => d.data().story_id === ep.story_id && d.id !== sub_id).length;
+  if (prevCount === 0) {
     await db.collection('stories').doc(ep.story_id).update({
       participant_count: firebase.firestore.FieldValue.increment(1)
     });

@@ -2333,9 +2333,10 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
     return `
       <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
         <span class="prose-sentence">${esc(sub.content)}</span>
-        <span class="prose-author">— ${sub.author_badge?`<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(sub.author_badge)}</span>`:''}${esc(sub.author_nickname || '익명')}</span>
         ${mvpBadge}${myMvpMark}
-      </div>${forkHtml}${childHtml}`;
+      </div>
+      <span class="prose-author">— ${sub.author_badge?`<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(sub.author_badge)}</span>`:''}${esc(sub.author_nickname || '익명')}</span>
+      ${forkHtml}${childHtml}`;
   }
 
   // 동률 채택 분기 포인트
@@ -2354,9 +2355,9 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
         </div>
         <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
           <span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span>
-          <span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>
           ${mvpBadge}${myMvpMark}
         </div>
+        <span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>
       </div>
       ${chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId) : ''}`;
   }

@@ -2588,10 +2588,12 @@ function showOnboarding() {
   _obPage = 0;
   _renderObPage(0);
   document.getElementById('onboarding-overlay').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
 }
 function closeOnboarding() {
   localStorage.setItem('hwasee_onboarding_seen', '1');
   document.getElementById('onboarding-overlay').style.display = 'none';
+  document.body.style.overflow = '';
 }
 function _renderObPage(dir) {
   const content = document.getElementById('ob-content');
@@ -2633,6 +2635,7 @@ function _obPrev() { if (_obPage > 0) { _obPage--; _renderObPage(-1); } }
 (function() {
   const ov = document.getElementById('onboarding-overlay');
   ov.addEventListener('touchstart', e => { _obTouchX = e.touches[0].clientX; }, { passive: true });
+  ov.addEventListener('touchmove', e => { e.preventDefault(); }, { passive: false });
   ov.addEventListener('touchcancel', () => { _obTouchX = null; });
   ov.addEventListener('touchend', e => {
     if (_obTouchX === null) return;

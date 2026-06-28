@@ -1195,16 +1195,6 @@ async function story() {
     loadStoryComments(currentParam);
   }
 
-  // 분기 있는 스토리: 산문뷰 박스 밖 탭 레이아웃 활성화
-  const hasBranchEps = episodes.filter(e => e.status === 'open').length > 1 ||
-    episodes.some(ep => ep.status === 'closed' &&
-      submissions.filter(s => s.episode_id === ep.episode_id && (s.is_adopted === true || s.is_adopted === 'TRUE')).length > 1
-    );
-  if (hasBranchEps) {
-    const pw = document.getElementById('story-prose-wrap');
-    if (pw) pw.classList.add('has-branch-tabs');
-  }
-
   // 이미 투표한 항목 pre-select
   _applyVoteSelections();
 
@@ -2503,6 +2493,10 @@ function chooseBranch(episode_id, sub_id) {
     const tree = getEpisodeTree(episodes.filter(e => e.status === 'closed'), submissions);
     el.innerHTML = inheritedHtml + (tree ? renderEpisodeTreeHtml(tree, window._branchChoice, mvp_map, branches, my_mvp_episode_id) : '');
   }
+
+  // 갈래 선택 시 산문뷰 왼쪽 탭 공간 확보
+  const pw = document.getElementById('story-prose-wrap');
+  if (pw) pw.classList.add('has-branch-tabs');
 
   // action 섹션 재렌더 (갈래에 맞는 open 에피소드로)
   const actionWrap = document.getElementById('story-action-wrap');

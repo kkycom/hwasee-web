@@ -380,7 +380,7 @@
   .bell-btn { position:relative; background:none; border:none; cursor:pointer; color:var(--text); font-size:15px; padding:4px 6px; border-radius:6px; }
   .bell-btn:hover { background:var(--surface); }
   .bell-badge { position:absolute; top:2px; right:2px; min-width:16px; height:16px; border-radius:8px; background:var(--accent2); color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 3px; pointer-events:none; }
-  .notif-panel { position:absolute; top:calc(100% + 6px); right:0; width:300px; background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.5); z-index:100; overflow:hidden; }
+  .notif-panel { position:fixed; top:62px; right:16px; width:300px; max-width:calc(100vw - 32px); max-height:70vh; overflow-y:auto; background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.5); z-index:200; }
   .notif-item { padding:12px 14px; border-bottom:1px solid var(--border); font-size:13px; line-height:1.4; cursor:pointer; }
   .notif-item:hover { background:var(--surface); }
   .notif-item.unread { border-left:3px solid var(--accent2); padding-left:11px; }

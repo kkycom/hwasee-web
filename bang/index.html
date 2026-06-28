@@ -830,6 +830,7 @@ async function loadHomeTab(tab) {
   if (!content) return;
 
   if (tab === 'seed') {
+    content.innerHTML = '';
     let res;
     try { res = await api('getSeeds'); } catch(e) {
       content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('seed')">다시 시도</button></div>`;
@@ -913,14 +914,20 @@ async function loadHomeTab(tab) {
 
 // 씨앗 카드 렌더
 function renderSeedCard() {
-  const content = document.getElementById('home-content');
-  if (!content) return;
+  let area = document.getElementById('seed-card-area');
+  if (!area) {
+    const content = document.getElementById('home-content');
+    if (!content) return;
+    area = document.createElement('div');
+    area.id = 'seed-card-area';
+    content.prepend(area);
+  }
   const text = (window._seeds || [])[window._seedIdx || 0];
   if (!text) {
-    content.innerHTML = `<div class="empty">씨앗 문장이 모두 소진됐어요.<br><span style="font-size:13px">새 문장 세트가 곧 추가됩니다.</span></div>`;
+    area.innerHTML = `<div class="empty">씨앗 문장이 모두 소진됐어요.<br><span style="font-size:13px">새 문장 세트가 곧 추가됩니다.</span></div>`;
     return;
   }
-  content.innerHTML = `
+  area.innerHTML = `
     <p style="font-family:var(--serif);font-size:16px;line-height:1.9;color:#9a8070;text-align:center;margin-bottom:28px">
       당신의 한 문장을 기다리는<br>이야기들이 있어요.
     </p>

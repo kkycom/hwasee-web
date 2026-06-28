@@ -1380,6 +1380,9 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1
         ${user && sub.sub_id !== mySubId ? `
           <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px;color:var(--muted);margin-left:auto;opacity:0.7"
             onclick="event.stopPropagation();toggleReport('${sub.sub_id}')">⚑ 신고</button>` : ''}
+        ${sub.sub_id === mySubId && voteCount === 0 && !isAdopted ? `
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px;color:var(--muted);margin-left:auto;opacity:0.6"
+            onclick="event.stopPropagation();deleteMySubmission('${sub.sub_id}')">✕ 삭제</button>` : ''}
       </div>
       ${user && sub.sub_id !== mySubId ? `
         <div id="report-${sub.sub_id}" style="display:none;margin-top:6px">
@@ -2789,6 +2792,7 @@ function reasonLabel(r) {
     direct:'채택 (직접 제출)', source:'다듬기 원저자 보상', mid:'중간 다듬기 보상', derived:'다듬기 채택 보상',
     submit:'제출 참여', vote:'공감 참여', daily_login:'출석 점수', mvp_nomination:'MVP 선정', bug_report:'버그 제보',
     boost_story:'이야기 주목 사용', extra_submit:'추가 제출권 사용', buy_avatar:'아바타 아이콘 구매',
+    delete_submission:'제출 삭제 패널티',
   }[r] || r;
 }
 
@@ -2959,6 +2963,14 @@ async function doToggleStoryLike(story_id) {
   }
   _lsc.del('done');
   _doneCache = null;
+}
+
+async function deleteMySubmission(sub_id) {
+  if (!confirm('제출을 삭제하면 10P가 차감됩니다. 삭제할까요?')) return;
+  const res = await api('deleteMySubmission', { sub_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast('삭제됐습니다. (-10P)');
+  story();
 }
 
 async function doBoostStory(story_id) {

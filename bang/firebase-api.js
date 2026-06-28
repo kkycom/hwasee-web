@@ -1363,6 +1363,25 @@ async function fbChangeDisplayName(user_id, new_display_name) {
   return { ok: true, display_name: dn };
 }
 
+async function fbDeleteMySubmission(sub_id, user_id) {
+  const subSnap = await db.collection('submissions').doc(sub_id).get();
+  if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
+  const sub = subSnap.data();
+  if (sub.author_id !== user_id) return { ok: false, error: '권한이 없습니다.' };
+  if ((Number(sub.vote_count) || 0) > 0) return { ok: false, error: '공감을 받은 글은 삭제할 수 없습니다.' };
+  if (sub.is_adopted === true || sub.is_adopted === 'TRUE') return { ok: false, error: '채택된 글은 삭제할 수 없습니다.' };
+  const spend = await _fbSpendPoints(user_id, 10, 'delete_submission');
+  if (!spend.ok) return spend;
+  await db.collection('submissions').doc(sub_id).delete();
+  const cSnap = await db.collection('comments').where('sub_id', '==', sub_id).get();
+  if (!cSnap.empty) {
+    const batch = db.batch();
+    cSnap.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+  return { ok: true };
+}
+
 // ─── 어드민 ──────────────────────────────────────────────
 
 async function fbAdminForceAdopt(sub_id, admin_id) {
@@ -1487,6 +1506,8 @@ async function firebaseApi(action, params = {}) {
     case 'voteMvp':            return fbVoteMvp(params.story_id, params.episode_id, need().user_id);
     case 'getMvpVotes':        return fbGetMvpVotes(params.story_id, session?.user_id || null);
     case 'createBranch':       return fbCreateBranch(params.story_id, params.branch_from_step, need().user_id);
+
+    case 'deleteMySubmission': return fbDeleteMySubmission(params.sub_id, need().user_id);
 
     case 'boostStory':         return fbBoostStory(params.story_id, need().user_id);
     case 'buyExtraSubmit':     return fbBuyExtraSubmit(params.episode_id, need().user_id);

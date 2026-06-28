@@ -599,10 +599,17 @@ function renderMineCards() {
   const content = document.getElementById('home-content');
   if (!content || !_mineCache) return;
   const { active, snapshot } = _mineCache;
-  const sorted = _sortStories(active, _mineSort);
-  content.innerHTML = _sortBtns('ms', [['activity','참여도 순'],['step','진행도 순'],['latest','최신 순']], _mineSort)
-    + (sorted.length
-      ? sorted.map(s => myStoryCardHtml(s, snapshot)).join('')
+  const boosted = active.filter(s => s.is_boosted);
+  const regular = _sortStories(active.filter(s => !s.is_boosted), _mineSort);
+  const boostHtml = boosted.length ? `
+    <div class="boost-section">
+      <div class="boost-section-label">✦ 주목 이야기</div>
+      <div class="boost-scroll">${boosted.map(s => boostCardHtml(s)).join('')}</div>
+    </div>` : '';
+  content.innerHTML = boostHtml
+    + _sortBtns('ms', [['activity','참여도 순'],['step','진행도 순'],['latest','최신 순']], _mineSort)
+    + (regular.length
+      ? regular.map(s => myStoryCardHtml(s, snapshot)).join('')
       : `<div class="empty" style="padding-top:30px">참여 중인 이야기가 없어요.<br>씨앗 탭에서 이야기를 시작해 보세요!</div>`);
 }
 
@@ -1034,7 +1041,7 @@ function doneCardHtml(s) {
   const step  = Number(s.current_step) || 0;
   const likes = Number(s.like_count) || 0;
   return `
-    <div class="story-card-wrap${s.is_boosted ? ' has-boost' : ''}">
+    <div class="story-card-wrap">
     <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
       ${cardStickersHtml(s)}
       <div class="story-card-title">${esc(s.opening)}</div>
@@ -1058,7 +1065,7 @@ function myStoryCardHtml(s, snapshot) {
   );
   const voteCount   = typeof s.has_voted_current === 'number' ? s.has_voted_current : null;
   return `
-    <div class="story-card-wrap${s.is_boosted ? ' has-boost' : ''}">
+    <div class="story-card-wrap">
       <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
       ${cardStickersHtml(s, false, isNew)}
       <div class="story-card-title">${esc(s.opening)}</div>

@@ -659,11 +659,13 @@ async function _fbGetStoryParticipants(story_id) {
     ...bmSnap.docs.map(d => d.data().user_id),
     ...commSnap.docs.map(d => d.data().author_id),
   ];
-  // 투표자 — in 쿼리 최대 10개 제한 대응
+  // 투표자 — epIds 전체를 10개씩 배치 처리
   if (epIds.size > 0) {
-    const epArr = [...epIds].slice(0, 10);
-    const vSnap = await db.collection('votes').where('episode_id', 'in', epArr).get();
-    vSnap.docs.forEach(d => ids.push(d.data().voter_id));
+    const epArr = [...epIds];
+    const batches = [];
+    for (let i = 0; i < epArr.length; i += 10) batches.push(epArr.slice(i, i + 10));
+    const vSnaps = await Promise.all(batches.map(b => db.collection('votes').where('episode_id', 'in', b).get()));
+    vSnaps.forEach(s => s.docs.forEach(d => ids.push(d.data().voter_id)));
   }
   return [...new Set(ids.filter(Boolean))];
 }
@@ -822,7 +824,7 @@ const FB_AI_OPENINGS = [
 ];
 
 async function fbGetSeeds() {
-  const usedSnap = await db.collection('stories').get();
+  const usedSnap = await db.collection('stories').where('is_ai_seed', '==', true).get();
   const used     = new Set(usedSnap.docs.map(d => d.data().opening));
   const available = FB_AI_OPENINGS.filter(o => !used.has(o));
   const src    = available.length >= 5 ? available.slice() : FB_AI_OPENINGS.slice();
@@ -999,14 +1001,25 @@ async function fbAddReport(sub_id, reason, reporter_id) {
 
 async function fbGetReports(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const [rSnap, uSnap, sSnap] = await Promise.all([
-    db.collection('reports').orderBy('created_at', 'desc').get(),
-    db.collection('users').get(),
-    db.collection('submissions').get(),
-  ]);
-  const nickMap = {}, subMap = {};
-  uSnap.docs.forEach(d => { nickMap[d.id] = d.data().display_name || d.data().nickname; });
-  sSnap.docs.forEach(d => { subMap[d.id] = d.data(); });
+  const rSnap = await db.collection('reports').orderBy('created_at', 'desc').get();
+  if (rSnap.empty) return { ok: true, reports: [] };
+
+  const subIds     = [...new Set(rSnap.docs.map(d => d.data().sub_id).filter(Boolean))];
+  const reporterIds = [...new Set(rSnap.docs.map(d => d.data().reporter_id).filter(Boolean))];
+
+  const subMap = {}, nickMap = {};
+  const subDocs = subIds.length > 0
+    ? await Promise.all(subIds.map(id => db.collection('submissions').doc(id).get()))
+    : [];
+  const authorIds = [];
+  subDocs.forEach(d => { if (d.exists) { subMap[d.id] = d.data(); if (d.data().author_id) authorIds.push(d.data().author_id); } });
+
+  const allUserIds = [...new Set([...reporterIds, ...authorIds])];
+  if (allUserIds.length > 0) {
+    const userDocs = await Promise.all(allUserIds.map(id => db.collection('users').doc(id).get()));
+    userDocs.forEach(d => { if (d.exists) nickMap[d.id] = d.data().display_name || d.data().nickname; });
+  }
+
   const label = { plagiarism:'표절', sexual:'성적 묘사', profanity:'욕설·혐오', spam:'스팸', other:'기타' };
   const reports = rSnap.docs.map(d => {
     const r = d.data();
@@ -1109,9 +1122,12 @@ async function fbGetMvpVotes(story_id, voter_id) {
     const uid = d.data().nominated_user_id;
     countMap[uid] = (countMap[uid] || 0) + 1;
   });
-  const uSnap = await db.collection('users').get();
   const nickMap = {}, badgeMap = {};
-  uSnap.docs.forEach(d => { nickMap[d.id] = d.data().nickname; badgeMap[d.id] = d.data().badge; });
+  const uids = Object.keys(countMap).filter(Boolean);
+  if (uids.length > 0) {
+    const userDocs = await Promise.all(uids.map(id => db.collection('users').doc(id).get()));
+    userDocs.forEach(d => { if (d.exists) { nickMap[d.id] = d.data().display_name || d.data().nickname; badgeMap[d.id] = d.data().badge; } });
+  }
   const votes = Object.entries(countMap)
     .sort(([,a],[,b]) => b - a)
     .map(([uid, count]) => ({ user_id: uid, nickname: nickMap[uid] || '?', badge: badgeMap[uid] || 'seed', count }));
@@ -1421,11 +1437,13 @@ async function fbGetBugReports(user_id) {
   const uSnap = await db.collection('users').doc(user_id).get();
   if (!uSnap.exists || uSnap.data().badge !== 'treeguard') return { ok: false, error: '권한이 없습니다.' };
   const snap = await db.collection('bug_reports').orderBy('created_at', 'desc').limit(50).get();
-  const reports = await Promise.all(snap.docs.map(async d => {
-    const data = d.data();
-    const uDoc = await db.collection('users').doc(data.user_id).get();
-    return { id: d.id, ...data, reporter_nickname: uDoc.exists ? (uDoc.data().display_name || uDoc.data().nickname) : '알 수 없음' };
-  }));
+  const reporterIds = [...new Set(snap.docs.map(d => d.data().user_id).filter(Boolean))];
+  const nickMap = {};
+  if (reporterIds.length > 0) {
+    const userDocs = await Promise.all(reporterIds.map(id => db.collection('users').doc(id).get()));
+    userDocs.forEach(d => { if (d.exists) nickMap[d.id] = d.data().display_name || d.data().nickname; });
+  }
+  const reports = snap.docs.map(d => ({ id: d.id, ...d.data(), reporter_nickname: nickMap[d.data().user_id] || '알 수 없음' }));
   return { ok: true, reports };
 }
 
@@ -1438,15 +1456,8 @@ async function fbResolveBugReport(report_id, user_id) {
 
 async function fbSubmitBugReport(content, user_id) {
   if (!content || content.trim().length < 5) return { ok: false, error: '내용을 5자 이상 입력해주세요.' };
-  const t = now();
-  await db.collection('bug_reports').add({ user_id, content: content.trim(), created_at: t, status: 'open' });
-  await Promise.all([
-    db.collection('users').doc(user_id).update({
-      points: firebase.firestore.FieldValue.increment(10),
-      total_points: firebase.firestore.FieldValue.increment(10),
-    }),
-    db.collection('point_history').add({ user_id, points: 10, reason: 'bug_report', created_at: t }),
-  ]);
+  await db.collection('bug_reports').add({ user_id, content: content.trim(), created_at: fbNow(), status: 'open' });
+  await _fbAddPoints(user_id, 10, 'bug_report', '');
   return { ok: true };
 }
 

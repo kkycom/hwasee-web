@@ -2498,7 +2498,11 @@ function chooseBranch(episode_id, sub_id) {
 
   // 갈래 선택 시 산문뷰 왼쪽 탭 공간 확보
   const pw = document.getElementById('story-prose-wrap');
-  if (pw) pw.classList.add('has-branch-tabs');
+  if (pw) {
+    pw.classList.add('has-branch-tabs');
+    // 공감현황/으뜸글 모드 중이면 재렌더된 prose-author도 visible 복원
+    if (window._proseSelMode) pw.querySelectorAll('.prose-author').forEach(el => el.classList.add('visible'));
+  }
 
   // action 섹션 재렌더 (갈래에 맞는 open 에피소드로)
   const actionWrap = document.getElementById('story-action-wrap');

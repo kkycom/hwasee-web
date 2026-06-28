@@ -242,15 +242,11 @@ async function fbGetStories(page) {
   const p = Number(page) || 1;
 
   if (p === 1) {
-    const [storiesSnap, episodesSnap, boostsSnap, usersSnap] = await Promise.all([
+    const [storiesSnap, episodesSnap, boostsSnap] = await Promise.all([
       db.collection('stories').where('status', '==', 'active').get(),
       db.collection('episodes').where('status', '==', 'open').get(),
       db.collection('boosts').where('expires_at', '>', fbNow()).get(),
-      db.collection('users').get(),
     ]);
-
-    const nickMap = {}, badgeMap = {};
-    usersSnap.docs.forEach(d => { nickMap[d.id] = d.data().display_name || d.data().nickname; badgeMap[d.id] = d.data().badge; });
 
     const openVoteMap = {};
     episodesSnap.docs.forEach(d => {
@@ -294,11 +290,10 @@ async function fbGetStories(page) {
 }
 
 async function fbGetStory(story_id, user_id) {
-  const [storySnap, episodesSnap, primarySubsSnap, usersSnap, commSnap, mvpSnap] = await Promise.all([
+  const [storySnap, episodesSnap, primarySubsSnap, commSnap, mvpSnap] = await Promise.all([
     db.collection('stories').doc(story_id).get(),
     db.collection('episodes').where('story_id', '==', story_id).get(),
     db.collection('submissions').where('story_id', '==', story_id).get(),
-    db.collection('users').get(),
     db.collection('comments').where('story_id', '==', story_id).get(),
     db.collection('story_mvp').where('story_id', '==', story_id).get(),
   ]);
@@ -318,8 +313,13 @@ async function fbGetStory(story_id, user_id) {
   }
   const subsSnap = { docs: [...subMap.values()] };
 
+  // 제출 작성자만 개별 조회 (전체 users 컬렉션 대신)
+  const authorIds = [...new Set(subsSnap.docs.map(d => d.data().author_id).filter(Boolean))];
   const nickMap = {}, badgeMap = {};
-  usersSnap.docs.forEach(d => { nickMap[d.id] = d.data().display_name || d.data().nickname; badgeMap[d.id] = d.data().badge; });
+  if (authorIds.length > 0) {
+    const userDocs = await Promise.all(authorIds.map(id => db.collection('users').doc(id).get()));
+    userDocs.forEach(d => { if (d.exists) { nickMap[d.id] = d.data().display_name || d.data().nickname; badgeMap[d.id] = d.data().badge; } });
+  }
 
   const commentCountMap = {};
   commSnap.docs.forEach(d => {
@@ -440,26 +440,43 @@ async function fbCreateStory(opening, creator_id, is_ai_seed) {
 async function fbGetMyStories(user_id) {
   if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
 
-  const [mySubsSnap, myVotesSnap, allEpsSnap, allStoriesSnap] = await Promise.all([
+  const [mySubsSnap, myVotesSnap] = await Promise.all([
     db.collection('submissions').where('author_id', '==', user_id).get(),
     db.collection('votes').where('voter_id', '==', user_id).get(),
-    db.collection('episodes').get(),
-    db.collection('stories').get(),
+  ]);
+
+  // 제출에서 story_id 직접 추출 (submissions에 story_id 저장돼 있음)
+  const storyIdSet = new Set(mySubsSnap.docs.map(d => d.data().story_id).filter(Boolean));
+  const voteEpIds  = [...new Set(myVotesSnap.docs.map(d => d.data().episode_id).filter(Boolean))];
+
+  // 투표 episode_id → story_id 해석 (제출 없이 투표만 한 경우)
+  if (voteEpIds.length > 0) {
+    const batches = [];
+    for (let i = 0; i < voteEpIds.length; i += 10) batches.push(voteEpIds.slice(i, i+10));
+    const snaps = await Promise.all(
+      batches.map(b => db.collection('episodes').where(firebase.firestore.FieldPath.documentId(), 'in', b).get())
+    );
+    snaps.forEach(s => s.docs.forEach(d => { if (d.data().story_id) storyIdSet.add(d.data().story_id); }));
+  }
+
+  if (storyIdSet.size === 0) return { ok: true, stories: [] };
+
+  const idBatches = [];
+  const storyIdArr = [...storyIdSet];
+  for (let i = 0; i < storyIdArr.length; i += 10) idBatches.push(storyIdArr.slice(i, i+10));
+
+  // 관련 story/episode만 조회
+  const [storySnaps, epSnaps] = await Promise.all([
+    Promise.all(idBatches.map(b => db.collection('stories').where(firebase.firestore.FieldPath.documentId(), 'in', b).get())),
+    Promise.all(idBatches.map(b => db.collection('episodes').where('story_id', 'in', b).get())),
   ]);
 
   const epMap = {};
-  allEpsSnap.docs.forEach(d => { epMap[d.id] = d.data(); });
-
-  const epIds = new Set([
-    ...mySubsSnap.docs.map(d => d.data().episode_id),
-    ...myVotesSnap.docs.map(d => d.data().episode_id),
-  ]);
-  const storyIds = new Set([...epIds].map(eid => epMap[eid]?.story_id).filter(Boolean));
+  epSnaps.forEach(s => s.docs.forEach(d => { epMap[d.id] = d.data(); }));
 
   const openEpMap = {};
-  allEpsSnap.docs.forEach(d => {
-    const e = d.data();
-    if (e.status === 'open') openEpMap[e.story_id] = e.episode_id;
+  Object.entries(epMap).forEach(([epId, ep]) => {
+    if (ep.status === 'open') openEpMap[ep.story_id] = epId;
   });
 
   const myVoteCountMap = {};
@@ -474,20 +491,20 @@ async function fbGetMyStories(user_id) {
     ep_status: epMap[d.data().episode_id]?.status || 'closed',
   }));
 
-  const stories = allStoriesSnap.docs
-    .filter(d => storyIds.has(d.id) && d.data().status !== 'deleted' && d.data().status !== 'inactive')
-    .map(d => {
-      const s = d.data();
-      const openEpId = openEpMap[s.story_id];
-      return {
-        ...s,
-        mySubmissions:      mySubsArr.filter(sub => sub.story_id === s.story_id).sort((a,b) => a.step - b.step),
-        activity_count:     s.participant_count || 0,
-        has_voted_current:  openEpId != null ? (myVoteCountMap[openEpId] || 0) : null,
-      };
-    })
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const stories = [];
+  storySnaps.forEach(snap => snap.docs.forEach(d => {
+    const s = d.data();
+    if (s.status === 'deleted' || s.status === 'inactive') return;
+    const openEpId = openEpMap[s.story_id];
+    stories.push({
+      ...s,
+      mySubmissions:     mySubsArr.filter(sub => sub.story_id === s.story_id).sort((a,b) => a.step - b.step),
+      activity_count:    s.participant_count || 0,
+      has_voted_current: openEpId != null ? (myVoteCountMap[openEpId] || 0) : null,
+    });
+  }));
 
+  stories.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   return { ok: true, stories };
 }
 
@@ -914,10 +931,13 @@ async function fbAddComment(sub_id, content, author_id) {
 }
 
 async function fbGetComments(sub_id) {
-  const snap   = await db.collection('comments').where('sub_id','==',sub_id).get();
-  const uSnap  = await db.collection('users').get();
+  const snap = await db.collection('comments').where('sub_id','==',sub_id).get();
+  const authorIds = [...new Set(snap.docs.map(d => d.data().author_id).filter(Boolean))];
   const nickMap = {};
-  uSnap.docs.forEach(d => { nickMap[d.id] = d.data().display_name || d.data().nickname; });
+  if (authorIds.length > 0) {
+    const userDocs = await Promise.all(authorIds.map(id => db.collection('users').doc(id).get()));
+    userDocs.forEach(d => { if (d.exists) nickMap[d.id] = d.data().display_name || d.data().nickname; });
+  }
   const comments = snap.docs.map(d => ({ comment_id: d.id, ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }))
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   return { ok: true, comments };
@@ -947,11 +967,14 @@ async function fbAddStoryComment(story_id, content, author_id) {
 
 async function fbGetStoryComments(story_id) {
   if (!story_id) return { ok: false, error: '잘못된 요청입니다.' };
-  const snap   = await db.collection('comments')
+  const snap = await db.collection('comments')
     .where('story_id','==',story_id).where('sub_id','==','').get();
-  const uSnap  = await db.collection('users').get();
+  const authorIds = [...new Set(snap.docs.map(d => d.data().author_id).filter(Boolean))];
   const nickMap = {};
-  uSnap.docs.forEach(d => { nickMap[d.id] = d.data().display_name || d.data().nickname; });
+  if (authorIds.length > 0) {
+    const userDocs = await Promise.all(authorIds.map(id => db.collection('users').doc(id).get()));
+    userDocs.forEach(d => { if (d.exists) nickMap[d.id] = d.data().display_name || d.data().nickname; });
+  }
   const comments = snap.docs.map(d => ({ comment_id: d.id, ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }))
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   return { ok: true, comments };

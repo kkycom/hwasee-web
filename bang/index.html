@@ -906,18 +906,27 @@ async function loadHomeTab(tab) {
         <button class="btn btn-primary" style="margin-top:20px" onclick="nav('auth','login')">로그인</button></div>`;
       return;
     }
-    let res;
-    try { res = await api('getMyStories'); } catch(e) {
-      content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('mine')">다시 시도</button></div>`;
-      return;
-    }
-    const active = res.ok ? res.stories.filter(s => s.status === 'active') : [];
-    const mineSnap = (() => { try { return JSON.parse(localStorage.getItem('mine_snap') || '{}'); } catch { return {}; } })();
-    const newSnap = {};
-    active.forEach(s => { newSnap[s.story_id] = { activity: Number(s.activity_count) || 0, step: Number(s.current_step) || 0 }; });
-    try { localStorage.setItem('mine_snap', JSON.stringify(newSnap)); } catch {}
-    _mineCache = { active, snapshot: mineSnap };
-    renderMineCards();
+    const _applyMine = (res) => {
+      const active = res?.ok ? res.stories.filter(s => s.status === 'active') : [];
+      const mineSnap = (() => { try { return JSON.parse(localStorage.getItem('mine_snap') || '{}'); } catch { return {}; } })();
+      const newSnap = {};
+      active.forEach(s => { newSnap[s.story_id] = { activity: Number(s.activity_count) || 0, step: Number(s.current_step) || 0 }; });
+      try { localStorage.setItem('mine_snap', JSON.stringify(newSnap)); } catch {}
+      _mineCache = { active, snapshot: mineSnap };
+      if (currentRoute === 'mine') renderMineCards();
+    };
+    const _cachedMine = _lsc.get('mine');
+    if (_cachedMine) _applyMine(_cachedMine);
+    const _fetchMine = async () => {
+      let res;
+      try { res = await api('getMyStories'); } catch(e) {
+        if (!_cachedMine) content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('mine')">다시 시도</button></div>`;
+        return;
+      }
+      _lsc.set('mine', res, 120);
+      _applyMine(res);
+    };
+    if (!_cachedMine) await _fetchMine(); else _fetchMine();
 
   } else if (tab === 'done') {
     const _applyDone = (res) => {
@@ -989,7 +998,7 @@ async function startSeedStory() {
   if (btn) { btn.disabled = true; btn.textContent = '시작 중...'; }
   const res = await api('createStory', { opening: text, is_ai_seed: true });
   if (!res.ok) { toast(res.error, true); if (btn) { btn.disabled = false; btn.textContent = '이 문장으로 시작하기'; } return; }
-  _lsc.del('pop', 'done', 'lb');
+  _lsc.del('pop', 'done', 'lb', 'mine');
   toast('이야기가 시작됐습니다!');
   nav('story', res.story_id);
 }
@@ -1121,7 +1130,7 @@ async function submitStory() {
   btn.disabled = true; btn.textContent = '생성 중...';
   const res = await api('createStory', { opening });
   if (!res.ok) { toast(res.error, true); btn.disabled = false; btn.textContent = '이야기 시작'; return; }
-  _lsc.del('pop', 'done', 'lb');
+  _lsc.del('pop', 'done', 'lb', 'mine');
   toast('이야기가 시작됐습니다!');
   nav('story', res.story_id);
 }
@@ -1603,7 +1612,7 @@ async function submitSubInStory(episode_id, closing = false) {
   const res = await api('createSubmission', { episode_id, content, derived_from, closing });
   if (!res.ok) { toast(res.error, true); return; }
   window._polishFrom = null;
-  _lsc.del('pop', 'done');
+  _lsc.del('pop', 'done', 'mine');
   toast(closing ? '제출 완료! 이야기 마무리 공감이 시작됩니다.' : '제출 완료!');
   story();
 }
@@ -1643,7 +1652,7 @@ async function submitVoteInStory(episode_id) {
   if (btn) { btn.disabled = true; btn.textContent = '공감 중...'; }
   const res = await api('vote', { episode_id, sub_ids: selectedSubs });
   if (!res.ok) { toast(res.error, true); if (btn) btn.disabled = false; return; }
-  _lsc.del('pop', 'done');
+  _lsc.del('pop', 'done', 'mine');
   toast(wasRevote ? '공감이 변경됐어요!' : `공감 완료! 현재 ${res.total_voters}명 참여`);
   story();
 }
@@ -1827,7 +1836,7 @@ async function submitSub(episode_id) {
   if (content.length > 50) { toast('조금 더 짧게 써주세요.', true); return; }
   const res = await api('createSubmission', { episode_id, content, derived_from: '' });
   if (!res.ok) { toast(res.error, true); return; }
-  _lsc.del('pop', 'done');
+  _lsc.del('pop', 'done', 'mine');
   toast('제출 완료!');
   episode();
 }
@@ -1838,7 +1847,7 @@ async function submitVote(episode_id) {
   btn.disabled = true; btn.textContent = '공감 중...';
   const res = await api('vote', { episode_id, sub_ids: selectedSubs });
   if (!res.ok) { toast(res.error, true); btn.disabled = false; return; }
-  _lsc.del('pop', 'done');
+  _lsc.del('pop', 'done', 'mine');
   toast(`공감 완료! 현재 ${res.total_voters}명 참여`);
   episode();
 }

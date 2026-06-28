@@ -504,6 +504,20 @@ async function fbGetMyStories(user_id) {
     });
   }));
 
+  // 주목 여부 반영
+  const allStoryIds = stories.map(s => s.story_id).filter(Boolean);
+  if (allStoryIds.length > 0) {
+    const now = fbNow();
+    const boostBatches = [];
+    for (let i = 0; i < allStoryIds.length; i += 10) boostBatches.push(allStoryIds.slice(i, i+10));
+    const boostSnaps = await Promise.all(boostBatches.map(b =>
+      db.collection('boosts').where('story_id', 'in', b).where('expires_at', '>', now).get()
+    ));
+    const boostSet = new Set();
+    boostSnaps.forEach(s => s.docs.forEach(d => boostSet.add(d.data().story_id)));
+    stories.forEach(s => { s.is_boosted = boostSet.has(s.story_id); });
+  }
+
   stories.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   return { ok: true, stories };
 }

@@ -504,17 +504,21 @@ async function fbGetMyStories(user_id) {
     });
   }));
 
-  // 주목 여부 반영
+  // 주목 여부 반영 (in + 부등호 복합쿼리 인덱스 이슈로 JS 필터링)
   const allStoryIds = stories.map(s => s.story_id).filter(Boolean);
   if (allStoryIds.length > 0) {
-    const now = fbNow();
+    const nowMs = Date.now();
     const boostBatches = [];
     for (let i = 0; i < allStoryIds.length; i += 10) boostBatches.push(allStoryIds.slice(i, i+10));
     const boostSnaps = await Promise.all(boostBatches.map(b =>
-      db.collection('boosts').where('story_id', 'in', b).where('expires_at', '>', now).get()
+      db.collection('boosts').where('story_id', 'in', b).get()
     ));
     const boostSet = new Set();
-    boostSnaps.forEach(s => s.docs.forEach(d => boostSet.add(d.data().story_id)));
+    boostSnaps.forEach(s => s.docs.forEach(d => {
+      const data = d.data();
+      const exp = data.expires_at?.toMillis ? data.expires_at.toMillis() : (Number(data.expires_at) || 0);
+      if (exp > nowMs) boostSet.add(data.story_id);
+    }));
     stories.forEach(s => { s.is_boosted = boostSet.has(s.story_id); });
   }
 

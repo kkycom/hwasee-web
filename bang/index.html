@@ -124,6 +124,19 @@
     50%       { border-color:rgba(192,132,252,.85); box-shadow:0 0 22px rgba(192,132,252,.22); }
   }
   .story-card-wrap.has-boost > .story-card { animation:boost-glow 2.2s ease-in-out infinite; border-width:2px; }
+  @keyframes boost-section-glow {
+    0%, 100% { border-color:rgba(192,132,252,.25); box-shadow:0 0 14px rgba(192,132,252,.07); }
+    50%       { border-color:rgba(192,132,252,.6);  box-shadow:0 0 32px rgba(192,132,252,.16); }
+  }
+  .boost-section {
+    border:1.5px solid rgba(192,132,252,.25); border-radius:var(--radius);
+    padding:14px 16px 16px; margin-bottom:16px;
+    animation:boost-section-glow 2.6s ease-in-out infinite;
+  }
+  .boost-section-label { font-size:11px; font-weight:700; color:rgba(192,132,252,.85); letter-spacing:.06em; margin-bottom:12px; }
+  .boost-scroll { display:flex; gap:12px; overflow-x:auto; scrollbar-width:none; -ms-overflow-style:none; padding-bottom:2px; }
+  .boost-scroll::-webkit-scrollbar { display:none; }
+  .boost-card-wrap { min-width:248px; max-width:248px; flex-shrink:0; }
   .sort-btn { background:var(--surface); border:none; color:var(--muted); padding:5px 12px; border-radius:16px; font-size:12px; font-weight:600; cursor:pointer; transition:.15s; }
   .sort-btn.active { background:var(--accent); color:#fff; }
 
@@ -605,10 +618,17 @@ function setPopSort(key) {
 function renderPopCards() {
   const content = document.getElementById('home-content');
   if (!content || !_popCache) return;
-  const sorted = _sortStories(_popCache.stories, _popSort);
-  content.innerHTML = _sortBtns('ps', [['activity','참여도 순'],['step','진행도 순'],['latest','최신 순']], _popSort)
-    + (sorted.length
-      ? sorted.map(s => popularCardHtml(s)).join('')
+  const boosted = _popCache.stories.filter(s => s.is_boosted);
+  const regular = _sortStories(_popCache.stories.filter(s => !s.is_boosted), _popSort);
+  const boostHtml = boosted.length ? `
+    <div class="boost-section">
+      <div class="boost-section-label">✦ 주목 이야기</div>
+      <div class="boost-scroll">${boosted.map(s => boostCardHtml(s)).join('')}</div>
+    </div>` : '';
+  content.innerHTML = boostHtml
+    + _sortBtns('ps', [['activity','참여도 순'],['step','진행도 순'],['latest','최신 순']], _popSort)
+    + (regular.length
+      ? regular.map(s => popularCardHtml(s)).join('')
       : `<div class="empty" style="padding-top:40px">아직 이야기가 없어요.<br>씨앗 탭에서 첫 이야기를 시작해 보세요!</div>`);
 }
 
@@ -976,6 +996,21 @@ function cardStickersHtml(s, alwaysBm, isNew) {
     hasBm ? `<span class="card-bookmark-sticker">★</span>` : '',
   ].filter(Boolean).join('');
   return parts ? `<div class="card-stickers">${parts}</div>` : '';
+}
+
+function boostCardHtml(s) {
+  const step  = Number(s.current_step) || 0;
+  const count = Number(s.activity_count || s.participant_count) || 0;
+  return `
+    <div class="boost-card-wrap">
+      <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
+        ${cardStickersHtml(s)}
+        <div class="story-card-title" style="-webkit-line-clamp:2;line-clamp:2">${esc(s.opening)}</div>
+        <div class="story-card-footer">
+          <span class="step-pill"><span class="step-dot"></span>${s.open_ep_step != null ? (s.branch_from_step ? (Number(s.branch_from_step)-1)+s.open_ep_step : s.open_ep_step+1) : step+2}단계 · 참여자 ${count}명</span>
+        </div>
+      </div>
+    </div>`;
 }
 
 function popularCardHtml(s) {

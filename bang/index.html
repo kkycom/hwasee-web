@@ -965,7 +965,7 @@ function popularCardHtml(s) {
         ${cardStickersHtml(s)}
         <div class="story-card-title">${esc(s.opening)}</div>
         <div class="story-card-footer">
-          <span class="step-pill"><span class="step-dot"></span>${step+1}단계 · 참여자 ${count}명</span>
+          <span class="step-pill"><span class="step-dot"></span>${step+2}단계 · 참여자 ${count}명</span>
           <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
         </div>
       </div>
@@ -981,7 +981,7 @@ function doneCardHtml(s) {
       ${cardStickersHtml(s)}
       <div class="story-card-title">${esc(s.opening)}</div>
       <div class="story-card-footer">
-        <span class="step-pill">${step}단계 완성</span>
+        <span class="step-pill">${step+1}단계 완성</span>
         ${likes > 0 ? `<span style="font-size:12px;color:var(--accent);margin-left:8px">👍 ${likes}</span>` : ''}
         <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
       </div>
@@ -1022,7 +1022,7 @@ function myStoryCardHtml(s, snapshot) {
             </div>`).join('')}
         </div>` : ''}
       <div class="story-card-footer">
-        <span class="step-pill"><span class="step-dot"></span>${step+1}단계 · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
+        <span class="step-pill"><span class="step-dot"></span>${s.status==='active'?step+2:step+1}단계 · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
         ${(voteCount !== null && voteCount > 0) ? `<span style="font-size:11px;color:var(--success);font-weight:700">${voteCount >= 2 ? '공감 완료' : `✓ ${voteCount}개 공감`}</span>` : ''}
         <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
       </div>
@@ -2090,7 +2090,7 @@ async function profile() {
               ${cardStickersHtml(s, true)}
               <div class="story-card-title">${esc(s.opening)}</div>
               <div class="story-card-footer">
-                <span class="step-pill">${s.status==='active' ? Number(s.current_step) + 1 : Number(s.current_step)}단계</span>
+                <span class="step-pill">${s.status==='active' ? Number(s.current_step) + 2 : Number(s.current_step) + 1}단계</span>
                 <span class="story-status ${s.status==='active'?'status-active':'status-completed'}">${s.status==='active'?'진행 중':'완결'}</span>
               </div>
             </div>`).join('')}
@@ -2107,7 +2107,7 @@ async function profile() {
             <div style="padding:12px 14px;margin-bottom:8px;cursor:pointer;border-left:3px solid var(--success);border-radius:6px;background:var(--bg)"
               onclick="nav('story','${a.story_id}')">
               <div style="font-size:11px;color:var(--muted);margin-bottom:6px">
-                ${a.step}단계 · "${esc(a.story_opening.slice(0,40))}${a.story_opening.length>40?'…':''}"
+                ${a.step+1}단계 · "${esc(a.story_opening.slice(0,40))}${a.story_opening.length>40?'…':''}"
               </div>
               <div style="font-size:14px;line-height:1.6">"${esc(a.content)}"</div>
               <div style="font-size:12px;color:var(--muted);margin-top:6px">▲ ${a.vote_count}표 채택 · ${timeAgo(a.created_at)}</div>

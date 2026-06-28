@@ -691,7 +691,7 @@ async function fbCreateSubmission(episode_id, content, author_id, derived_from, 
   }
 
   const sub_id    = fbGenId();
-  const is_closing = closing === true && Number(ep.step) >= 3;
+  const is_closing = closing === true && Number(ep.step) >= 2;
   const uDoc = await db.collection('users').doc(author_id).get();
   const uData = uDoc.exists ? uDoc.data() : {};
   await db.collection('submissions').doc(sub_id).set({

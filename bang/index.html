@@ -1085,7 +1085,7 @@ async function story() {
     document.getElementById('app').innerHTML = `<div class="empty">불러오기 실패.<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="story()">다시 시도</button></div>`;
     return;
   }
-  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">이야기를 불러오지 못했습니다.<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="story()">다시 시도</button></div>`; return; }
 
   const { story: s, episodes, submissions, is_bookmarked, is_liked = false, like_count = 0, my_voted_sub_ids = [] } = res;
   const myVotedSet = new Set(my_voted_sub_ids);
@@ -1661,7 +1661,7 @@ async function episode() {
     document.getElementById('app').innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="episode()">다시 시도</button></div>`;
     return;
   }
-  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">에피소드를 불러오지 못했습니다.<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="episode()">다시 시도</button></div>`; return; }
 
   const ep           = res.episode;
   const prevChain    = res.prevChain || [];

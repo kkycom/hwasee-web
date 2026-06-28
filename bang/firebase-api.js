@@ -354,15 +354,17 @@ async function fbGetStory(story_id, user_id) {
   like_count = extras[1].size;
   if (user_id) is_liked = extras[1].docs.some(d => d.data().user_id === user_id);
 
-  // open 상태인데 최고 득표가 임계값 이상이면 pending으로 자동 전환 (채택강행 후 stuck 복구)
-  const stuckEp = episodes.find(e => e.status === 'open');
-  if (stuckEp) {
-    const stuckSubs = submissions.filter(s => s.episode_id === stuckEp.episode_id);
-    const maxV = stuckSubs.reduce((m, s) => Math.max(m, Number(s.vote_count) || 0), 0);
-    if (maxV >= FB_VOTE_THRESHOLD) {
-      await _fbCloseEpisode(stuckEp.episode_id, { ...stuckEp });
+  // open 상태인데 최고 득표가 임계값 이상이면 자동 마감 (새로고침 경쟁 조건 복구)
+  try {
+    const stuckEp = episodes.find(e => e.status === 'open');
+    if (stuckEp) {
+      const stuckSubs = submissions.filter(s => s.episode_id === stuckEp.episode_id);
+      const maxV = stuckSubs.reduce((m, s) => Math.max(m, Number(s.vote_count) || 0), 0);
+      if (maxV >= FB_VOTE_THRESHOLD) {
+        await _fbCloseEpisode(stuckEp.episode_id, { ...stuckEp });
+      }
     }
-  }
+  } catch(_) { /* 복구 실패 시 페이지 로드 차단하지 않음 */ }
 
   if (user_id) {
     const openEp = episodes.find(e => e.status === 'open');
@@ -537,9 +539,11 @@ async function fbGetMyStories(user_id) {
 // ─── 에피소드 ────────────────────────────────────────────
 
 async function fbGetEpisode(episode_id) {
+  if (!episode_id) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
   const epSnap = await db.collection('episodes').doc(episode_id).get();
   if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
   const ep = epSnap.data();
+  if (!ep.story_id) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
 
   const [subsSnap, storySnap, allEpsSnap, allSubsSnap] = await Promise.all([
     db.collection('submissions').where('episode_id', '==', episode_id).get(),
@@ -937,7 +941,7 @@ async function fbGetBookmarkIds(user_id) {
 async function fbGetBookmarks(user_id) {
   if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
   const snap   = await db.collection('bookmarks').where('user_id','==',user_id).get();
-  const ids    = snap.docs.map(d => d.data().story_id);
+  const ids    = snap.docs.map(d => d.data().story_id).filter(Boolean);
   if (!ids.length) return { ok: true, stories: [] };
   const stSnap = await Promise.all(ids.map(id => db.collection('stories').doc(id).get()));
   const stories = stSnap.filter(d => d.exists && d.data().status !== 'deleted' && d.data().status !== 'inactive').map(d => d.data());

@@ -603,7 +603,7 @@ function renderMineCards() {
   const regular = _sortStories(active.filter(s => !s.is_boosted), _mineSort);
   const boostHtml = boosted.length ? `
     <div class="boost-section">
-      <div class="boost-section-label">✦ 주목 이야기</div>
+      <div class="boost-section-label">✦ 이런 이야기도 있어요</div>
       <div class="boost-scroll">${boosted.map(s => boostCardHtml(s)).join('')}</div>
     </div>` : '';
   content.innerHTML = boostHtml
@@ -629,7 +629,7 @@ function renderPopCards() {
   const regular = _sortStories(_popCache.stories.filter(s => !s.is_boosted), _popSort);
   const boostHtml = boosted.length ? `
     <div class="boost-section">
-      <div class="boost-section-label">✦ 주목 이야기</div>
+      <div class="boost-section-label">✦ 이런 이야기도 있어요</div>
       <div class="boost-scroll">${boosted.map(s => boostCardHtml(s)).join('')}</div>
     </div>` : '';
   content.innerHTML = boostHtml

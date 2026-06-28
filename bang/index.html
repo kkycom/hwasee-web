@@ -394,8 +394,10 @@
   .branch-choice-card { background:var(--surface); border:1.5px solid var(--border); border-radius:10px; padding:16px 14px 12px; cursor:pointer; text-align:left; font-size:15px; line-height:1.75; font-family:var(--serif); color:var(--text); transition:border-color .2s, box-shadow .2s; width:100%; display:flex; flex-direction:column; }
   .branch-choice-card:hover { border-color:var(--accent2); border-width:3px; box-shadow:0 0 20px rgba(200,169,110,.35), inset 0 0 0 1px rgba(200,169,110,.2); }
   .branch-choice-label { display:inline-block; font-size:11px; font-weight:800; letter-spacing:.06em; margin-bottom:8px; padding:2px 9px; border-radius:5px; }
-  .branch-indicator { display:flex; gap:4px; margin:2px 0 -4px; align-items:center; }
-  .branch-tab { background:var(--card); border:1px solid var(--border); border-radius:4px; padding:2px 8px; font-size:11px; cursor:pointer; color:var(--muted); }
+  .branch-prose-row { display:flex; align-items:flex-start; gap:10px; margin:2px 0; }
+  .branch-side-indicator { display:flex; flex-direction:column; align-items:center; gap:3px; min-width:46px; flex-shrink:0; padding-top:3px; }
+  .branch-side-label { font-size:9px; color:var(--muted); letter-spacing:.5px; margin-bottom:1px; }
+  .branch-tab { background:var(--card); border:1px solid var(--border); border-radius:4px; padding:2px 8px; font-size:11px; cursor:pointer; color:var(--muted); width:100%; }
   .branch-tab.active { border-color:var(--accent2); color:var(--accent2); font-weight:700; }
 
   /* ── 산문 선택 모드 */
@@ -2350,19 +2352,21 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
     const chosenSub   = adoptedSubs.find(s => s.sub_id === chosenSubId);
     const chosenChild = children.find(c => c.ep.parent_sub_id === chosenSubId);
     return `
-      <div style="margin:4px 0 -2px">
-        <div class="branch-indicator">
-          <span style="font-size:10px;color:var(--muted);margin-right:4px">분기</span>
+      <div class="branch-prose-row">
+        <div class="branch-side-indicator">
+          <span class="branch-side-label">분기</span>
           ${adoptedSubs.map((sub, i) => `
             <button class="branch-tab ${sub.sub_id === chosenSubId ? 'active' : ''}"
               onclick="chooseBranch('${ep.episode_id}','${sub.sub_id}')">
               ${String.fromCharCode(65+i)}갈래</button>`).join('')}
         </div>
-        <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
-          <span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span>
-          ${mvpBadge}${myMvpMark}
+        <div style="flex:1;min-width:0">
+          <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
+            <span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span>
+            ${mvpBadge}${myMvpMark}
+          </div>
+          <span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>
         </div>
-        <span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>
       </div>
       ${chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId) : ''}`;
   }

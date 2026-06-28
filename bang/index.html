@@ -1098,16 +1098,13 @@ async function story() {
 
   // 분기 트리 산문 (전역 저장 → chooseBranch 재렌더용)
   const { branches = [], parent_chain = null, mvp_map = {}, my_mvp_episode_id = null } = res;
-  window._storyData = { episodes, submissions, story: s, branches, parent_chain, mvp_map, my_mvp_episode_id };
+  window._storyData = { episodes, submissions, story: s, branches, parent_chain, mvp_map, my_mvp_episode_id, my_voted_sub_ids };
   window._branchChoice = window._branchChoice || {};
   window._proseSelMode = null; // 'mvp' | 'branch'
   window._proseSelEpId = null;
 
-  // 열린/대기 에피소드
-  const openEp    = episodes.find(e => e.status === 'open') || null;
-  const openSubs  = openEp ? submissions.filter(sub => sub.episode_id === openEp.episode_id) : [];
-  const mySubId   = user && openEp ? (openSubs.find(sub => sub.author_id === user.user_id) || {}).sub_id || null : null;
-  const maxVotes  = openSubs.length ? Math.max(...openSubs.map(sub => Number(sub.vote_count)||0)) : 0;
+  // 열린/대기 에피소드 (현재 갈래 선택 반영)
+  const openEp    = getChosenOpenEp(episodes, submissions, window._branchChoice);
 
   // 분기 이야기면 부모 단계 잠금 산문
   let inheritedHtml = '';
@@ -1126,41 +1123,7 @@ async function story() {
   // ── 다음 단계 액션 ──
   let actionHtml = '';
   if (openEp) {
-    const closedCount = episodes.filter(e => e.status === 'closed').length;
-    actionHtml = `
-      <div class="prose-divider">이 이야기의 다음 문장을 결정합니다</div>
-      ${user && !mySubId ? `
-        <div class="card" style="margin-bottom:20px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:10px">✏️ 이어 쓰기</div>
-          <div id="polish-indicator" style="display:none;font-size:12px;color:var(--accent2);margin-bottom:8px;padding:6px 10px;background:var(--surface);border-radius:6px;border-left:2px solid var(--accent2)"></div>
-          <input type="text" id="sub-input" maxlength="50" placeholder="한 문장으로 이어가세요" oninput="updateCount('sub-input','sub-cc')">
-          <div class="char-count" id="sub-cc" style="margin-bottom:10px">0자</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            ${closedCount >= 1
-              ? `<button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">이야기를 열어두고 제출</button>
-                 <button class="btn btn-sm" style="background:var(--accent2);color:#fff;border:none;font-weight:700" onclick="submitSubInStory('${esc(openEp.episode_id)}', true)">이야기를 끝맺고 제출</button>`
-              : `<button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">제출</button>`}
-          </div>
-        </div>` : ''}
-      ${user && mySubId ? `
-        <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-          <span>✓ 이미 제출하셨습니다. 다른 글에 공감할 수 있습니다.</span>
-          <button class="btn btn-ghost btn-sm" style="font-size:12px;white-space:nowrap"
-            onclick="doBuyExtraSubmit('${esc(openEp.episode_id)}')">추가 제출 (20P)</button>
-        </div>` : ''}
-      ${!user ? `
-        <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px">
-          참여하려면 <button class="btn btn-ghost btn-sm" onclick="nav('auth','login')">로그인</button>이 필요합니다.
-        </div>` : ''}
-      ${openSubs.length === 0
-        ? `<div class="empty" style="padding:20px 0">아직 제출된 문장이 없습니다.</div>`
-        : renderSubsWithReplies(openSubs, mySubId, maxVotes, myVotedSet, openEp.step)}
-      ${user && openSubs.length > 0 ? `
-        <div class="vote-sticky">
-          <button class="btn btn-primary" id="vote-btn" onclick="submitVoteInStory('${esc(openEp.episode_id)}')">
-            ${my_voted_sub_ids.length > 0 ? (2 - my_voted_sub_ids.length > 0 ? `공감하기 · ${2 - my_voted_sub_ids.length}개 더 고를 수 있어요` : '공감하기') : '2개 선택 가능'}
-          </button>
-        </div>` : ''}`;
+    actionHtml = buildStoryActionHtml(openEp);
   } else if (s.status === 'completed' || s.status === 'inactive') {
     actionHtml = `
       <div class="prose-divider">완결된 이야기입니다</div>
@@ -1203,7 +1166,7 @@ async function story() {
       <span class="prose-author">— ${s.creator_badge ? `<span class="badge badge-${s.creator_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(s.creator_badge)}</span>` : ''}${esc(s.creator_nickname || '익명')}</span>
       ${confirmedHtml || ''}
     </div>
-    ${actionHtml}
+    <div id="story-action-wrap">${actionHtml}</div>
     ${isFinished ? `
       <div style="margin-top:8px">
         <button class="btn btn-ghost btn-sm" style="width:100%;color:var(--muted);font-size:12px"
@@ -1230,13 +1193,7 @@ async function story() {
   }
 
   // 이미 투표한 항목 pre-select
-  if (openEp && my_voted_sub_ids.length > 0) {
-    selectedSubs = [...my_voted_sub_ids];
-    my_voted_sub_ids.forEach(sid => {
-      const el = document.getElementById('sc-' + sid);
-      if (el) el.classList.add('selected');
-    });
-  }
+  _applyVoteSelections();
 
   if (newBannerMsg) {
     setTimeout(() => {
@@ -2295,6 +2252,101 @@ document.addEventListener('click', (e) => {
 window._branchChoice = {}; // episode_id → chosen sub_id
 window._storyData   = null;
 
+// 현재 갈래 선택에 맞는 open 에피소드 찾기
+function getChosenOpenEp(allEps, submissions, choices) {
+  const openEps = allEps.filter(e => e.status === 'open');
+  if (!openEps.length) return null;
+  if (openEps.length === 1) return openEps[0];
+
+  const subToOpenEp = {};
+  openEps.forEach(ep => { if (ep.parent_sub_id) subToOpenEp[ep.parent_sub_id] = ep; });
+  const subToClosedEps = {};
+  allEps.filter(e => e.status === 'closed').forEach(ep => {
+    if (!ep.parent_sub_id) return;
+    (subToClosedEps[ep.parent_sub_id] = subToClosedEps[ep.parent_sub_id] || []).push(ep);
+  });
+
+  let cur = allEps.find(ep => !ep.parent_sub_id || ep.parent_sub_id === '');
+  while (cur) {
+    if (cur.status === 'open') return cur;
+    const adopted = submissions.filter(s =>
+      s.episode_id === cur.episode_id && (s.is_adopted === true || s.is_adopted === 'TRUE')
+    );
+    if (!adopted.length) break;
+    let nextSub = adopted[0];
+    if (adopted.length > 1) {
+      const pick = choices && choices[cur.episode_id];
+      nextSub = adopted.find(s => s.sub_id === pick) || adopted[0];
+    }
+    if (subToOpenEp[nextSub.sub_id]) return subToOpenEp[nextSub.sub_id];
+    const kids = subToClosedEps[nextSub.sub_id] || [];
+    if (!kids.length) break;
+    cur = kids[0];
+  }
+  return openEps[0];
+}
+
+// 투표 pre-select 적용
+function _applyVoteSelections() {
+  const sd = window._storyData;
+  if (!sd) return;
+  const { my_voted_sub_ids = [] } = sd;
+  if (!my_voted_sub_ids.length) return;
+  selectedSubs = [...my_voted_sub_ids];
+  my_voted_sub_ids.forEach(sid => {
+    const el = document.getElementById('sc-' + sid);
+    if (el) el.classList.add('selected');
+  });
+}
+
+// 갈래 선택에 따른 action 섹션 HTML 생성
+function buildStoryActionHtml(openEp) {
+  const sd = window._storyData;
+  if (!sd || !openEp) return '';
+  const { episodes, submissions, my_voted_sub_ids = [] } = sd;
+  const myVotedSet  = new Set(my_voted_sub_ids);
+  const closedCount = episodes.filter(e => e.status === 'closed').length;
+  const openSubs    = submissions.filter(sub => sub.episode_id === openEp.episode_id);
+  const mySubId     = user ? (openSubs.find(sub => sub.author_id === user.user_id) || {}).sub_id || null : null;
+  const maxVotes    = openSubs.length ? Math.max(...openSubs.map(sub => Number(sub.vote_count)||0)) : 0;
+  const epSubIds    = new Set(openSubs.map(s => s.sub_id));
+  const votedHere   = my_voted_sub_ids.filter(id => epSubIds.has(id)).length;
+  return `
+    <div class="prose-divider">이 이야기의 다음 문장을 결정합니다</div>
+    ${user && !mySubId ? `
+      <div class="card" style="margin-bottom:20px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px">✏️ 이어 쓰기</div>
+        <div id="polish-indicator" style="display:none;font-size:12px;color:var(--accent2);margin-bottom:8px;padding:6px 10px;background:var(--surface);border-radius:6px;border-left:2px solid var(--accent2)"></div>
+        <input type="text" id="sub-input" maxlength="50" placeholder="한 문장으로 이어가세요" oninput="updateCount('sub-input','sub-cc')">
+        <div class="char-count" id="sub-cc" style="margin-bottom:10px">0자</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${closedCount >= 1
+            ? `<button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">이야기를 열어두고 제출</button>
+               <button class="btn btn-sm" style="background:var(--accent2);color:#fff;border:none;font-weight:700" onclick="submitSubInStory('${esc(openEp.episode_id)}', true)">이야기를 끝맺고 제출</button>`
+            : `<button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">제출</button>`}
+        </div>
+      </div>` : ''}
+    ${user && mySubId ? `
+      <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span>✓ 이미 제출하셨습니다. 다른 글에 공감할 수 있습니다.</span>
+        <button class="btn btn-ghost btn-sm" style="font-size:12px;white-space:nowrap"
+          onclick="doBuyExtraSubmit('${esc(openEp.episode_id)}')">추가 제출 (20P)</button>
+      </div>` : ''}
+    ${!user ? `
+      <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px">
+        참여하려면 <button class="btn btn-ghost btn-sm" onclick="nav('auth','login')">로그인</button>이 필요합니다.
+      </div>` : ''}
+    ${openSubs.length === 0
+      ? `<div class="empty" style="padding:20px 0">아직 제출된 문장이 없습니다.</div>`
+      : renderSubsWithReplies(openSubs, mySubId, maxVotes, myVotedSet, openEp.step)}
+    ${user && openSubs.length > 0 ? `
+      <div class="vote-sticky">
+        <button class="btn btn-primary" id="vote-btn" onclick="submitVoteInStory('${esc(openEp.episode_id)}')">
+          ${votedHere > 0 ? (2 - votedHere > 0 ? `공감하기 · ${2 - votedHere}개 더 고를 수 있어요` : '공감하기') : '2개 선택 가능'}
+        </button>
+      </div>` : ''}`;
+}
+
 function getEpisodeTree(episodes, submissions) {
   const subToChildEps = {};
   episodes.forEach(ep => {
@@ -2423,9 +2475,12 @@ function toggleProseAuthors(btn) {
 function chooseBranch(episode_id, sub_id) {
   window._branchChoice = window._branchChoice || {};
   window._branchChoice[episode_id] = sub_id;
+  if (!window._storyData) return;
+  const { episodes, submissions, branches, mvp_map, my_mvp_episode_id, parent_chain } = window._storyData;
+
+  // 산문 트리 재렌더
   const el = document.getElementById('story-prose-content');
-  if (el && window._storyData) {
-    const { episodes, submissions, branches, mvp_map, my_mvp_episode_id, parent_chain } = window._storyData;
+  if (el) {
     let inheritedHtml = '';
     if (parent_chain && parent_chain.episodes.length) {
       const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions);
@@ -2433,6 +2488,15 @@ function chooseBranch(episode_id, sub_id) {
     }
     const tree = getEpisodeTree(episodes.filter(e => e.status === 'closed'), submissions);
     el.innerHTML = inheritedHtml + (tree ? renderEpisodeTreeHtml(tree, window._branchChoice, mvp_map, branches, my_mvp_episode_id) : '');
+  }
+
+  // action 섹션 재렌더 (갈래에 맞는 open 에피소드로)
+  const actionWrap = document.getElementById('story-action-wrap');
+  if (actionWrap && window._storyData.story.status === 'active') {
+    const newOpenEp = getChosenOpenEp(episodes, submissions, window._branchChoice);
+    actionWrap.innerHTML = buildStoryActionHtml(newOpenEp);
+    selectedSubs = [];
+    _applyVoteSelections();
   }
 }
 

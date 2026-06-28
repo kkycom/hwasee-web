@@ -507,7 +507,7 @@ async function fbGetMyStories(user_id) {
   // 주목 여부 반영 (in + 부등호 복합쿼리 인덱스 이슈로 JS 필터링)
   const allStoryIds = stories.map(s => s.story_id).filter(Boolean);
   if (allStoryIds.length > 0) {
-    const nowMs = Date.now();
+    const nowIso = new Date().toISOString();
     const boostBatches = [];
     for (let i = 0; i < allStoryIds.length; i += 10) boostBatches.push(allStoryIds.slice(i, i+10));
     const boostSnaps = await Promise.all(boostBatches.map(b =>
@@ -516,8 +516,7 @@ async function fbGetMyStories(user_id) {
     const boostSet = new Set();
     boostSnaps.forEach(s => s.docs.forEach(d => {
       const data = d.data();
-      const exp = data.expires_at?.toMillis ? data.expires_at.toMillis() : (Number(data.expires_at) || 0);
-      if (exp > nowMs) boostSet.add(data.story_id);
+      if ((data.expires_at || '') > nowIso) boostSet.add(data.story_id);
     }));
     stories.forEach(s => { s.is_boosted = boostSet.has(s.story_id); });
   }

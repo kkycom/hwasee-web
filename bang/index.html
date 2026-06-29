@@ -1402,7 +1402,7 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1
   const voteCount   = Number(sub.vote_count) || 0;
   const barPct      = Math.min(Math.round(voteCount / FB_VOTE_THRESHOLD * 100), 100);
   const isClickable = user && sub.sub_id !== mySubId && !isAdopted;
-  const showLabel   = Number(step) >= 3;
+  const showLabel   = Number(step) >= 2;
   const isMyCard    = sub.sub_id === mySubId;
   const bStyle      = 'border-top:none;font-size:9px;font-weight:700;padding:2px 7px;letter-spacing:.04em;pointer-events:none';
   const cornerBadge = isMyCard && isChild
@@ -1846,7 +1846,7 @@ function renderSubCard(s, isClosed, mySubId, maxVotes, step = 1) {
   const sVoteCount = Number(s.vote_count) || 0;
   const barPct     = Math.min(Math.round(sVoteCount / FB_VOTE_THRESHOLD * 100), 100);
   const isClickable = !isClosed && s.sub_id !== mySubId;
-  const showLabel   = Number(step) >= 3;
+  const showLabel   = Number(step) >= 2;
   return `
     <div class="vote-card ${isAdopted?'adopted':''}" id="sc-${s.sub_id}"
       ${isClickable ? `onclick="toggleSub('${s.sub_id}')"` : ''} style="${isClickable?'cursor:pointer':''}">

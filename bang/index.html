@@ -1235,18 +1235,19 @@ function _applyStoryData(res, story_id) {
       <button class="btn btn-ghost btn-sm" style="border:none" onclick="nav(window._prevRoute || 'home')">← 목록으로</button>
       ${isFinished && s.branch_from_step ? `<span class="prose-branch-tag" style="margin-left:6px">⑂ ${s.branch_from_step}단계 분기</span>` : ''}
       <div style="margin-left:auto;display:inline-flex;align-items:center;gap:0">
-        <button id="bm-btn" class="btn btn-ghost btn-sm" data-bm="${is_bookmarked?'1':''}" style="border:none;color:${is_bookmarked?'var(--accent2)':'var(--muted)'};display:inline-flex;align-items:center;gap:4px"
-          onclick="toggleBookmark('${esc(s.story_id)}', this)">
-          <svg width="9" height="12" viewBox="0 0 9 12" fill="${is_bookmarked?'currentColor':'none'}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M1 1h7v10l-3.5-2.5L1 11z"/></svg>${is_bookmarked ? '책갈피됨' : '책갈피'}
-        </button>
-        ${user && s.status === 'active' ? `
-          <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>
-          <button class="btn btn-ghost btn-sm" style="border:none;color:var(--muted);display:inline-flex;align-items:center;gap:4px"
-            onclick="doBoostStory('${esc(s.story_id)}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><polygon points="12,2 15.1,8.3 22,9.3 17,14.1 18.2,21 12,17.8 5.8,21 7,14.1 2,9.3 8.9,8.3"/></svg>주목</button>` : ''}
-        ${user && isFinished ? `
-          <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>
-          <button class="prose-author-toggle" style="border:none;font-size:13px;opacity:1" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">으뜸 글 뽑기</button>` : ''}
-        <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>
+        ${user ? `
+          <button id="bm-btn" class="btn btn-ghost btn-sm" data-bm="${is_bookmarked?'1':''}" style="border:none;color:${is_bookmarked?'var(--accent2)':'var(--muted)'};display:inline-flex;align-items:center;gap:4px"
+            onclick="toggleBookmark('${esc(s.story_id)}', this)">
+            <svg width="9" height="12" viewBox="0 0 9 12" fill="${is_bookmarked?'currentColor':'none'}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M1 1h7v10l-3.5-2.5L1 11z"/></svg>${is_bookmarked ? '책갈피됨' : '책갈피'}
+          </button>
+          ${s.status === 'active' ? `
+            <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>
+            <button class="btn btn-ghost btn-sm" style="border:none;color:var(--muted);display:inline-flex;align-items:center;gap:4px"
+              onclick="doBoostStory('${esc(s.story_id)}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><polygon points="12,2 15.1,8.3 22,9.3 17,14.1 18.2,21 12,17.8 5.8,21 7,14.1 2,9.3 8.9,8.3"/></svg>주목</button>` : ''}
+          ${isFinished ? `
+            <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>
+            <button class="prose-author-toggle" style="border:none;font-size:13px;opacity:1" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">으뜸 글 뽑기</button>` : ''}
+          <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>` : ''}
         <button class="prose-author-toggle" style="border:none;font-size:13px;opacity:1;display:inline-flex;align-items:center;gap:4px" onclick="window._proseSelMode==='viewvotes'?cancelProseSelMode():enterProseSelMode('viewvotes','${esc(s.story_id)}')"><svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="0" y="5" width="3" height="7" rx="0.5"/><rect x="4.5" y="2" width="3" height="10" rx="0.5"/><rect x="9" y="7" width="3" height="5" rx="0.5"/></svg>공감 현황</button>
         ${isAdmin() && s.status === 'active' ? `
           <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>

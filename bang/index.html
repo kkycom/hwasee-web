@@ -701,6 +701,7 @@ let currentParam = null;
 
 function nav(route, param) {
   if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; }
+  Object.keys(commentCache).forEach(k => delete commentCache[k]);
   if (route === 'story' && currentRoute !== 'story' && currentRoute !== 'episode') {
     window._prevRoute = currentRoute;
   }
@@ -1718,6 +1719,7 @@ async function adminCloseStory(story_id) {
 // ─── 에피소드 단독 뷰 (직접 URL 접근용) ──────────────────
 
 async function episode() {
+  if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; }
   const episode_id = currentParam;
   selectedSubs = [];
   document.getElementById('app').innerHTML = `<div class="loading">불러오는 중...</div>`;
@@ -3199,9 +3201,8 @@ window.onload = async () => {
   loadUser();
   renderNav();
   if (user) {
-    _loadBmIds();
     const token = localStorage.getItem('hwasee_token');
-    const session = await fbGetSession(token);
+    const [session] = await Promise.all([fbGetSession(token), _loadBmIds()]);
     if (!session) { saveUser(null); }
     else {
       const br = await api('checkDailyBonus');

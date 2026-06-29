@@ -1345,17 +1345,21 @@ async function fbBuyAvatar(emoji_id, user_id) {
   if (!item) return { ok: false, error: '존재하지 않는 아이템입니다.' };
   const uRef = db.collection('users').doc(user_id);
   const ledgerRef = db.collection('point_ledger').doc();
-  return db.runTransaction(async tx => {
-    const uSnap = await tx.get(uRef);
-    const u = uSnap.data();
-    if ((u.owned_avatars || []).includes(emoji_id)) return { ok: false, error: '이미 보유한 아이템입니다.' };
-    const newPts = (u.total_points || 0) - item.price;
-    if (newPts < 0) return { ok: false, error: '포인트가 부족합니다.' };
-    const newOwned = [...(u.owned_avatars || []), emoji_id];
-    tx.update(uRef, { total_points: newPts, owned_avatars: newOwned, badge: fbCalcBadge(newPts) });
-    tx.set(ledgerRef, { user_id, points: -item.price, reason: 'buy_avatar', created_at: fbNow() });
-    return { ok: true, owned_avatars: newOwned, total_points: newPts, badge: fbCalcBadge(newPts) };
-  });
+  try {
+    return await db.runTransaction(async tx => {
+      const uSnap = await tx.get(uRef);
+      const u = uSnap.data();
+      if ((u.owned_avatars || []).includes(emoji_id)) return { ok: false, error: '이미 보유한 아이템입니다.' };
+      const newPts = (u.total_points || 0) - item.price;
+      if (newPts < 0) return { ok: false, error: '포인트가 부족합니다.' };
+      const newOwned = [...(u.owned_avatars || []), emoji_id];
+      tx.update(uRef, { total_points: newPts, owned_avatars: newOwned, badge: fbCalcBadge(newPts) });
+      tx.set(ledgerRef, { user_id, points: -item.price, reason: 'buy_avatar', created_at: fbNow() });
+      return { ok: true, owned_avatars: newOwned, total_points: newPts, badge: fbCalcBadge(newPts) };
+    });
+  } catch(e) {
+    return { ok: false, error: '구매에 실패했습니다. 다시 시도해주세요.' };
+  }
 }
 
 async function fbSetAvatar(emoji_id, user_id) {

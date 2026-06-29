@@ -146,6 +146,7 @@
   .boost-scroll { display:flex; gap:12px; overflow-x:auto; scrollbar-width:none; -ms-overflow-style:none; padding-bottom:2px; }
   .boost-scroll::-webkit-scrollbar { display:none; }
   .boost-card-wrap { min-width:300px; max-width:300px; flex-shrink:0; }
+  .boost-card-wrap .story-card-title { padding-right:52px; }
   .sort-btn { background:var(--surface); border:none; color:var(--muted); padding:5px 12px; border-radius:16px; font-size:12px; font-weight:600; cursor:pointer; transition:.15s; }
   .sort-btn.active { background:var(--accent); color:#1a2e26; }
 
@@ -259,7 +260,7 @@
   .vote-card.clickable:hover { border-color: var(--accent); }
   .vote-card.selected { border-color: var(--accent); background: rgba(154,104,64,.12); box-shadow: 0 0 0 2px var(--accent); }
   .vote-card.adopted  { border-color: var(--success); }
-  .vote-content { font-size: 15px; line-height: 1.75; margin-bottom: 8px; font-family: var(--serif); }
+  .vote-content { font-size: 15px; line-height: 1.75; margin-bottom: 14px; font-family: var(--serif); }
   .vote-meta { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
   .vote-count { color: var(--accent); font-weight: 700; }
   .vote-bar { height: 4px; background: var(--border); border-radius: 2px; margin-bottom: 10px; overflow: hidden; }
@@ -759,8 +760,8 @@ function renderNav() {
   } else {
     el.innerHTML = `
       ${rankBtn}
-      <button class="btn btn-ghost btn-sm" onclick="nav('auth','login')">로그인</button>
-      <button class="btn btn-primary btn-sm" onclick="nav('auth','register')">회원가입</button>`;
+      <button class="btn-nav" onclick="nav('auth','login')">로그인</button>
+      <button class="btn-nav" style="color:var(--accent);font-weight:700" onclick="nav('auth','register')">회원가입</button>`;
   }
 }
 

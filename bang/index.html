@@ -2571,7 +2571,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
           <button class="branch-choice-card" onclick="chooseBranch('${ep.episode_id}','${sub.sub_id}')">
             <div class="branch-choice-label" style="background:${bg};color:${fg};align-self:flex-start;margin-bottom:10px">${String.fromCharCode(65+i)}갈래</div>
             <div style="flex:1">${esc(sub.content)}</div>
-            <div style="font-size:11px;color:var(--muted);font-weight:700;margin-top:10px">▲ ${sub.vote_count}표</div>
+            <div style="font-size:11px;color:var(--muted);font-weight:700;margin-top:10px">공감 ${sub.vote_count}개</div>
           </button>`;
         }).join('')}
       </div>

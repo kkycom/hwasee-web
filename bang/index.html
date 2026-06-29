@@ -1378,7 +1378,6 @@ function renderSubsWithReplies(subs, mySubId, maxVotes, myVotedSet = new Set(), 
       children.map(child => `
         <div style="display:flex;gap:8px;margin-top:-8px;margin-bottom:10px;padding-left:12px">
           <div style="display:flex;flex-direction:column;align-items:center;padding-top:8px;flex-shrink:0">
-            <div style="width:1px;height:12px;background:var(--border)"></div>
             <span style="font-size:13px;color:var(--muted);line-height:1">↳</span>
           </div>
           <div style="flex:1">${renderVoteCard(child, mySubId, maxVotes, myVotedSet, step, true)}</div>

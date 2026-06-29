@@ -261,7 +261,7 @@
   .vote-card.adopted  { border-color: var(--success); }
   .vote-content { font-size: 15px; line-height: 1.75; margin-bottom: 14px; font-family: var(--serif); }
   .vote-meta { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
-  .vote-count { color: var(--accent); font-weight: 700; }
+  .vote-count { color: var(--accent); font-weight: 700; white-space: nowrap; }
   .vote-bar { height: 4px; background: var(--border); border-radius: 2px; margin-bottom: 10px; overflow: hidden; }
   .vote-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 2px; transition: width .4s; }
 
@@ -1403,7 +1403,7 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1
       <div class="vote-meta">
         <span>✍ ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeLabel(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
         <span class="vote-count">▲ ${voteCount}/${FB_VOTE_THRESHOLD}표</span>
-        ${iVoted ? '<span style="font-size:11px;color:var(--accent);font-weight:700">✓ 내가 공감함</span>' : ''}
+        ${iVoted ? '<span style="font-size:11px;color:var(--accent);font-weight:700;white-space:nowrap">✓ 내가 공감함</span>' : ''}
         ${sub.sub_id === mySubId ? '<span class="tag">내 제출</span>' : ''}
         ${isChild ? '<span class="tag">손본 글</span>' : ''}
         ${isAdopted ? '<span style="color:var(--success)">✓ 채택됨</span>' : ''}

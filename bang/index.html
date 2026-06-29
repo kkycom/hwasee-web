@@ -1413,7 +1413,6 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1
       <div class="vote-content">${esc(sub.content)}</div>
       <div class="vote-meta">
         <span class="vote-count">공감 ${voteCount}/${FB_VOTE_THRESHOLD}개</span>
-        ${iVoted ? '<span style="font-size:11px;color:var(--accent);font-weight:700;white-space:nowrap">✓ 공감함</span>' : ''}
         ${sub.sub_id === mySubId ? '<span class="tag">내 제출</span>' : ''}
         ${isAdopted ? '<span style="color:var(--success)">✓ 채택됨</span>' : ''}
         <span style="margin-left:auto;font-size:11px;color:var(--muted)"><span style="font-size:10px;margin-right:3px">글쓴이</span>${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>

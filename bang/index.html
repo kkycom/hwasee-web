@@ -673,11 +673,15 @@ function renderDoneCards() {
 
 let user = null;
 
+function _applyAdminGaOpt(u) {
+  if (u && u.is_admin) window['ga-disable-G-G7M4WPYHQK'] = true;
+}
 function loadUser() {
   const raw = localStorage.getItem('hwasee_user');
   if (raw) try {
     user = JSON.parse(raw);
     if (user && user.user_id) localStorage.setItem('hwasee_uid', user.user_id);
+    _applyAdminGaOpt(user);
   } catch {}
 }
 function saveUser(u) {
@@ -686,6 +690,7 @@ function saveUser(u) {
     localStorage.setItem('hwasee_token', u.token);
     localStorage.setItem('hwasee_user', JSON.stringify(u));
     if (u.user_id) localStorage.setItem('hwasee_uid', u.user_id);
+    _applyAdminGaOpt(u);
   } else {
     localStorage.removeItem('hwasee_token');
     localStorage.removeItem('hwasee_user');

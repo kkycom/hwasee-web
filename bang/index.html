@@ -2539,15 +2539,15 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
       <div class="branch-choices">
         ${adoptedSubs.map((sub, i) => {
           const [bg, fg] = [
-            ['rgba(128,151,140,.22)','#9db5a8'],
-            ['rgba(200,169,110,.22)','#c8a96e'],
-            ['rgba(192,132,252,.22)','#c084fc'],
-          ][i] || ['rgba(128,151,140,.22)','#9db5a8'];
+            ['rgba(70,110,85,.18)','#2a6040'],
+            ['rgba(160,100,30,.18)','#7a4a10'],
+            ['rgba(100,50,160,.18)','#5a2a90'],
+          ][i] || ['rgba(70,110,85,.18)','#2a6040'];
           return `
           <button class="branch-choice-card" onclick="chooseBranch('${ep.episode_id}','${sub.sub_id}')">
             <div class="branch-choice-label" style="background:${bg};color:${fg};align-self:flex-start;margin-bottom:10px">${String.fromCharCode(65+i)}갈래</div>
             <div style="flex:1">${esc(sub.content)}</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:10px">▲ ${sub.vote_count}표</div>
+            <div style="font-size:11px;color:var(--muted);font-weight:700;margin-top:10px">▲ ${sub.vote_count}표</div>
           </button>`;
         }).join('')}
       </div>

@@ -1402,7 +1402,7 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1
   const voteCount   = Number(sub.vote_count) || 0;
   const barPct      = Math.min(Math.round(voteCount / FB_VOTE_THRESHOLD * 100), 100);
   const isClickable = user && sub.sub_id !== mySubId && !isAdopted;
-  const showLabel   = Number(step) >= 3 || sub.is_closing === true;
+  const showLabel   = Number(step) >= 3;
 
   return `
     <div class="vote-card ${isAdopted?'adopted':''} ${isClickable?'clickable':''}" id="sc-${sub.sub_id}"
@@ -1836,7 +1836,7 @@ function renderSubCard(s, isClosed, mySubId, maxVotes, step = 1) {
   const sVoteCount = Number(s.vote_count) || 0;
   const barPct     = Math.min(Math.round(sVoteCount / FB_VOTE_THRESHOLD * 100), 100);
   const isClickable = !isClosed && s.sub_id !== mySubId;
-  const showLabel   = Number(step) >= 3 || s.is_closing === true;
+  const showLabel   = Number(step) >= 3;
   return `
     <div class="vote-card ${isAdopted?'adopted':''}" id="sc-${s.sub_id}"
       ${isClickable ? `onclick="toggleSub('${s.sub_id}')"` : ''} style="${isClickable?'cursor:pointer':''}">

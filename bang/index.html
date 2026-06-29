@@ -1382,7 +1382,7 @@ function renderSubsWithReplies(subs, mySubId, maxVotes, myVotedSet = new Set(), 
     const children = childMap[root.sub_id] || [];
     return renderVoteCard(root, mySubId, maxVotes, myVotedSet, step, false) +
       children.map(child => `
-        <div style="display:flex;gap:8px;margin-top:-8px;margin-bottom:10px;padding-left:12px">
+        <div style="display:flex;gap:8px;margin-top:6px;margin-bottom:10px;padding-left:12px">
           <div style="display:flex;flex-direction:column;align-items:center;padding-top:8px;flex-shrink:0">
             <span style="font-size:13px;color:var(--muted);line-height:1">↳</span>
           </div>

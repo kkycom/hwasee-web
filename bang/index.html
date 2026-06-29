@@ -409,9 +409,10 @@
   .new-banner { display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--accent); border-radius:10px; padding:10px 14px; margin-bottom:14px; font-size:13px; color:var(--accent); font-weight:600; animation:fadeInDown .3s ease; }
   @keyframes fadeInDown { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
 
-  .bell-btn { position:relative; background:none; border:none; cursor:pointer; color:var(--muted); font-size:13px; font-weight:500; padding:4px 8px; border-radius:6px; line-height:1.4; vertical-align:middle; }
+  .bell-btn { background:none; border:none; cursor:pointer; color:var(--muted); font-size:13px; font-weight:500; padding:4px 8px; border-radius:6px; line-height:1.4; vertical-align:middle; }
   .bell-btn:hover { background:var(--surface); }
-  .bell-badge { position:absolute; top:2px; right:2px; min-width:16px; height:16px; border-radius:8px; background:var(--accent2); color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 3px; pointer-events:none; }
+  .bell-badge { min-width:16px; height:16px; border-radius:8px; background:var(--accent2); color:#fff; font-size:10px; font-weight:700; display:none; align-items:center; justify-content:center; padding:0 4px; pointer-events:none; margin-left:1px; vertical-align:middle; }
+  #notif-wrapper { display:inline-flex; align-items:center; position:relative; }
   .notif-panel { position:fixed; top:62px; right:16px; width:300px; max-width:calc(100vw - 32px); max-height:70vh; overflow-y:auto; background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.5); z-index:200; }
   .notif-item { padding:12px 14px; border-bottom:1px solid var(--border); font-size:13px; line-height:1.4; cursor:pointer; }
   .notif-item:hover { background:var(--surface); }
@@ -734,7 +735,7 @@ function renderNav() {
     el.innerHTML = `
       ${rankBtn}
       <div id="notif-wrapper">
-        <button class="bell-btn" onclick="toggleNotifPanel()" id="bell-btn" title="알림">알림<span class="bell-badge" id="bell-badge" style="display:none"></span></button>
+        <button class="bell-btn" onclick="toggleNotifPanel()" id="bell-btn" title="알림">알림</button><span class="bell-badge" id="bell-badge"></span>
         <div id="notif-panel" style="display:none" class="notif-panel"></div>
       </div>
       ${isAdmin() ? `<button class="btn-nav" onclick="adminPanel()" title="신고 관리">⚠️</button>` : ''}
@@ -2325,7 +2326,7 @@ async function loadNotifCount() {
     const badge = document.getElementById('bell-badge');
     if (badge) {
       badge.textContent = count > 9 ? '9+' : count;
-      badge.style.display = count > 0 ? 'flex' : 'none';
+      badge.style.display = count > 0 ? 'inline-flex' : 'none';
     }
   } catch(e) {}
 }

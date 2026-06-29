@@ -140,7 +140,7 @@ async function fbRegister(nickname, password, name, display_name) {
 
   await db.collection('users').doc(user_id).set({
     user_id, nickname, display_name: dn, pw_hash: await fbHashPw(password), token, token_exp,
-    total_points: 0, badge: 'seed', name: (name || '').trim(), created_at: fbNow()
+    total_points: 0, adoption_count: 0, badge: 'seed', name: (name || '').trim(), created_at: fbNow()
   });
 
   localStorage.setItem('hwasee_uid', user_id);
@@ -163,8 +163,6 @@ async function fbLogin(nickname, password) {
   localStorage.setItem('hwasee_uid', u.user_id);
 
   const daily_bonus = await _fbCheckDailyBonus(u.user_id);
-  const adoptSnap = await db.collection('submissions')
-    .where('author_id', '==', u.user_id).where('is_adopted', '==', true).get();
 
   // 기존 유저 display_name 자동 마이그레이션
   if (!u.display_name) await doc.ref.update({ display_name: u.nickname });
@@ -173,7 +171,7 @@ async function fbLogin(nickname, password) {
     ok: true, token, user_id: u.user_id, nickname: u.nickname,
     display_name: u.display_name || u.nickname,
     total_points: u.total_points || 0, badge: u.badge || 'seed',
-    is_admin: u.user_id === FB_ADMIN_ID, daily_bonus, adoption_count: adoptSnap.size
+    is_admin: u.user_id === FB_ADMIN_ID, daily_bonus, adoption_count: u.adoption_count || 0
   };
 }
 
@@ -605,6 +603,14 @@ async function _fbCloseEpisode(episode_id, ep) {
   }
   for (const w of winners) {
     await w._ref.update({ is_adopted: true });
+    if (w.author_id && w.author_id !== FB_ADMIN_ID) {
+      const uRef = db.collection('users').doc(w.author_id);
+      await db.runTransaction(async tx => {
+        const snap = await tx.get(uRef);
+        if (!snap.exists) return;
+        tx.update(uRef, { adoption_count: (snap.data().adoption_count || 0) + 1 });
+      });
+    }
     await _fbDistributePoints(w, allSubs);
   }
 
@@ -1090,14 +1096,7 @@ async function fbGetAdminStats(admin_id) {
 // ─── 랭킹 ────────────────────────────────────────────────
 
 async function fbGetLeaderboard() {
-  const [uSnap, sSnap, vSnap] = await Promise.all([
-    db.collection('users').get(),
-    db.collection('submissions').get(),
-    db.collection('votes').get(),
-  ]);
-
-  const uMap = {};
-  uSnap.docs.forEach(d => { uMap[d.id] = d.data(); });
+  const uSnap = await db.collection('users').get();
 
   const pointsRank = uSnap.docs
     .filter(d => Number(d.data().total_points) > 0 && d.id !== FB_ADMIN_ID)
@@ -1105,28 +1104,29 @@ async function fbGetLeaderboard() {
     .slice(0, 10)
     .map(d => ({ nickname: d.data().display_name || d.data().nickname, badge: d.data().badge, value: Number(d.data().total_points) }));
 
-  const adoptMap = {};
-  sSnap.docs.filter(d => d.data().is_adopted === true && d.data().author_id !== FB_ADMIN_ID)
-    .forEach(d => { adoptMap[d.data().author_id] = (adoptMap[d.data().author_id] || 0) + 1; });
-  const adoptionsRank = Object.entries(adoptMap)
-    .sort(([,a],[,b]) => b - a).slice(0, 10)
-    .map(([uid, cnt]) => ({ nickname: uMap[uid]?.display_name || uMap[uid]?.nickname || '?', badge: uMap[uid]?.badge || 'seed', value: cnt }));
+  const adoptionsRank = uSnap.docs
+    .filter(d => d.id !== FB_ADMIN_ID && (d.data().adoption_count || 0) > 0)
+    .sort((a,b) => (b.data().adoption_count || 0) - (a.data().adoption_count || 0))
+    .slice(0, 10)
+    .map(d => ({ nickname: d.data().display_name || d.data().nickname, badge: d.data().badge, value: d.data().adoption_count || 0 }));
 
-  const partMap = {};
-  sSnap.docs.filter(d => d.data().author_id !== FB_ADMIN_ID)
-    .forEach(d => { partMap[d.data().author_id] = (partMap[d.data().author_id] || 0) + 1; });
-  const votedEps = {};
-  vSnap.docs.filter(d => d.data().voter_id !== FB_ADMIN_ID).forEach(d => {
-    const v = d.data();
-    if (!votedEps[v.voter_id]) votedEps[v.voter_id] = new Set();
-    votedEps[v.voter_id].add(v.episode_id);
+  return { ok: true, points: pointsRank, adoptions: adoptionsRank };
+}
+
+async function fbBackfillAdoptionCounts(admin_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  const sSnap = await db.collection('submissions').where('is_adopted', '==', true).get();
+  const countMap = {};
+  sSnap.docs.forEach(d => {
+    const uid = d.data().author_id;
+    if (uid && uid !== FB_ADMIN_ID) countMap[uid] = (countMap[uid] || 0) + 1;
   });
-  Object.entries(votedEps).forEach(([uid, eps]) => { partMap[uid] = (partMap[uid] || 0) + eps.size; });
-  const partRank = Object.entries(partMap)
-    .sort(([,a],[,b]) => b - a).slice(0, 10)
-    .map(([uid, cnt]) => ({ nickname: uMap[uid]?.display_name || uMap[uid]?.nickname || '?', badge: uMap[uid]?.badge || 'seed', value: cnt }));
-
-  return { ok: true, points: pointsRank, adoptions: adoptionsRank, participations: partRank };
+  const batch = db.batch();
+  Object.entries(countMap).forEach(([uid, cnt]) => {
+    batch.update(db.collection('users').doc(uid), { adoption_count: cnt });
+  });
+  await batch.commit();
+  return { ok: true, updated: Object.keys(countMap).length };
 }
 
 // ─── MVP ────────────────────────────────────────────────
@@ -1557,7 +1557,8 @@ async function firebaseApi(action, params = {}) {
     case 'dismissReport':      return fbDismissReport(params.report_id, need().user_id);
     case 'getAdminStats':      return fbGetAdminStats(need().user_id);
 
-    case 'getLeaderboard':       return fbGetLeaderboard();
+    case 'getLeaderboard':          return fbGetLeaderboard();
+    case 'backfillAdoptionCounts':  return fbBackfillAdoptionCounts(need().user_id);
     case 'getProfile':           return fbGetProfile(need().user_id);
     case 'buyAvatar':            return fbBuyAvatar(params.emoji_id, need().user_id);
     case 'setAvatar':            return fbSetAvatar(params.emoji_id, need().user_id);

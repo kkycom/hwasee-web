@@ -1233,9 +1233,9 @@ function _applyStoryData(res, story_id) {
               onclick="doBoostStory('${esc(s.story_id)}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><polygon points="12,2 15.1,8.3 22,9.3 17,14.1 18.2,21 12,17.8 5.8,21 7,14.1 2,9.3 8.9,8.3"/></svg>주목</button>` : ''}
           ${isFinished ? `
             <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>
-            <button class="prose-author-toggle" style="border:none;font-weight:700" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">으뜸 글 뽑기</button>` : ''}
+            <button class="prose-author-toggle" style="border:none;font-size:13px;opacity:1" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">으뜸 글 뽑기</button>` : ''}
           <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>` : ''}
-        <button class="prose-author-toggle" style="border:none;font-weight:700" onclick="window._proseSelMode==='viewvotes'?cancelProseSelMode():enterProseSelMode('viewvotes','${esc(s.story_id)}')">공감 현황</button>
+        <button class="prose-author-toggle" style="border:none;font-size:13px;opacity:1;display:inline-flex;align-items:center;gap:4px" onclick="window._proseSelMode==='viewvotes'?cancelProseSelMode():enterProseSelMode('viewvotes','${esc(s.story_id)}')"><svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="0" y="5" width="3" height="7" rx="0.5"/><rect x="4.5" y="2" width="3" height="10" rx="0.5"/><rect x="9" y="7" width="3" height="5" rx="0.5"/></svg>공감 현황</button>
         ${isAdmin() && s.status === 'active' ? `
           <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>
           <button class="admin-btn admin-delete" onclick="adminCloseStory('${esc(s.story_id)}')">✕ 이야기 종료</button>` : ''}

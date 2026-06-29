@@ -764,20 +764,29 @@ function renderNav() {
 }
 
 function badgeAvatar(b) {
-  return { seed:'🌰', seed1:'🌰', seed2:'🌰', sprout:'🌱', sprout1:'🌱', sprout2:'🌱', leaf:'🌿', leaf1:'🌿', leaf2:'🌿', bud:'🌸', flower:'🌺', flower1:'💐', fruit:'🍎', treeguard:'🌳' }[b] || '🌱';
+  const map = { seed:'seed', seed1:'seed', seed2:'seed', sprout:'sprout', sprout1:'sprout', sprout2:'sprout', leaf:'leaf', leaf1:'leaf', leaf2:'leaf', bud:'bud', flower:'flower', flower1:'flower1', fruit:'fruit', treeguard:'treeguard' };
+  const key = map[b];
+  if (key) return `<img src="badges/${key}.png" style="width:22px;height:22px;object-fit:contain;vertical-align:middle;display:inline-block">`;
+  return '🌱';
 }
 const AVATAR_SHOP_ITEMS = [
-  { id:'🍂', label:'낙엽',    price: 300 },
-  { id:'🌾', label:'벼이삭',  price: 300 },
-  { id:'🍄', label:'버섯',    price: 500 },
-  { id:'🌵', label:'선인장',  price: 500 },
-  { id:'🎋', label:'대나무',  price: 500 },
-  { id:'🌻', label:'해바라기', price: 500 },
-  { id:'🦋', label:'나비',    price: 800 },
-  { id:'🌊', label:'파도',    price: 800 },
-  { id:'🌙', label:'달',      price: 800 },
-  { id:'⭐', label:'별',      price:1000 },
-  { id:'🔥', label:'불꽃',   price:1000 },
+  { id:'🍂', label:'낙엽',    price:  500 },
+  { id:'🌾', label:'벼이삭',  price:  500 },
+  { id:'🍄', label:'버섯',    price:  700 },
+  { id:'🌵', label:'선인장',  price:  700 },
+  { id:'🎋', label:'대나무',  price:  800 },
+  { id:'🌻', label:'해바라기', price:  800 },
+  { id:'🌰', label:'씨앗',    price: 1000 },
+  { id:'🌱', label:'새싹',    price: 1000 },
+  { id:'🦋', label:'나비',    price: 1200 },
+  { id:'🌊', label:'파도',    price: 1200 },
+  { id:'🌙', label:'달',      price: 1500 },
+  { id:'🌸', label:'꽃봉오리', price: 1500 },
+  { id:'🌼', label:'꽃',      price: 1500 },
+  { id:'⭐', label:'별',      price: 2000 },
+  { id:'🔥', label:'불꽃',    price: 2000 },
+  { id:'🍎', label:'사과',    price: 2500 },
+  { id:'🌳', label:'나무',    price: 3000 },
 ];
 function badgeEmoji(b, size=18) {
   const alias = { new:'seed', rookie:'sprout', writer:'leaf', expert:'bud', master:'fruit' };

@@ -541,7 +541,7 @@ async function api(action, params = {}) {
     const _t = new Promise((_, rej) => setTimeout(() => rej(new Error('요청 시간이 초과됐습니다. 재시도해주세요.')), 8000));
     const result = await Promise.race([firebaseApi(action, params), _t]);
     if (!result.ok && result.error === '로그인이 필요합니다.' && localStorage.getItem('hwasee_token')) {
-      logout();
+      saveUser(null); renderNav(); nav('seed');
       toast('세션이 만료됐습니다. 다시 로그인해주세요.', true);
     }
     return result;
@@ -807,7 +807,7 @@ function badgeLabel(b) {
   }[b] || b;
 }
 function isAdmin() { return !!(user && user.is_admin); }
-function logout() { saveUser(null); toast('로그아웃됐습니다.'); nav('seed'); }
+function logout() { saveUser(null); renderNav(); toast('로그아웃됐습니다.'); nav('seed'); }
 
 function toggleProfileMenu() {
   const btn  = document.getElementById('profile-menu-btn');
@@ -2086,6 +2086,7 @@ async function profile() {
   if (!user) { nav('auth','login'); return; }
   document.getElementById('app').innerHTML = `<div class="loading">불러오는 중...</div>`;
   const [res, bmRes] = await Promise.all([api('getProfile'), api('getBookmarks')]);
+  if (!user) return;
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
 
   const u         = res.user;

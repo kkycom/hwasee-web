@@ -1335,7 +1335,7 @@ function renderHistoryPanel(episodes, submissions, opening) {
   const openingCard = opening ? `
     <div style="margin-bottom:20px">
       <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;letter-spacing:1px">1단계</div>
-      <div style="padding:10px 12px;border-radius:8px;border:1px solid var(--success);background:rgba(90,138,114,.1)">
+      <div style="padding:10px 12px;border-radius:8px;border:2px solid var(--success);background:rgba(90,138,114,.1)">
         <div style="font-size:13px;line-height:1.5">${esc(opening)}</div>
         <div style="font-size:11px;color:var(--success);margin-top:6px">✓ 씨앗 문장</div>
       </div>
@@ -1351,7 +1351,7 @@ function renderHistoryPanel(episodes, submissions, opening) {
         ${epSubs.map(sub => {
           const adopted = sub.is_adopted === true || sub.is_adopted === 'TRUE';
           return `
-            <div style="padding:10px 12px;margin-bottom:6px;border-radius:8px;border:1px solid ${adopted?'var(--success)':'var(--border)'};background:${adopted?'rgba(90,138,114,.1)':'var(--card)'}">
+            <div style="padding:10px 12px;margin-bottom:6px;border-radius:8px;border:${adopted?'2px':'1px'} solid ${adopted?'var(--success)':'var(--border)'};background:${adopted?'rgba(90,138,114,.1)':'var(--card)'}">
               <div style="font-size:13px;line-height:1.5">${esc(sub.content)}</div>
               <div style="font-size:11px;color:var(--muted);margin-top:6px;display:flex;gap:8px">
                 <span><span style="font-size:10px;color:var(--muted);margin-right:3px">글쓴이</span>${esc(sub.author_nickname || '익명')}</span>

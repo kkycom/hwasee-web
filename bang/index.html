@@ -2198,7 +2198,7 @@ async function profile() {
                 ${a.step+1}단계 · "${esc(a.story_opening.slice(0,40))}${a.story_opening.length>40?'…':''}"
               </div>
               <div style="font-size:14px;line-height:1.6">"${esc(a.content)}"</div>
-              <div style="font-size:12px;color:var(--muted);margin-top:6px">▲ ${a.vote_count}표 채택 · ${timeAgo(a.created_at)}</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:6px">공감 ${a.vote_count}개 채택 · ${timeAgo(a.created_at)}</div>
             </div>`).join('')}
         </div>
       </div>` : ''}

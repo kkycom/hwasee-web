@@ -538,7 +538,8 @@
 
 async function api(action, params = {}) {
   try {
-    const result = await firebaseApi(action, params);
+    const _t = new Promise((_, rej) => setTimeout(() => rej(new Error('요청 시간이 초과됐습니다. 재시도해주세요.')), 8000));
+    const result = await Promise.race([firebaseApi(action, params), _t]);
     if (!result.ok && result.error === '로그인이 필요합니다.' && localStorage.getItem('hwasee_token')) {
       logout();
       toast('세션이 만료됐습니다. 다시 로그인해주세요.', true);
@@ -1149,19 +1150,8 @@ let selectedSubs = [];
 const commentCache = {};
 let _epUnsubscribe = null; // 에피소드 실시간 리스너 정리용
 
-async function story() {
-  const story_id = currentParam;
-  selectedSubs = [];
-  document.getElementById('app').innerHTML = `<div class="loading">불러오는 중...</div>`;
-
-  let res;
-  try {
-    res = await api('getStory', { story_id });
-  } catch(e) {
-    document.getElementById('app').innerHTML = `<div class="empty">불러오기 실패.<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="story()">다시 시도</button></div>`;
-    return;
-  }
-  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">이야기를 불러오지 못했습니다.<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="story()">다시 시도</button></div>`; return; }
+function _applyStoryData(res, story_id) {
+  if (currentParam !== story_id) return;
 
   const { story: s, episodes, submissions, is_bookmarked, is_liked = false, like_count = 0, my_voted_sub_ids = [] } = res;
   const myVotedSet = new Set(my_voted_sub_ids);
@@ -1282,6 +1272,24 @@ async function story() {
       if (b) { b.style.transition = 'opacity .4s'; b.style.opacity = '0'; setTimeout(() => b.remove(), 400); }
     }, 3000);
   }
+}
+
+async function story() {
+  const story_id = currentParam;
+  selectedSubs = [];
+  const cached = _lsc.get('story_' + story_id);
+  if (cached) {
+    _applyStoryData(cached, story_id);
+  } else {
+    document.getElementById('app').innerHTML = `<div class="loading">불러오는 중...</div>`;
+  }
+  const res = await api('getStory', { story_id });
+  if (!res.ok) {
+    if (!cached) document.getElementById('app').innerHTML = `<div class="empty">이야기를 불러오지 못했습니다.<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="story()">다시 시도</button></div>`;
+    return;
+  }
+  _lsc.set('story_' + story_id, res, 90);
+  _applyStoryData(res, story_id);
 }
 
 function toggleHistory() {
@@ -1620,7 +1628,7 @@ async function submitSubInStory(episode_id, closing = false) {
   const res = await api('createSubmission', { episode_id, content, derived_from, closing });
   if (!res.ok) { toast(res.error, true); return; }
   window._polishFrom = null;
-  _lsc.del('pop', 'done', 'mine');
+  _lsc.del('pop', 'done', 'mine', 'story_' + currentParam);
   toast(closing ? '제출 완료! 이야기 마무리 공감이 시작됩니다.' : '제출 완료!');
   story();
 }
@@ -1660,7 +1668,7 @@ async function submitVoteInStory(episode_id) {
   if (btn) { btn.disabled = true; btn.textContent = '공감 중...'; }
   const res = await api('vote', { episode_id, sub_ids: selectedSubs });
   if (!res.ok) { toast(res.error, true); if (btn) btn.disabled = false; return; }
-  _lsc.del('pop', 'done', 'mine');
+  _lsc.del('pop', 'done', 'mine', 'story_' + currentParam);
   toast(wasRevote ? '공감이 변경됐어요!' : `공감 완료! 현재 ${res.total_voters}명 참여`);
   story();
 }

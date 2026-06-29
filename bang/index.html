@@ -1453,7 +1453,7 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1
   return `
     <div class="vote-card ${isAdopted?'adopted':''} ${isClickable?'clickable':''}" id="sc-${sub.sub_id}"
       style="position:relative;${iVoted?'border-color:var(--accent);':''}"
-      ${isClickable ? `onclick="toggleSub('${sub.sub_id}')"` : ''}>
+      ${isClickable ? `onclick="toggleSub('${sub.sub_id}')"` : isMyCard && !isAdopted ? `onclick="toast('내가 쓴 글은 선택할 수 없어요.',true)"` : ''}>
       ${cornerBadge}
       ${showLabel ? (sub.is_closing ? `<div style="font-size:10px;font-weight:700;color:var(--accent2);margin-bottom:6px;letter-spacing:.04em">■ 닫는 이야기</div>` : `<div style="font-size:10px;font-weight:700;color:#5a8a72;margin-bottom:6px;letter-spacing:.04em">▶ 열린 이야기</div>`) : ''}
       <div class="vote-content">${esc(sub.content)}</div>

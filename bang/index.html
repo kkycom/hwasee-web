@@ -1095,7 +1095,7 @@ function myStoryCardHtml(s, snapshot) {
             <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
               <span style="font-size:10px;color:var(--accent2);font-weight:700;white-space:nowrap;flex-shrink:0">${Number(sub.step)+1}단계</span>
               <div>
-                <div style="font-size:13px;line-height:1.6">${esc(sub.content)}</div>
+                <div style="font-size:13px;line-height:1.6;margin-bottom:6px">${esc(sub.content)}</div>
                 <div style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px">
                   <span>▲ ${sub.vote_count}개 공감</span>
                   ${sub.is_adopted===true||sub.is_adopted==='TRUE'

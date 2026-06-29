@@ -1217,16 +1217,18 @@ function _applyStoryData(res, story_id) {
 
   document.getElementById('app').innerHTML = `
     ${newBannerMsg ? `<div class="new-banner" id="new-banner">${newBannerMsg}</div>` : ''}
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:24px">
+    <div style="display:flex;align-items:center;gap:0;margin-bottom:24px">
       <button class="btn btn-ghost btn-sm" onclick="nav(window._prevRoute || 'home')">← 목록으로</button>
       ${user ? `
-        <button id="bm-btn" class="btn btn-ghost btn-sm" style="color:${is_bookmarked?'var(--accent2)':'var(--muted)'}"
+        <span style="width:1px;height:14px;background:var(--border);margin:0 6px;flex-shrink:0"></span>
+        <button id="bm-btn" class="btn btn-ghost btn-sm" data-bm="${is_bookmarked?'1':''}" style="color:${is_bookmarked?'var(--accent2)':'var(--muted)'};display:inline-flex;align-items:center;gap:4px"
           onclick="toggleBookmark('${esc(s.story_id)}', this)">
-          ${is_bookmarked ? '★ 책갈피됨' : '☆ 책갈피'}
+          <svg width="9" height="12" viewBox="0 0 9 12" fill="${is_bookmarked?'currentColor':'none'}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M1 1h7v10l-3.5-2.5L1 11z"/></svg>${is_bookmarked ? '책갈피됨' : '책갈피'}
         </button>` : ''}
       ${user && s.status === 'active' ? `
+        <span style="width:1px;height:14px;background:var(--border);margin:0 6px;flex-shrink:0"></span>
         <button class="btn btn-ghost btn-sm" style="color:var(--muted)"
-          onclick="doBoostStory('${esc(s.story_id)}')">⭐ 주목 (30P)</button>` : ''}
+          onclick="doBoostStory('${esc(s.story_id)}')">주목</button>` : ''}
       ${isAdmin() && s.status === 'active' ? `
         <button class="admin-btn admin-delete" style="margin-left:auto" onclick="adminCloseStory('${esc(s.story_id)}')">✕ 이야기 종료</button>` : ''}
     </div>
@@ -1234,7 +1236,7 @@ function _applyStoryData(res, story_id) {
       ${isFinished && s.branch_from_step ? `<span class="prose-branch-tag">⑂ ${s.branch_from_step}단계 분기</span>` : ''}
       ${isFinished && user ? `
         <button class="prose-author-toggle" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">으뜸 글 뽑기</button>` : ''}
-      <button class="prose-author-toggle" onclick="window._proseSelMode==='viewvotes'?cancelProseSelMode():enterProseSelMode('viewvotes','${esc(s.story_id)}')">📊 공감 현황</button>
+      <button class="prose-author-toggle" onclick="window._proseSelMode==='viewvotes'?cancelProseSelMode():enterProseSelMode('viewvotes','${esc(s.story_id)}')">공감 현황</button>
     </div>
     <div id="prose-select-bar" class="prose-select-bar"></div>
     <div class="story-prose" id="story-prose-wrap">
@@ -1662,12 +1664,14 @@ function polishSub(sub_id, content, author_nickname) {
 
 async function toggleBookmark(story_id, btn) {
   if (!user) { toast('로그인이 필요합니다.', true); return; }
-  const isMarked = btn.textContent.includes('★');
+  const isMarked = btn.getAttribute('data-bm') === '1';
   const res = await api(isMarked ? 'removeBookmark' : 'addBookmark', { story_id });
   if (!res.ok && !res.already) { toast(res.error, true); return; }
   if (isMarked) _bmIds.delete(story_id); else _bmIds.add(story_id);
-  btn.textContent  = isMarked ? '☆ 책갈피' : '★ 책갈피됨';
-  btn.style.color  = isMarked ? 'var(--muted)' : 'var(--accent2)';
+  const nowMarked = !isMarked;
+  btn.setAttribute('data-bm', nowMarked ? '1' : '');
+  btn.style.color = nowMarked ? 'var(--accent2)' : 'var(--muted)';
+  btn.innerHTML = `<svg width="9" height="12" viewBox="0 0 9 12" fill="${nowMarked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M1 1h7v10l-3.5-2.5L1 11z"/></svg>${nowMarked ? '책갈피됨' : '책갈피'}`;
   toast(isMarked ? '책갈피 해제됐습니다.' : '책갈피에 추가됐습니다.');
 }
 

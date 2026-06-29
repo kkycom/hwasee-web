@@ -1439,14 +1439,14 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1
   const isMyCard    = sub.sub_id === mySubId;
   const bStyle      = 'border-top:none;font-size:9px;font-weight:700;padding:2px 7px;letter-spacing:.04em;pointer-events:none';
   const cornerBadge = isMyCard && isChild
-    ? `<div style="position:absolute;top:0;right:12px;display:flex">
+    ? `<div style="position:absolute;top:0;right:0;display:flex">
         <div style="${bStyle};background:#a07850;color:#fff;border:1px solid rgba(120,80,40,.25);border-right:none;border-radius:0 0 0 5px">내 글</div>
         <div style="${bStyle};background:#c8b898;color:#5a4030;border:1px solid rgba(154,104,64,.25);border-radius:0 0 5px 0">손본 글</div>
        </div>`
     : isMyCard
-      ? `<div style="position:absolute;top:0;right:12px;${bStyle};background:#a07850;color:#fff;border:1px solid rgba(120,80,40,.25);border-radius:0 0 5px 5px">내 글</div>`
+      ? `<div style="position:absolute;top:0;right:0;${bStyle};background:#a07850;color:#fff;border:1px solid rgba(120,80,40,.25);border-radius:0 0 5px 5px">내 글</div>`
       : isChild
-        ? `<div style="position:absolute;top:0;right:12px;${bStyle};background:#c8b898;color:#5a4030;border:1px solid rgba(154,104,64,.25);border-radius:0 0 5px 5px">손본 글</div>`
+        ? `<div style="position:absolute;top:0;right:0;${bStyle};background:#c8b898;color:#5a4030;border:1px solid rgba(154,104,64,.25);border-radius:0 0 5px 5px">손본 글</div>`
         : '';
 
   return `

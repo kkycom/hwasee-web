@@ -1543,6 +1543,7 @@ function toggleReport(sub_id) {
 }
 
 async function submitReport(sub_id, reason) {
+  if (!confirm('이 문장을 신고하시겠습니까?')) return;
   const res = await api('addReport', { sub_id, reason });
   const el = document.getElementById('report-' + sub_id);
   if (el) el.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:2px 0">신고가 접수됐습니다.</div>';

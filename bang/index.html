@@ -1112,13 +1112,14 @@ function myStoryCardHtml(s, snapshot) {
               <span style="font-size:10px;color:var(--accent2);font-weight:700;white-space:nowrap;flex-shrink:0">${stepLabel}</span>
               <div>
                 <div style="font-size:13px;line-height:1.6;margin-bottom:6px">${esc(sub.content)}</div>
-                <div style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px">
-                  <span>▲ ${sub.vote_count}개 공감</span>
+                <div style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px">
+                  <span>공감 ${sub.vote_count}개</span>
+                  <span style="opacity:.4">·</span>
                   ${sub.is_adopted===true||sub.is_adopted==='TRUE'
-                    ? '<span style="color:var(--success);font-weight:700">✓ 채택됨</span>'
+                    ? '<span style="color:#7090b0;font-weight:600">채택됨</span>'
                     : sub.ep_status==='open'
-                      ? '<span style="color:var(--accent);font-weight:600">● 진행 중</span>'
-                      : '<span style="color:var(--muted)">탈락</span>'}
+                      ? '<span style="color:var(--accent);font-weight:600">진행 중</span>'
+                      : '<span style="color:#b07070;font-weight:600">탈락</span>'}
                 </div>
               </div>
             </div>`;}).join('')}

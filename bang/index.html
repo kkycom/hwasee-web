@@ -2109,17 +2109,17 @@ async function profile() {
       </button>
       <div style="display:block;padding:12px 16px">
         ${[
-          { emoji:'🌰', stages:[['seed','씨앗','0'],['seed1','금간 씨앗','20'],['seed2','발아하는 씨앗','60']] },
-          { emoji:'🌱', stages:[['sprout','여린 새싹','150'],['sprout1','새싹','350'],['sprout2','무성한 새싹','550']] },
-          { emoji:'🌿', stages:[['leaf','여린 잎','700'],['leaf1','잎','1,200'],['leaf2','무성한 잎','1,700']] },
-          { emoji:'🌺', stages:[['bud','꽃봉오리','2,000'],['flower','꽃','3,000'],['flower1','만개한 꽃','4,000']] },
-          { emoji:'🍎', stages:[['fruit','열매','5,000']] },
-        ].map(({emoji, stages}, i) => `
+          [['seed','씨앗','0'],['seed1','금간 씨앗','20'],['seed2','발아하는 씨앗','60']],
+          [['sprout','여린 새싹','150'],['sprout1','새싹','350'],['sprout2','무성한 새싹','550']],
+          [['leaf','여린 잎','700'],['leaf1','잎','1,200'],['leaf2','무성한 잎','1,700']],
+          [['bud','꽃봉오리','2,000'],['flower','꽃','3,000'],['flower1','만개한 꽃','4,000']],
+          [['fruit','열매','5,000']],
+        ].map((stages, i) => `
           <div style="${i>0?'margin-top:8px;padding-top:8px;border-top:1px solid var(--border)':''}">
             ${stages.map(([badge,label,pts]) => `
               <div style="display:flex;align-items:center;justify-content:space-between;padding:3px 0">
                 <div style="display:flex;align-items:center;gap:6px">
-                  <span style="font-size:13px">${emoji}</span>
+                  <span style="font-size:13px">${badgeEmoji(badge)}</span>
                   <span class="badge badge-${badge}" style="font-size:9px;padding:1px 6px">${label}</span>
                 </div>
                 <span style="font-size:10px;color:var(--muted)">${pts}p</span>

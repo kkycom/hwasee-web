@@ -1403,19 +1403,30 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1
   const barPct      = Math.min(Math.round(voteCount / FB_VOTE_THRESHOLD * 100), 100);
   const isClickable = user && sub.sub_id !== mySubId && !isAdopted;
   const showLabel   = Number(step) >= 3;
+  const isMyCard    = sub.sub_id === mySubId;
+  const bStyle      = 'border-top:none;font-size:9px;font-weight:700;padding:2px 7px;letter-spacing:.04em;pointer-events:none';
+  const cornerBadge = isMyCard && isChild
+    ? `<div style="position:absolute;top:0;right:12px;display:flex">
+        <div style="${bStyle};background:#a07850;color:#fff;border:1px solid rgba(120,80,40,.25);border-right:none;border-radius:0 0 0 5px">내 글</div>
+        <div style="${bStyle};background:#c8b898;color:#5a4030;border:1px solid rgba(154,104,64,.25);border-radius:0 0 5px 0">손본 글</div>
+       </div>`
+    : isMyCard
+      ? `<div style="position:absolute;top:0;right:12px;${bStyle};background:#a07850;color:#fff;border:1px solid rgba(120,80,40,.25);border-radius:0 0 5px 5px">내 글</div>`
+      : isChild
+        ? `<div style="position:absolute;top:0;right:12px;${bStyle};background:#c8b898;color:#5a4030;border:1px solid rgba(154,104,64,.25);border-radius:0 0 5px 5px">손본 글</div>`
+        : '';
 
   return `
     <div class="vote-card ${isAdopted?'adopted':''} ${isClickable?'clickable':''}" id="sc-${sub.sub_id}"
       style="position:relative;${iVoted?'border-color:var(--accent);':''}"
       ${isClickable ? `onclick="toggleSub('${sub.sub_id}')"` : ''}>
-      ${isChild ? `<div style="position:absolute;top:0;right:12px;background:#c8b898;color:#5a4030;border:1px solid rgba(154,104,64,.25);border-top:none;font-size:9px;font-weight:700;padding:2px 7px 2px;border-radius:0 0 5px 5px;letter-spacing:.04em;pointer-events:none">손본 글</div>` : ''}
+      ${cornerBadge}
       ${showLabel ? (sub.is_closing ? `<div style="font-size:10px;font-weight:700;color:var(--accent2);margin-bottom:6px;letter-spacing:.04em">■ 닫는 이야기</div>` : `<div style="font-size:10px;font-weight:700;color:#5a8a72;margin-bottom:6px;letter-spacing:.04em">▶ 열린 이야기</div>`) : ''}
       <div class="vote-content">${esc(sub.content)}</div>
       <div class="vote-meta">
         <span class="vote-count">공감 ${voteCount}/${FB_VOTE_THRESHOLD}개</span>
-        ${sub.sub_id === mySubId ? '<span class="tag">내 제출</span>' : ''}
         ${isAdopted ? '<span style="color:var(--success)">✓ 채택됨</span>' : ''}
-        <span style="margin-left:auto;font-size:11px;color:var(--muted)"><span style="font-size:10px;margin-right:3px">글쓴이</span>${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--muted)">${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
       </div>
       <div class="vote-bar"><div class="vote-fill" style="width:${barPct}%"></div></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">

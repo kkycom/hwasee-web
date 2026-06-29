@@ -120,14 +120,14 @@
     position:absolute; top:0; right:12px;
     display:flex; gap:4px; pointer-events:none;
   }
-  .card-branch-sticker, .card-bookmark-sticker, .card-new-sticker {
+  .card-branch-sticker, .card-bookmark-sticker {
     background:#c8b898; color:#5a4030;
     border:1px solid rgba(154,104,64,.25); border-top:none;
     font-size:10px; font-weight:700; padding:2px 8px;
     border-radius:0 0 5px 5px; letter-spacing:.04em;
   }
   .card-bookmark-sticker { color:#a06020; border-color:rgba(200,130,58,.35); }
-  .card-new-sticker { color:#2878b0; border-color:rgba(40,120,176,.25); }
+
   @keyframes boost-glow {
     0%, 100% { border-color:rgba(200,130,58,.45); box-shadow:0 0 10px rgba(200,130,58,.1); }
     50%       { border-color:rgba(200,130,58,.85); box-shadow:0 0 22px rgba(200,130,58,.22); }
@@ -405,13 +405,10 @@
   }
 
   /* ── 알림 bell */
-  /* ── NEW 배너 */
-  .new-banner { display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--accent); border-radius:10px; padding:10px 14px; margin-bottom:14px; font-size:13px; color:var(--accent); font-weight:600; animation:fadeInDown .3s ease; }
-  @keyframes fadeInDown { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
 
-  .bell-btn { background:none; border:none; cursor:pointer; color:var(--muted); font-size:13px; font-weight:500; padding:4px 8px; border-radius:6px; line-height:1.4; vertical-align:middle; }
+  .bell-btn { background:none; border:none; cursor:pointer; color:var(--muted); font-size:13px; font-weight:500; padding:4px 8px; border-radius:6px; line-height:1.4; display:inline-flex; align-items:center; gap:2px; }
   .bell-btn:hover { background:var(--surface); }
-  .bell-badge { min-width:16px; height:16px; border-radius:8px; background:var(--accent2); color:#fff; font-size:10px; font-weight:700; display:none; align-items:center; justify-content:center; padding:0 4px; pointer-events:none; margin-left:1px; vertical-align:middle; }
+  .bell-badge { min-width:16px; height:16px; border-radius:8px; background:var(--accent2); color:#fff; font-size:10px; font-weight:700; display:none; align-items:center; justify-content:center; padding:0 4px; pointer-events:none; }
   #notif-wrapper { display:inline-flex; align-items:center; position:relative; }
   .notif-panel { position:fixed; top:62px; right:16px; width:300px; max-width:calc(100vw - 32px); max-height:70vh; overflow-y:auto; background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.5); z-index:200; }
   .notif-item { padding:12px 14px; border-bottom:1px solid var(--border); font-size:13px; line-height:1.4; cursor:pointer; }
@@ -609,7 +606,7 @@ function setMineSort(key) {
 function renderMineCards() {
   const content = document.getElementById('home-content');
   if (!content || !_mineCache) return;
-  const { active, snapshot } = _mineCache;
+  const { active } = _mineCache;
   const boosted = active.filter(s => s.is_boosted);
   const regular = _sortStories(active.filter(s => !s.is_boosted), _mineSort);
   const boostHtml = boosted.length ? `
@@ -620,7 +617,7 @@ function renderMineCards() {
   content.innerHTML = boostHtml
     + _sortBtns('ms', [['activity','참여도 순'],['step','진행도 순'],['latest','최신 순']], _mineSort)
     + (regular.length
-      ? regular.map(s => myStoryCardHtml(s, snapshot)).join('')
+      ? regular.map(s => myStoryCardHtml(s)).join('')
       : `<div class="empty" style="padding-top:30px">참여 중인 이야기가 없어요.<br>씨앗 탭에서 이야기를 시작해 보세요!</div>`);
 }
 
@@ -740,7 +737,7 @@ function renderNav() {
     el.innerHTML = `
       ${rankBtn}
       <div id="notif-wrapper">
-        <button class="bell-btn" onclick="toggleNotifPanel()" id="bell-btn" title="알림">알림</button><span class="bell-badge" id="bell-badge"></span>
+        <button class="bell-btn" onclick="toggleNotifPanel()" id="bell-btn" title="알림">알림<span class="bell-badge" id="bell-badge"></span></button>
         <div id="notif-panel" style="display:none" class="notif-panel"></div>
       </div>
       ${isAdmin() ? `<button class="btn-nav" onclick="adminPanel()" title="신고 관리">⚠️</button>` : ''}
@@ -930,11 +927,7 @@ async function loadHomeTab(tab) {
     }
     const _applyMine = (res) => {
       const active = res?.ok ? res.stories.filter(s => s.status === 'active') : [];
-      const mineSnap = (() => { try { return JSON.parse(localStorage.getItem('mine_snap') || '{}'); } catch { return {}; } })();
-      const newSnap = {};
-      active.forEach(s => { newSnap[s.story_id] = { activity: Number(s.activity_count) || 0, step: Number(s.current_step) || 0 }; });
-      try { localStorage.setItem('mine_snap', JSON.stringify(newSnap)); } catch {}
-      _mineCache = { active, snapshot: mineSnap };
+      _mineCache = { active };
       if (currentRoute === 'mine') renderMineCards();
     };
     const _cachedMine = _lsc.get('mine');
@@ -1026,11 +1019,10 @@ async function startSeedStory() {
 }
 
 // 관심받는 이야기 카드
-function cardStickersHtml(s, alwaysBm, isNew) {
+function cardStickersHtml(s, alwaysBm) {
   const hasBm = alwaysBm || _bmIds.has(s.story_id);
   const parts = [
     s.has_branch ? `<span class="card-branch-sticker">⑂ 분기</span>` : '',
-    isNew ? `<span class="card-new-sticker">N</span>` : '',
     hasBm ? `<span class="card-bookmark-sticker">★</span>` : '',
   ].filter(Boolean).join('');
   return parts ? `<div class="card-stickers">${parts}</div>` : '';
@@ -1086,14 +1078,8 @@ function doneCardHtml(s) {
 }
 
 
-function myStoryCardHtml(s, snapshot) {
-  const step    = Number(s.current_step) || 0;
+function myStoryCardHtml(s) {
   const mySubs  = s.mySubmissions || [];
-  const stored  = snapshot && snapshot[s.story_id];
-  const isNew   = stored && (
-    Number(s.activity_count) > (stored.activity || 0) ||
-    step > (stored.step || 0)
-  );
   const voteCount   = typeof s.has_voted_current === 'number' ? s.has_voted_current : null;
   // 같은 step에 여러 제출이 있으면(분기) A,B,C 라벨 부여
   const stepGroups = {};
@@ -1106,7 +1092,7 @@ function myStoryCardHtml(s, snapshot) {
   return `
     <div class="story-card-wrap">
       <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
-      ${cardStickersHtml(s, false, isNew)}
+      ${cardStickersHtml(s, false)}
       <div class="story-card-title">${esc(s.opening)}</div>
       ${mySubs.length ? `
         <div style="margin-bottom:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">
@@ -1183,17 +1169,6 @@ function _applyStoryData(res, story_id) {
   const { story: s, episodes, submissions, is_bookmarked, is_liked = false, like_count = 0, my_voted_sub_ids = [] } = res;
   const myVotedSet = new Set(my_voted_sub_ids);
 
-  // NEW 배너: 이전 스냅샷과 비교
-  const mineSnap = (() => { try { return JSON.parse(localStorage.getItem('mine_snap') || '{}'); } catch { return {}; } })();
-  const stored = mineSnap[story_id];
-  let newBannerMsg = '';
-  if (stored) {
-    const curStep = Number(s.current_step) || 0;
-    const curAct  = Number(s.activity_count) || 0;
-    if (curStep > (stored.step || 0))         newBannerMsg = '🌿 새로운 단계가 시작됐어요!';
-    else if (curAct > (stored.activity || 0)) newBannerMsg = '✍ 새로 제출된 이야기가 있어요!';
-  }
-
   // 분기 트리 산문 (전역 저장 → chooseBranch 재렌더용)
   const { branches = [], parent_chain = null, mvp_map = {}, my_mvp_episode_id = null } = res;
   window._storyData = { episodes, submissions, story: s, branches, parent_chain, mvp_map, my_mvp_episode_id, my_voted_sub_ids };
@@ -1238,7 +1213,6 @@ function _applyStoryData(res, story_id) {
   const isFinished = s.status === 'completed' || s.status === 'inactive';
 
   document.getElementById('app').innerHTML = `
-    ${newBannerMsg ? `<div class="new-banner" id="new-banner">${newBannerMsg}</div>` : ''}
     <div style="display:flex;align-items:center;gap:0;margin-bottom:24px;flex-wrap:wrap;row-gap:6px">
       <button class="btn btn-ghost btn-sm" style="border:none" onclick="nav(window._prevRoute || 'home')">← 목록으로</button>
       ${isFinished && s.branch_from_step ? `<span class="prose-branch-tag" style="margin-left:6px">⑂ ${s.branch_from_step}단계 분기</span>` : ''}
@@ -1297,12 +1271,6 @@ function _applyStoryData(res, story_id) {
   // 이미 투표한 항목 pre-select
   _applyVoteSelections();
 
-  if (newBannerMsg) {
-    setTimeout(() => {
-      const b = document.getElementById('new-banner');
-      if (b) { b.style.transition = 'opacity .4s'; b.style.opacity = '0'; setTimeout(() => b.remove(), 400); }
-    }, 3000);
-  }
 }
 
 async function story() {
@@ -1440,14 +1408,14 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1
   const isMyCard    = sub.sub_id === mySubId;
   const bStyle      = 'border-top:none;font-size:9px;font-weight:700;padding:2px 7px;letter-spacing:.04em;pointer-events:none';
   const cornerBadge = isMyCard && isChild
-    ? `<div style="position:absolute;top:-2px;right:12px;display:flex">
+    ? `<div style="position:absolute;top:-4px;right:12px;display:flex">
         <div style="${bStyle};background:#a07850;color:#fff;border:1px solid rgba(120,80,40,.25);border-right:none;border-radius:0 0 0 5px">내 글</div>
         <div style="${bStyle};background:#c8b898;color:#5a4030;border:1px solid rgba(154,104,64,.25);border-radius:0 0 5px 0">손본 글</div>
        </div>`
     : isMyCard
-      ? `<div style="position:absolute;top:-2px;right:12px;${bStyle};background:#a07850;color:#fff;border:1px solid rgba(120,80,40,.25);border-radius:0 0 5px 5px">내 글</div>`
+      ? `<div style="position:absolute;top:-4px;right:12px;${bStyle};background:#a07850;color:#fff;border:1px solid rgba(120,80,40,.25);border-radius:0 0 5px 5px">내 글</div>`
       : isChild
-        ? `<div style="position:absolute;top:-2px;right:12px;${bStyle};background:#c8b898;color:#5a4030;border:1px solid rgba(154,104,64,.25);border-radius:0 0 5px 5px">손본 글</div>`
+        ? `<div style="position:absolute;top:-4px;right:12px;${bStyle};background:#c8b898;color:#5a4030;border:1px solid rgba(154,104,64,.25);border-radius:0 0 5px 5px">손본 글</div>`
         : '';
 
   return `

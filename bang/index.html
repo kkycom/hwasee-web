@@ -744,7 +744,7 @@ function renderNav() {
         <div class="profile-dropdown" id="profile-dropdown">
           <div class="profile-dropdown-header">
             <div class="profile-dropdown-nick">${esc(user.display_name || user.nickname)}</div>
-            <div class="profile-dropdown-badge"><span class="badge badge-${user.badge}" style="font-size:10px">${badgeLabel(user.badge)}</span></div>
+            <div class="profile-dropdown-badge"><span class="badge badge-${user.badge}" style="font-size:10px">${badgeEmoji(user.badge)}</span></div>
           </div>
           <button class="profile-dropdown-item" onclick="closeProfileMenu();nav('profile','points')">📋 활동 내역</button>
           <button class="profile-dropdown-item" onclick="closeProfileMenu();nav('profile','settings')">⚙️ 회원정보 수정</button>
@@ -1244,7 +1244,7 @@ async function story() {
     <div id="prose-select-bar" class="prose-select-bar"></div>
     <div class="story-prose" id="story-prose-wrap">
       <div class="prose-opening">${esc(s.opening)}</div>
-      <span class="prose-author">— ${s.creator_badge ? `<span class="badge badge-${s.creator_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(s.creator_badge)}</span>` : ''}${esc(s.creator_nickname || '익명')}</span>
+      <span class="prose-author">— ${s.creator_badge ? `<span class="badge badge-${s.creator_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(s.creator_badge)}</span>` : ''}${esc(s.creator_nickname || '익명')}</span>
       ${confirmedHtml || ''}
     </div>
     <div id="story-action-wrap">${actionHtml}</div>
@@ -1399,7 +1399,7 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1
       ${showLabel ? (sub.is_closing ? `<div style="font-size:10px;font-weight:700;color:var(--accent2);margin-bottom:6px;letter-spacing:.04em">◼ 닫는 이야기</div>` : `<div style="font-size:10px;font-weight:700;color:#68c8a8;margin-bottom:6px;letter-spacing:.04em">▶ 열린 이야기</div>`) : ''}
       <div class="vote-content">${esc(sub.content)}</div>
       <div class="vote-meta">
-        <span>✍ ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeLabel(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
+        <span>✍ ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
         <span class="vote-count">▲ ${voteCount}/${FB_VOTE_THRESHOLD}표</span>
         ${iVoted ? '<span style="font-size:11px;color:var(--accent);font-weight:700;white-space:nowrap">✓ 공감함</span>' : ''}
         ${sub.sub_id === mySubId ? '<span class="tag">내 제출</span>' : ''}
@@ -1479,7 +1479,7 @@ function lbBodyHtml(limit) {
     ? pointRows.map((r, i) => `
         <div class="lb-row">
           <span class="lb-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</span>
-          <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;flex-shrink:0">${badgeLabel(r.badge||'seed')}</span>
+          <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;flex-shrink:0">${badgeEmoji(r.badge||'seed')}</span>
           <span class="lb-name">${esc(r.nickname)}</span>
           <span class="lb-value">${r.value||0}p</span>
         </div>`).join('')
@@ -1490,7 +1490,7 @@ function lbBodyHtml(limit) {
     ? adoptRows.map((r, i) => `
         <div class="lb-row">
           <span class="lb-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</span>
-          <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;flex-shrink:0">${badgeLabel(r.badge||'seed')}</span>
+          <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;flex-shrink:0">${badgeEmoji(r.badge||'seed')}</span>
           <span class="lb-name">${esc(r.nickname)}</span>
           <span class="lb-value">${r.value||0}편</span>
         </div>`).join('')
@@ -2259,7 +2259,7 @@ async function profile() {
         <div>
           <div style="font-size:20px;font-weight:700">${esc(u.display_name || u.nickname)}</div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:2px">${esc(u.nickname)}</div>
-          <span class="badge badge-${u.badge}">${badgeLabel(u.badge)}</span>
+          <span class="badge badge-${u.badge}">${badgeEmoji(u.badge)}</span>
           ${nextBadge ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">다음: ${nextBadge}</div>` : ''}
         </div>
         <div style="margin-left:auto;text-align:right">
@@ -2501,7 +2501,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
         <span class="prose-sentence">${esc(sub.content)}</span>
         ${mvpBadge}${myMvpMark}
       </div>
-      <span class="prose-author">— ${sub.author_badge?`<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(sub.author_badge)}</span>`:''}${esc(sub.author_nickname || '익명')}</span>
+      <span class="prose-author">— ${sub.author_badge?`<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>`:''}${esc(sub.author_nickname || '익명')}</span>
       ${forkHtml}${childHtml}`;
   }
 
@@ -2523,7 +2523,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
             <span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span>
             ${mvpBadge}${myMvpMark}
           </div>
-          <span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeLabel(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>
+          <span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>
         </div>
       </div>
       ${chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId) : ''}`;
@@ -2838,14 +2838,14 @@ function renderMvpHtml(story_id, authors, res) {
     if (canVote) {
       return `
         <div class="mvp-author-card" id="mvp-${a.user_id}" onclick="toggleMvpVote('${story_id}','${a.user_id}','${esc(a.nickname)}')">
-          <span class="badge badge-${a.badge}" style="font-size:9px;padding:1px 5px">${badgeLabel(a.badge)}</span>
+          <span class="badge badge-${a.badge}" style="font-size:9px;padding:1px 5px">${badgeEmoji(a.badge)}</span>
           <span style="font-size:14px;font-weight:600;flex:1">${esc(a.nickname)}</span>
           <span style="font-size:20px">🤍</span>
         </div>`;
     } else {
       return `
         <div class="mvp-author-card result">
-          <span class="badge badge-${a.badge}" style="font-size:9px;padding:1px 5px">${badgeLabel(a.badge)}</span>
+          <span class="badge badge-${a.badge}" style="font-size:9px;padding:1px 5px">${badgeEmoji(a.badge)}</span>
           <span style="font-size:14px;font-weight:600;flex:1">${esc(a.nickname)}</span>
           ${count > 0 ? `
             <div class="mvp-bar" style="max-width:80px"><div class="mvp-bar-fill" style="width:${Math.round(count/maxCount*100)}%"></div></div>

@@ -864,7 +864,9 @@ async function switchHomeTab(tab) {
     if (el) el.classList.toggle('active', t.key === tab);
   });
   const content = document.getElementById('home-content');
-  if (content) content.innerHTML = `<div class="loading">불러오는 중...</div>`;
+  const cacheKey = tab === 'popular' ? 'pop' : tab;
+  const hasCached = tab !== 'seed' && !!_lsc.get(cacheKey);
+  if (content && !hasCached) content.innerHTML = `<div class="loading">불러오는 중...</div>`;
   await loadHomeTab(tab);
 }
 
@@ -2341,6 +2343,7 @@ function switchProfileTab(tab) {
 
 // ─── 알림 ──────────────────────────────────────────────
 let _notifOpen = false;
+let _notifCache = null;
 
 async function loadNotifCount() {
   try {
@@ -2354,6 +2357,21 @@ async function loadNotifCount() {
   } catch(e) {}
 }
 
+function _renderNotifPanel(panel, notifs) {
+  if (notifs.length === 0) {
+    panel.innerHTML = '<div style="padding:14px;font-size:13px;color:var(--muted);text-align:center">새 알림이 없습니다.</div>';
+  } else {
+    panel.innerHTML = `
+      <div style="padding:10px 14px;font-size:12px;font-weight:700;border-bottom:1px solid var(--border)">알림</div>
+      ${notifs.map(n => `
+        <div class="notif-item ${n.is_read === 'false' || n.is_read === false ? 'unread' : ''}"
+          onclick="notifClick('${esc(n.story_id)}')">
+          <div>${esc(n.message)}</div>
+          <div class="notif-time">${timeAgo(n.created_at)}</div>
+        </div>`).join('')}`;
+  }
+}
+
 async function toggleNotifPanel() {
   const panel = document.getElementById('notif-panel');
   if (!panel) return;
@@ -2361,30 +2379,26 @@ async function toggleNotifPanel() {
   if (!_notifOpen) { panel.style.display = 'none'; return; }
 
   panel.style.display = 'block';
-  panel.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--muted)">불러오는 중...</div>';
+  if (_notifCache) {
+    _renderNotifPanel(panel, _notifCache);
+  } else {
+    panel.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--muted)">불러오는 중...</div>';
+  }
 
   try {
     const res = await api('getNotifications', {});
     const notifs = res.ok ? res.notifications : [];
-    if (notifs.length === 0) {
-      panel.innerHTML = '<div style="padding:14px;font-size:13px;color:var(--muted);text-align:center">새 알림이 없습니다.</div>';
-    } else {
-      panel.innerHTML = `
-        <div style="padding:10px 14px;font-size:12px;font-weight:700;border-bottom:1px solid var(--border)">알림</div>
-        ${notifs.map(n => `
-          <div class="notif-item ${n.is_read === 'false' || n.is_read === false ? 'unread' : ''}"
-            onclick="notifClick('${esc(n.story_id)}')">
-            <div>${esc(n.message)}</div>
-            <div class="notif-time">${timeAgo(n.created_at)}</div>
-          </div>`).join('')}`;
-      // 읽음 처리
+    _notifCache = notifs;
+    _renderNotifPanel(panel, notifs);
+    if (notifs.length > 0) {
       api('markNotificationsRead', {}).then(() => {
         const badge = document.getElementById('bell-badge');
         if (badge) badge.style.display = 'none';
+        _notifCache = notifs.map(n => ({ ...n, is_read: true }));
       });
     }
   } catch(e) {
-    panel.innerHTML = '<div style="padding:14px;font-size:13px;color:var(--muted)">불러오기 실패.</div>';
+    if (!_notifCache) panel.innerHTML = '<div style="padding:14px;font-size:13px;color:var(--muted)">불러오기 실패.</div>';
   }
 }
 

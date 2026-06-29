@@ -1960,6 +1960,15 @@ function auth() {
         <div class="form-group"><label>이름 (비밀번호 찾기에 사용)</label><input id="a-name" type="text" placeholder="실명 또는 별칭" maxlength="20"></div>
         <div class="form-group"><label>비밀번호 (8자 이상)</label><input id="a-pw" type="password" placeholder="비밀번호"></div>
         <div class="form-group"><label>비밀번호 확인</label><input id="a-pw2" type="password" placeholder="비밀번호 재입력" onkeydown="if(event.key==='Enter')doRegister()"></div>
+        <div class="form-group">
+          <label style="margin-bottom:10px;display:block">어떻게 알게 됐어요? <span style="color:var(--muted);font-weight:400">(선택)</span></label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px" id="referral-chips">
+            ${['지인 추천','커뮤니티 (에타·블라인드)','SNS (인스타·스레드)','기타'].map(v =>
+              `<button type="button" class="btn btn-ghost btn-sm" style="border-radius:20px" onclick="selectReferral(this,'${v}')">${v}</button>`
+            ).join('')}
+          </div>
+          <input type="hidden" id="a-referral" value="">
+        </div>
         <button class="btn btn-primary" style="width:100%" onclick="doRegister()">가입하기</button>
       ` : `
         <p style="font-size:13px;color:var(--muted);margin-bottom:20px">가입 시 입력한 아이디와 이름이 일치하면 비밀번호를 재설정할 수 있어요.</p>
@@ -1970,6 +1979,18 @@ function auth() {
         <button class="btn btn-primary" style="width:100%" onclick="doRecover()">비밀번호 재설정</button>
       `}
     </div>`;
+}
+
+function selectReferral(btn, value) {
+  const input = document.getElementById('a-referral');
+  if (input.value === value) {
+    input.value = '';
+    btn.classList.remove('active');
+  } else {
+    input.value = value;
+    document.querySelectorAll('#referral-chips .btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
 }
 
 async function doLogin() {
@@ -2023,9 +2044,11 @@ async function doRegister() {
   if (password !== password2) {
     toast('비밀번호가 일치하지 않아요.', true); return;
   }
+  const referral = (document.getElementById('a-referral')?.value || '').trim();
   const res = await api('register', { nickname, password, name: nameVal, display_name: displayName });
   if (!res.ok) { toast(res.error, true); return; }
   saveUser(res);
+  if (typeof gtag === 'function') gtag('event', 'sign_up', { method: 'email', referral_source: referral || '미입력' });
   toast(`가입 완료! 환영합니다, ${res.display_name || res.nickname}님!`);
   nav('seed');
   if (!localStorage.getItem('hwasee_onboarding_seen')) setTimeout(showOnboarding, 400);

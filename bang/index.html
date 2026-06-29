@@ -2752,7 +2752,11 @@ function _obPrev() { if (_obPage > 0) { _obPage--; _renderObPage(-1); } }
     const dx = e.clientX - _obMouseX;
     const wasDrag = _obMouseDrag;
     _obMouseX = null; _obMouseDrag = false;
-    if (!wasDrag || Math.abs(dx) < 50) return;
+    if (!wasDrag) {
+      if (!e.target.closest('button')) _obNext();
+      return;
+    }
+    if (Math.abs(dx) < 50) return;
     if (dx < 0) _obNext(); else _obPrev();
   });
 })();

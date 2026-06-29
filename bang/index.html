@@ -1088,6 +1088,14 @@ function myStoryCardHtml(s, snapshot) {
     step > (stored.step || 0)
   );
   const voteCount   = typeof s.has_voted_current === 'number' ? s.has_voted_current : null;
+  // 같은 step에 여러 제출이 있으면(분기) A,B,C 라벨 부여
+  const stepGroups = {};
+  mySubs.forEach(sub => {
+    const k = String(sub.step);
+    if (!stepGroups[k]) stepGroups[k] = [];
+    stepGroups[k].push(sub.episode_id);
+  });
+  Object.values(stepGroups).forEach(arr => arr.sort());
   return `
     <div class="story-card-wrap">
       <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
@@ -1095,9 +1103,13 @@ function myStoryCardHtml(s, snapshot) {
       <div class="story-card-title">${esc(s.opening)}</div>
       ${mySubs.length ? `
         <div style="margin-bottom:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">
-          ${mySubs.map(sub => `
+          ${mySubs.map(sub => {
+            const grp = stepGroups[String(sub.step)];
+            const branchLetter = grp.length > 1 ? String.fromCharCode(65 + grp.indexOf(sub.episode_id)) : '';
+            const stepLabel = `${Number(sub.step)+1}단계${branchLetter ? `(${branchLetter})` : ''}`;
+            return `
             <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
-              <span style="font-size:10px;color:var(--accent2);font-weight:700;white-space:nowrap;flex-shrink:0">${Number(sub.step)+1}단계</span>
+              <span style="font-size:10px;color:var(--accent2);font-weight:700;white-space:nowrap;flex-shrink:0">${stepLabel}</span>
               <div>
                 <div style="font-size:13px;line-height:1.6;margin-bottom:6px">${esc(sub.content)}</div>
                 <div style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px">
@@ -1109,7 +1121,7 @@ function myStoryCardHtml(s, snapshot) {
                       : '<span style="color:var(--muted)">탈락</span>'}
                 </div>
               </div>
-            </div>`).join('')}
+            </div>`;}).join('')}
         </div>` : ''}
       <div class="story-card-footer">
         <span class="step-pill"><span class="step-dot"></span>${s.status==='active' ? (s.open_ep_step != null ? (s.branch_from_step ? (Number(s.branch_from_step)-1)+s.open_ep_step : s.open_ep_step+1) : step+2) : step+1}단계 · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>

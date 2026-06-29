@@ -1266,7 +1266,7 @@ function _applyStoryData(res, story_id) {
         <button class="btn btn-ghost btn-sm" style="width:100%;color:var(--muted);font-size:12px"
           onclick="toggleHistory()">만들어진 과정 보기 ▾</button>
         <div id="history-body" style="display:none;margin-top:12px">
-          ${renderHistoryPanel(episodes, submissions)}
+          ${renderHistoryPanel(episodes, submissions, s.opening)}
         </div>
       </div>
       <div style="margin-top:32px">
@@ -1328,12 +1328,20 @@ function toggleHistory() {
   }
 }
 
-function renderHistoryPanel(episodes, submissions) {
+function renderHistoryPanel(episodes, submissions, opening) {
   const closedEps = episodes
     .filter(e => e.status === 'closed')
     .sort((a, b) => Number(a.step) - Number(b.step));
-  if (!closedEps.length) return '<div style="color:var(--muted);font-size:13px;padding:12px 0">기록이 없습니다.</div>';
-  return closedEps.map(ep => {
+  const openingCard = opening ? `
+    <div style="margin-bottom:20px">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;letter-spacing:1px">1단계</div>
+      <div style="padding:10px 12px;border-radius:8px;border:1px solid var(--success);background:rgba(90,138,114,.1)">
+        <div style="font-size:13px;line-height:1.5">${esc(opening)}</div>
+        <div style="font-size:11px;color:var(--success);margin-top:6px">✓ 씨앗 문장</div>
+      </div>
+    </div>` : '';
+  if (!closedEps.length) return openingCard || '<div style="color:var(--muted);font-size:13px;padding:12px 0">기록이 없습니다.</div>';
+  return openingCard + closedEps.map(ep => {
     const epSubs = submissions
       .filter(s => s.episode_id === ep.episode_id)
       .sort((a, b) => Number(b.vote_count) - Number(a.vote_count));

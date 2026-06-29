@@ -112,7 +112,7 @@
   .btn-ghost:hover { color: var(--text); border-color: var(--accent); }
   .btn-ghost.active { background: var(--accent); color: #3a5548; border-color: var(--accent); }
   .btn-sm { padding: 5px 12px; font-size: 13px; }
-  .btn-nav { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px 8px; font-size: 13px; font-weight: 500; border-radius: 6px; }
+  .btn-nav { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px 8px; font-size: 13px; font-weight: 500; border-radius: 6px; line-height: 1.4; }
   .btn-nav:hover { color: var(--text); background: var(--surface); }
   .story-card-wrap { position:relative; margin-bottom:12px; }
   .story-card-wrap > .story-card { margin-bottom:0; }
@@ -1537,7 +1537,7 @@ function lbBodyHtml(limit) {
         </div>`).join('')
     : emptyHtml;
 
-  return `<div style="display:flex;max-width:420px;margin:0 auto">
+  return `<div style="display:flex">
     <div style="flex:1;padding:0 14px;border-right:1px solid var(--border)">
       <div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:10px;text-align:center">포인트 랭킹</div>
       ${pointHtml}
@@ -1559,7 +1559,7 @@ function openRankingModal() {
   modal.className = 'modal-overlay';
   modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
   modal.innerHTML = `
-    <div class="modal-box">
+    <div class="modal-box" style="max-width:600px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <div style="font-size:15px;font-weight:700">✦ 명예의 전당</div>
         <button onclick="document.getElementById('ranking-modal').remove()"

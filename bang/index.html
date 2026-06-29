@@ -1964,7 +1964,7 @@ function auth() {
         <div class="form-group">
           <label style="margin-bottom:10px;display:block">어떻게 알게 됐어요? <span style="color:var(--muted);font-weight:400">(선택)</span></label>
           <div style="display:flex;flex-wrap:wrap;gap:8px" id="referral-chips">
-            ${['지인 추천','커뮤니티 (에타·블라인드)','SNS (인스타·스레드)','기타'].map(v =>
+            ${['지인 추천','커뮤니티 (에타·블라인드 등)','SNS (인스타·스레드 등)','기타'].map(v =>
               `<button type="button" class="btn btn-ghost btn-sm" style="border-radius:20px" onclick="selectReferral(this,'${v}')">${v}</button>`
             ).join('')}
           </div>

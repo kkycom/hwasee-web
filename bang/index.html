@@ -2978,15 +2978,31 @@ function shareStory() {
 async function adminPanel() {
   if (!isAdmin()) { nav('seed'); return; }
   document.getElementById('app').innerHTML = `<div class="loading">불러오는 중...</div>`;
-  const res = await api('getReports', {});
+  const [res, stats] = await Promise.all([api('getReports', {}), api('getAdminStats', {})]);
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
 
   const reports = res.reports;
+  const statsHtml = stats.ok ? `
+    <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+      <div class="card" style="padding:12px 18px;margin-bottom:0">
+        <div style="font-size:11px;color:var(--muted)">가입자 수</div>
+        <div style="font-size:20px;font-weight:700">${stats.user_count}</div>
+      </div>
+      <div class="card" style="padding:12px 18px;margin-bottom:0">
+        <div style="font-size:11px;color:var(--muted)">이야기 수</div>
+        <div style="font-size:20px;font-weight:700">${stats.story_count}</div>
+      </div>
+      <div class="card" style="padding:12px 18px;margin-bottom:0">
+        <div style="font-size:11px;color:var(--muted)">제출된 글</div>
+        <div style="font-size:20px;font-weight:700">${stats.submission_count}</div>
+      </div>
+    </div>` : '';
   document.getElementById('app').innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
       <button class="btn btn-ghost btn-sm" onclick="nav('seed')">← 돌아가기</button>
       <h2 style="margin:0">신고 목록 <span style="font-size:14px;font-weight:400;color:var(--muted)">${reports.length}건</span></h2>
     </div>
+    ${statsHtml}
     ${reports.length === 0
       ? `<div class="empty">처리할 신고가 없습니다.</div>`
       : reports.map(r => `

@@ -1072,6 +1072,21 @@ async function fbDismissReport(report_id, admin_id) {
   return { ok: true };
 }
 
+async function fbGetAdminStats(admin_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  const [uCount, sCount, subCount] = await Promise.all([
+    db.collection('users').count().get(),
+    db.collection('stories').count().get(),
+    db.collection('submissions').count().get(),
+  ]);
+  return {
+    ok: true,
+    user_count: uCount.data().count,
+    story_count: sCount.data().count,
+    submission_count: subCount.data().count,
+  };
+}
+
 // ─── 랭킹 ────────────────────────────────────────────────
 
 async function fbGetLeaderboard() {
@@ -1540,6 +1555,7 @@ async function firebaseApi(action, params = {}) {
     case 'addReport':          return fbAddReport(params.sub_id, params.reason, need().user_id);
     case 'getReports':         return fbGetReports(need().user_id);
     case 'dismissReport':      return fbDismissReport(params.report_id, need().user_id);
+    case 'getAdminStats':      return fbGetAdminStats(need().user_id);
 
     case 'getLeaderboard':       return fbGetLeaderboard();
     case 'getProfile':           return fbGetProfile(need().user_id);

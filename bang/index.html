@@ -1325,7 +1325,7 @@ function renderHistoryPanel(episodes, submissions) {
         ${epSubs.map(sub => {
           const adopted = sub.is_adopted === true || sub.is_adopted === 'TRUE';
           return `
-            <div style="padding:10px 12px;margin-bottom:6px;border-radius:8px;border:1px solid ${adopted?'var(--success)':'var(--border)'};background:${adopted?'#0c1f12':'var(--card)'}">
+            <div style="padding:10px 12px;margin-bottom:6px;border-radius:8px;border:1px solid ${adopted?'var(--success)':'var(--border)'};background:${adopted?'rgba(90,138,114,.1)':'var(--card)'}">
               <div style="font-size:13px;line-height:1.5">${esc(sub.content)}</div>
               <div style="font-size:11px;color:var(--muted);margin-top:6px;display:flex;gap:8px">
                 <span><span style="font-size:10px;color:var(--muted);margin-right:3px">글쓴이</span>${esc(sub.author_nickname || '익명')}</span>

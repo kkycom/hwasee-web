@@ -3230,23 +3230,36 @@ function parseHash() {
 
 window.addEventListener('hashchange', () => { parseHash(); render(); renderNav(); });
 
+// 잠금화면 복귀 시 30초 이상 숨겨졌으면 재렌더
+let _hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    _hiddenAt = Date.now();
+  } else if (_hiddenAt && Date.now() - _hiddenAt > 30000) {
+    _hiddenAt = 0;
+    render();
+  }
+});
 
 window.onload = async () => {
   loadUser();
+  parseHash();
+  render();       // 캐시 데이터로 즉시 렌더
   renderNav();
+
   if (user) {
     const token = localStorage.getItem('hwasee_token');
     const [session] = await Promise.all([fbGetSession(token), _loadBmIds()]);
-    if (!session) { saveUser(null); }
-    else {
+    if (!session) {
+      // 네트워크 오류와 실제 만료를 구분: 온라인일 때만 로그아웃
+      if (navigator.onLine !== false) { saveUser(null); renderNav(); render(); }
+    } else {
       const br = await api('checkDailyBonus');
       if (br.ok && br.bonus > 0) {
         setTimeout(() => toast(`🌿 출석 점수 +${br.bonus}p 지급됐어요!`), 800);
       }
     }
   }
-  parseHash();
-  render();
 };
 </script>
 <footer style="text-align:center;padding:24px 16px;border-top:1px solid var(--border);margin-top:32px">

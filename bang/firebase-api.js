@@ -275,17 +275,9 @@ async function fbGetStories(page) {
 
     return { ok: true, stories, page: 1 };
   } else {
-    const [storiesSnap, likesSnap] = await Promise.all([
-      db.collection('stories').where('status', '==', 'completed').get(),
-      db.collection('story_likes').get(),
-    ]);
-    const likeCountMap = {};
-    likesSnap.docs.forEach(d => {
-      const r = d.data();
-      likeCountMap[r.story_id] = (likeCountMap[r.story_id] || 0) + 1;
-    });
+    const storiesSnap = await db.collection('stories').where('status', '==', 'completed').get();
     const stories = storiesSnap.docs
-      .map(d => ({ ...d.data(), like_count: likeCountMap[d.id] || 0 }))
+      .map(d => ({ ...d.data(), like_count: d.data().like_count || 0 }))
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     return { ok: true, stories, page: 2 };
   }
@@ -345,12 +337,12 @@ async function fbGetStory(story_id, user_id) {
 
   const extras = await Promise.all([
     user_id ? db.collection('bookmarks').where('user_id','==',user_id).where('story_id','==',story_id).limit(1).get() : Promise.resolve(null),
-    db.collection('story_likes').where('story_id','==',story_id).get(),
+    user_id ? db.collection('story_likes').where('story_id','==',story_id).where('user_id','==',user_id).limit(1).get() : Promise.resolve(null),
   ]);
 
   if (extras[0]) is_bookmarked = !extras[0].empty;
-  like_count = extras[1].size;
-  if (user_id) is_liked = extras[1].docs.some(d => d.data().user_id === user_id);
+  like_count = storySnap.data().like_count || 0;
+  if (user_id && extras[1]) is_liked = !extras[1].empty;
 
   // open 상태인데 최고 득표가 임계값 이상이면 자동 마감 (새로고침 경쟁 조건 복구)
   try {
@@ -431,7 +423,7 @@ async function fbCreateStory(opening, creator_id, is_ai_seed) {
   batch.set(db.collection('stories').doc(story_id), {
     story_id, opening: opening.trim(), max_steps: 10, current_step: 0,
     status: 'active', creator_id, creator_nickname, creator_badge,
-    created_at: fbNow(), batch: '', participant_count: 0
+    created_at: fbNow(), batch: '', participant_count: 0, like_count: 0
   });
   batch.set(db.collection('episodes').doc(episode_id), {
     episode_id, story_id, step: 1, parent_sub_id: '',
@@ -1113,6 +1105,22 @@ async function fbGetLeaderboard() {
   return { ok: true, points: pointsRank, adoptions: adoptionsRank };
 }
 
+async function fbBackfillLikeCounts(admin_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  const likesSnap = await db.collection('story_likes').get();
+  const countMap = {};
+  likesSnap.docs.forEach(d => {
+    const sid = d.data().story_id;
+    if (sid) countMap[sid] = (countMap[sid] || 0) + 1;
+  });
+  const batch = db.batch();
+  Object.entries(countMap).forEach(([sid, cnt]) => {
+    batch.update(db.collection('stories').doc(sid), { like_count: cnt });
+  });
+  await batch.commit();
+  return { ok: true, updated: Object.keys(countMap).length };
+}
+
 async function fbBackfillAdoptionCounts(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   const sSnap = await db.collection('submissions').where('is_adopted', '==', true).get();
@@ -1279,19 +1287,24 @@ async function fbBuyExtraSubmit(episode_id, user_id) {
 }
 
 async function fbToggleStoryLike(story_id, user_id) {
-  const stSnap = await db.collection('stories').doc(story_id).get();
+  const stRef  = db.collection('stories').doc(story_id);
+  const stSnap = await stRef.get();
   if (!stSnap.exists) return { ok: false, error: '이야기를 찾을 수 없습니다.' };
   const st = stSnap.data();
   if (st.status !== 'completed' && st.status !== 'inactive')
     return { ok: false, error: '완결된 이야기에만 추천할 수 있습니다.' };
-  const snap    = await db.collection('story_likes').where('story_id','==',story_id).get();
-  const myLike  = snap.docs.find(d => d.data().user_id === user_id);
-  if (myLike) {
-    await myLike.ref.delete();
-    return { ok: true, liked: false, like_count: snap.size - 1 };
+  const snap   = await db.collection('story_likes').where('story_id','==',story_id).where('user_id','==',user_id).limit(1).get();
+  const cur    = st.like_count || 0;
+  if (!snap.empty) {
+    await snap.docs[0].ref.delete();
+    const newCount = Math.max(0, cur - 1);
+    await stRef.update({ like_count: newCount });
+    return { ok: true, liked: false, like_count: newCount };
   } else {
     await db.collection('story_likes').doc(fbGenId()).set({ story_id, user_id, created_at: fbNow() });
-    return { ok: true, liked: true, like_count: snap.size + 1 };
+    const newCount = cur + 1;
+    await stRef.update({ like_count: newCount });
+    return { ok: true, liked: true, like_count: newCount };
   }
 }
 
@@ -1559,6 +1572,7 @@ async function firebaseApi(action, params = {}) {
 
     case 'getLeaderboard':          return fbGetLeaderboard();
     case 'backfillAdoptionCounts':  return fbBackfillAdoptionCounts(need().user_id);
+    case 'backfillLikeCounts':      return fbBackfillLikeCounts(need().user_id);
     case 'getProfile':           return fbGetProfile(need().user_id);
     case 'buyAvatar':            return fbBuyAvatar(params.emoji_id, need().user_id);
     case 'setAvatar':            return fbSetAvatar(params.emoji_id, need().user_id);

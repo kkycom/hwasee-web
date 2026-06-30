@@ -498,7 +498,6 @@
     display:none; position:fixed; inset:0; z-index:9000;
     background:rgba(0,0,0,.72); backdrop-filter:blur(6px);
     align-items:center; justify-content:center; padding:20px;
-    transition:opacity .2s;
   }
   .ob-card {
     background:var(--surface); border:1px solid var(--border); border-radius:20px;
@@ -2783,16 +2782,12 @@ function showOnboarding() {
   _obPage = 0;
   _renderObPage(0);
   document.body.style.overflow = 'hidden';
-  const ov = document.getElementById('onboarding-overlay');
-  ov.style.opacity = '0';
-  ov.style.display = 'flex';
-  requestAnimationFrame(() => requestAnimationFrame(() => { ov.style.opacity = '1'; }));
+  document.getElementById('onboarding-overlay').style.display = 'flex';
 }
 function closeOnboarding() {
   localStorage.setItem('hwasee_onboarding_seen', '1');
-  const ov = document.getElementById('onboarding-overlay');
-  ov.style.opacity = '0';
-  setTimeout(() => { ov.style.display = 'none'; ov.style.opacity = ''; document.body.style.overflow = ''; }, 200);
+  document.getElementById('onboarding-overlay').style.display = 'none';
+  document.body.style.overflow = '';
 }
 function _renderObPage(dir) {
   const content = document.getElementById('ob-content');

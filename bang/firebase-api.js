@@ -122,7 +122,7 @@ async function _fbSpendPoints(user_id, pts, reason) {
 
 // ─── 인증 ────────────────────────────────────────────────
 
-async function fbRegister(nickname, password, name, display_name) {
+async function fbRegister(nickname, password, name, display_name, referral) {
   if (!nickname || !password) return { ok: false, error: '아이디와 비밀번호를 입력해주세요.' };
   if (!/^[가-힣a-zA-Z0-9]{2,12}$/.test(nickname)) return { ok: false, error: '아이디는 2~12자, 한글·영문·숫자만 사용할 수 있어요.' };
   if (password.length < 8) return { ok: false, error: '비밀번호는 8자 이상입니다.' };
@@ -143,7 +143,8 @@ async function fbRegister(nickname, password, name, display_name) {
 
   await db.collection('users').doc(user_id).set({
     user_id, nickname, display_name: dn, pw_hash: await fbHashPw(password), token, token_exp,
-    total_points: 0, adoption_count: 0, badge: 'seed', name: (name || '').trim(), created_at: fbNow()
+    total_points: 0, adoption_count: 0, badge: 'seed', name: (name || '').trim(),
+    referral: (referral || '').trim(), created_at: fbNow()
   });
 
   localStorage.setItem('hwasee_uid', user_id);
@@ -1241,6 +1242,16 @@ async function fbGetAdminStats(admin_id) {
     db.collection('stories').get(),
     db.collection('submissions').get(),
   ]);
+
+  const referralMap = {};
+  uSnap.docs.forEach(d => {
+    const r = (d.data().referral || '').trim() || '미입력';
+    referralMap[r] = (referralMap[r] || 0) + 1;
+  });
+  const referral_stats = Object.entries(referralMap)
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, count]) => ({ label, count }));
+
   let visit_today = 0, visit_yesterday = 0, visit_total = 0;
   try {
     const [todaySnap, yesSnap, allSnap] = await Promise.all([
@@ -1257,7 +1268,7 @@ async function fbGetAdminStats(admin_id) {
   return {
     ok: true,
     user_count: uSnap.size, story_count: sSnap.size, submission_count: subSnap.size,
-    visit_today, visit_yesterday, visit_total,
+    visit_today, visit_yesterday, visit_total, referral_stats,
   };
 }
 
@@ -1725,7 +1736,7 @@ async function firebaseApi(action, params = {}) {
   const need    = () => { if (!session) throw new Error('로그인이 필요합니다.'); return session; };
 
   switch (action) {
-    case 'register':           return fbRegister(params.nickname, params.password, params.name);
+    case 'register':           return fbRegister(params.nickname, params.password, params.name, params.display_name, params.referral);
     case 'login':              return fbLogin(params.nickname, params.password);
     case 'deleteAccount':      return fbDeleteAccount(need().user_id);
     case 'changePassword':     return fbChangePassword(need().user_id, params.current_password, params.new_password);

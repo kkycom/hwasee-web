@@ -2041,7 +2041,7 @@ function auth() {
         <div class="form-group">
           <label style="margin-bottom:10px;display:block">어떻게 알게 됐어요? <span style="color:var(--muted);font-weight:400">(선택)</span></label>
           <div style="display:flex;flex-wrap:wrap;gap:8px" id="referral-chips">
-            ${['지인 추천','커뮤니티 (에타·블라인드 등)','SNS (인스타·스레드 등)','기타'].map(v =>
+            ${['지인 추천','커뮤니티 (에타·블라인드 등)','인스타그램','스레드','기타'].map(v =>
               `<button type="button" class="btn btn-ghost btn-sm" style="border-radius:20px" onclick="selectReferral(this,'${v}')">${v}</button>`
             ).join('')}
           </div>
@@ -2123,7 +2123,7 @@ async function doRegister() {
     toast('비밀번호가 일치하지 않아요.', true); return;
   }
   const referral = (document.getElementById('a-referral')?.value || '').trim();
-  const res = await api('register', { nickname, password, name: nameVal, display_name: displayName });
+  const res = await api('register', { nickname, password, name: nameVal, display_name: displayName, referral });
   if (!res.ok) { toast(res.error, true); return; }
   saveUser(res);
   if (typeof gtag === 'function') gtag('event', 'sign_up', { method: 'email', referral_source: referral || '미입력' });
@@ -2997,6 +2997,17 @@ async function adminPanel() {
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
 
   const reports = res.reports;
+  const referralHtml = (stats.ok && stats.referral_stats?.length) ? `
+    <div class="card" style="padding:14px 18px;margin-bottom:20px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;font-weight:600">가입 경로</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${stats.referral_stats.map(r => `
+          <div style="display:flex;align-items:center;gap:6px;background:var(--bg);border-radius:8px;padding:6px 12px">
+            <span style="font-size:13px;font-weight:600">${esc(r.label)}</span>
+            <span style="font-size:16px;font-weight:700;color:var(--accent2)">${r.count}</span>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
   const statsHtml = stats.ok ? `
     <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
       <div class="card" style="padding:12px 18px;margin-bottom:0">
@@ -3030,6 +3041,7 @@ async function adminPanel() {
       <h2 style="margin:0">신고 목록 <span style="font-size:14px;font-weight:400;color:var(--muted)">${reports.length}건</span></h2>
     </div>
     ${statsHtml}
+    ${referralHtml}
     ${reports.length === 0
       ? `<div class="empty">처리할 신고가 없습니다.</div>`
       : reports.map(r => `

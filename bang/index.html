@@ -511,7 +511,7 @@
     cursor:pointer; padding:4px 8px; border-radius:6px;
   }
   .ob-skip:hover { color:var(--text); }
-  #ob-content { transition:opacity .2s; height:300px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; overflow:hidden; }
+  #ob-content { height:300px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; overflow:hidden; }
   .ob-img-wrap { text-align:center; height:120px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
   .ob-img-wrap:empty { display:none; }
   .ob-img-wrap img { max-width:100%; max-height:120px; border-radius:10px; object-fit:cover; display:block; margin:0 auto; }
@@ -2790,34 +2790,21 @@ function closeOnboarding() {
   document.body.style.overflow = '';
 }
 function _renderObPage(dir) {
-  const content = document.getElementById('ob-content');
-  const doUpdate = () => {
-    const p = _OB_PAGES[_obPage];
-    const imgWrap = document.getElementById('ob-img-wrap');
-    imgWrap.innerHTML = p.img
-      ? `<img src="/bang/${p.img}" alt="" onerror="this.parentElement.innerHTML='';">`
+  const p = _OB_PAGES[_obPage];
+  const imgWrap = document.getElementById('ob-img-wrap');
+  imgWrap.innerHTML = p.img
+    ? `<img src="/bang/${p.img}" alt="" onerror="this.parentElement.innerHTML='';">`
+    : '';
+  document.getElementById('ob-icon').textContent  = p.icon;
+  document.getElementById('ob-title').textContent = p.title;
+  document.getElementById('ob-body').innerHTML    = p.body;
+  [0,1,2,3].forEach(i => {
+    document.getElementById('ob-dot-'+i).className = 'ob-dot' + (i === _obPage ? ' active' : '');
+  });
+  document.getElementById('ob-actions').innerHTML =
+    _obPage === _OB_PAGES.length - 1
+      ? `<button class="ob-btn-start" onclick="closeOnboarding()">시작하기</button>`
       : '';
-    document.getElementById('ob-icon').textContent  = p.icon;
-    document.getElementById('ob-title').textContent = p.title;
-    document.getElementById('ob-body').innerHTML    = p.body;
-    [0,1,2,3].forEach(i => {
-      document.getElementById('ob-dot-'+i).className = 'ob-dot' + (i === _obPage ? ' active' : '');
-    });
-    document.getElementById('ob-actions').innerHTML =
-      _obPage === _OB_PAGES.length - 1
-        ? `<button class="ob-btn-start" onclick="closeOnboarding()">시작하기</button>`
-        : '';
-  };
-  if (!dir) { doUpdate(); return; }
-  content.style.transition = 'opacity .15s';
-  content.style.opacity = '0';
-  setTimeout(() => {
-    doUpdate();
-    requestAnimationFrame(() => {
-      content.style.transition = 'opacity .2s';
-      content.style.opacity = '1';
-    });
-  }, 150);
 }
 function _obNext() { if (_obPage < _OB_PAGES.length - 1) { _obPage++; _renderObPage(1); } else { closeOnboarding(); } }
 function _obPrev() { if (_obPage > 0) { _obPage--; _renderObPage(-1); } }

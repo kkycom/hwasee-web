@@ -246,24 +246,25 @@ async function fbGetStories(page) {
       db.collection('boosts').where('expires_at', '>', fbNow()).get(),
     ]);
 
-    const openVoteMap = {}, openStepMap = {};
+    const openVoteMap = {}, openStepMap = {}, openStepMaxMap = {};
     episodesSnap.docs.forEach(d => {
       const e = d.data();
       const cur = openVoteMap[e.story_id] || 0;
       if ((e.vote_total || 0) > cur) openVoteMap[e.story_id] = e.vote_total || 0;
-      // 갈래가 여러 개면 가장 얕은 step 사용 (분기 오버카운트 방지)
-      if (!openStepMap[e.story_id] || Number(e.step) < openStepMap[e.story_id])
-        openStepMap[e.story_id] = Number(e.step);
+      const step = Number(e.step);
+      if (openStepMap[e.story_id] === undefined || step < openStepMap[e.story_id]) openStepMap[e.story_id] = step;
+      if (openStepMaxMap[e.story_id] === undefined || step > openStepMaxMap[e.story_id]) openStepMaxMap[e.story_id] = step;
     });
     const boostSet = new Set(boostsSnap.docs.map(d => d.data().story_id));
 
     const stories = storiesSnap.docs.map(d => ({
       ...d.data(),
-      is_boosted:       boostSet.has(d.id),
-      activity_count:   d.data().participant_count || 0,
-      creator_nickname: d.data().creator_nickname || '익명',
-      creator_badge:    d.data().creator_badge    || '',
-      open_ep_step:     openStepMap[d.id] ?? null,
+      is_boosted:        boostSet.has(d.id),
+      activity_count:    d.data().participant_count || 0,
+      creator_nickname:  d.data().creator_nickname || '익명',
+      creator_badge:     d.data().creator_badge    || '',
+      open_ep_step:      openStepMap[d.id]    ?? null,
+      open_ep_step_max:  openStepMaxMap[d.id] ?? null,
     }));
 
     stories.sort((a, b) => {
@@ -470,12 +471,13 @@ async function fbGetMyStories(user_id) {
   const epMap = {};
   epSnaps.forEach(s => s.docs.forEach(d => { epMap[d.id] = d.data(); }));
 
-  const openEpMap = {};
+  const openEpMap = {}, openEpMaxMap = {};
   Object.entries(epMap).forEach(([epId, ep]) => {
-    // 갈래가 여러 개면 가장 얕은 step의 open 에피소드 사용 (분기 오버카운트 방지)
     if (ep.status === 'open') {
-      const prev = openEpMap[ep.story_id];
-      if (!prev || ep.step < (epMap[prev]?.step ?? Infinity)) openEpMap[ep.story_id] = epId;
+      const prev    = openEpMap[ep.story_id];
+      const prevMax = openEpMaxMap[ep.story_id];
+      if (!prev    || ep.step < (epMap[prev]?.step    ?? Infinity))  openEpMap[ep.story_id]    = epId;
+      if (!prevMax || ep.step > (epMap[prevMax]?.step ?? -Infinity)) openEpMaxMap[ep.story_id] = epId;
     }
   });
 
@@ -502,6 +504,7 @@ async function fbGetMyStories(user_id) {
       activity_count:    s.participant_count || 0,
       has_voted_current: openEpId != null ? (myVoteCountMap[openEpId] || 0) : null,
       open_ep_step:      openEpId && epMap[openEpId] ? Number(epMap[openEpId].step) : null,
+      open_ep_step_max:  (() => { const id = openEpMaxMap[s.story_id]; return id && epMap[id] ? Number(epMap[id].step) : null; })(),
     });
   }));
 

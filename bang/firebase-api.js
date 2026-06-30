@@ -977,8 +977,8 @@ async function _fbRecycleAbandonedSeeds(docs) {
 }
 
 async function fbGetSeeds() {
-  const usedSnap = await db.collection('stories').where('is_ai_seed', '==', true).get();
-  const used     = new Set(usedSnap.docs.filter(d => d.data().status === 'active').map(d => d.data().opening));
+  const usedSnap = await db.collection('stories').where('status', '==', 'active').get();
+  const used     = new Set(usedSnap.docs.map(d => d.data().opening));
   const available = FB_AI_OPENINGS.filter(o => !used.has(o));
   const src    = available.length >= 5 ? available.slice() : FB_AI_OPENINGS.slice();
   const picked = [];

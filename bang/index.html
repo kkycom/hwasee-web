@@ -757,9 +757,9 @@ function renderNav() {
           <span style="margin-right:3px;font-style:normal">${badgeEmoji(user.badge)}</span>${esc(user.display_name || user.nickname)} <span class="caret">▼</span>
         </button>
         <div class="profile-dropdown" id="profile-dropdown">
-          <div class="profile-dropdown-header">
+          <div class="profile-dropdown-header" style="display:flex;align-items:center;gap:8px">
             <div class="profile-dropdown-nick">${esc(user.display_name || user.nickname)}</div>
-            <div class="profile-dropdown-badge"><span class="badge badge-${user.badge}" style="font-size:10px">${badgeEmoji(user.badge)}</span></div>
+            <span class="badge badge-${user.badge}" style="font-size:10px;flex-shrink:0">${badgeEmoji(user.badge)}</span>
           </div>
           <button class="profile-dropdown-item" onclick="closeProfileMenu();nav('profile','points')">📋 활동 내역</button>
           <button class="profile-dropdown-item" onclick="closeProfileMenu();nav('profile','settings')">⚙️ 회원정보 수정</button>
@@ -1058,7 +1058,7 @@ function boostCardHtml(s) {
         ${cardStickersHtml(s)}
         <div class="story-card-title" style="-webkit-line-clamp:2;line-clamp:2">${esc(s.opening)}</div>
         <div class="story-card-footer">
-          <span class="step-pill"><span class="step-dot"></span>${s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : step+2}단계 · 참여자 ${count}명</span>
+          <span class="step-pill"><span class="step-dot"></span>${s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`} · 참여자 ${count}명</span>
         </div>
       </div>
     </div>`;
@@ -1073,7 +1073,7 @@ function popularCardHtml(s) {
         ${cardStickersHtml(s)}
         <div class="story-card-title">${esc(s.opening)}</div>
         <div class="story-card-footer">
-          <span class="step-pill"><span class="step-dot"></span>${s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : step+2}단계 · 참여자 ${count}명</span>
+          <span class="step-pill"><span class="step-dot"></span>${s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`} · 참여자 ${count}명</span>
           <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
         </div>
       </div>
@@ -1140,7 +1140,7 @@ function myStoryCardHtml(s) {
             </div>`;}).join('')}
         </div>` : ''}
       <div class="story-card-footer">
-        <span class="step-pill"><span class="step-dot"></span>${s.status==='active' ? (s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : step+2) : step+1}단계 · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
+        <span class="step-pill"><span class="step-dot"></span>${s.status==='active' ? (s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`) : `${step+1}단계`} · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
         ${(voteCount !== null && voteCount > 0) ? `<span style="font-size:11px;color:var(--success);font-weight:700">${voteCount >= 2 ? '공감 완료' : `✓ ${voteCount}개 공감`}</span>` : ''}
         <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
       </div>

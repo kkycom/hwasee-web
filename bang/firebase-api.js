@@ -1225,7 +1225,7 @@ async function fbGetAdminStats(admin_id) {
     visit_today     = todaySnap.exists ? (todaySnap.data().count || 0) : 0;
     visit_yesterday = yesSnap.exists   ? (yesSnap.data().count   || 0) : 0;
     visit_total     = totalSnap.exists ? (totalSnap.data().count  || 0) : 0;
-  } catch(e) {}
+  } catch(e) { visit_today = e.message; }
   return {
     ok: true,
     user_count: uSnap.size, story_count: sSnap.size, submission_count: subSnap.size,

@@ -3361,6 +3361,41 @@ window.onload = async () => {
     }
   }
 
+  // iOS 홈화면 설치 유도 팝업
+  (function() {
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isInstalled = window.navigator.standalone === true;
+    const isSafari = /safari/i.test(navigator.userAgent) && !/crios|fxios|opios/i.test(navigator.userAgent);
+    const dismissed = localStorage.getItem('hwasee_ios_install_dismissed');
+    if (!isIOS || isInstalled || !isSafari || dismissed) return;
+
+    setTimeout(() => {
+      const el = document.createElement('div');
+      el.id = '_ios-install-banner';
+      el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9998;background:#1c2320;border-top:1px solid #3a4a3d;padding:16px 20px 32px;box-shadow:0 -4px 24px rgba(0,0,0,.5)';
+      el.innerHTML = `
+        <button onclick="localStorage.setItem('hwasee_ios_install_dismissed','1');this.parentElement.remove()" style="position:absolute;top:12px;right:16px;background:none;border:none;color:#4a5a4d;font-size:22px;cursor:pointer;line-height:1">×</button>
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+          <img src="/bang/icon-192.png" style="width:48px;height:48px;border-radius:12px;flex-shrink:0">
+          <div>
+            <div style="font-size:14px;font-weight:700;color:#e4ebe6;margin-bottom:2px">화씨.방 앱으로 설치하기</div>
+            <div style="font-size:12px;color:#6b7d6e;line-height:1.5">홈화면에 추가하면 더 편하게 쓸 수 있어요</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;background:#141714;border-radius:10px;padding:12px 14px">
+          <span style="font-size:12px;color:#9aab9d;line-height:1.7;flex:1">
+            하단 <span style="display:inline-flex;align-items:center;gap:2px;background:#2d4a35;border-radius:5px;padding:1px 7px;color:#a8d4b0;font-weight:600">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+              공유
+            </span> 버튼을 누른 뒤<br>
+            <strong style="color:#e4ebe6">홈 화면에 추가</strong>를 선택해주세요
+          </span>
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#3a4a3d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18" stroke-width="2"/></svg>
+        </div>`;
+      document.body.appendChild(el);
+    }, 3000);
+  })();
+
   // PWA Service Worker 등록 + FCM 초기화
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/bang/sw.js').then(async reg => {

@@ -1144,13 +1144,14 @@ function popularCardHtml(s) {
 function doneCardHtml(s) {
   const step  = Number(s.current_step) || 0;
   const likes = Number(s.like_count) || 0;
+  const count = Number(s.activity_count || s.participant_count) || 0;
   return `
     <div class="story-card-wrap">
     <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
       ${cardStickersHtml(s)}
       <div class="story-card-title">${esc(s.opening)}</div>
       <div class="story-card-footer">
-        <span class="step-pill">${step+1}단계 완성</span>
+        <span class="step-pill">${step+1}단계 완성 · 참여자 ${count}명</span>
         ${likes > 0 ? `<span style="font-size:12px;color:var(--accent);margin-left:8px">👍 ${likes}</span>` : ''}
       </div>
     </div>

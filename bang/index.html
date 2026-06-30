@@ -112,6 +112,26 @@
   .profile-dropdown-item.danger { color: #f87171; }
   .profile-dropdown-divider { height: 1px; background: var(--border); margin: 2px 0; }
 
+  /* ── 어드민 드롭다운 */
+  .admin-menu-wrap { position: relative; }
+  .admin-menu-dropdown {
+    display: none; position: absolute; top: calc(100% + 8px); right: 0;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4); min-width: 150px; z-index: 200; overflow: hidden;
+  }
+  .admin-menu-dropdown.open { display: block; }
+  .admin-menu-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px; font-size: 13px; color: var(--text);
+    background: none; border: none; width: 100%; text-align: left; cursor: pointer;
+    transition: background .1s;
+  }
+  .admin-menu-item:hover { background: var(--surface); }
+  /* ── 산문 수정 버튼 */
+  .prose-edit-btn { opacity: 0; background: none; border: 1px solid var(--border); border-radius: 4px; font-size: 10px; cursor: pointer; padding: 1px 5px; margin-left: 7px; color: var(--muted); transition: opacity .15s; vertical-align: middle; line-height: 1.3; }
+  .prose-line:hover .prose-edit-btn { opacity: 1; }
+  .prose-inline-editor { margin: 6px 0 12px; }
+
   /* ── 버튼 */
   .btn { padding: 8px 18px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: .15s; }
   .btn-primary { background: var(--accent); color: #3a5548; font-weight: 550; }
@@ -769,7 +789,7 @@ function nav(route, param) {
 }
 
 function render() {
-  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, create, 'episode-votes': episodeVotes };
+  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, create, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs };
   (routes[currentRoute] || home)();
 }
 
@@ -785,7 +805,16 @@ function renderNav() {
         <button class="bell-btn" onclick="toggleNotifPanel()" id="bell-btn" title="알림">${bellSvg}<span class="bell-badge" id="bell-badge"></span></button>
         <div id="notif-panel" style="display:none" class="notif-panel"></div>
       </div>
-      ${isAdmin() ? `<button class="btn-nav" onclick="adminPanel()" title="신고 관리">⚠️</button>` : ''}
+      ${isAdmin() ? `
+      <div class="admin-menu-wrap" id="admin-menu-wrap">
+        <button class="btn-nav" onclick="toggleAdminMenu()" title="관리자 메뉴">⚠️</button>
+        <div class="admin-menu-dropdown" id="admin-menu-dropdown">
+          <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-stats')">📊 이용통계</button>
+          <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-edits')">✏️ 수정 내역</button>
+          <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-reports')">🚩 신고 내역</button>
+          <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-bugs')">🐛 버그 내역</button>
+        </div>
+      </div>` : ''}
       <div class="profile-menu-wrap" id="profile-menu-wrap">
         <button class="profile-menu-btn" id="profile-menu-btn" onclick="toggleProfileMenu()">
           <span style="margin-right:3px;font-style:normal">${badgeEmoji(user.badge)}</span>${esc(user.display_name || user.nickname)} <span class="caret">▼</span>
@@ -874,6 +903,8 @@ function closeProfileMenu() {
 document.addEventListener('click', e => {
   const wrap = document.getElementById('profile-menu-wrap');
   if (wrap && !wrap.contains(e.target)) closeProfileMenu();
+  const adminWrap = document.getElementById('admin-menu-wrap');
+  if (adminWrap && !adminWrap.contains(e.target)) closeAdminMenu();
 });
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -1341,6 +1372,7 @@ async function story() {
   }
   _lsc.set('story_' + story_id, res, 90);
   _applyStoryData(res, story_id);
+  _autoAiReview(story_id, res.episodes || [], res.submissions || []);
 }
 
 function toggleHistory() {
@@ -2600,10 +2632,11 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
     const childHtml = children.length === 1
       ? renderEpisodeTreeHtml(children[0], choices, mvpMap, branches, myMvpEpId) : '';
     const forkHtml = extBranch ? renderExtBranchFork(ep, sub, extBranch) : '';
+    const editBtn = isAdmin() ? `<button class="prose-edit-btn" data-sub="${sub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)">✏️</button>` : '';
     return `
       <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
         <span class="prose-sentence">${esc(sub.content)}</span>
-        ${mvpBadge}${myMvpMark}
+        ${editBtn}${mvpBadge}${myMvpMark}
       </div>
       <span class="prose-author">— ${sub.author_badge?`<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>`:''}${esc(sub.author_nickname || '익명')}</span>
       ${forkHtml}${childHtml}`;
@@ -2625,7 +2658,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
         <div>
           <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
             <span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span>
-            ${mvpBadge}${myMvpMark}
+            ${isAdmin() && chosenSub ? `<button class="prose-edit-btn" data-sub="${chosenSub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)">✏️</button>` : ''}${mvpBadge}${myMvpMark}
           </div>
           <span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>
         </div>
@@ -2989,14 +3022,35 @@ function shareStory() {
     .catch(() => toast('복사 실패 — 브라우저 권한을 확인해주세요.', true));
 }
 
-// ─── 어드민 페이지 ──────────────────────────────────────
-async function adminPanel() {
+// ─── 어드민 공통 ──────────────────────────────────────────
+const CLAUDE_API_KEY = ''; // 발급받은 Anthropic API 키를 여기에 입력하세요
+
+function _adminNav(current) {
+  return `
+    <div style="display:flex;gap:6px;margin-bottom:22px;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-ghost btn-sm" onclick="nav('seed')">← 메인</button>
+      <button class="btn ${current==='stats'?'btn-primary':'btn-ghost'} btn-sm" onclick="nav('admin-stats')">📊 이용통계</button>
+      <button class="btn ${current==='edits'?'btn-primary':'btn-ghost'} btn-sm" onclick="nav('admin-edits')">✏️ 수정 내역</button>
+      <button class="btn ${current==='reports'?'btn-primary':'btn-ghost'} btn-sm" onclick="nav('admin-reports')">🚩 신고 내역</button>
+      <button class="btn ${current==='bugs'?'btn-primary':'btn-ghost'} btn-sm" onclick="nav('admin-bugs')">🐛 버그 내역</button>
+    </div>`;
+}
+
+function toggleAdminMenu() {
+  const drop = document.getElementById('admin-menu-dropdown');
+  if (!drop) return;
+  drop.classList.toggle('open');
+}
+function closeAdminMenu() {
+  const drop = document.getElementById('admin-menu-dropdown');
+  if (drop) drop.classList.remove('open');
+}
+
+// ─── 이용통계 ────────────────────────────────────────────
+async function adminStats() {
   if (!isAdmin()) { nav('seed'); return; }
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
-  const [res, stats] = await Promise.all([api('getReports', {}), api('getAdminStats', {})]);
-  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
-
-  const reports = res.reports;
+  const stats = await api('getAdminStats', {});
   const referralHtml = (stats.ok && stats.referral_stats?.length) ? `
     <div class="card" style="padding:14px 18px;margin-bottom:20px">
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px;font-weight:600">가입 경로</div>
@@ -3010,59 +3064,109 @@ async function adminPanel() {
     </div>` : '';
   const statsHtml = stats.ok ? `
     <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
-      <div class="card" style="padding:12px 18px;margin-bottom:0">
-        <div style="font-size:11px;color:var(--muted)">가입자 수</div>
-        <div style="font-size:20px;font-weight:700">${stats.user_count}</div>
-      </div>
-      <div class="card" style="padding:12px 18px;margin-bottom:0">
-        <div style="font-size:11px;color:var(--muted)">이야기 수</div>
-        <div style="font-size:20px;font-weight:700">${stats.story_count}</div>
-      </div>
-      <div class="card" style="padding:12px 18px;margin-bottom:0">
-        <div style="font-size:11px;color:var(--muted)">제출된 글</div>
-        <div style="font-size:20px;font-weight:700">${stats.submission_count}</div>
-      </div>
-      <div class="card" style="padding:12px 18px;margin-bottom:0">
-        <div style="font-size:11px;color:var(--muted)">오늘 방문</div>
-        <div style="font-size:20px;font-weight:700">${stats.visit_today}</div>
-      </div>
-      <div class="card" style="padding:12px 18px;margin-bottom:0">
-        <div style="font-size:11px;color:var(--muted)">어제 방문</div>
-        <div style="font-size:20px;font-weight:700">${stats.visit_yesterday}</div>
-      </div>
-      <div class="card" style="padding:12px 18px;margin-bottom:0">
-        <div style="font-size:11px;color:var(--muted)">누적 방문</div>
-        <div style="font-size:20px;font-weight:700">${stats.visit_total}</div>
-      </div>
-    </div>` : '';
+      ${[['가입자 수', stats.user_count], ['이야기 수', stats.story_count], ['제출된 글', stats.submission_count],
+         ['오늘 방문', stats.visit_today], ['어제 방문', stats.visit_yesterday], ['누적 방문', stats.visit_total]].map(([label, val]) => `
+        <div class="card" style="padding:12px 18px;margin-bottom:0">
+          <div style="font-size:11px;color:var(--muted)">${label}</div>
+          <div style="font-size:20px;font-weight:700">${val ?? '-'}</div>
+        </div>`).join('')}
+    </div>` : `<div class="empty">불러오지 못했습니다.</div>`;
   document.getElementById('app').innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-      <button class="btn btn-ghost btn-sm" onclick="nav('seed')">← 돌아가기</button>
-      <h2 style="margin:0">신고 목록 <span style="font-size:14px;font-weight:400;color:var(--muted)">${reports.length}건</span></h2>
-    </div>
+    ${_adminNav('stats')}
+    <h2 style="margin:0 0 18px">📊 이용통계</h2>
     ${statsHtml}
-    ${referralHtml}
-    ${reports.length === 0
-      ? `<div class="empty">처리할 신고가 없습니다.</div>`
-      : reports.map(r => `
-          <div class="card" style="padding:14px 16px;margin-bottom:10px" id="report-card-${esc(r.report_id)}">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
-              <div style="flex:1">
-                <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
-                  <span style="color:var(--accent2);font-weight:700">${esc(r.reason)}</span>
-                  · ${esc(r.reporter_nickname)}님이 신고 · ${timeAgo(r.created_at)}
-                </div>
-                <div style="font-size:14px;line-height:1.5;margin-bottom:4px">${esc(r.sub_content)}</div>
-                <div style="font-size:12px;color:var(--muted)">작성자: ${esc(r.sub_author)}</div>
+    ${referralHtml}`;
+}
+
+// ─── 수정 내역 ────────────────────────────────────────────
+async function adminEdits() {
+  if (!isAdmin()) { nav('seed'); return; }
+  document.getElementById('app').innerHTML = `<div class="loading"></div>`;
+  const res = await api('getAdminEdits', {});
+  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+  const edits = res.edits;
+  const editTypeLabel = t => t === 'ai' ? '🤖 AI' : '✏️ 수동';
+  document.getElementById('app').innerHTML = `
+    ${_adminNav('edits')}
+    <h2 style="margin:0 0 18px">✏️ 수정 내역 <span style="font-size:14px;font-weight:400;color:var(--muted)">${edits.length}건</span></h2>
+    ${edits.length === 0 ? `<div class="empty">수정 내역이 없습니다.</div>` : edits.map(e => `
+      <div class="card" style="padding:14px 16px;margin-bottom:10px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span style="font-weight:700;color:var(--accent2)">${editTypeLabel(e.edit_type)}</span>
+          <span>${timeAgo(e.edited_at)}</span>
+          ${e.story_opening ? `<a href="#story/${esc(e.story_id)}" onclick="nav('story','${esc(e.story_id)}');return false" style="color:var(--accent);text-decoration:underline;font-size:11px">이야기 보기</a>` : ''}
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">수정 전</div>
+        <div style="font-size:13px;line-height:1.6;color:var(--muted);background:var(--bg);padding:7px 10px;border-radius:6px;margin-bottom:6px">${esc(e.old_content)}</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">수정 후</div>
+        <div style="font-size:13px;line-height:1.6;background:var(--bg);padding:7px 10px;border-radius:6px">${esc(e.new_content)}</div>
+      </div>`).join('')}`;
+}
+
+// ─── 신고 내역 ────────────────────────────────────────────
+async function adminReports() {
+  if (!isAdmin()) { nav('seed'); return; }
+  document.getElementById('app').innerHTML = `<div class="loading"></div>`;
+  const res = await api('getReports', {});
+  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+  const reports = res.reports;
+  document.getElementById('app').innerHTML = `
+    ${_adminNav('reports')}
+    <h2 style="margin:0 0 18px">🚩 신고 내역 <span style="font-size:14px;font-weight:400;color:var(--muted)">${reports.length}건</span></h2>
+    ${reports.length === 0 ? `<div class="empty">처리할 신고가 없습니다.</div>` :
+      reports.map(r => `
+        <div class="card" style="padding:14px 16px;margin-bottom:10px" id="report-card-${esc(r.report_id)}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+            <div style="flex:1">
+              <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
+                <span style="color:var(--accent2);font-weight:700">${esc(r.reason)}</span>
+                · ${esc(r.reporter_nickname)}님이 신고 · ${timeAgo(r.created_at)}
               </div>
-              <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
-                <button class="admin-btn admin-delete"
-                  onclick="adminDeleteFromReport('${esc(r.sub_id)}','${esc(r.report_id)}')">글 삭제</button>
-                <button class="admin-btn" style="background:var(--surface);color:var(--muted)"
-                  onclick="dismissReportItem('${esc(r.report_id)}')">무시</button>
-              </div>
+              <div style="font-size:14px;line-height:1.5;margin-bottom:4px">${esc(r.sub_content)}</div>
+              <div style="font-size:12px;color:var(--muted)">작성자: ${esc(r.sub_author)}</div>
             </div>
-          </div>`).join('')}`;
+            <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+              <button class="admin-btn admin-delete"
+                onclick="adminDeleteFromReport('${esc(r.sub_id)}','${esc(r.report_id)}')">글 삭제</button>
+              <button class="admin-btn" style="background:var(--surface);color:var(--muted)"
+                onclick="dismissReportItem('${esc(r.report_id)}')">무시</button>
+            </div>
+          </div>
+        </div>`).join('')}`;
+}
+
+// ─── 버그 내역 ────────────────────────────────────────────
+async function adminBugs() {
+  if (!isAdmin()) { nav('seed'); return; }
+  document.getElementById('app').innerHTML = `<div class="loading"></div>`;
+  const res = await api('getBugReports', {});
+  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+  const bugs = res.reports || [];
+  document.getElementById('app').innerHTML = `
+    ${_adminNav('bugs')}
+    <h2 style="margin:0 0 18px">🐛 버그 내역 <span style="font-size:14px;font-weight:400;color:var(--muted)">${bugs.length}건</span></h2>
+    ${bugs.length === 0 ? `<div class="empty">접수된 버그가 없습니다.</div>` :
+      bugs.map(b => `
+        <div class="card" style="padding:14px 16px;margin-bottom:10px;${b.status==='resolved'?'opacity:.55':''}" id="bug-card-${esc(b.id)}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+            <div style="flex:1">
+              <div style="font-size:12px;color:var(--muted);margin-bottom:5px">${esc(b.user_nickname || '알 수 없음')} · ${timeAgo(b.created_at)}${b.status==='resolved'?` · <span style="color:var(--accent)">처리완료</span>`:''}</div>
+              <div style="font-size:14px;line-height:1.55">${esc(b.description)}</div>
+              ${b.url ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">${esc(b.url)}</div>` : ''}
+            </div>
+            ${b.status !== 'resolved' ? `
+            <button class="admin-btn" style="background:var(--accent);color:#3a5548;flex-shrink:0"
+              onclick="adminResolveBug('${esc(b.id)}')">해결</button>` : ''}
+          </div>
+        </div>`).join('')}`;
+}
+
+async function adminResolveBug(bug_id) {
+  const res = await api('resolveBugReport', { bug_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  const card = document.getElementById('bug-card-' + bug_id);
+  if (card) card.style.opacity = '.55';
+  toast('처리 완료로 표시했어요.');
 }
 
 async function adminDeleteFromReport(sub_id, report_id) {
@@ -3081,6 +3185,139 @@ async function dismissReportItem(report_id) {
   if (!res.ok) { toast(res.error, true); return; }
   const card = document.getElementById('report-card-' + report_id);
   if (card) card.remove();
+}
+
+// ─── 산문 인라인 수정 ─────────────────────────────────────
+function startProseEdit(sub_id, ep_id) {
+  cancelProseEdit();
+  const proseLine = document.querySelector(`.prose-line[data-episode-id="${ep_id}"]`);
+  if (!proseLine) return;
+  const content = proseLine.querySelector('.prose-sentence')?.textContent || '';
+  const editor = document.createElement('div');
+  editor.className = 'prose-inline-editor';
+  editor.dataset.subId = sub_id;
+  editor.dataset.epId = ep_id;
+  editor.dataset.oldContent = content;
+  editor.innerHTML = `
+    <textarea style="width:100%;background:var(--bg);border:1.5px solid var(--accent2);border-radius:6px;padding:8px 10px;font-size:15px;line-height:1.75;font-family:var(--serif);color:var(--text);resize:vertical;min-height:60px;box-sizing:border-box">${esc(content)}</textarea>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn btn-primary btn-sm" onclick="saveProseEdit()">저장</button>
+      <button class="btn btn-ghost btn-sm" onclick="cancelProseEdit()">취소</button>
+    </div>`;
+  proseLine.insertAdjacentElement('afterend', editor);
+  editor.querySelector('textarea')?.focus();
+}
+
+function cancelProseEdit() {
+  document.querySelectorAll('.prose-inline-editor').forEach(el => el.remove());
+}
+
+async function saveProseEdit() {
+  const editor = document.querySelector('.prose-inline-editor');
+  if (!editor) return;
+  const sub_id = editor.dataset.subId;
+  const ep_id = editor.dataset.epId;
+  const old_content = editor.dataset.oldContent;
+  const new_content = editor.querySelector('textarea')?.value.trim();
+  if (!new_content) { toast('내용을 입력해주세요.', true); return; }
+  if (new_content === old_content.trim()) { cancelProseEdit(); return; }
+  const story_id = window._storyData?.story?.story_id || '';
+  const res = await api('adminEditSub', { sub_id, new_content, old_content, story_id, edit_type: 'manual' });
+  if (!res.ok) { toast(res.error, true); return; }
+  const proseLine = document.querySelector(`.prose-line[data-episode-id="${ep_id}"]`);
+  if (proseLine) {
+    const sentenceEl = proseLine.querySelector('.prose-sentence');
+    if (sentenceEl) sentenceEl.textContent = new_content;
+  }
+  cancelProseEdit();
+  toast('수정됐어요.');
+}
+
+// ─── Claude API 직접 호출 ────────────────────────────────
+async function _callClaude(userMessage) {
+  if (!CLAUDE_API_KEY) return null;
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': CLAUDE_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 2000,
+        messages: [{ role: 'user', content: userMessage }],
+      }),
+    });
+    const data = await res.json();
+    return data.content?.[0]?.text || null;
+  } catch(e) { return null; }
+}
+
+let _aiReviewLock = false;
+
+async function _autoAiReview(story_id, episodes, submissions) {
+  if (!isAdmin() || !CLAUDE_API_KEY || _aiReviewLock) return;
+  const adopted = submissions.filter(s => s.is_adopted === true || s.is_adopted === 'TRUE');
+  const unreviewed = adopted.filter(s => !s.ai_reviewed);
+  if (!unreviewed.length) return;
+  _aiReviewLock = true;
+  try {
+    const allSubIds = unreviewed.map(s => s.sub_id);
+    if (adopted.length < 2) {
+      await api('markAiReviewed', { sub_ids: allSubIds });
+      return;
+    }
+    const sortedAdopted = adopted.slice().sort((a, b) => {
+      const ea = episodes.find(e => e.episode_id === a.episode_id);
+      const eb = episodes.find(e => e.episode_id === b.episode_id);
+      return (Number(ea?.step) || 0) - (Number(eb?.step) || 0);
+    });
+    const prompt = `다음은 여러 사람이 한 문장씩 이어 쓴 릴레이 소설입니다.
+문장과 문장 사이 이음새를 자연스럽게 다듬어 주세요.
+
+규칙:
+- 문장의 핵심 의미와 단어는 절대 바꾸지 않는다
+- 오탈자, 띄어쓰기, 최소한의 접속어/조사만 수정한다
+- 수정이 불필요하면 revised에 원문 그대로 넣는다
+- JSON 배열 형식으로만 응답, 다른 텍스트 없음
+
+문장 목록:
+${JSON.stringify(sortedAdopted.map(s => ({ sub_id: s.sub_id, content: s.content })))}
+
+응답 형식: [{"sub_id":"...","revised":"..."}]`;
+    const result = await _callClaude(prompt);
+    if (!result) { await api('markAiReviewed', { sub_ids: allSubIds }); return; }
+    let revised;
+    try {
+      const match = result.match(/\[[\s\S]*\]/);
+      revised = JSON.parse(match ? match[0] : result);
+    } catch(e) { await api('markAiReviewed', { sub_ids: allSubIds }); return; }
+    let changedCount = 0;
+    for (const r of revised) {
+      if (!r.sub_id || !r.revised) continue;
+      const orig = sortedAdopted.find(s => s.sub_id === r.sub_id);
+      if (!orig || orig.content.trim() === r.revised.trim()) continue;
+      const editRes = await api('adminEditSub', {
+        sub_id: r.sub_id, new_content: r.revised,
+        old_content: orig.content, story_id, edit_type: 'ai',
+      });
+      if (editRes.ok) changedCount++;
+    }
+    await api('markAiReviewed', { sub_ids: allSubIds });
+    if (changedCount > 0) {
+      toast(`AI가 ${changedCount}개 문장을 다듬었어요.`);
+      const freshRes = await api('getStory', { story_id });
+      if (freshRes.ok && currentParam === story_id) {
+        _lsc.set('story_' + story_id, freshRes, 90);
+        _applyStoryData(freshRes, story_id);
+      }
+    }
+  } finally {
+    _aiReviewLock = false;
+  }
 }
 
 function reasonLabel(r) {

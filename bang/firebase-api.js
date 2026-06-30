@@ -1726,6 +1726,43 @@ async function fbSubmitBugReport(content, user_id) {
   return { ok: true };
 }
 
+// ─── 관리자 글 수정 ──────────────────────────────────────
+
+async function fbAdminEditSub(admin_id, sub_id, new_content, old_content, story_id, edit_type) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  if (!new_content?.trim()) return { ok: false, error: '내용을 입력해주세요.' };
+  await db.collection('submissions').doc(sub_id).update({ content: new_content.trim() });
+  await db.collection('admin_edits').add({
+    sub_id, story_id: story_id || '', old_content: old_content || '',
+    new_content: new_content.trim(), edit_type: edit_type || 'manual',
+    admin_id, edited_at: fbNow(),
+  });
+  return { ok: true };
+}
+
+async function fbGetAdminEdits(admin_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  const snap = await db.collection('admin_edits').orderBy('edited_at', 'desc').limit(200).get();
+  if (snap.empty) return { ok: true, edits: [] };
+  const storyIds = [...new Set(snap.docs.map(d => d.data().story_id).filter(Boolean))];
+  const storyMap = {};
+  if (storyIds.length) {
+    const sDocs = await Promise.all(storyIds.map(id => db.collection('stories').doc(id).get()));
+    sDocs.forEach(d => { if (d.exists) storyMap[d.id] = d.data().opening || ''; });
+  }
+  return {
+    ok: true,
+    edits: snap.docs.map(d => ({ edit_id: d.id, ...d.data(), story_opening: storyMap[d.data().story_id] || '' })),
+  };
+}
+
+async function fbMarkAiReviewed(admin_id, sub_ids) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  if (!sub_ids?.length) return { ok: true };
+  await Promise.all(sub_ids.map(id => db.collection('submissions').doc(id).update({ ai_reviewed: true })));
+  return { ok: true };
+}
+
 // ─── 메인 디스패처 ───────────────────────────────────────
 
 async function firebaseApi(action, params = {}) {
@@ -1774,6 +1811,9 @@ async function firebaseApi(action, params = {}) {
     case 'getReports':         return fbGetReports(need().user_id);
     case 'dismissReport':      return fbDismissReport(params.report_id, need().user_id);
     case 'getAdminStats':      return fbGetAdminStats(need().user_id);
+    case 'adminEditSub':       return fbAdminEditSub(need().user_id, params.sub_id, params.new_content, params.old_content, params.story_id, params.edit_type);
+    case 'getAdminEdits':      return fbGetAdminEdits(need().user_id);
+    case 'markAiReviewed':     return fbMarkAiReviewed(need().user_id, params.sub_ids);
 
     case 'getLeaderboard':          return fbGetLeaderboard();
     case 'backfillAdoptionCounts':  return fbBackfillAdoptionCounts(need().user_id);

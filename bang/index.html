@@ -3006,6 +3006,18 @@ async function adminPanel() {
         <div style="font-size:11px;color:var(--muted)">제출된 글</div>
         <div style="font-size:20px;font-weight:700">${stats.submission_count}</div>
       </div>
+      <div class="card" style="padding:12px 18px;margin-bottom:0">
+        <div style="font-size:11px;color:var(--muted)">오늘 방문</div>
+        <div style="font-size:20px;font-weight:700">${stats.visit_today}</div>
+      </div>
+      <div class="card" style="padding:12px 18px;margin-bottom:0">
+        <div style="font-size:11px;color:var(--muted)">어제 방문</div>
+        <div style="font-size:20px;font-weight:700">${stats.visit_yesterday}</div>
+      </div>
+      <div class="card" style="padding:12px 18px;margin-bottom:0">
+        <div style="font-size:11px;color:var(--muted)">누적 방문</div>
+        <div style="font-size:20px;font-weight:700">${stats.visit_total}</div>
+      </div>
     </div>` : '';
   document.getElementById('app').innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
@@ -3317,6 +3329,12 @@ window.onload = async () => {
   parseHash();
   render();       // 캐시 데이터로 즉시 렌더
   renderNav();
+
+  // 하루 1회 방문자 카운트 (기기별 중복 방지)
+  const _vkey = 'hwasee_visited_' + new Date().toISOString().slice(0, 10);
+  if (!localStorage.getItem(_vkey)) {
+    api('trackVisit', {}).then(() => localStorage.setItem(_vkey, '1')).catch(() => {});
+  }
 
   if (user) {
     const token = localStorage.getItem('hwasee_token');

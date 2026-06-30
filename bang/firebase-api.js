@@ -1222,8 +1222,12 @@ async function fbSaveFcmToken(user_id, fcm_token) {
   return { ok: true };
 }
 
+function _kstDate(offsetDays = 0) {
+  return new Date(Date.now() + (9 + offsetDays * 24) * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 async function fbTrackVisit() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _kstDate();
   const ref   = db.collection('visits').doc(today);
   const total = db.collection('visits').doc('_total');
   await Promise.all([
@@ -1235,8 +1239,8 @@ async function fbTrackVisit() {
 
 async function fbGetAdminStats(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const today     = new Date().toISOString().slice(0, 10);
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const today     = _kstDate(0);
+  const yesterday = _kstDate(-1);
   const [uSnap, sSnap, subSnap] = await Promise.all([
     db.collection('users').get(),
     db.collection('stories').get(),

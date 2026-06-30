@@ -73,6 +73,12 @@ exports.aiReviewCompletedStories = functions
       const story_id = storyDoc.id;
       const story    = storyDoc.data();
 
+      // 쿼리 결과 방어 검증 — status가 completed인 것만 처리
+      if (story.status !== 'completed') {
+        console.warn(`Story ${story_id} has status "${story.status}", skipping.`);
+        continue;
+      }
+
       // 채택된 submissions 조회
       const subsSnap = await db.collection('submissions')
         .where('story_id', '==', story_id)

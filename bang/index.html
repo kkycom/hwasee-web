@@ -1074,7 +1074,6 @@ function popularCardHtml(s) {
         <div class="story-card-title">${esc(s.opening)}</div>
         <div class="story-card-footer">
           <span class="step-pill"><span class="step-dot"></span>${s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`} · 참여자 ${count}명</span>
-          <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
         </div>
       </div>
     </div>`;
@@ -1092,7 +1091,6 @@ function doneCardHtml(s) {
       <div class="story-card-footer">
         <span class="step-pill">${step+1}단계 완성</span>
         ${likes > 0 ? `<span style="font-size:12px;color:var(--accent);margin-left:8px">👍 ${likes}</span>` : ''}
-        <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
       </div>
     </div>
     </div>`;
@@ -1142,7 +1140,6 @@ function myStoryCardHtml(s) {
       <div class="story-card-footer">
         <span class="step-pill"><span class="step-dot"></span>${s.status==='active' ? (s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`) : `${step+1}단계`} · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
         ${(voteCount !== null && voteCount > 0) ? `<span style="font-size:11px;color:var(--success);font-weight:700">${voteCount >= 2 ? '공감 완료' : `✓ ${voteCount}개 공감`}</span>` : ''}
-        <span style="font-size:12px;color:var(--muted);margin-left:auto">${timeAgo(s.created_at)}</span>
       </div>
       </div>
     </div>`;
@@ -2209,24 +2206,33 @@ async function profile() {
             </div>`).join('')}
         </div>
       </div>` : ''}
-    ${res.adoptions && res.adoptions.length ? `
-      <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-        <button onclick="const b=this.nextElementSibling,a=this.querySelector('.arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
-          <span>✓ 채택된 글 <span style="font-size:12px;font-weight:400">${res.adoptions.length}편</span></span>
-          <span class="arrow" style="font-size:11px;transition:transform .2s">▼</span>
-        </button>
-        <div style="display:none;padding:12px 16px">
-          ${res.adoptions.map(a => `
-            <div style="padding:12px 14px;margin-bottom:8px;cursor:pointer;border-left:3px solid var(--success);border-radius:6px;background:var(--bg)"
-              onclick="nav('story','${a.story_id}')">
-              <div style="font-size:11px;color:var(--muted);margin-bottom:6px">
-                ${a.step+1}단계 · "${esc(a.story_opening.slice(0,40))}${a.story_opening.length>40?'…':''}"
-              </div>
-              <div style="font-size:14px;line-height:1.6">"${esc(a.content)}"</div>
-              <div style="font-size:12px;color:var(--muted);margin-top:6px">공감 ${a.vote_count}개 채택 · ${timeAgo(a.created_at)}</div>
-            </div>`).join('')}
-        </div>
-      </div>` : ''}
+    <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <button onclick="const b=this.nextElementSibling,a=this.querySelector('.wt-arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+        <span>✏ 내가 쓴 글 <span style="font-size:12px;font-weight:400">${res.writings ? res.writings.length : 0}편</span></span>
+        <span class="wt-arrow" style="font-size:11px;color:var(--muted);transition:transform .2s;transform:rotate(180deg)">▼</span>
+      </button>
+      <div style="display:block;padding:12px 16px">
+        ${res.writings && res.writings.length ? res.writings.map(a => `
+          <div style="padding:10px 14px;margin-bottom:8px;cursor:pointer;
+            border-left:3px solid ${a.is_adopted ? 'var(--success)' : 'var(--border)'};
+            border-radius:6px;background:var(--bg)"
+            onclick="nav('story','${esc(a.story_id)}')">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">
+              ${a.step+1}단계 · "${esc((a.story_opening||'').slice(0,30))}${(a.story_opening||'').length>30?'…':''}"
+            </div>
+            <div style="font-size:14px;line-height:1.6;${a.is_adopted ? 'font-weight:700' : ''}">"${esc(a.content)}"</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px;display:flex;gap:8px;align-items:center">
+              <span>공감 ${a.vote_count}개</span>
+              ${a.is_adopted
+                ? '<span style="color:var(--success);font-weight:700">✓ 채택됨</span>'
+                : a.ep_status === 'open'
+                  ? '<span style="color:var(--accent)">진행 중</span>'
+                  : '<span>탈락</span>'}
+            </div>
+          </div>`).join('')
+        : '<div class="empty" style="padding:20px 0">아직 쓴 글이 없어요.</div>'}
+      </div>
+    </div>
     <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
       <button onclick="const b=this.nextElementSibling,a=this.querySelector('.arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
         <span>✦ 포인트 획득 내역</span>

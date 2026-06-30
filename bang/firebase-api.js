@@ -1471,21 +1471,21 @@ async function fbGetProfile(user_id) {
 
   const _toChunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
 
-  const [histSnap, adoptSnap] = await Promise.all([
+  const [histSnap, writingsSnap] = await Promise.all([
     db.collection('point_ledger').where('user_id','==',user_id).get(),
-    db.collection('submissions').where('author_id','==',user_id).where('is_adopted','==',true).get(),
+    db.collection('submissions').where('author_id','==',user_id).get(),
   ]);
 
-  // 채택글에서 실제 참조하는 ID만 배치 조회 (전체 episodes/stories 조회 방지)
+  // 제출글에서 실제 참조하는 ID만 배치 조회
   const epMap = {}, storyMap = {};
-  const adoptedEpIds    = [...new Set(adoptSnap.docs.map(d => d.data().episode_id).filter(Boolean))];
-  const adoptedStoryIds = [...new Set(adoptSnap.docs.map(d => d.data().story_id).filter(Boolean))];
+  const allEpIds    = [...new Set(writingsSnap.docs.map(d => d.data().episode_id).filter(Boolean))];
+  const allStoryIds = [...new Set(writingsSnap.docs.map(d => d.data().story_id).filter(Boolean))];
   await Promise.all([
-    ..._toChunks(adoptedEpIds).map(ch =>
+    ..._toChunks(allEpIds).map(ch =>
       db.collection('episodes').where(firebase.firestore.FieldPath.documentId(), 'in', ch).get()
         .then(s => s.docs.forEach(d => { epMap[d.id] = d.data(); }))
     ),
-    ..._toChunks(adoptedStoryIds).map(ch =>
+    ..._toChunks(allStoryIds).map(ch =>
       db.collection('stories').where(firebase.firestore.FieldPath.documentId(), 'in', ch).get()
         .then(s => s.docs.forEach(d => { storyMap[d.id] = d.data().opening; }))
     ),
@@ -1505,20 +1505,26 @@ async function fbGetProfile(user_id) {
   }
   history.forEach(h => { if (h.sub_id && subStoryMap[h.sub_id]) h.story_id = subStoryMap[h.sub_id]; });
 
-  const adoptions = adoptSnap.docs.map(d => {
+  const writings = writingsSnap.docs.map(d => {
     const s = d.data();
+    const ep = epMap[s.episode_id];
     return {
-      sub_id: s.sub_id, content: s.content, vote_count: s.vote_count,
-      story_id: s.story_id, story_opening: storyMap[s.story_id] || '',
-      step: epMap[s.episode_id] ? Number(epMap[s.episode_id].step) : 0,
+      sub_id: s.sub_id || d.id,
+      content: s.content,
+      vote_count: s.vote_count || 0,
+      is_adopted: s.is_adopted === true || s.is_adopted === 'TRUE',
+      ep_status: ep ? ep.status : null,
+      story_id: s.story_id,
+      story_opening: storyMap[s.story_id] || '',
+      step: ep ? Number(ep.step) : 0,
       created_at: s.created_at,
     };
-  }).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+  }).sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 50);
 
   return {
     ok: true,
     user: { user_id, nickname: u.nickname, display_name: u.display_name || u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed', avatar: u.avatar || null, owned_avatars: u.owned_avatars || [], created_at: u.created_at },
-    history, adoptions,
+    history, writings,
   };
 }
 

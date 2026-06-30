@@ -1469,26 +1469,69 @@ async function fbGetProfile(user_id) {
   if (!uSnap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
   const u = uSnap.data();
 
-  const [histSnap, adoptSnap] = await Promise.all([
+  const _toChunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
+
+  const [histSnap, allSubsSnap] = await Promise.all([
     db.collection('point_ledger').where('user_id','==',user_id).get(),
-    db.collection('submissions').where('author_id','==',user_id).where('is_adopted','==',true).get(),
+    db.collection('submissions').where('author_id','==',user_id).get(),
   ]);
 
-  // 채택글에서 실제 참조하는 ID만 배치 조회 (전체 episodes/stories 조회 방지)
-  const epMap = {}, storyMap = {};
-  const _toChunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
-  const adoptedEpIds    = [...new Set(adoptSnap.docs.map(d => d.data().episode_id).filter(Boolean))];
-  const adoptedStoryIds = [...new Set(adoptSnap.docs.map(d => d.data().story_id).filter(Boolean))];
+  // 이야기별 그룹핑 (참여한 이야기 목록)
+  const storySubsMap = {};
+  allSubsSnap.docs.forEach(d => {
+    const s = d.data();
+    if (!s.story_id) return;
+    if (!storySubsMap[s.story_id]) storySubsMap[s.story_id] = [];
+    storySubsMap[s.story_id].push({
+      sub_id: s.sub_id || d.id, content: s.content,
+      is_adopted: s.is_adopted === true || s.is_adopted === 'TRUE',
+      vote_count: s.vote_count || 0, created_at: s.created_at,
+    });
+  });
+  const allStoryIds = Object.keys(storySubsMap);
+
+  // 채택글 episode 정보 (step 표시용)
+  const epMap = {}, storyInfoMap = {};
+  const adoptedEpIds = [...new Set(allSubsSnap.docs
+    .filter(d => d.data().is_adopted === true || d.data().is_adopted === 'TRUE')
+    .map(d => d.data().episode_id).filter(Boolean))];
+
   await Promise.all([
     ..._toChunks(adoptedEpIds).map(ch =>
       db.collection('episodes').where(firebase.firestore.FieldPath.documentId(), 'in', ch).get()
         .then(s => s.docs.forEach(d => { epMap[d.id] = d.data(); }))
     ),
-    ..._toChunks(adoptedStoryIds).map(ch =>
+    ..._toChunks(allStoryIds).map(ch =>
       db.collection('stories').where(firebase.firestore.FieldPath.documentId(), 'in', ch).get()
-        .then(s => s.docs.forEach(d => { storyMap[d.id] = d.data().opening; }))
+        .then(s => s.docs.forEach(d => { storyInfoMap[d.id] = { opening: d.data().opening, status: d.data().status }; }))
     ),
   ]);
+
+  // 참여 이야기 목록 (최신 참여순)
+  const participations = allStoryIds.map(sid => {
+    const subs = storySubsMap[sid].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    return {
+      story_id: sid,
+      opening: (storyInfoMap[sid] || {}).opening || '',
+      status: (storyInfoMap[sid] || {}).status || 'active',
+      submissions: subs,
+      has_adoption: subs.some(s => s.is_adopted),
+      latest_at: subs[0]?.created_at || '',
+    };
+  }).sort((a, b) => new Date(b.latest_at) - new Date(a.latest_at));
+
+  // 채택글 (기존 호환)
+  const adoptions = allSubsSnap.docs
+    .filter(d => d.data().is_adopted === true || d.data().is_adopted === 'TRUE')
+    .map(d => {
+      const s = d.data();
+      return {
+        sub_id: s.sub_id || d.id, content: s.content, vote_count: s.vote_count || 0,
+        story_id: s.story_id, story_opening: (storyInfoMap[s.story_id] || {}).opening || '',
+        step: epMap[s.episode_id] ? Number(epMap[s.episode_id].step) : 0,
+        created_at: s.created_at,
+      };
+    }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   const history = histSnap.docs.map(d => d.data())
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 20);
@@ -1496,29 +1539,18 @@ async function fbGetProfile(user_id) {
   const subIds = [...new Set(history.map(h => h.sub_id).filter(Boolean))];
   const subStoryMap = {};
   if (subIds.length) {
-    const chunks = [];
-    for (let i = 0; i < subIds.length; i += 30) chunks.push(subIds.slice(i, i + 30));
-    await Promise.all(chunks.map(async chunk => {
+    await Promise.all(_toChunks(subIds).map(async ch => {
       const snap = await db.collection('submissions')
-        .where(firebase.firestore.FieldPath.documentId(), 'in', chunk).get();
+        .where(firebase.firestore.FieldPath.documentId(), 'in', ch).get();
       snap.docs.forEach(d => { subStoryMap[d.id] = d.data().story_id; });
     }));
   }
   history.forEach(h => { if (h.sub_id && subStoryMap[h.sub_id]) h.story_id = subStoryMap[h.sub_id]; });
-  const adoptions = adoptSnap.docs.map(d => {
-    const s = d.data();
-    return {
-      sub_id: s.sub_id, content: s.content, vote_count: s.vote_count,
-      story_id: s.story_id, story_opening: storyMap[s.story_id] || '',
-      step: epMap[s.episode_id] ? Number(epMap[s.episode_id].step) : 0,
-      created_at: s.created_at,
-    };
-  }).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
 
   return {
     ok: true,
     user: { user_id, nickname: u.nickname, display_name: u.display_name || u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed', avatar: u.avatar || null, owned_avatars: u.owned_avatars || [], created_at: u.created_at },
-    history, adoptions,
+    history, adoptions, participations,
   };
 }
 

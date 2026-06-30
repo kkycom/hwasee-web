@@ -2191,6 +2191,36 @@ async function profile() {
           </div>`).join('')}
       </div>
     </div>
+    ${res.participations && res.participations.length ? `
+      <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        <button onclick="const b=this.nextElementSibling,a=this.querySelector('.pt-arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+          <span>✍ 내가 참여한 이야기 <span style="font-size:12px;font-weight:400">${res.participations.length}편</span></span>
+          <span class="pt-arrow" style="font-size:11px;transition:transform .2s;transform:rotate(180deg)">▼</span>
+        </button>
+        <div style="display:block;padding:12px 16px">
+          ${res.participations.map(p => `
+            <div style="margin-bottom:12px;border:1px solid ${p.has_adoption ? 'var(--success)' : 'var(--border)'};border-radius:10px;overflow:hidden">
+              <div style="padding:10px 14px;background:var(--surface);display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="nav('story','${esc(p.story_id)}')">
+                <div style="font-size:13px;font-weight:600;line-height:1.4;flex:1;margin-right:8px">"${esc((p.opening||'').slice(0,40))}${(p.opening||'').length>40?'…':''}"</div>
+                <div style="display:flex;gap:6px;flex-shrink:0;align-items:center">
+                  ${p.has_adoption ? `<span style="font-size:10px;color:var(--success);border:1px solid var(--success);border-radius:10px;padding:2px 7px;white-space:nowrap">채택 있음</span>` : ''}
+                  <span style="font-size:11px;color:var(--muted)">${p.status==='active'?'진행 중':'완결'}</span>
+                </div>
+              </div>
+              <div style="padding:10px 14px;background:var(--bg)">
+                ${p.submissions.map(s => `
+                  <div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border)">
+                    ${s.is_adopted ? `<span style="color:var(--success);font-size:14px;flex-shrink:0;margin-top:1px">✓</span>` : `<span style="color:var(--border);font-size:14px;flex-shrink:0;margin-top:1px">·</span>`}
+                    <div style="flex:1">
+                      <div style="font-size:13px;line-height:1.6;color:${s.is_adopted?'var(--text)':'var(--muted)'}">${esc(s.content)}</div>
+                      ${s.is_adopted ? `<div style="font-size:11px;color:var(--success);margin-top:2px">채택 · 공감 ${s.vote_count}개</div>` : ''}
+                    </div>
+                  </div>`).join('')}
+                <div style="text-align:right;padding-top:8px;font-size:12px;color:var(--accent);cursor:pointer" onclick="nav('story','${esc(p.story_id)}')">이야기 보러가기 →</div>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
     ${bookmarks.length ? `
       <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
         <button onclick="const b=this.nextElementSibling,a=this.querySelector('.bm-arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">

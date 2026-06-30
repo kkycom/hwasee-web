@@ -3023,7 +3023,7 @@ function shareStory() {
 }
 
 // ─── 어드민 공통 ──────────────────────────────────────────
-const CLAUDE_API_KEY = ''; // 발급받은 Anthropic API 키를 여기에 입력하세요
+function _getClaudeKey() { return localStorage.getItem('_hwasee_claude_key') || ''; }
 
 function _adminNav(current) {
   return `
@@ -3071,11 +3071,37 @@ async function adminStats() {
           <div style="font-size:20px;font-weight:700">${val ?? '-'}</div>
         </div>`).join('')}
     </div>` : `<div class="empty">불러오지 못했습니다.</div>`;
+  const hasKey = !!_getClaudeKey();
+  const aiKeyHtml = `
+    <div class="card" style="padding:14px 18px;margin-top:8px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;font-weight:600">🤖 Claude API 키 ${hasKey ? '<span style="color:var(--accent)">✓ 설정됨</span>' : '<span style="color:#f87171">미설정</span>'}</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="password" id="claude-key-input" placeholder="sk-ant-api03-..." value="${hasKey ? '••••••••••••••••' : ''}"
+          style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px;color:var(--text);min-width:0">
+        <button class="btn btn-primary btn-sm" onclick="saveClaudeKey()">저장</button>
+        ${hasKey ? `<button class="btn btn-ghost btn-sm" onclick="deleteClaudeKey()">삭제</button>` : ''}
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">키는 이 브라우저에만 저장되며 서버/GitHub에 전송되지 않습니다.</div>
+    </div>`;
   document.getElementById('app').innerHTML = `
     ${_adminNav('stats')}
     <h2 style="margin:0 0 18px">📊 이용통계</h2>
     ${statsHtml}
-    ${referralHtml}`;
+    ${referralHtml}
+    ${aiKeyHtml}`;
+}
+
+function saveClaudeKey() {
+  const val = document.getElementById('claude-key-input')?.value.trim();
+  if (!val || val.startsWith('•')) { toast('새 키를 입력해주세요.', true); return; }
+  localStorage.setItem('_hwasee_claude_key', val);
+  toast('API 키가 저장됐어요.');
+  adminStats();
+}
+function deleteClaudeKey() {
+  localStorage.removeItem('_hwasee_claude_key');
+  toast('API 키를 삭제했어요.');
+  adminStats();
 }
 
 // ─── 수정 내역 ────────────────────────────────────────────
@@ -3235,13 +3261,14 @@ async function saveProseEdit() {
 
 // ─── Claude API 직접 호출 ────────────────────────────────
 async function _callClaude(userMessage) {
-  if (!CLAUDE_API_KEY) return null;
+  const key = _getClaudeKey();
+  if (!key) return null;
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': CLAUDE_API_KEY,
+        'x-api-key': key,
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
       },
@@ -3259,7 +3286,7 @@ async function _callClaude(userMessage) {
 let _aiReviewLock = false;
 
 async function _autoAiReview(story_id, episodes, submissions) {
-  if (!isAdmin() || !CLAUDE_API_KEY || _aiReviewLock) return;
+  if (!isAdmin() || !_getClaudeKey() || _aiReviewLock) return;
   const adopted = submissions.filter(s => s.is_adopted === true || s.is_adopted === 'TRUE');
   const unreviewed = adopted.filter(s => !s.ai_reviewed);
   if (!unreviewed.length) return;

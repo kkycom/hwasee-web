@@ -1280,12 +1280,12 @@ function _applyStoryData(res, story_id) {
       <div class="prose-divider">완결된 이야기입니다</div>
       <div style="display:flex;gap:8px;justify-content:center;margin-bottom:8px;flex-wrap:wrap;align-items:center">
         ${user ? `
-        <button id="like-btn" class="btn ${is_liked ? 'btn-primary' : 'btn-ghost'} btn-sm" style="display:inline-flex;align-items:center;gap:5px"
-          onclick="doToggleStoryLike('${esc(s.story_id)}')">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>추천해요${like_count > 0 ? ` (${like_count})` : ''}
-        </button>
         <button class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:5px" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>으뜸 글 뽑기
+        </button>
+        <button id="like-btn" class="btn ${is_liked ? 'btn-primary' : 'btn-ghost'} btn-sm" style="display:inline-flex;align-items:center;gap:5px"
+          onclick="doToggleStoryLike('${esc(s.story_id)}')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>이야기 추천해요${like_count > 0 ? ` (${like_count})` : ''}
         </button>` : ''}
         <button class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:5px" onclick="shareStory()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>공유하기
@@ -3413,7 +3413,7 @@ async function doToggleStoryLike(story_id) {
   const btn = document.getElementById('like-btn');
   if (btn) {
     btn.className = `btn ${res.liked ? 'btn-primary' : 'btn-ghost'} btn-sm`;
-    btn.textContent = `👍 이 이야기 추천해요${res.like_count > 0 ? ` (${res.like_count})` : ''}`;
+    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>이야기 추천해요${res.like_count > 0 ? ` (${res.like_count})` : ''}`;
   }
   _lsc.del('done');
   _doneCache = null;

@@ -3089,7 +3089,7 @@ function refreshAvatarShop() {
   if (!el || !_profileUser) return;
   const u = _profileUser;
   const circle = document.getElementById('profile-avatar-circle');
-  if (circle) circle.textContent = u.avatar || badgeAvatar(u.badge);
+  if (circle) circle.innerHTML = u.avatar || badgeAvatar(u.badge);
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
       <div style="width:48px;height:48px;border-radius:50%;background:var(--surface);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:26px">

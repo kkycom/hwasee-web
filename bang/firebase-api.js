@@ -321,13 +321,11 @@ async function fbGetStory(story_id, user_id) {
   }
   const subsSnap = { docs: [...subMap.values()] };
 
-  // 제출 작성자만 개별 조회 (전체 users 컬렉션 대신)
+  // 동기 메타 추출
+  const story    = storySnap.data();
+  const episodes = episodesSnap.docs.map(d => ({ episode_id: d.id, ...d.data() }));
+  const openEp   = episodes.find(e => e.status === 'open');
   const authorIds = [...new Set(subsSnap.docs.map(d => d.data().author_id).filter(Boolean))];
-  const nickMap = {}, badgeMap = {};
-  if (authorIds.length > 0) {
-    const userDocs = await Promise.all(authorIds.map(id => db.collection('users').doc(id).get()));
-    userDocs.forEach(d => { if (d.exists) { nickMap[d.id] = d.data().display_name || d.data().nickname; badgeMap[d.id] = d.data().badge; } });
-  }
 
   const commentCountMap = {};
   commSnap.docs.forEach(d => {
@@ -335,8 +333,36 @@ async function fbGetStory(story_id, user_id) {
     if (sid) commentCountMap[sid] = (commentCountMap[sid] || 0) + (d.data().deleted ? 0 : 1);
   });
 
-  const story       = storySnap.data();
-  const episodes    = episodesSnap.docs.map(d => ({ episode_id: d.id, ...d.data() }));
+  // Round 2: 나머지 모든 조회를 한 번에 병렬 처리
+  const [userDocs, bmSnap, likeSnap, voteSnap, branchSnap] = await Promise.all([
+    authorIds.length > 0
+      ? Promise.all(authorIds.map(id => db.collection('users').doc(id).get()))
+      : Promise.resolve([]),
+    user_id
+      ? db.collection('bookmarks').where('user_id','==',user_id).where('story_id','==',story_id).limit(1).get()
+      : Promise.resolve(null),
+    user_id
+      ? db.collection('story_likes').where('story_id','==',story_id).where('user_id','==',user_id).limit(1).get()
+      : Promise.resolve(null),
+    user_id && openEp
+      ? db.collection('votes').where('episode_id','==',openEp.episode_id).where('voter_id','==',user_id).get()
+      : Promise.resolve(null),
+    db.collection('stories').where('parent_story_id', '==', story_id).get(),
+  ]);
+
+  // 마감 대기 에피소드 비동기 복구 — await 제거로 페이지 렌더를 차단하지 않음
+  if (openEp) {
+    const stuckMaxV = subsSnap.docs
+      .filter(d => d.data().episode_id === openEp.episode_id)
+      .reduce((m, d) => Math.max(m, Number(d.data().vote_count) || 0), 0);
+    if (stuckMaxV >= FB_VOTE_THRESHOLD) {
+      _fbCloseEpisode(openEp.episode_id, { ...openEp }).catch(() => {});
+    }
+  }
+
+  const nickMap = {}, badgeMap = {};
+  userDocs.forEach(d => { if (d.exists) { nickMap[d.id] = d.data().display_name || d.data().nickname; badgeMap[d.id] = d.data().badge; } });
+
   const submissions = subsSnap.docs.map(d => ({
     sub_id: d.id,
     ...d.data(),
@@ -345,39 +371,15 @@ async function fbGetStory(story_id, user_id) {
     comment_count:   commentCountMap[d.id] || 0,
   }));
 
-  let is_bookmarked = false;
-  let is_liked = false, like_count = 0;
-  let my_voted_sub_ids = [];
-
-  const extras = await Promise.all([
-    user_id ? db.collection('bookmarks').where('user_id','==',user_id).where('story_id','==',story_id).limit(1).get() : Promise.resolve(null),
-    user_id ? db.collection('story_likes').where('story_id','==',story_id).where('user_id','==',user_id).limit(1).get() : Promise.resolve(null),
-  ]);
-
-  if (extras[0]) is_bookmarked = !extras[0].empty;
-  like_count = storySnap.data().like_count || 0;
-  if (user_id && extras[1]) is_liked = !extras[1].empty;
-
-  // open 상태인데 최고 득표가 임계값 이상이면 자동 마감 (새로고침 경쟁 조건 복구)
-  try {
-    const stuckEp = episodes.find(e => e.status === 'open');
-    if (stuckEp) {
-      const stuckSubs = submissions.filter(s => s.episode_id === stuckEp.episode_id);
-      const maxV = stuckSubs.reduce((m, s) => Math.max(m, Number(s.vote_count) || 0), 0);
-      if (maxV >= FB_VOTE_THRESHOLD) {
-        await _fbCloseEpisode(stuckEp.episode_id, { ...stuckEp });
-      }
-    }
-  } catch(_) { /* 복구 실패 시 페이지 로드 차단하지 않음 */ }
-
-  if (user_id) {
-    const openEp = episodes.find(e => e.status === 'open');
-    if (openEp) {
-      const vSnap = await db.collection('votes')
-        .where('episode_id','==',openEp.episode_id).where('voter_id','==',user_id).get();
-      my_voted_sub_ids = vSnap.docs.map(d => d.data().sub_id);
-    }
-  }
+  const is_bookmarked    = bmSnap   ? !bmSnap.empty   : false;
+  const like_count       = storySnap.data().like_count || 0;
+  const is_liked         = (user_id && likeSnap) ? !likeSnap.empty : false;
+  const my_voted_sub_ids = voteSnap ? voteSnap.docs.map(d => d.data().sub_id) : [];
+  const branches         = branchSnap.docs.map(d => ({
+    story_id: d.data().story_id || d.id,
+    branch_from_step: Number(d.data().branch_from_step),
+    status: d.data().status,
+  }));
 
   // MVP 투표 현황
   const mvp_map = {};
@@ -387,14 +389,6 @@ async function fbGetStory(story_id, user_id) {
     if (m.episode_id) mvp_map[m.episode_id] = (mvp_map[m.episode_id] || 0) + 1;
     if (user_id && m.voter_id === user_id) my_mvp_episode_id = m.episode_id || null;
   });
-
-  // 이 이야기의 외부 분기 목록
-  const branchSnap = await db.collection('stories').where('parent_story_id', '==', story_id).get();
-  const branches = branchSnap.docs.map(d => ({
-    story_id: d.data().story_id || d.id,
-    branch_from_step: Number(d.data().branch_from_step),
-    status: d.data().status,
-  }));
 
   // 분기 이야기면 부모 단계 가져오기 (잠금 산문용)
   let parent_chain = null;

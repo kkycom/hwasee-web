@@ -77,7 +77,7 @@ async function fbGetSession(token) {
       await snap.ref.update({ token_exp: new_exp });
     }
     return { user_id: uid, nickname: u.nickname, display_name: u.display_name || u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed' };
-  } catch(e) { return null; }
+  } catch(e) { return undefined; } // undefined = 네트워크 오류 (null = 확실한 토큰 무효)
 }
 
 // ─── 포인트 ──────────────────────────────────────────────
@@ -1699,7 +1699,9 @@ async function fbSubmitBugReport(content, user_id) {
 
 async function firebaseApi(action, params = {}) {
   const token   = localStorage.getItem('hwasee_token');
-  const session = token ? await fbGetSession(token) : null;
+  const uid     = localStorage.getItem('hwasee_uid');
+  // 매 호출마다 Firestore 재검증 대신 localStorage uid를 직접 신뢰 (세션 만료는 앱 시작 시 검증)
+  const session = (token && uid) ? { user_id: uid } : null;
   const need    = () => { if (!session) throw new Error('로그인이 필요합니다.'); return session; };
 
   switch (action) {

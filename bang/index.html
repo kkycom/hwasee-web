@@ -563,7 +563,7 @@
 
 async function api(action, params = {}) {
   try {
-    const _t = new Promise((_, rej) => setTimeout(() => rej(new Error('요청 시간이 초과됐습니다. 재시도해주세요.')), 8000));
+    const _t = new Promise((_, rej) => setTimeout(() => rej(new Error('요청 시간이 초과됐습니다. 재시도해주세요.')), 15000));
     const result = await Promise.race([firebaseApi(action, params), _t]);
     if (!result.ok && result.error === '로그인이 필요합니다.' && localStorage.getItem('hwasee_token')) {
       saveUser(null); renderNav(); nav('seed');
@@ -3374,10 +3374,11 @@ window.onload = async () => {
   if (user) {
     const token = localStorage.getItem('hwasee_token');
     const [session] = await Promise.all([fbGetSession(token), _loadBmIds()]);
-    if (!session) {
-      // 네트워크 오류와 실제 만료를 구분: 온라인일 때만 로그아웃
-      if (navigator.onLine !== false) { saveUser(null); renderNav(); render(); }
+    if (session === null) {
+      // null = 토큰 불일치/유저 없음 → 확실한 만료, 로그아웃
+      saveUser(null); renderNav(); render();
     } else {
+      // undefined = 네트워크 오류 → 로그인 유지
       const br = await api('checkDailyBonus');
       if (br.ok && br.bonus > 0) {
         setTimeout(() => toast(`🌿 출석 점수 +${br.bonus}p 지급됐어요!`), 800);

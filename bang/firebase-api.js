@@ -1195,6 +1195,12 @@ async function fbDismissReport(report_id, admin_id) {
   return { ok: true };
 }
 
+async function fbSaveFcmToken(user_id, fcm_token) {
+  if (!user_id || !fcm_token) return { ok: false };
+  await db.collection('users').doc(user_id).update({ fcm_token });
+  return { ok: true };
+}
+
 async function fbTrackVisit() {
   const today = new Date().toISOString().slice(0, 10);
   const ref   = db.collection('visits').doc(today);
@@ -1751,6 +1757,7 @@ async function firebaseApi(action, params = {}) {
     case 'adminDeleteSubmission': return fbAdminDeleteSubmission(params.sub_id, need().user_id);
     case 'adminCloseStory':       return fbAdminCloseStory(params.story_id, need().user_id);
 
+    case 'saveFcmToken':    return fbSaveFcmToken(need().user_id, params.fcm_token);
     case 'trackVisit':      return fbTrackVisit();
     case 'checkDailyBonus': return { ok: true, bonus: await _fbCheckDailyBonus(need().user_id) };
     case 'submitBugReport':   return fbSubmitBugReport(params.content, need().user_id);

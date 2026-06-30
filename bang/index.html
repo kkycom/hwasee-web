@@ -47,6 +47,7 @@
 </style>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
 <script src="firebase-api.js?v=2"></script>
 <style>
   :root {
@@ -3364,9 +3365,41 @@ window.onload = async () => {
     }
   }
 
-  // PWA Service Worker 등록
+  // PWA Service Worker 등록 + FCM 초기화
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/bang/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/bang/sw.js').then(async reg => {
+      if (!user) return;
+      try {
+        const messaging = firebase.messaging();
+        const currentPerm = Notification.permission;
+        if (currentPerm === 'denied') return;
+        if (currentPerm === 'default') {
+          // 부드러운 인앱 프롬프트 — 브라우저 다이얼로그 전에 먼저 물어봄
+          const agreed = await new Promise(resolve => {
+            const bar = document.createElement('div');
+            bar.style.cssText = 'position:fixed;bottom:72px;left:50%;transform:translateX(-50%);background:#1c2320;border:1px solid #3a4a3d;border-radius:12px;padding:14px 18px;display:flex;gap:12px;align-items:center;z-index:9999;max-width:340px;width:calc(100% - 32px);box-shadow:0 4px 24px rgba(0,0,0,.5)';
+            bar.innerHTML = `<span style="font-size:13px;color:#c8d8cb;flex:1;line-height:1.5">새 글·댓글 알림을<br>받아보실래요?</span>
+              <button id="_nb_yes" style="background:#2d4a35;color:#a8d4b0;border:none;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap">받을게요</button>
+              <button id="_nb_no"  style="background:none;color:#4a5a4d;border:none;font-size:20px;cursor:pointer;line-height:1">×</button>`;
+            document.body.appendChild(bar);
+            bar.querySelector('#_nb_yes').onclick = () => { bar.remove(); resolve(true); };
+            bar.querySelector('#_nb_no').onclick  = () => { bar.remove(); resolve(false); };
+          });
+          if (!agreed) return;
+          await Notification.requestPermission();
+        }
+        if (Notification.permission !== 'granted') return;
+        const token = await messaging.getToken({
+          vapidKey: 'BDcmPonXJ1kYTThhICDRDEE4g8oCntlur6d1Dmv0Q-iAOo3cbK20jI9nBW-FKgGdElWXcpoSvQz13YOiqJ9qMs4',
+          serviceWorkerRegistration: reg,
+        });
+        if (token) api('saveFcmToken', { fcm_token: token });
+        messaging.onTokenRefresh(async () => {
+          const t = await messaging.getToken({ vapidKey: 'BDcmPonXJ1kYTThhICDRDEE4g8oCntlur6d1Dmv0Q-iAOo3cbK20jI9nBW-FKgGdElWXcpoSvQz13YOiqJ9qMs4', serviceWorkerRegistration: reg });
+          if (t) api('saveFcmToken', { fcm_token: t });
+        });
+      } catch(e) { /* 알림 미지원 환경 */ }
+    }).catch(() => {});
   }
 };
 </script>

@@ -257,7 +257,16 @@ async function fbGetStories(page) {
     });
     const boostSet = new Set(boostsSnap.docs.map(d => d.data().story_id));
 
-    const stories = storiesSnap.docs.map(d => ({
+    // 1일 경과 + 참여자 0 + AI 씨앗 → inactive 처리 + 생성자에게 알림
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const abandoned = storiesSnap.docs.filter(d => {
+      const s = d.data();
+      return s.is_ai_seed === true && (s.participant_count || 0) === 0 && (s.created_at || '') < oneDayAgo;
+    });
+    if (abandoned.length) await _fbRecycleAbandonedSeeds(abandoned);
+    const recycledSet = new Set(abandoned.map(d => d.id));
+
+    const stories = storiesSnap.docs.filter(d => !recycledSet.has(d.id)).map(d => ({
       ...d.data(),
       is_boosted:        boostSet.has(d.id),
       activity_count:    d.data().participant_count || 0,
@@ -424,7 +433,8 @@ async function fbCreateStory(opening, creator_id, is_ai_seed) {
   batch.set(db.collection('stories').doc(story_id), {
     story_id, opening: opening.trim(), max_steps: 10, current_step: 0,
     status: 'active', creator_id, creator_nickname, creator_badge,
-    created_at: fbNow(), batch: '', participant_count: 0, like_count: 0
+    created_at: fbNow(), batch: '', participant_count: 0, like_count: 0,
+    is_ai_seed: !!is_ai_seed,
   });
   batch.set(db.collection('episodes').doc(episode_id), {
     episode_id, story_id, step: 1, parent_sub_id: '',
@@ -884,9 +894,30 @@ const FB_AI_OPENINGS = [
   "버스에서 잠들었는데 종점이었다. 내릴 곳이 맞았다.",
 ];
 
+async function _fbRecycleAbandonedSeeds(docs) {
+  if (!docs.length) return;
+  const batch = db.batch();
+  docs.forEach(doc => batch.update(doc.ref, { status: 'inactive' }));
+  await batch.commit();
+  const nb = db.batch();
+  let hasNotif = false;
+  docs.forEach(doc => {
+    const s = doc.data();
+    if (!s.creator_id) return;
+    const snippet = (s.opening || '').length > 30 ? s.opening.substring(0, 30) + '…' : (s.opening || '');
+    nb.set(db.collection('notifications').doc(fbGenId()), {
+      user_id: s.creator_id, type: 'seed_recycled', story_id: '',
+      message: `선택했던 이야기 씨앗이 다시 풀로 돌아갔어요.\n"${snippet}"`,
+      is_read: false, created_at: fbNow(),
+    });
+    hasNotif = true;
+  });
+  if (hasNotif) await nb.commit();
+}
+
 async function fbGetSeeds() {
   const usedSnap = await db.collection('stories').where('is_ai_seed', '==', true).get();
-  const used     = new Set(usedSnap.docs.map(d => d.data().opening));
+  const used     = new Set(usedSnap.docs.filter(d => d.data().status === 'active').map(d => d.data().opening));
   const available = FB_AI_OPENINGS.filter(o => !used.has(o));
   const src    = available.length >= 5 ? available.slice() : FB_AI_OPENINGS.slice();
   const picked = [];

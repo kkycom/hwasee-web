@@ -401,7 +401,9 @@
   hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
   h2 { font-size: 18px; margin-bottom: 16px; }
   p.desc { color: var(--muted); font-size: 14px; margin-bottom: 24px; line-height: 1.6; }
+  @keyframes spin-star { to { transform: rotate(360deg); } }
   .loading { text-align: center; padding: 40px; color: var(--muted); }
+  .loading::after { content: '✦'; display: inline-block; font-size: 22px; color: var(--accent); animation: spin-star 1.4s linear infinite; }
   .empty   { text-align: center; padding: 48px 0; color: var(--muted); }
   .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--border); font-size: 12px; color: var(--muted); margin-right: 6px; white-space: nowrap; }
   .section-label { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .08em; margin-bottom: 10px; }
@@ -515,7 +517,7 @@
   <div class="nav-right" id="nav-right"></div>
 </header>
 
-<main id="app"><div class="loading">불러오는 중...</div></main>
+<main id="app"><div class="loading"></div></main>
 <div class="toast" id="toast"></div>
 
 <div id="onboarding-overlay">
@@ -874,7 +876,7 @@ async function home() {
 
   document.getElementById('app').innerHTML = `
     <div class="home-tabs">${tabHtml}</div>
-    <div id="home-content"><div class="loading">불러오는 중...</div></div>`;
+    <div id="home-content"><div class="loading"></div></div>`;
 
   await loadHomeTab(tab);
 }
@@ -889,7 +891,7 @@ async function switchHomeTab(tab) {
   const content = document.getElementById('home-content');
   const cacheKey = tab === 'popular' ? 'pop' : tab;
   const hasCached = tab !== 'seed' && !!_lsc.get(cacheKey);
-  if (content && !hasCached) content.innerHTML = `<div class="loading">불러오는 중...</div>`;
+  if (content && !hasCached) content.innerHTML = `<div class="loading"></div>`;
   await loadHomeTab(tab);
 }
 
@@ -1298,7 +1300,7 @@ async function story() {
   if (cached) {
     _applyStoryData(cached, story_id);
   } else {
-    document.getElementById('app').innerHTML = `<div class="loading">불러오는 중...</div>`;
+    document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   }
   const res = await api('getStory', { story_id });
   if (!res.ok) {
@@ -1774,7 +1776,7 @@ async function episode() {
   if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; }
   const episode_id = currentParam;
   selectedSubs = [];
-  document.getElementById('app').innerHTML = `<div class="loading">불러오는 중...</div>`;
+  document.getElementById('app').innerHTML = `<div class="loading"></div>`;
 
   let res;
   try {
@@ -2116,7 +2118,7 @@ async function doRecover() {
 
 async function profile() {
   if (!user) { nav('auth','login'); return; }
-  document.getElementById('app').innerHTML = `<div class="loading">불러오는 중...</div>`;
+  document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   const [res, bmRes] = await Promise.all([api('getProfile'), api('getBookmarks')]);
   if (!user) return;
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
@@ -3004,7 +3006,7 @@ function shareStory() {
 // ─── 어드민 페이지 ──────────────────────────────────────
 async function adminPanel() {
   if (!isAdmin()) { nav('seed'); return; }
-  document.getElementById('app').innerHTML = `<div class="loading">불러오는 중...</div>`;
+  document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   const [res, stats] = await Promise.all([api('getReports', {}), api('getAdminStats', {})]);
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
 

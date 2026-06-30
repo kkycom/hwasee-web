@@ -1223,14 +1223,16 @@ async function fbGetAdminStats(admin_id) {
   ]);
   let visit_today = 0, visit_yesterday = 0, visit_total = 0;
   try {
-    const [todaySnap, yesSnap, totalSnap] = await Promise.all([
+    const [todaySnap, yesSnap, allSnap] = await Promise.all([
       db.collection('visits').doc(today).get(),
       db.collection('visits').doc(yesterday).get(),
-      db.collection('visits').doc('_total').get(),
+      db.collection('visits').get(),
     ]);
     visit_today     = todaySnap.exists ? (todaySnap.data().count || 0) : 0;
     visit_yesterday = yesSnap.exists   ? (yesSnap.data().count   || 0) : 0;
-    visit_total     = totalSnap.exists ? (totalSnap.data().count  || 0) : 0;
+    visit_total     = allSnap.docs
+      .filter(d => d.id !== '_total')
+      .reduce((sum, d) => sum + (d.data().count || 0), 0);
   } catch(e) { /* visits read 실패 시 0 유지 */ }
   return {
     ok: true,

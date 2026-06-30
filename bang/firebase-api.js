@@ -1660,7 +1660,17 @@ async function fbGetBugReports(user_id) {
 async function fbResolveBugReport(report_id, user_id) {
   const uSnap = await db.collection('users').doc(user_id).get();
   if (!uSnap.exists || uSnap.data().badge !== 'treeguard') return { ok: false, error: '권한이 없습니다.' };
-  await db.collection('bug_reports').doc(report_id).update({ status: 'resolved' });
+  const rSnap = await db.collection('bug_reports').doc(report_id).get();
+  if (!rSnap.exists) return { ok: false, error: '존재하지 않는 제보입니다.' };
+  await rSnap.ref.update({ status: 'resolved' });
+  const reporter_id = rSnap.data().user_id;
+  if (reporter_id) {
+    await db.collection('notifications').doc(fbGenId()).set({
+      user_id: reporter_id, type: 'bug_resolved', story_id: '',
+      message: '제보해주신 버그가 해결됐어요! 소중한 제보 감사합니다 🌱',
+      is_read: false, created_at: fbNow(),
+    });
+  }
   return { ok: true };
 }
 

@@ -1198,7 +1198,7 @@ async function fbDismissReport(report_id, admin_id) {
 async function fbTrackVisit() {
   const today = new Date().toISOString().slice(0, 10);
   const ref   = db.collection('visits').doc(today);
-  const total = db.collection('visits').doc('__total__');
+  const total = db.collection('visits').doc('_total');
   await Promise.all([
     ref.set({ date: today, count: firebase.firestore.FieldValue.increment(1) }, { merge: true }),
     total.set({ count: firebase.firestore.FieldValue.increment(1) }, { merge: true }),
@@ -1220,12 +1220,12 @@ async function fbGetAdminStats(admin_id) {
     const [todaySnap, yesSnap, totalSnap] = await Promise.all([
       db.collection('visits').doc(today).get(),
       db.collection('visits').doc(yesterday).get(),
-      db.collection('visits').doc('__total__').get(),
+      db.collection('visits').doc('_total').get(),
     ]);
     visit_today     = todaySnap.exists ? (todaySnap.data().count || 0) : 0;
     visit_yesterday = yesSnap.exists   ? (yesSnap.data().count   || 0) : 0;
     visit_total     = totalSnap.exists ? (totalSnap.data().count  || 0) : 0;
-  } catch(e) { visit_today = e.message; }
+  } catch(e) { /* visits read 실패 시 0 유지 */ }
   return {
     ok: true,
     user_count: uSnap.size, story_count: sSnap.size, submission_count: subSnap.size,

@@ -1372,7 +1372,6 @@ async function story() {
   }
   _lsc.set('story_' + story_id, res, 90);
   _applyStoryData(res, story_id);
-  _autoAiReview(story_id, res.story, res.episodes || [], res.submissions || []);
 }
 
 function toggleHistory() {
@@ -3023,8 +3022,6 @@ function shareStory() {
 }
 
 // ─── 어드민 공통 ──────────────────────────────────────────
-function _getClaudeKey() { return localStorage.getItem('_hwasee_claude_key') || ''; }
-
 function _adminNav(current) {
   return `
     <div style="display:flex;gap:6px;margin-bottom:22px;flex-wrap:wrap;align-items:center">
@@ -3071,37 +3068,11 @@ async function adminStats() {
           <div style="font-size:20px;font-weight:700">${val ?? '-'}</div>
         </div>`).join('')}
     </div>` : `<div class="empty">불러오지 못했습니다.</div>`;
-  const hasKey = !!_getClaudeKey();
-  const aiKeyHtml = `
-    <div class="card" style="padding:14px 18px;margin-top:8px">
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;font-weight:600">🤖 Claude API 키 ${hasKey ? '<span style="color:var(--accent)">✓ 설정됨</span>' : '<span style="color:#f87171">미설정</span>'}</div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="password" id="claude-key-input" placeholder="sk-ant-api03-..." value="${hasKey ? '••••••••••••••••' : ''}"
-          style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px;color:var(--text);min-width:0">
-        <button class="btn btn-primary btn-sm" onclick="saveClaudeKey()">저장</button>
-        ${hasKey ? `<button class="btn btn-ghost btn-sm" onclick="deleteClaudeKey()">삭제</button>` : ''}
-      </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:6px">키는 이 브라우저에만 저장되며 서버/GitHub에 전송되지 않습니다.</div>
-    </div>`;
   document.getElementById('app').innerHTML = `
     ${_adminNav('stats')}
     <h2 style="margin:0 0 18px">📊 이용통계</h2>
     ${statsHtml}
-    ${referralHtml}
-    ${aiKeyHtml}`;
-}
-
-function saveClaudeKey() {
-  const val = document.getElementById('claude-key-input')?.value.trim();
-  if (!val || val.startsWith('•')) { toast('새 키를 입력해주세요.', true); return; }
-  localStorage.setItem('_hwasee_claude_key', val);
-  toast('API 키가 저장됐어요.');
-  adminStats();
-}
-function deleteClaudeKey() {
-  localStorage.removeItem('_hwasee_claude_key');
-  toast('API 키를 삭제했어요.');
-  adminStats();
+    ${referralHtml}`;
 }
 
 // ─── 수정 내역 ────────────────────────────────────────────
@@ -3257,128 +3228,6 @@ async function saveProseEdit() {
   }
   cancelProseEdit();
   toast('수정됐어요.');
-}
-
-// ─── Claude API 직접 호출 ────────────────────────────────
-async function _callClaude(userMessage) {
-  const key = _getClaudeKey();
-  if (!key) return null;
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 2000,
-        messages: [{ role: 'user', content: userMessage }],
-      }),
-    });
-    const data = await res.json();
-    return data.content?.[0]?.text || null;
-  } catch(e) { return null; }
-}
-
-let _aiReviewLock = false;
-let _aiReviewPending = null; // { story_id, adopted, unreviewed, episodes }
-
-function _autoAiReview(story_id, story, episodes, submissions) {
-  if (!isAdmin() || !_getClaudeKey()) return;
-  if (story?.status !== 'completed' && story?.status !== 'inactive') return;
-  const adopted = submissions.filter(s => s.is_adopted === true || s.is_adopted === 'TRUE');
-  const unreviewed = adopted.filter(s => !s.ai_reviewed);
-  if (!unreviewed.length) return;
-  _aiReviewPending = { story_id, adopted, unreviewed, episodes };
-  // 기존 배너 제거 후 새로 추가
-  document.getElementById('ai-review-banner')?.remove();
-  const banner = document.createElement('div');
-  banner.id = 'ai-review-banner';
-  banner.style.cssText = 'position:fixed;bottom:72px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 18px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 20px rgba(0,0,0,.35);z-index:300;white-space:nowrap';
-  banner.innerHTML = `
-    <span style="font-size:13px">🤖 이 이야기 문장을 AI로 다듬을까요?</span>
-    <button class="btn btn-primary btn-sm" onclick="runAiReview()">다듬기</button>
-    <button class="btn btn-ghost btn-sm" onclick="skipAiReview()">건너뛰기</button>`;
-  document.body.appendChild(banner);
-}
-
-async function runAiReview() {
-  const pending = _aiReviewPending;
-  if (!pending || _aiReviewLock) return;
-  _aiReviewLock = true;
-  const banner = document.getElementById('ai-review-banner');
-  if (banner) banner.innerHTML = `<span style="font-size:13px">🤖 AI가 문장을 검토하는 중...</span><div class="loading" style="width:20px;height:20px;margin:0"></div>`;
-  try {
-    const { story_id, adopted, unreviewed, episodes } = pending;
-    const allSubIds = unreviewed.map(s => s.sub_id);
-    if (adopted.length < 2) {
-      await api('markAiReviewed', { sub_ids: allSubIds });
-      banner?.remove(); return;
-    }
-    const sortedAdopted = adopted.slice().sort((a, b) => {
-      const ea = episodes.find(e => e.episode_id === a.episode_id);
-      const eb = episodes.find(e => e.episode_id === b.episode_id);
-      return (Number(ea?.step) || 0) - (Number(eb?.step) || 0);
-    });
-    const prompt = `다음은 여러 사람이 한 문장씩 이어 쓴 릴레이 소설입니다.
-문장과 문장 사이 이음새를 자연스럽게 다듬어 주세요.
-
-규칙:
-- 문장의 핵심 의미와 단어는 절대 바꾸지 않는다
-- 오탈자, 띄어쓰기, 최소한의 접속어/조사만 수정한다
-- 수정이 불필요하면 revised에 원문 그대로 넣는다
-- JSON 배열 형식으로만 응답, 다른 텍스트 없음
-
-문장 목록:
-${JSON.stringify(sortedAdopted.map(s => ({ sub_id: s.sub_id, content: s.content })))}
-
-응답 형식: [{"sub_id":"...","revised":"..."}]`;
-    const result = await _callClaude(prompt);
-    if (!result) { await api('markAiReviewed', { sub_ids: allSubIds }); banner?.remove(); return; }
-    let revised;
-    try {
-      const match = result.match(/\[[\s\S]*\]/);
-      revised = JSON.parse(match ? match[0] : result);
-    } catch(e) { await api('markAiReviewed', { sub_ids: allSubIds }); banner?.remove(); return; }
-    let changedCount = 0;
-    for (const r of revised) {
-      if (!r.sub_id || !r.revised) continue;
-      const orig = sortedAdopted.find(s => s.sub_id === r.sub_id);
-      if (!orig || orig.content.trim() === r.revised.trim()) continue;
-      const editRes = await api('adminEditSub', {
-        sub_id: r.sub_id, new_content: r.revised,
-        old_content: orig.content, story_id, edit_type: 'ai',
-      });
-      if (editRes.ok) changedCount++;
-    }
-    await api('markAiReviewed', { sub_ids: allSubIds });
-    banner?.remove();
-    _aiReviewPending = null;
-    if (changedCount > 0) {
-      toast(`AI가 ${changedCount}개 문장을 다듬었어요.`);
-      const freshRes = await api('getStory', { story_id });
-      if (freshRes.ok && currentParam === story_id) {
-        _lsc.set('story_' + story_id, freshRes, 90);
-        _applyStoryData(freshRes, story_id);
-      }
-    } else {
-      toast('수정할 부분이 없었어요.');
-    }
-  } finally {
-    _aiReviewLock = false;
-  }
-}
-
-async function skipAiReview() {
-  document.getElementById('ai-review-banner')?.remove();
-  if (_aiReviewPending) {
-    const ids = _aiReviewPending.unreviewed.map(s => s.sub_id);
-    _aiReviewPending = null;
-    await api('markAiReviewed', { sub_ids: ids });
-  }
 }
 
 function reasonLabel(r) {

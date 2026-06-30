@@ -425,13 +425,29 @@
   h2 { font-size: 18px; margin-bottom: 16px; }
   p.desc { color: var(--muted); font-size: 14px; margin-bottom: 24px; line-height: 1.6; }
   @keyframes writing {
-    0%   { transform: translateX(-10px); }
-    20%  { transform: translateX(0px);   }
-    30%  { transform: translateX(0px);   }
-    55%  { transform: translateX(10px);  }
-    65%  { transform: translateX(10px);  }
-    66%  { transform: translateX(-10px); }
-    100% { transform: translateX(-10px); }
+    0%   { transform: translateX(-15px); }
+    5%   { transform: translateX(-13px); }
+    9%   { transform: translateX(-14px); }
+    14%  { transform: translateX(-11px); }
+    18%  { transform: translateX(-12px); }
+    23%  { transform: translateX(-9px);  }
+    27%  { transform: translateX(-10px); }
+    32%  { transform: translateX(-7px);  }
+    36%  { transform: translateX(-8px);  }
+    41%  { transform: translateX(-5px);  }
+    45%  { transform: translateX(-6px);  }
+    51%  { transform: translateX(-3px);  }
+    55%  { transform: translateX(-4px);  }
+    61%  { transform: translateX(-1px);  }
+    65%  { transform: translateX(-2px);  }
+    71%  { transform: translateX(0px);   }
+    75%  { transform: translateX(-1px);  }
+    81%  { transform: translateX(1px);   }
+    85%  { transform: translateX(0px);   }
+    90%  { transform: translateX(2px);   }
+    94%  { transform: translateX(1px);   }
+    97%  { transform: translateX(-15px); }
+    100% { transform: translateX(-15px); }
   }
   .loading { text-align: center; padding: 40px; color: var(--muted); }
   .loading::before { content: '✍️'; display: inline-block; font-size: 20px; animation: writing 2.4s ease-in-out infinite; filter: saturate(0.55) brightness(1.1); }
@@ -945,6 +961,7 @@ async function home() {
 
 async function switchHomeTab(tab) {
   currentRoute = tab;
+  _skipHashChange = true;
   location.hash = tab;
   HOME_TABS.forEach(t => {
     const el = document.getElementById('htab-' + t.key);

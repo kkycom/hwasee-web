@@ -1210,22 +1210,26 @@ async function fbGetAdminStats(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   const today     = new Date().toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  const [uSnap, sSnap, subSnap, todaySnap, yesSnap, totalSnap] = await Promise.all([
+  const [uSnap, sSnap, subSnap] = await Promise.all([
     db.collection('users').get(),
     db.collection('stories').get(),
     db.collection('submissions').get(),
-    db.collection('visits').doc(today).get(),
-    db.collection('visits').doc(yesterday).get(),
-    db.collection('visits').doc('__total__').get(),
   ]);
+  let visit_today = 0, visit_yesterday = 0, visit_total = 0;
+  try {
+    const [todaySnap, yesSnap, totalSnap] = await Promise.all([
+      db.collection('visits').doc(today).get(),
+      db.collection('visits').doc(yesterday).get(),
+      db.collection('visits').doc('__total__').get(),
+    ]);
+    visit_today     = todaySnap.exists ? (todaySnap.data().count || 0) : 0;
+    visit_yesterday = yesSnap.exists   ? (yesSnap.data().count   || 0) : 0;
+    visit_total     = totalSnap.exists ? (totalSnap.data().count  || 0) : 0;
+  } catch(e) {}
   return {
     ok: true,
-    user_count:       uSnap.size,
-    story_count:      sSnap.size,
-    submission_count: subSnap.size,
-    visit_today:      todaySnap.exists  ? (todaySnap.data().count  || 0) : 0,
-    visit_yesterday:  yesSnap.exists    ? (yesSnap.data().count    || 0) : 0,
-    visit_total:      totalSnap.exists  ? (totalSnap.data().count  || 0) : 0,
+    user_count: uSnap.size, story_count: sSnap.size, submission_count: subSnap.size,
+    visit_today, visit_yesterday, visit_total,
   };
 }
 

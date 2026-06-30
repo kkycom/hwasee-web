@@ -72,7 +72,10 @@ async function fbGetSession(token) {
     if (!snap.exists) return null;
     const u = snap.data();
     if (u.token !== token) return null;
-    if (new Date(u.token_exp) < new Date()) return null;
+    if (new Date(u.token_exp) < new Date()) {
+      const new_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      await snap.ref.update({ token_exp: new_exp });
+    }
     return { user_id: uid, nickname: u.nickname, display_name: u.display_name || u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed' };
   } catch(e) { return null; }
 }

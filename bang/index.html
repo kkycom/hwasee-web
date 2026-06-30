@@ -2012,8 +2012,8 @@ async function episodeVotes() {
           ${isAdopted ? `<div style="font-size:10px;font-weight:700;color:var(--accent2);margin-bottom:6px;letter-spacing:.04em">✓ 채택됨</div>` : ''}
           <div style="font-size:14px;line-height:1.6;margin-bottom:10px">${esc(sub.content)}</div>
           <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted)">
+            <span style="${isAdopted ? 'color:var(--accent2);font-weight:700' : ''}">${sub.vote_count || 0}개 공감</span>
             <span><span style="font-size:10px;color:var(--muted);margin-right:3px">글쓴이</span>${esc(nickname)}</span>
-            <span style="${isAdopted ? 'color:var(--accent2);font-weight:700' : ''}">▲ ${sub.vote_count || 0}개 공감</span>
           </div>
         </div>`;
       }).join('');
@@ -2023,7 +2023,7 @@ async function episodeVotes() {
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
       <h2 style="margin:0">${stepNum}단계 공감 현황</h2>
     </div>
-    <div style="font-size:13px;color:var(--muted);margin-bottom:20px">총 ${totalVoters}명 참여 · ${subs.length}편 경쟁</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:20px">총 ${subs.length}편 경쟁 · 공감 ${totalVoters}명 참여</div>
     ${subsHtml}
     ${canBranch ? `
     <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border);text-align:center">

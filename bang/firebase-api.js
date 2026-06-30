@@ -1072,16 +1072,16 @@ async function fbDismissReport(report_id, admin_id) {
 
 async function fbGetAdminStats(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const [uCount, sCount, subCount] = await Promise.all([
-    db.collection('users').count().get(),
-    db.collection('stories').count().get(),
-    db.collection('submissions').count().get(),
+  const [uSnap, sSnap, subSnap] = await Promise.all([
+    db.collection('users').get(),
+    db.collection('stories').get(),
+    db.collection('submissions').get(),
   ]);
   return {
     ok: true,
-    user_count: uCount.data().count,
-    story_count: sCount.data().count,
-    submission_count: subCount.data().count,
+    user_count: uSnap.size,
+    story_count: sSnap.size,
+    submission_count: subSnap.size,
   };
 }
 

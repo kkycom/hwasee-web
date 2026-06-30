@@ -61,7 +61,7 @@ exports.aiReviewCompletedStories = functions
 
     // 완성된 이야기 전체 조회
     const storiesSnap = await db.collection('stories')
-      .where('status', 'in', ['completed', 'inactive'])
+      .where('status', '==', 'completed')
       .get();
 
     if (storiesSnap.empty) return null;

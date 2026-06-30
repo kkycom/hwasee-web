@@ -401,9 +401,25 @@
   hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
   h2 { font-size: 18px; margin-bottom: 16px; }
   p.desc { color: var(--muted); font-size: 14px; margin-bottom: 24px; line-height: 1.6; }
-  @keyframes spin-star { to { transform: rotate(360deg); } }
+  @keyframes writing {
+    0%   { transform: translateX(0px);  }
+    10%  { transform: translateX(10px); }
+    18%  { transform: translateX(10px); }
+    24%  { transform: translateX(8px);  }
+    29%  { transform: translateX(8px);  }
+    39%  { transform: translateX(18px); }
+    47%  { transform: translateX(18px); }
+    53%  { transform: translateX(16px); }
+    58%  { transform: translateX(16px); }
+    68%  { transform: translateX(24px); }
+    76%  { transform: translateX(24px); }
+    82%  { transform: translateX(22px); }
+    88%  { transform: translateX(0px);  }
+    100% { transform: translateX(0px);  }
+  }
   .loading { text-align: center; padding: 40px; color: var(--muted); }
-  .loading::after { content: '✦'; display: inline-block; font-size: 22px; color: var(--accent); animation: spin-star 1.4s linear infinite; }
+  .loading::before { content: '✍️'; display: inline-block; font-size: 28px; animation: writing 2.4s ease-in-out infinite; }
+  .loading::after  { content: '불러오는 중입니다'; display: block; font-size: 13px; color: var(--muted); margin-top: 10px; letter-spacing: .3px; }
   .empty   { text-align: center; padding: 48px 0; color: var(--muted); }
   .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--border); font-size: 12px; color: var(--muted); margin-right: 6px; white-space: nowrap; }
   .section-label { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .08em; margin-bottom: 10px; }

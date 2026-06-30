@@ -128,8 +128,10 @@
   }
   .admin-menu-item:hover { background: var(--surface); }
   /* ── 산문 수정 버튼 */
-  .prose-edit-btn { opacity: 0; background: none; border: 1px solid var(--border); border-radius: 4px; font-size: 10px; cursor: pointer; padding: 1px 5px; margin-left: 7px; color: var(--muted); transition: opacity .15s; vertical-align: middle; line-height: 1.3; }
+  .prose-edit-btn { opacity: 0; background: none; border: 1px solid var(--border); border-radius: 4px; font-size: 10px; cursor: pointer; padding: 2px 5px; color: var(--muted); transition: opacity .15s; flex-shrink: 0; display: flex; align-items: center; }
   .prose-line:hover .prose-edit-btn { opacity: 1; }
+  .prose-line-meta { position: absolute; left: 0; right: 0; top: 100%; height: 25px; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
+  .prose-line-meta > * { pointer-events: auto; }
   .prose-inline-editor { margin: 6px 0 12px; }
 
   /* ── 버튼 */
@@ -392,7 +394,7 @@
     font-family: var(--serif); font-size: 16px; line-height: 29px;
     color: #2c1a0e;
   }
-  .prose-line { margin-top: 29px; }
+  .prose-line { margin-top: 29px; position: relative; }
   .prose-sentence { font-family: var(--serif); font-size: 16px; line-height: 29px; display: block; color: #2c1a0e; }
   .prose-author { font-size: 11px; color: #9a7060; display: none; text-align: right; margin-top: 4px; }
   .prose-author.visible { display: block; }
@@ -424,17 +426,11 @@
   p.desc { color: var(--muted); font-size: 14px; margin-bottom: 24px; line-height: 1.6; }
   @keyframes writing {
     0%   { transform: translateX(-10px); }
-    9%   { transform: translateX(2px);   }
-    16%  { transform: translateX(2px);   }
-    22%  { transform: translateX(0px);   }
-    28%  { transform: translateX(0px);   }
-    38%  { transform: translateX(10px);  }
-    45%  { transform: translateX(10px);  }
-    51%  { transform: translateX(8px);   }
-    56%  { transform: translateX(8px);   }
-    63%  { transform: translateX(0px);   }
-    74%  { transform: translateX(0px);   }
-    86%  { transform: translateX(-10px); }
+    20%  { transform: translateX(0px);   }
+    30%  { transform: translateX(0px);   }
+    55%  { transform: translateX(10px);  }
+    65%  { transform: translateX(10px);  }
+    66%  { transform: translateX(-10px); }
     100% { transform: translateX(-10px); }
   }
   .loading { text-align: center; padding: 40px; color: var(--muted); }
@@ -488,7 +484,7 @@
   .story-prose.selecting .prose-line + .prose-line { margin-top:20px; }
   .story-prose.selecting .prose-line:hover { border-left-color:var(--accent2); background:rgba(200,169,110,0.04); }
   .story-prose.selecting .prose-line.prose-selected { border-left-color:var(--accent2); background:rgba(200,130,58,.1); }
-  .prose-line-mvp { font-size:11px; color:var(--accent); font-weight:700; margin-left:8px; }
+  .prose-line-mvp { font-size:11px; color:var(--accent); font-weight:700; display:inline-flex; align-items:center; gap:3px; }
   .prose-line-my-mvp { font-size:10px; color:var(--accent2); margin-left:6px; }
   /* ── 분기 이야기 잠금 산문 */
   .prose-inherited { opacity:0.55; pointer-events:none; }
@@ -1282,13 +1278,18 @@ function _applyStoryData(res, story_id) {
   } else if (s.status === 'completed' || s.status === 'inactive') {
     actionHtml = `
       <div class="prose-divider">완결된 이야기입니다</div>
-      <div style="display:flex;gap:10px;justify-content:center;margin-bottom:8px;flex-wrap:wrap">
+      <div style="display:flex;gap:8px;justify-content:center;margin-bottom:8px;flex-wrap:wrap;align-items:center">
         ${user ? `
-        <button id="like-btn" class="btn ${is_liked ? 'btn-primary' : 'btn-ghost'} btn-sm"
+        <button id="like-btn" class="btn ${is_liked ? 'btn-primary' : 'btn-ghost'} btn-sm" style="display:inline-flex;align-items:center;gap:5px"
           onclick="doToggleStoryLike('${esc(s.story_id)}')">
-          👍 이 이야기 추천해요${like_count > 0 ? ` (${like_count})` : ''}
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>추천해요${like_count > 0 ? ` (${like_count})` : ''}
+        </button>
+        <button class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:5px" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>으뜸 글 뽑기
         </button>` : ''}
-        <button class="btn btn-ghost btn-sm" onclick="shareStory()">🔗 공유하기</button>
+        <button class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:5px" onclick="shareStory()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>공유하기
+        </button>
       </div>`;
   }
 
@@ -1308,9 +1309,6 @@ function _applyStoryData(res, story_id) {
             <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>
             <button class="btn btn-ghost btn-sm" style="border:none;color:var(--muted);display:inline-flex;align-items:center;gap:4px"
               onclick="doBoostStory('${esc(s.story_id)}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><polygon points="12,2 15.1,8.3 22,9.3 17,14.1 18.2,21 12,17.8 5.8,21 7,14.1 2,9.3 8.9,8.3"/></svg>주목</button>` : ''}
-          ${isFinished ? `
-            <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>
-            <button class="prose-author-toggle" style="border:none;font-size:13px;opacity:1" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">으뜸 글 뽑기</button>` : ''}
           <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>` : ''}
         <button class="prose-author-toggle" style="border:none;font-size:13px;opacity:1;display:inline-flex;align-items:center;gap:4px" onclick="window._proseSelMode==='viewvotes'?cancelProseSelMode():enterProseSelMode('viewvotes','${esc(s.story_id)}')"><svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="0" y="5" width="3" height="7" rx="0.5"/><rect x="4.5" y="2" width="3" height="10" rx="0.5"/><rect x="9" y="7" width="3" height="5" rx="0.5"/></svg>공감 현황</button>
         ${isAdmin() && s.status === 'active' ? `
@@ -2631,11 +2629,11 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
     const childHtml = children.length === 1
       ? renderEpisodeTreeHtml(children[0], choices, mvpMap, branches, myMvpEpId) : '';
     const forkHtml = extBranch ? renderExtBranchFork(ep, sub, extBranch) : '';
-    const editBtn = isAdmin() ? `<button class="prose-edit-btn" data-sub="${sub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)">✏️</button>` : '';
+    const editBtnHtml = isAdmin() ? `<button class="prose-edit-btn" data-sub="${sub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : '';
     return `
       <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
         <span class="prose-sentence">${esc(sub.content)}</span>
-        ${editBtn}${mvpBadge}${myMvpMark}
+        <div class="prose-line-meta"><span>${mvpBadge}${myMvpMark}</span>${editBtnHtml}</div>
       </div>
       <span class="prose-author">— ${sub.author_badge?`<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>`:''}${esc(sub.author_nickname || '익명')}</span>
       ${forkHtml}${childHtml}`;
@@ -2657,7 +2655,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
         <div>
           <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
             <span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span>
-            ${isAdmin() && chosenSub ? `<button class="prose-edit-btn" data-sub="${chosenSub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)">✏️</button>` : ''}${mvpBadge}${myMvpMark}
+            <div class="prose-line-meta"><span>${mvpBadge}${myMvpMark}</span>${isAdmin() && chosenSub ? `<button class="prose-edit-btn" data-sub="${chosenSub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : ''}</div>
           </div>
           <span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>
         </div>

@@ -3284,19 +3284,39 @@ async function _callClaude(userMessage) {
 }
 
 let _aiReviewLock = false;
+let _aiReviewPending = null; // { story_id, adopted, unreviewed, episodes }
 
-async function _autoAiReview(story_id, story, episodes, submissions) {
-  if (!isAdmin() || !_getClaudeKey() || _aiReviewLock) return;
+function _autoAiReview(story_id, story, episodes, submissions) {
+  if (!isAdmin() || !_getClaudeKey()) return;
   if (story?.status !== 'completed' && story?.status !== 'inactive') return;
   const adopted = submissions.filter(s => s.is_adopted === true || s.is_adopted === 'TRUE');
   const unreviewed = adopted.filter(s => !s.ai_reviewed);
   if (!unreviewed.length) return;
+  _aiReviewPending = { story_id, adopted, unreviewed, episodes };
+  // 기존 배너 제거 후 새로 추가
+  document.getElementById('ai-review-banner')?.remove();
+  const banner = document.createElement('div');
+  banner.id = 'ai-review-banner';
+  banner.style.cssText = 'position:fixed;bottom:72px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 18px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 20px rgba(0,0,0,.35);z-index:300;white-space:nowrap';
+  banner.innerHTML = `
+    <span style="font-size:13px">🤖 이 이야기 문장을 AI로 다듬을까요?</span>
+    <button class="btn btn-primary btn-sm" onclick="runAiReview()">다듬기</button>
+    <button class="btn btn-ghost btn-sm" onclick="skipAiReview()">건너뛰기</button>`;
+  document.body.appendChild(banner);
+}
+
+async function runAiReview() {
+  const pending = _aiReviewPending;
+  if (!pending || _aiReviewLock) return;
   _aiReviewLock = true;
+  const banner = document.getElementById('ai-review-banner');
+  if (banner) banner.innerHTML = `<span style="font-size:13px">🤖 AI가 문장을 검토하는 중...</span><div class="loading" style="width:20px;height:20px;margin:0"></div>`;
   try {
+    const { story_id, adopted, unreviewed, episodes } = pending;
     const allSubIds = unreviewed.map(s => s.sub_id);
     if (adopted.length < 2) {
       await api('markAiReviewed', { sub_ids: allSubIds });
-      return;
+      banner?.remove(); return;
     }
     const sortedAdopted = adopted.slice().sort((a, b) => {
       const ea = episodes.find(e => e.episode_id === a.episode_id);
@@ -3317,12 +3337,12 @@ ${JSON.stringify(sortedAdopted.map(s => ({ sub_id: s.sub_id, content: s.content 
 
 응답 형식: [{"sub_id":"...","revised":"..."}]`;
     const result = await _callClaude(prompt);
-    if (!result) { await api('markAiReviewed', { sub_ids: allSubIds }); return; }
+    if (!result) { await api('markAiReviewed', { sub_ids: allSubIds }); banner?.remove(); return; }
     let revised;
     try {
       const match = result.match(/\[[\s\S]*\]/);
       revised = JSON.parse(match ? match[0] : result);
-    } catch(e) { await api('markAiReviewed', { sub_ids: allSubIds }); return; }
+    } catch(e) { await api('markAiReviewed', { sub_ids: allSubIds }); banner?.remove(); return; }
     let changedCount = 0;
     for (const r of revised) {
       if (!r.sub_id || !r.revised) continue;
@@ -3335,6 +3355,8 @@ ${JSON.stringify(sortedAdopted.map(s => ({ sub_id: s.sub_id, content: s.content 
       if (editRes.ok) changedCount++;
     }
     await api('markAiReviewed', { sub_ids: allSubIds });
+    banner?.remove();
+    _aiReviewPending = null;
     if (changedCount > 0) {
       toast(`AI가 ${changedCount}개 문장을 다듬었어요.`);
       const freshRes = await api('getStory', { story_id });
@@ -3342,9 +3364,20 @@ ${JSON.stringify(sortedAdopted.map(s => ({ sub_id: s.sub_id, content: s.content 
         _lsc.set('story_' + story_id, freshRes, 90);
         _applyStoryData(freshRes, story_id);
       }
+    } else {
+      toast('수정할 부분이 없었어요.');
     }
   } finally {
     _aiReviewLock = false;
+  }
+}
+
+async function skipAiReview() {
+  document.getElementById('ai-review-banner')?.remove();
+  if (_aiReviewPending) {
+    const ids = _aiReviewPending.unreviewed.map(s => s.sub_id);
+    _aiReviewPending = null;
+    await api('markAiReviewed', { sub_ids: ids });
   }
 }
 

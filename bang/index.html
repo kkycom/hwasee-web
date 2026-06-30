@@ -493,9 +493,9 @@
     cursor:pointer; padding:4px 8px; border-radius:6px;
   }
   .ob-skip:hover { color:var(--text); }
-  #ob-content { transition:opacity .2s, transform .2s; min-height:220px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; }
-  .ob-img-wrap { text-align:center; }
-  .ob-img-wrap:empty { display:none; }
+  #ob-content { transition:opacity .2s; height:260px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; overflow:hidden; }
+  .ob-img-wrap { text-align:center; height:160px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .ob-img-wrap:empty { visibility:hidden; }
   .ob-img-wrap img { max-width:100%; max-height:160px; border-radius:10px; object-fit:cover; display:block; margin:0 auto; }
   .ob-icon { font-size:36px; text-align:center; }
   .ob-title { font-size:17px; font-weight:700; text-align:center; font-family:var(--serif); line-height:1.4; }
@@ -2740,7 +2740,7 @@ const _OB_PAGES = [
     img: 'ob1.png',
   },
   {
-    icon: '▲',
+    icon: '👍',
     title: '공감으로 이야기가 완성돼요',
     body: '다른 사람들이 쓴 문장에 공감을 보낼 수 있어요.<br><strong>가장 많은 공감을 받은 문장이 채택되어</strong><br>다음 이야기로 이어져요.',
     img: 'ob2.png',
@@ -2785,18 +2785,14 @@ function _renderObPage(dir) {
         : '';
   };
   if (!dir) { doUpdate(); return; }
-  content.style.transition = 'opacity .15s, transform .15s';
+  content.style.transition = 'opacity .15s';
   content.style.opacity = '0';
-  content.style.transform = dir > 0 ? 'translateX(-20px)' : 'translateX(20px)';
   setTimeout(() => {
     doUpdate();
-    content.style.transition = 'none';
-    content.style.transform = dir > 0 ? 'translateX(20px)' : 'translateX(-20px)';
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      content.style.transition = 'opacity .2s, transform .2s';
+    requestAnimationFrame(() => {
+      content.style.transition = 'opacity .2s';
       content.style.opacity = '1';
-      content.style.transform = 'translateX(0)';
-    }));
+    });
   }, 150);
 }
 function _obNext() { if (_obPage < _OB_PAGES.length - 1) { _obPage++; _renderObPage(1); } else { closeOnboarding(); } }

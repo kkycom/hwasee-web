@@ -771,6 +771,8 @@ function toast(msg, isErr) {
 let currentRoute = 'home';
 let currentParam = null;
 
+let _skipHashChange = false;
+
 function nav(route, param) {
   if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; }
   Object.keys(commentCache).forEach(k => delete commentCache[k]);
@@ -779,6 +781,7 @@ function nav(route, param) {
   }
   currentRoute = route;
   currentParam = param || null;
+  _skipHashChange = true;
   location.hash = param ? `${route}/${param}` : route;
   window.scrollTo(0, 0);
   render();
@@ -3487,7 +3490,10 @@ function parseHash() {
   currentParam = parts[1] || null;
 }
 
-window.addEventListener('hashchange', () => { parseHash(); render(); renderNav(); });
+window.addEventListener('hashchange', () => {
+  if (_skipHashChange) { _skipHashChange = false; return; }
+  parseHash(); render(); renderNav();
+});
 
 // 잠금화면 복귀 시 30초 이상 숨겨졌으면 재렌더
 let _hiddenAt = 0;

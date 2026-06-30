@@ -523,6 +523,7 @@
       <span class="ob-dot" id="ob-dot-0"></span>
       <span class="ob-dot" id="ob-dot-1"></span>
       <span class="ob-dot" id="ob-dot-2"></span>
+      <span class="ob-dot" id="ob-dot-3"></span>
     </div>
     <div id="ob-actions"></div>
   </div>
@@ -2719,6 +2720,12 @@ function enterProseSelMode(mode, story_id) {
 // ─── 온보딩 ───────────────────────────────────────────────
 const _OB_PAGES = [
   {
+    icon: '🌱',
+    title: '와주셔서 정말 감사합니다.',
+    body: '어렵게 생각하지 마세요!<br>아무 말이라도 괜찮습니다.<br><strong>열심히 하겠습니다. 지켜봐주세요!</strong>',
+    img: '',
+  },
+  {
     icon: '✍️',
     title: '한 문장씩 이어가는 이야기',
     body: '시작 페이지에서 마음에 드는 이야기를 골라,<br>한 문장을 더해보세요.<br><strong>채택되면 포인트가 쌓여요!</strong>',
@@ -2761,7 +2768,7 @@ function _renderObPage(dir) {
     document.getElementById('ob-icon').textContent  = p.icon;
     document.getElementById('ob-title').textContent = p.title;
     document.getElementById('ob-body').innerHTML    = p.body;
-    [0,1,2].forEach(i => {
+    [0,1,2,3].forEach(i => {
       document.getElementById('ob-dot-'+i).className = 'ob-dot' + (i === _obPage ? ' active' : '');
     });
     document.getElementById('ob-actions').innerHTML =

@@ -620,6 +620,36 @@ async function _fbCloseEpisode(episode_id, ep) {
 
   if (nextStep >= maxSteps || anyClose) {
     await storySnap.ref.update({ current_step: nextStep, status: 'completed' });
+
+    // 남은 open 에피소드(다른 갈래)를 독립 active 스토리로 분리
+    const orphanSnap = await db.collection('episodes')
+      .where('story_id', '==', ep.story_id).where('status', '==', 'open').get();
+    for (const orphanDoc of orphanSnap.docs) {
+      const orphan = orphanDoc.data();
+      const newStoryId = fbGenId();
+      const spinBatch = db.batch();
+      spinBatch.set(db.collection('stories').doc(newStoryId), {
+        story_id: newStoryId, parent_story_id: ep.story_id,
+        branch_from_step: Number(orphan.step) + 1,
+        opening: st.opening, max_steps: st.max_steps || 10,
+        current_step: Number(orphan.step), status: 'active',
+        creator_id: st.creator_id,
+        creator_nickname: st.creator_nickname || '익명',
+        creator_badge: st.creator_badge || '',
+        participant_count: 0, like_count: 0, adoption_count: 0,
+        has_branch: false, created_at: fbNow(), batch: '',
+      });
+      spinBatch.update(orphanDoc.ref, { story_id: newStoryId });
+      await spinBatch.commit();
+      const subSnap = await db.collection('submissions')
+        .where('episode_id', '==', orphan.episode_id).get();
+      if (!subSnap.empty) {
+        const subBatch = db.batch();
+        subSnap.docs.forEach(d => subBatch.update(d.ref, { story_id: newStoryId }));
+        await subBatch.commit();
+      }
+    }
+
     const ids = await _fbGetStoryParticipants(ep.story_id);
     await _fbCreateNotifications(ids, ep.story_id, `"${snippet}" 이야기가 완결됐어요!`);
   } else {

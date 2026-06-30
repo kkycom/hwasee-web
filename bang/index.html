@@ -3537,6 +3537,11 @@ window.onload = async () => {
       saveUser(null); renderNav(); render();
     } else {
       // undefined = 네트워크 오류 → 로그인 유지
+      if (session && session.badge) {
+        user.total_points = session.total_points;
+        user.badge = session.badge;
+        saveUser(user);
+      }
       const br = await api('checkDailyBonus');
       if (br.ok && br.bonus > 0) {
         setTimeout(() => toast(`🌿 출석 점수 +${br.bonus}p 지급됐어요!`), 800);

@@ -65,7 +65,8 @@
     --serif:   'Gowun Batang', Georgia, serif;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+  html { overflow-x: hidden; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; overflow-x: hidden; max-width: 100vw; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
   /* ── 헤더 */
   header {
@@ -448,7 +449,9 @@
   .branch-chooser-label { font-size:12px; color:var(--accent2); text-align:center; letter-spacing:2px; font-weight:700; margin-bottom:14px; }
   .branch-choices { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .branch-choice-card { background:var(--surface); border:1.5px solid var(--border); border-radius:10px; padding:16px 14px 12px; cursor:pointer; text-align:left; font-size:15px; line-height:1.75; font-family:var(--serif); color:var(--text); transition:border-color .2s, box-shadow .2s; width:100%; display:flex; flex-direction:column; }
-  .branch-choice-card:hover { border-color:var(--accent2); border-width:3px; box-shadow:0 0 20px rgba(200,169,110,.35), inset 0 0 0 1px rgba(200,169,110,.2); }
+  @media (hover: hover) {
+    .branch-choice-card:hover { border-color:var(--accent2); border-width:3px; box-shadow:0 0 20px rgba(200,169,110,.35), inset 0 0 0 1px rgba(200,169,110,.2); }
+  }
   .branch-choice-label { display:inline-block; font-size:11px; font-weight:800; letter-spacing:.06em; margin-bottom:8px; padding:2px 9px; border-radius:5px; }
   .branch-prose-row { position:relative; margin:2px 0; }
   .branch-side-indicator { display:flex; flex-direction:column; align-items:stretch; gap:3px; }
@@ -1224,7 +1227,6 @@ function _applyStoryData(res, story_id) {
   // 분기 트리 산문 (전역 저장 → chooseBranch 재렌더용)
   const { branches = [], parent_chain = null, mvp_map = {}, my_mvp_episode_id = null } = res;
   window._storyData = { episodes, submissions, story: s, branches, parent_chain, mvp_map, my_mvp_episode_id, my_voted_sub_ids };
-  window._branchChoice = {}; // 페이지 진입 시 항상 초기화 → 매번 갈림길 카드 먼저 표시
   window._proseSelMode = null; // 'mvp' | 'branch'
   window._proseSelEpId = null;
 
@@ -1328,6 +1330,7 @@ function _applyStoryData(res, story_id) {
 async function story() {
   const story_id = currentParam;
   selectedSubs = [];
+  window._branchChoice = {}; // 페이지 진입 시 1회만 초기화 (재렌더 시 보존)
   const cached = _lsc.get('story_' + story_id);
   if (cached) {
     _applyStoryData(cached, story_id);
@@ -1595,13 +1598,13 @@ function openRankingModal() {
   modal.className = 'modal-overlay';
   modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
   modal.innerHTML = `
-    <div class="modal-box" style="max-width:600px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div class="modal-box" style="max-width:600px;padding:0;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--border);border-radius:var(--radius) var(--radius) 0 0;z-index:1;flex-shrink:0">
         <div style="font-size:15px;font-weight:700">✦ 명예의 전당</div>
         <button onclick="document.getElementById('ranking-modal').remove()"
           style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1">✕</button>
       </div>
-      <div id="modal-lb-body"><div style="font-size:12px;color:var(--muted)">불러오는 중...</div></div>
+      <div id="modal-lb-body" style="padding:20px;overflow-y:auto"><div style="font-size:12px;color:var(--muted)">불러오는 중...</div></div>
     </div>`;
   document.body.appendChild(modal);
   // 모달에서는 10위까지 보여줌

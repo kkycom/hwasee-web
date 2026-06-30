@@ -503,7 +503,7 @@
     background:var(--surface); border:1px solid var(--border); border-radius:20px;
     width:100%; max-width:360px; padding:32px 28px 24px;
     display:flex; flex-direction:column; gap:16px;
-    position:relative; user-select:none; overflow:hidden;
+    position:relative; user-select:none;
   }
   .ob-skip {
     position:absolute; top:16px; right:16px;
@@ -511,10 +511,9 @@
     cursor:pointer; padding:4px 8px; border-radius:6px;
   }
   .ob-skip:hover { color:var(--text); }
-  #ob-content { height:300px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; overflow:hidden; }
-  .ob-img-wrap { text-align:center; height:120px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-  .ob-img-wrap:empty { display:none; }
-  .ob-img-wrap img { max-width:100%; max-height:120px; border-radius:10px; object-fit:cover; display:block; margin:0 auto; }
+  .ob-page { display:none; flex-direction:column; align-items:center; gap:12px; min-height:280px; justify-content:center; }
+  .ob-page.active { display:flex; }
+  .ob-img { max-width:100%; max-height:120px; border-radius:10px; object-fit:cover; }
   .ob-icon { font-size:36px; text-align:center; }
   .ob-title { font-size:17px; font-weight:700; text-align:center; font-family:var(--serif); line-height:1.4; }
   .ob-body { font-size:13px; color:var(--muted); line-height:1.8; text-align:center; }
@@ -539,14 +538,31 @@
 <div id="onboarding-overlay">
   <div class="ob-card">
     <button class="ob-skip" onclick="closeOnboarding()">건너뛰기</button>
-    <div id="ob-content">
-      <div class="ob-img-wrap" id="ob-img-wrap"></div>
-      <div class="ob-icon" id="ob-icon"></div>
-      <div class="ob-title" id="ob-title"></div>
-      <div class="ob-body" id="ob-body"></div>
+    <div class="ob-page active">
+      <div class="ob-icon">🌱</div>
+      <div class="ob-title">와주셔서 정말 감사합니다.</div>
+      <div class="ob-body">어렵게 생각하지 마세요!<br>아무 말이라도 괜찮습니다.<br><strong>열심히 하겠습니다. 지켜봐주세요!</strong></div>
+    </div>
+    <div class="ob-page">
+      <img class="ob-img" src="/bang/ob1.png" alt="" onerror="this.style.display='none'">
+      <div class="ob-icon">✍️</div>
+      <div class="ob-title">한 문장씩 이어가는 이야기</div>
+      <div class="ob-body">시작 페이지에서 마음에 드는 이야기를 골라,<br>한 문장을 더해보세요.<br><strong>채택되면 포인트가 쌓여요!</strong></div>
+    </div>
+    <div class="ob-page">
+      <img class="ob-img" src="/bang/ob2.png" alt="" onerror="this.style.display='none'">
+      <div class="ob-icon">👍</div>
+      <div class="ob-title">공감으로 이야기가 완성돼요</div>
+      <div class="ob-body">다른 사람들이 쓴 문장에 공감을 보낼 수 있어요.<br><strong>가장 많은 공감을 받은 문장이 채택되어</strong><br>다음 이야기로 이어져요.</div>
+    </div>
+    <div class="ob-page">
+      <img class="ob-img" src="/bang/ob3.png" alt="" onerror="this.style.display='none'">
+      <div class="ob-icon">📖</div>
+      <div class="ob-title">완성된 이야기를 즐겨요</div>
+      <div class="ob-body">이야기가 완결되면 언제든지 꺼내볼 수 있어요!<br><strong>으뜸 글을 뽑거나</strong>, 마음에 드는 지점에서<br>새로운 방향의 이야기를 시작할 수도 있어요.</div>
     </div>
     <div class="ob-dots">
-      <span class="ob-dot" id="ob-dot-0"></span>
+      <span class="ob-dot active" id="ob-dot-0"></span>
       <span class="ob-dot" id="ob-dot-1"></span>
       <span class="ob-dot" id="ob-dot-2"></span>
       <span class="ob-dot" id="ob-dot-3"></span>
@@ -2750,37 +2766,11 @@ function enterProseSelMode(mode, story_id) {
 }
 
 // ─── 온보딩 ───────────────────────────────────────────────
-const _OB_PAGES = [
-  {
-    icon: '🌱',
-    title: '와주셔서 정말 감사합니다.',
-    body: '어렵게 생각하지 마세요!<br>아무 말이라도 괜찮습니다.<br><strong>열심히 하겠습니다. 지켜봐주세요!</strong>',
-    img: '',
-  },
-  {
-    icon: '✍️',
-    title: '한 문장씩 이어가는 이야기',
-    body: '시작 페이지에서 마음에 드는 이야기를 골라,<br>한 문장을 더해보세요.<br><strong>채택되면 포인트가 쌓여요!</strong>',
-    img: 'ob1.png',
-  },
-  {
-    icon: '👍',
-    title: '공감으로 이야기가 완성돼요',
-    body: '다른 사람들이 쓴 문장에 공감을 보낼 수 있어요.<br><strong>가장 많은 공감을 받은 문장이 채택되어</strong><br>다음 이야기로 이어져요.',
-    img: 'ob2.png',
-  },
-  {
-    icon: '📖',
-    title: '완성된 이야기를 즐겨요',
-    body: '이야기가 완결되면 언제든지 꺼내볼 수 있어요!<br><strong>으뜸 글을 뽑거나</strong>, 마음에 드는 지점에서<br>새로운 방향의 이야기를 시작할 수도 있어요.',
-    img: 'ob3.png',
-  },
-];
 let _obPage = 0, _obTouchX = null, _obMouseX = null, _obMouseDrag = false;
 
 function showOnboarding() {
   _obPage = 0;
-  _renderObPage(0);
+  _setObPage(0);
   document.body.style.overflow = 'hidden';
   document.getElementById('onboarding-overlay').style.display = 'flex';
 }
@@ -2789,25 +2779,18 @@ function closeOnboarding() {
   document.getElementById('onboarding-overlay').style.display = 'none';
   document.body.style.overflow = '';
 }
-function _renderObPage(dir) {
-  const p = _OB_PAGES[_obPage];
-  const imgWrap = document.getElementById('ob-img-wrap');
-  imgWrap.innerHTML = p.img
-    ? `<img src="/bang/${p.img}" alt="" onerror="this.parentElement.innerHTML='';">`
-    : '';
-  document.getElementById('ob-icon').textContent  = p.icon;
-  document.getElementById('ob-title').textContent = p.title;
-  document.getElementById('ob-body').innerHTML    = p.body;
+function _setObPage(n) {
+  document.querySelectorAll('.ob-page').forEach((el, i) => {
+    el.classList.toggle('active', i === n);
+  });
   [0,1,2,3].forEach(i => {
-    document.getElementById('ob-dot-'+i).className = 'ob-dot' + (i === _obPage ? ' active' : '');
+    document.getElementById('ob-dot-'+i).className = 'ob-dot' + (i === n ? ' active' : '');
   });
   document.getElementById('ob-actions').innerHTML =
-    _obPage === _OB_PAGES.length - 1
-      ? `<button class="ob-btn-start" onclick="closeOnboarding()">시작하기</button>`
-      : '';
+    n === 3 ? `<button class="ob-btn-start" onclick="closeOnboarding()">시작하기</button>` : '';
 }
-function _obNext() { if (_obPage < _OB_PAGES.length - 1) { _obPage++; _renderObPage(1); } else { closeOnboarding(); } }
-function _obPrev() { if (_obPage > 0) { _obPage--; _renderObPage(-1); } }
+function _obNext() { if (_obPage < 3) { _obPage++; _setObPage(_obPage); } else { closeOnboarding(); } }
+function _obPrev() { if (_obPage > 0) { _obPage--; _setObPage(_obPage); } }
 
 (function() {
   const ov = document.getElementById('onboarding-overlay');

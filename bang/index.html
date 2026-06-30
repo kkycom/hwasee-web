@@ -1372,7 +1372,7 @@ async function story() {
   }
   _lsc.set('story_' + story_id, res, 90);
   _applyStoryData(res, story_id);
-  _autoAiReview(story_id, res.episodes || [], res.submissions || []);
+  _autoAiReview(story_id, res.story, res.episodes || [], res.submissions || []);
 }
 
 function toggleHistory() {
@@ -3285,8 +3285,9 @@ async function _callClaude(userMessage) {
 
 let _aiReviewLock = false;
 
-async function _autoAiReview(story_id, episodes, submissions) {
+async function _autoAiReview(story_id, story, episodes, submissions) {
   if (!isAdmin() || !_getClaudeKey() || _aiReviewLock) return;
+  if (story?.status !== 'completed' && story?.status !== 'inactive') return;
   const adopted = submissions.filter(s => s.is_adopted === true || s.is_adopted === 'TRUE');
   const unreviewed = adopted.filter(s => !s.ai_reviewed);
   if (!unreviewed.length) return;

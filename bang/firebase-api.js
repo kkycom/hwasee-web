@@ -261,8 +261,8 @@ async function fbGetStories(page) {
     });
     const boostSet = new Set(boostsSnap.docs.map(d => d.data().story_id));
 
-    // 1일 경과 + 참여자 0 + AI 씨앗 → inactive 처리 + 생성자에게 알림
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    // 1시간 경과 + 참여자 0 + AI 씨앗 → inactive 처리 + 생성자에게 알림
+    const oneDayAgo = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
     const abandoned = storiesSnap.docs.filter(d => {
       const s = d.data();
       return s.is_ai_seed === true && (s.participant_count || 0) === 0 && (s.created_at || '') < oneDayAgo;

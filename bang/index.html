@@ -3265,7 +3265,7 @@ async function adminAI() {
       </div>`).join('');
 
   document.getElementById('app').innerHTML = nav_ + `
-    <div class="card" style="padding:16px 18px;margin-bottom:16px">
+    <div class="card" style="padding:16px 18px;margin-bottom:12px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div>
           <div style="font-size:14px;font-weight:700">AI 참여 ${enabled ? '<span style="color:var(--success)">ON</span>' : '<span style="color:var(--muted)">OFF</span>'}</div>
@@ -3282,8 +3282,29 @@ async function adminAI() {
         <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:2px"><span>50% (느림)</span><span>100% (기본)</span><span>200% (빠름)</span></div>
       </div>
     </div>
+    <div class="card" style="padding:16px 18px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px">
+        Claude API 키
+        <span style="font-size:11px;font-weight:400;margin-left:6px;color:${res.has_key ? 'var(--success)' : 'var(--accent2)'}">${res.has_key ? '✓ 설정됨' : '미설정 — AI 교정 비활성'}</span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <input type="password" id="claude-key-input" placeholder="sk-ant-..." autocomplete="off"
+          style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--bg);color:var(--text)">
+        <button class="btn btn-primary btn-sm" onclick="saveClaudeKey()">저장</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Anthropic Console → API Keys에서 발급. 여기 입력 시 Firestore에만 저장되며 외부 노출 없음.</div>
+    </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">AI 제출 내역 (최근 ${res.submissions.length}건)</div>
     <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:20px">${subsHtml}</div>`;
+}
+
+async function saveClaudeKey() {
+  const key = document.getElementById('claude-key-input')?.value.trim();
+  if (!key) { toast('키를 입력해주세요.', true); return; }
+  const res = await api('setClaudeKey', { key });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast('Claude API 키가 저장됐습니다.');
+  adminAI();
 }
 
 async function toggleAIEnabled(val) {

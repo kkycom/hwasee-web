@@ -65,13 +65,13 @@ exports.aiReviewCompletedStories = functions
   .pubsub.schedule('every 2 hours')
   .timeZone('Asia/Seoul')
   .onRun(async () => {
-    const claudeKey = functions.config().claude?.key;
+    const db = admin.firestore();
+    const secretsSnap = await db.collection('config').doc('secrets').get();
+    const claudeKey = secretsSnap.exists ? secretsSnap.data().claude_key : null;
     if (!claudeKey) {
-      console.log('Claude API key not set. Run: firebase functions:config:set claude.key="sk-ant-..."');
+      console.log('Claude API key not set. Add it via admin AI page.');
       return null;
     }
-
-    const db = admin.firestore();
 
     // 완성된 이야기 전체 조회
     const storiesSnap = await db.collection('stories')
@@ -377,7 +377,8 @@ exports.aiParticipate = functions
   .timeZone('Asia/Seoul')
   .onRun(async () => {
     const db = admin.firestore();
-    const claudeKey = functions.config().claude?.key;
+    const secretsSnap = await db.collection('config').doc('secrets').get();
+    const claudeKey = secretsSnap.exists ? secretsSnap.data().claude_key : null;
     if (!claudeKey) return null;
 
     const configSnap = await db.collection('config').doc('ai_config').get();

@@ -1790,14 +1790,21 @@ async function fbAdminCloseStory(story_id, admin_id) {
 
 async function fbGetAIActivities(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const [configSnap, secretsSnap, subsSnap, votesSnap] = await Promise.all([
+  const [configSnap, secretsSnap] = await Promise.all([
     db.collection('config').doc('ai_config').get(),
     db.collection('config').doc('secrets').get(),
-    db.collection('submissions').where('author_id', '==', FB_ADMIN_ID).where('is_ai', '==', true).get(),
-    db.collection('votes').where('voter_id', '==', FB_ADMIN_ID).where('is_ai', '==', true).get(),
   ]);
   const aiConfig = configSnap.exists ? configSnap.data() : { enabled: false, speed_pct: 100 };
   const hasKey = secretsSnap.exists && !!secretsSnap.data().claude_key;
+  let subsSnap, votesSnap;
+  try {
+    [subsSnap, votesSnap] = await Promise.all([
+      db.collection('submissions').where('author_id', '==', FB_ADMIN_ID).where('is_ai', '==', true).get(),
+      db.collection('votes').where('voter_id', '==', FB_ADMIN_ID).where('is_ai', '==', true).get(),
+    ]);
+  } catch(e) {
+    return { ok: true, ai_config: aiConfig, has_key: hasKey, submissions: [], votes: [], total_subs: 0, total_votes: 0 };
+  }
   const subs = subsSnap.docs.map(d => d.data())
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).slice(0, 100);
   const votes = votesSnap.docs.map(d => d.data())

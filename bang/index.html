@@ -499,7 +499,10 @@
   .branch-side-label { display:none; }
   .branch-tab { background:var(--card); border:1px solid var(--border); border-radius:4px; padding:2px 8px; font-size:11px; cursor:pointer; color:var(--muted); white-space:nowrap; text-align:center; }
   .branch-tab.active { border-color:var(--accent2); color:var(--accent2); font-weight:700; }
-  @media (max-width:600px) { .branch-tab.active { font-weight:400; } }
+  @media (max-width:600px) {
+    .branch-tab.active { font-weight:400; }
+    .branch-choice-card:hover { box-shadow:none; border-color:var(--border); }
+  }
   /* 산문뷰 박스 밖 왼쪽에 두둥실 */
   #story-prose-wrap.has-branch-tabs { overflow:visible; margin-left:58px; }
   #story-prose-wrap.has-branch-tabs .branch-side-indicator { position:absolute; right:calc(100% + 28px + 10px); top:4px; }

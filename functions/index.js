@@ -381,14 +381,14 @@ exports.aiParticipate = functions
     const claudeKey = secretsSnap.exists ? secretsSnap.data().claude_key : null;
     if (!claudeKey) return null;
 
-    // 한국시간 08:00~23:00 외 비활성
+    // 한국시간 08:00~22:00 외 비활성
     const nowKSTDate = new Date(Date.now() + 9 * 3600 * 1000);
     const hourKST = nowKSTDate.getUTCHours();
-    if (hourKST < 8 || hourKST >= 23) return null;
+    if (hourKST < 8 || hourKST >= 22) return null;
 
-    // 야간(어젯밤 23:00 ~ 오늘 08:00) 활동 여부 판단용
+    // 야간(어젯밤 22:00 ~ 오늘 08:00) 활동 여부 판단용
     const kstMidnightUTC = Date.UTC(nowKSTDate.getUTCFullYear(), nowKSTDate.getUTCMonth(), nowKSTDate.getUTCDate()) - 9 * 3600 * 1000;
-    const overnightStart  = kstMidnightUTC - 3600 * 1000;      // 어젯밤 23:00 KST
+    const overnightStart  = kstMidnightUTC - 2 * 3600 * 1000;  // 어젯밤 22:00 KST
     const todayEightAMUTC = kstMidnightUTC + 8 * 3600 * 1000;  // 오늘 08:00 KST
 
     const configSnap = await db.collection('config').doc('ai_config').get();

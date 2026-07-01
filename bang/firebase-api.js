@@ -1768,7 +1768,16 @@ async function fbAdminDeleteSubmission(sub_id, admin_id) {
 
 async function fbAdminCloseStory(story_id, admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  const stSnap = await db.collection('stories').doc(story_id).get();
   await db.collection('stories').doc(story_id).update({ status: 'inactive' });
+  if (stSnap.exists) {
+    const d = stSnap.data();
+    if (d.is_ai_seed && d.opening) {
+      await db.collection('config').doc('used_openings').set(
+        { [d.opening]: true }, { merge: true }
+      );
+    }
+  }
   return { ok: true };
 }
 

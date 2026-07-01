@@ -1841,7 +1841,7 @@ async function fbSetClaudeKey(admin_id, key) {
 
 async function fbFixAINicknames(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const snap = await db.collection('submissions').where('is_ai', '==', true).get();
+  const snap = await db.collection('submissions').where('author_id', '==', FB_ADMIN_ID).get();
   if (snap.empty) return { ok: true, count: 0 };
   const BATCH_SIZE = 500;
   let count = 0;

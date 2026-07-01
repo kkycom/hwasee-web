@@ -622,11 +622,10 @@ async function _fbCloseEpisode(episode_id, ep) {
 
   const st       = storySnap.data();
   const nextStep = (Number(st.current_step) || 0) + 1;
-  const maxSteps = Number(st.max_steps) || 10;
   const anyClose = winners.some(w => w.is_closing === true);
   const snippet  = (st.opening || '').slice(0, 25) + ((st.opening || '').length > 25 ? '…' : '');
 
-  if (nextStep >= maxSteps || anyClose) {
+  if (anyClose) {
     await storySnap.ref.update({ current_step: nextStep, status: 'completed' });
 
     // 남은 open 에피소드(다른 갈래)를 독립 active 스토리로 분리

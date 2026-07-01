@@ -381,9 +381,15 @@ exports.aiParticipate = functions
     const claudeKey = secretsSnap.exists ? secretsSnap.data().claude_key : null;
     if (!claudeKey) return null;
 
-    // 한국시간 09:00~22:00 외 비활성
-    const hourKST = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCHours();
-    if (hourKST < 9 || hourKST >= 22) return null;
+    // 한국시간 08:00~23:00 외 비활성
+    const nowKSTDate = new Date(Date.now() + 9 * 3600 * 1000);
+    const hourKST = nowKSTDate.getUTCHours();
+    if (hourKST < 8 || hourKST >= 23) return null;
+
+    // 야간(어젯밤 23:00 ~ 오늘 08:00) 활동 여부 판단용
+    const kstMidnightUTC = Date.UTC(nowKSTDate.getUTCFullYear(), nowKSTDate.getUTCMonth(), nowKSTDate.getUTCDate()) - 9 * 3600 * 1000;
+    const overnightStart  = kstMidnightUTC - 3600 * 1000;      // 어젯밤 23:00 KST
+    const todayEightAMUTC = kstMidnightUTC + 8 * 3600 * 1000;  // 오늘 08:00 KST
 
     const configSnap = await db.collection('config').doc('ai_config').get();
     const aiConfig = configSnap.exists ? configSnap.data() : {};
@@ -423,7 +429,10 @@ exports.aiParticipate = functions
 
         // ── 제출 로직
         const aiSubs = subs.filter(s => s.is_ai === true);
-        if (now - lastSubAt >= subIntervalMs && aiSubs.length < 3) {
+        // 야간 활동이 있었으면 오늘 8시 기준 3시간 인터벌(→ 11시), 없었으면 8시 즉시 허용
+        const hadOvernightActivity = lastSubAt >= overnightStart;
+        const effectiveLastSubAt = hadOvernightActivity ? Math.max(lastSubAt, todayEightAMUTC) : lastSubAt;
+        if (now - effectiveLastSubAt >= subIntervalMs && aiSubs.length < 3) {
           const storyText = await _buildStoryContext(db, story_id, story);
           const epStep = Number(currentEp.step) || 1;
           const isClosing = epStep >= 3;

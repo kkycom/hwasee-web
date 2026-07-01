@@ -430,31 +430,39 @@
   p.desc { color: var(--muted); font-size: 14px; margin-bottom: 24px; line-height: 1.6; }
   @keyframes writing {
     0%   { transform: translateX(-15px); }
-    5%   { transform: translateX(-13px); }
-    9%   { transform: translateX(-14px); }
-    14%  { transform: translateX(-11px); }
-    18%  { transform: translateX(-12px); }
-    23%  { transform: translateX(-9px);  }
-    27%  { transform: translateX(-10px); }
-    32%  { transform: translateX(-7px);  }
-    36%  { transform: translateX(-8px);  }
-    41%  { transform: translateX(-5px);  }
-    45%  { transform: translateX(-6px);  }
-    51%  { transform: translateX(-3px);  }
-    55%  { transform: translateX(-4px);  }
-    61%  { transform: translateX(-1px);  }
-    65%  { transform: translateX(-2px);  }
-    71%  { transform: translateX(0px);   }
-    75%  { transform: translateX(-1px);  }
-    81%  { transform: translateX(1px);   }
-    85%  { transform: translateX(0px);   }
-    90%  { transform: translateX(2px);   }
-    94%  { transform: translateX(1px);   }
+    3%   { transform: translateX(-12px); }
+    6%   { transform: translateX(-13px); }
+    10%  { transform: translateX(-10px); }
+    13%  { transform: translateX(-11px); }
+    17%  { transform: translateX(-8px);  }
+    20%  { transform: translateX(-9px);  }
+    24%  { transform: translateX(-6px);  }
+    27%  { transform: translateX(-7px);  }
+    31%  { transform: translateX(-4px);  }
+    34%  { transform: translateX(-5px);  }
+    38%  { transform: translateX(-2px);  }
+    41%  { transform: translateX(-3px);  }
+    45%  { transform: translateX(0px);   }
+    48%  { transform: translateX(-1px);  }
+    52%  { transform: translateX(2px);   }
+    55%  { transform: translateX(1px);   }
+    59%  { transform: translateX(4px);   }
+    62%  { transform: translateX(3px);   }
+    66%  { transform: translateX(6px);   }
+    69%  { transform: translateX(5px);   }
+    73%  { transform: translateX(8px);   }
+    76%  { transform: translateX(7px);   }
+    80%  { transform: translateX(10px);  }
+    83%  { transform: translateX(9px);   }
+    87%  { transform: translateX(12px);  }
+    90%  { transform: translateX(11px);  }
+    93%  { transform: translateX(14px);  }
+    95%  { transform: translateX(13px);  }
     97%  { transform: translateX(-15px); }
     100% { transform: translateX(-15px); }
   }
   .loading { text-align: center; padding: 40px; color: var(--muted); }
-  .loading::before { content: '✍️'; display: inline-block; font-size: 20px; animation: writing 2.4s ease-in-out infinite; filter: saturate(0.55) brightness(1.1); }
+  .loading::before { content: '✍️'; display: inline-block; font-size: 20px; animation: writing 2.75s ease-in-out infinite; filter: saturate(0.55) brightness(1.1); }
   .loading::after  { content: '불러오는 중입니다'; display: block; font-size: 13px; color: var(--muted); margin-top: 10px; letter-spacing: .3px; }
   .empty   { text-align: center; padding: 48px 0; color: var(--muted); }
   .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--border); font-size: 12px; color: var(--muted); margin-right: 6px; white-space: nowrap; }

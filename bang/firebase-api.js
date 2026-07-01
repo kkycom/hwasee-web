@@ -1761,6 +1761,50 @@ async function fbMarkAiReviewed(admin_id, sub_ids) {
   return { ok: true };
 }
 
+// ─── AI 활동 ─────────────────────────────────────────────
+
+async function fbGetAIActivities(admin_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+
+  const [configSnap, subsSnap, votesSnap] = await Promise.all([
+    db.collection('config').doc('ai_config').get(),
+    db.collection('submissions').where('author_id', '==', FB_ADMIN_ID).where('is_ai', '==', true).get(),
+    db.collection('votes').where('voter_id', '==', FB_ADMIN_ID).where('is_ai', '==', true).get(),
+  ]);
+
+  const aiConfig = configSnap.exists ? configSnap.data() : { enabled: false, speed_pct: 100 };
+
+  const subs = subsSnap.docs.map(d => d.data())
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).slice(0, 100);
+  const votes = votesSnap.docs.map(d => d.data())
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).slice(0, 50);
+
+  const storyIds = [...new Set([...subs.map(s => s.story_id), ...votes.map(v => v.story_id)].filter(Boolean))];
+  const storyMap = {};
+  if (storyIds.length) {
+    const sDocs = await Promise.all(storyIds.map(id => db.collection('stories').doc(id).get()));
+    sDocs.forEach(d => { if (d.exists) storyMap[d.id] = d.data().opening || ''; });
+  }
+
+  return {
+    ok: true,
+    ai_config: aiConfig,
+    submissions: subs.map(s => ({ ...s, story_opening: storyMap[s.story_id] || '' })),
+    votes: votes.map(v => ({ ...v, story_opening: storyMap[v.story_id] || '' })),
+    total_subs: subsSnap.size,
+    total_votes: votesSnap.size,
+  };
+}
+
+async function fbSetAIConfig(admin_id, updates) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  const patch = { updated_at: fbNow() };
+  if (updates.enabled !== undefined) patch.enabled = Boolean(updates.enabled);
+  if (updates.speed_pct !== undefined) patch.speed_pct = Math.min(200, Math.max(50, Number(updates.speed_pct)));
+  await db.collection('config').doc('ai_config').set(patch, { merge: true });
+  return { ok: true };
+}
+
 // ─── 메인 디스패처 ───────────────────────────────────────
 
 async function firebaseApi(action, params = {}) {
@@ -1835,6 +1879,8 @@ async function firebaseApi(action, params = {}) {
     case 'adminForceAdopt':       return fbAdminForceAdopt(params.sub_id, need().user_id);
     case 'adminDeleteSubmission': return fbAdminDeleteSubmission(params.sub_id, need().user_id);
     case 'adminCloseStory':       return fbAdminCloseStory(params.story_id, need().user_id);
+    case 'getAIActivities':       return fbGetAIActivities(need().user_id);
+    case 'setAIConfig':           return fbSetAIConfig(need().user_id, params);
 
     case 'saveFcmToken':    return fbSaveFcmToken(need().user_id, params.fcm_token);
     case 'trackVisit':      return fbTrackVisit();

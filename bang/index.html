@@ -52,7 +52,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
-<script src="firebase-api.js?v=2"></script>
+<script src="firebase-api.js?v=3"></script>
 <style>
   :root {
     --bg:      #f0ead8;
@@ -819,7 +819,7 @@ function nav(route, param) {
 }
 
 function render() {
-  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, create, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs };
+  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, create, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI };
   (routes[currentRoute] || home)();
 }
 
@@ -840,6 +840,7 @@ function renderNav() {
         <button class="btn-nav" onclick="toggleAdminMenu()" title="관리자 메뉴"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
         <div class="admin-menu-dropdown" id="admin-menu-dropdown">
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-stats')"><svg width="13" height="13" viewBox="0 0 12 12" fill="currentColor"><rect x="0" y="5" width="3" height="7" rx="0.5"/><rect x="4.5" y="2" width="3" height="10" rx="0.5"/><rect x="9" y="7" width="3" height="5" rx="0.5"/></svg> 이용통계</button>
+          <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-ai')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> AI 활동내역</button>
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-edits')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> 수정 내역</button>
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-reports')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg> 신고 내역</button>
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-bugs')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9V6a3 3 0 0 1 6 0v3"/><path d="M5 13a7 7 0 0 0 14 0v-3H5v3z"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="5" y1="10" x2="2" y2="8"/><line x1="19" y1="10" x2="22" y2="8"/><line x1="5" y1="16" x2="2" y2="18"/><line x1="19" y1="16" x2="22" y2="18"/></svg> 버그 내역</button>
@@ -3084,6 +3085,7 @@ function _adminNav(current) {
   const sep = `<span style="width:1px;height:14px;background:var(--border);margin:0 4px;flex-shrink:0"></span>`;
   const svgs = {
     stats: `<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="0" y="5" width="3" height="7" rx="0.5"/><rect x="4.5" y="2" width="3" height="10" rx="0.5"/><rect x="9" y="7" width="3" height="5" rx="0.5"/></svg>`,
+    ai: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`,
     edits: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
     reports: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>`,
     bugs: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9V6a3 3 0 0 1 6 0v3"/><path d="M5 13a7 7 0 0 0 14 0v-3H5v3z"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="5" y1="10" x2="2" y2="8"/><line x1="19" y1="10" x2="22" y2="8"/><line x1="5" y1="16" x2="2" y2="18"/><line x1="19" y1="16" x2="22" y2="18"/></svg>`,
@@ -3097,6 +3099,7 @@ function _adminNav(current) {
       <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="nav('seed')">← 메인</button>
       <div style="margin-left:auto;display:inline-flex;align-items:center">
         ${btn('이용통계','stats','admin-stats')}${sep}
+        ${btn('AI 활동','ai','admin-ai')}${sep}
         ${btn('수정 내역','edits','admin-edits')}${sep}
         ${btn('신고 내역','reports','admin-reports')}${sep}
         ${btn('버그 내역','bugs','admin-bugs')}
@@ -3145,6 +3148,73 @@ async function adminStats() {
     <h2 style="margin:0 0 18px">📊 이용통계</h2>
     ${statsHtml}
     ${referralHtml}`;
+}
+
+// ─── AI 활동내역 ──────────────────────────────────────────
+async function adminAI() {
+  if (!isAdmin()) { nav('seed'); return; }
+  document.getElementById('app').innerHTML = `<div class="loading"></div>`;
+  const res = await api('getAIActivities', {});
+  if (currentRoute !== 'admin-ai') return;
+
+  const nav_ = _adminNav('ai');
+  if (!res.ok) {
+    document.getElementById('app').innerHTML = nav_ + `<div class="empty">${esc(res.error)}</div>`;
+    return;
+  }
+
+  const cfg = res.ai_config || {};
+  const enabled = cfg.enabled === true;
+  const speedPct = cfg.speed_pct || 100;
+  const subH = (3 * 100 / speedPct).toFixed(1);
+  const voteH = (2 * 100 / speedPct).toFixed(1);
+
+  const subsHtml = res.submissions.length === 0
+    ? `<div class="empty" style="padding:20px">AI 제출 내역이 없습니다.</div>`
+    : res.submissions.map(s => `
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:flex-start">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:3px">${esc((s.story_opening||'').slice(0,30))} · ${s.is_closing?'<span style="color:var(--accent2)">마감글</span>':'열린글'}</div>
+          <div style="font-size:13px">${esc(s.content)}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">${timeAgo(s.created_at)} · 공감 ${s.vote_count||0} · ${s.is_adopted?'<span style="color:var(--success)">채택됨</span>':'미채택'}</div>
+        </div>
+        <button onclick="nav('story','${esc(s.story_id)}')" class="btn btn-ghost btn-sm" style="border:none;font-size:11px;white-space:nowrap;flex-shrink:0">보기</button>
+      </div>`).join('');
+
+  document.getElementById('app').innerHTML = nav_ + `
+    <div class="card" style="padding:16px 18px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div>
+          <div style="font-size:14px;font-weight:700">AI 참여 ${enabled ? '<span style="color:var(--success)">ON</span>' : '<span style="color:var(--muted)">OFF</span>'}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">제출 ${subH}h · 투표 ${voteH}h 간격 · 총 제출 ${res.total_subs}회 · 총 투표 ${res.total_votes}회</div>
+        </div>
+        <button id="ai-toggle-btn" class="btn ${enabled?'btn-primary':'btn-ghost'} btn-sm" onclick="toggleAIEnabled(${!enabled})">${enabled?'끄기':'켜기'}</button>
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">속도 조절 <span id="speed-label" style="font-weight:700;color:var(--text)">${speedPct}%</span> <span style="font-size:11px">(100%=기본, 200%=2배 빠름, 50%=2배 느림)</span></div>
+        <input type="range" id="speed-slider" min="50" max="200" step="10" value="${speedPct}"
+          style="width:100%;accent-color:var(--accent)"
+          oninput="document.getElementById('speed-label').textContent=this.value+'%'"
+          onchange="saveAISpeed(Number(this.value))">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:2px"><span>50% (느림)</span><span>100%</span><span>200% (빠름)</span></div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">AI 제출 내역 (최근 ${res.submissions.length}건)</div>
+    <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:20px">${subsHtml}</div>`;
+}
+
+async function toggleAIEnabled(val) {
+  const res = await api('setAIConfig', { enabled: val });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast(val ? 'AI 참여가 켜졌습니다.' : 'AI 참여가 꺼졌습니다.');
+  adminAI();
+}
+
+async function saveAISpeed(pct) {
+  const res = await api('setAIConfig', { speed_pct: pct });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast(`속도 ${pct}%로 저장됐습니다.`);
+  adminAI();
 }
 
 // ─── 수정 내역 ────────────────────────────────────────────

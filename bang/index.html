@@ -1201,6 +1201,7 @@ function doneCardHtml(s) {
 
 
 function myStoryCardHtml(s) {
+  const step    = Number(s.current_step) || 0;
   const mySubs  = s.mySubmissions || [];
   const voteCount   = typeof s.has_voted_current === 'number' ? s.has_voted_current : null;
   // 같은 step에 여러 제출이 있으면(분기) A,B,C 라벨 부여

@@ -181,11 +181,12 @@ async function fbLogin(nickname, password) {
 
 async function _fbCheckDailyBonus(user_id) {
   const today = new Date().toISOString().slice(0, 10);
-  const snap  = await db.collection('point_ledger')
-    .where('user_id', '==', user_id).where('reason', '==', 'daily_login').get();
-  const already = snap.docs.some(d => String(d.data().created_at).slice(0, 10) === today);
-  if (!already) { await _fbAddPoints(user_id, 10, 'daily_login', ''); return 10; }
-  return 0;
+  const uRef  = db.collection('users').doc(user_id);
+  const uSnap = await uRef.get();
+  if (!uSnap.exists || uSnap.data().last_daily_bonus_date === today) return 0;
+  await uRef.update({ last_daily_bonus_date: today });
+  await _fbAddPoints(user_id, 10, 'daily_login', '');
+  return 10;
 }
 
 async function fbChangePassword(user_id, current_password, new_password) {
@@ -334,7 +335,7 @@ async function fbGetStory(story_id, user_id) {
   });
 
   // Round 2: 나머지 모든 조회를 한 번에 병렬 처리
-  const [userDocs, bmSnap, likeSnap, voteSnap, branchSnap] = await Promise.all([
+  const [userDocs, bmSnap, likeSnap, voteSnap, branchSnap, pEpsSnap, pSubsSnap] = await Promise.all([
     authorIds.length > 0
       ? Promise.all(authorIds.map(id => db.collection('users').doc(id).get()))
       : Promise.resolve([]),
@@ -348,6 +349,12 @@ async function fbGetStory(story_id, user_id) {
       ? db.collection('votes').where('episode_id','==',openEp.episode_id).where('voter_id','==',user_id).get()
       : Promise.resolve(null),
     db.collection('stories').where('parent_story_id', '==', story_id).get(),
+    story.parent_story_id
+      ? db.collection('episodes').where('story_id', '==', story.parent_story_id).get()
+      : Promise.resolve(null),
+    story.parent_story_id
+      ? db.collection('submissions').where('story_id', '==', story.parent_story_id).get()
+      : Promise.resolve(null),
   ]);
 
   // 마감 대기 에피소드 비동기 복구 — await 제거로 페이지 렌더를 차단하지 않음
@@ -391,13 +398,15 @@ async function fbGetStory(story_id, user_id) {
     if (user_id && m.voter_id === user_id) my_mvp_episode_id = m.episode_id || null;
   });
 
-  // 분기 이야기면 부모 단계 가져오기 (잠금 산문용)
+  // 분기 이야기면 부모 단계 가져오기 (잠금 산문용) — Round 2와 병렬로 이미 조회 완료
   let parent_chain = null;
-  if (story.parent_story_id) {
-    const [pEpsSnap, pSubsSnap] = await Promise.all([
-      db.collection('episodes').where('story_id', '==', story.parent_story_id).get(),
-      db.collection('submissions').where('story_id', '==', story.parent_story_id).get(),
-    ]);
+  if (story.parent_story_id && pEpsSnap && pSubsSnap) {
+    // 부모 에피소드 작가 중 현재 nickMap에 없는 ID 추가 조회
+    const missingPIds = [...new Set(pSubsSnap.docs.map(d => d.data().author_id).filter(id => id && !nickMap[id]))];
+    if (missingPIds.length) {
+      const extraDocs = await Promise.all(missingPIds.map(id => db.collection('users').doc(id).get()));
+      extraDocs.forEach(d => { if (d.exists) { nickMap[d.id] = d.data().display_name || d.data().nickname; badgeMap[d.id] = d.data().badge; } });
+    }
     const pEps = pEpsSnap.docs
       .map(d => ({ episode_id: d.id, ...d.data() }))
       .filter(e => e.status === 'closed' && (story.is_continuation || Number(e.step) < Number(story.branch_from_step) - 1));

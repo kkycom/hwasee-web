@@ -449,6 +449,11 @@ async function fbCreateStory(opening, creator_id, is_ai_seed) {
     status: 'open', vote_total: 0, created_at: fbNow(), closed_at: '', pending_at: ''
   });
   await batch.commit();
+  if (is_ai_seed && opening) {
+    await db.collection('config').doc('used_openings').set(
+      { [opening.trim()]: true }, { merge: true }
+    );
+  }
   return { ok: true, story_id, episode_id };
 }
 
@@ -789,13 +794,13 @@ async function fbCreateSubmission(episode_id, content, author_id, derived_from, 
   if (prevCount === 0) {
     const storyRef = db.collection('stories').doc(ep.story_id);
     await storyRef.update({ participant_count: firebase.firestore.FieldValue.increment(1) });
-    // 첫 사람 제출이 step 1이면 해당 오프닝을 used_openings에 기록 (씨앗 중복 방지)
-    if (author_id !== FB_ADMIN_ID && Number(ep.step) === 1) {
+    // 첫 사람 제출이 step 1이면 해당 오프닝을 used_openings에 기록 (씨앗 중복 방지 — fbCreateStory에서도 마킹하지만 fallback)
+    if (Number(ep.step) === 1) {
       const storySnap = await storyRef.get();
-      const opening = storySnap.exists ? storySnap.data().opening : null;
-      if (opening) {
+      const storyData = storySnap.exists ? storySnap.data() : null;
+      if (storyData?.is_ai_seed && storyData.opening) {
         await db.collection('config').doc('used_openings').set(
-          { [opening]: true }, { merge: true }
+          { [storyData.opening]: true }, { merge: true }
         );
       }
     }

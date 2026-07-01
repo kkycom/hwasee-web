@@ -3305,7 +3305,7 @@ async function saveClaudeKey() {
     const res = await api('setClaudeKey', { key });
     if (!res.ok) { toast(res.error, true); return; }
     toast('Claude API 키가 저장됐습니다.');
-    adminAI();
+    nav('admin-ai');
   } catch(e) { toast('오류: ' + e.message, true); }
 }
 

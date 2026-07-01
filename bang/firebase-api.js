@@ -991,17 +991,14 @@ async function _fbRecycleAbandonedSeeds(docs) {
   if (hasNotif) await nb.commit();
 }
 
-async function fbGetSeeds() {
-  const usedSnap = await db.collection('stories').where('status', '==', 'active').get();
-  const used     = new Set(usedSnap.docs.map(d => d.data().opening));
-  const available = FB_AI_OPENINGS.filter(o => !used.has(o));
-  const src    = available.length >= 5 ? available.slice() : FB_AI_OPENINGS.slice();
+function fbGetSeeds() {
+  const src = FB_AI_OPENINGS.slice();
   const picked = [];
   while (picked.length < Math.min(5, src.length)) {
     const idx = Math.floor(Math.random() * src.length);
     picked.push(src.splice(idx, 1)[0]);
   }
-  return { ok: true, seeds: picked, exhausted: available.length === 0 };
+  return { ok: true, seeds: picked };
 }
 
 function fbGetAISuggestion() {

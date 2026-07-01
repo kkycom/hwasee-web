@@ -12,6 +12,19 @@ exports.sendPushOnNotification = functions
     const notif = snap.data();
     if (!notif.user_id) return null;
 
+    // Firebase CF는 at-least-once 실행 — 트랜잭션으로 중복 발송 방지
+    try {
+      const shouldSend = await admin.firestore().runTransaction(async tx => {
+        const current = await tx.get(snap.ref);
+        if (!current.exists || current.data().push_sent) return false;
+        tx.update(snap.ref, { push_sent: true });
+        return true;
+      });
+      if (!shouldSend) return null;
+    } catch (e) {
+      return null;
+    }
+
     const userSnap = await admin.firestore().collection('users').doc(notif.user_id).get();
     if (!userSnap.exists) return null;
 

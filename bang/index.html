@@ -1596,16 +1596,19 @@ let _lbData = null;
 async function loadLeaderboard(targetId) {
   if (!_lbData) _lbData = _lsc.get('lb');
   if (_lbData && targetId) renderLbInto(targetId);
-  const _refresh = async () => {
+  const _refresh = async (retry = false) => {
     try {
       const res = await api('getLeaderboard', {});
-      if (!res.ok) { if (targetId) renderLbInto(targetId); return; }
+      if (!res.ok) throw new Error('fail');
       _lbData = res;
       _lsc.set('lb', res, 360);
       if (targetId) renderLbInto(targetId);
       const modal = document.getElementById('modal-lb-body');
       if (modal) modal.innerHTML = lbBodyHtml(10);
-    } catch(e) { if (targetId) renderLbInto(targetId); }
+    } catch(e) {
+      if (!retry) setTimeout(() => _refresh(true), 4000);
+      else if (targetId) renderLbInto(targetId);
+    }
   };
   if (!_lbData) await _refresh(); else _refresh();
 }
@@ -2487,7 +2490,11 @@ async function toggleNotifPanel() {
 
   try {
     const res = await api('getNotifications', {});
-    const notifs = res.ok ? res.notifications : [];
+    if (!res.ok) {
+      if (!_notifCache) panel.innerHTML = '<div style="padding:14px;font-size:13px;color:var(--muted)">불러오기 실패.</div>';
+      return;
+    }
+    const notifs = res.notifications;
     _notifCache = notifs;
     _renderNotifPanel(panel, notifs);
     if (notifs.length > 0) {

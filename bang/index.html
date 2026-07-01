@@ -995,12 +995,14 @@ async function loadHomeTab(tab) {
   if (!content) return;
 
   if (tab === 'seed') {
-    content.innerHTML = '';
     let res;
     try { res = await api('getSeeds'); } catch(e) {
+      if (currentRoute !== 'seed') return;
       content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('seed')">다시 시도</button></div>`;
       return;
     }
+    if (currentRoute !== 'seed') return;
+    content.innerHTML = '';
     window._seeds   = res.ok ? res.seeds : [];
     window._seedIdx = 0;
     renderSeedCard();
@@ -1084,6 +1086,7 @@ async function loadHomeTab(tab) {
 
 // 씨앗 카드 렌더
 function renderSeedCard() {
+  if (currentRoute !== 'seed') return;
   let area = document.getElementById('seed-card-area');
   if (!area) {
     const content = document.getElementById('home-content');

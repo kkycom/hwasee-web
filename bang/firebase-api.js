@@ -690,7 +690,8 @@ async function _fbCloseEpisode(episode_id, ep) {
       await _fbCreateNotifications([uid], ep.story_id, `"${snippet}" 이야기에서 내 글을 손본 문장이 채택됐어요! +10P`);
     }
     const allPart  = await _fbGetStoryParticipants(ep.story_id);
-    const otherIds = allPart.filter(id => !winnerAuthorIds.has(id));
+    const excludeIds = new Set([...winnerAuthorIds, ...sourceAuthorIds]);
+    const otherIds = allPart.filter(id => !excludeIds.has(id));
     const msg = winners.length > 1
       ? `"${snippet}" 이야기가 ${nextStep + 2}단계에서 ${winners.length}개 갈림길로 나뉘었어요!`
       : `"${snippet}" 이야기가 ${nextStep + 2}단계로 이어졌어요!`;
@@ -983,7 +984,7 @@ async function _fbRecycleAbandonedSeeds(docs) {
     const snippet = (s.opening || '').length > 30 ? s.opening.substring(0, 30) + '…' : (s.opening || '');
     nb.set(db.collection('notifications').doc(fbGenId()), {
       user_id: s.creator_id, type: 'seed_recycled', story_id: '',
-      message: `선택했던 이야기 씨앗이 다시 풀로 돌아갔어요.\n"${snippet}"`,
+      message: `시간이 경과하여 선택하신 이야기가 다시 되돌아갔습니다.\n"${snippet}"`,
       is_read: false, created_at: fbNow(),
     });
     hasNotif = true;

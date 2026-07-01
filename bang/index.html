@@ -462,7 +462,7 @@
     100% { transform: translateX(-15px); }
   }
   .loading { text-align: center; padding: 40px; color: var(--muted); }
-  .loading::before { content: '✍️'; display: inline-block; font-size: 20px; animation: writing 2.75s ease-in-out infinite; filter: saturate(0.55) brightness(1.1); }
+  .loading::before { content: '✍️'; display: inline-block; font-size: 20px; animation: writing 4.6s ease-in-out infinite; filter: saturate(0.55) brightness(1.1); }
   .loading::after  { content: '불러오는 중입니다'; display: block; font-size: 13px; color: var(--muted); margin-top: 10px; letter-spacing: .3px; }
   .empty   { text-align: center; padding: 48px 0; color: var(--muted); }
   .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--border); font-size: 12px; color: var(--muted); margin-right: 6px; white-space: nowrap; }
@@ -499,6 +499,7 @@
   .branch-side-label { display:none; }
   .branch-tab { background:var(--card); border:1px solid var(--border); border-radius:4px; padding:2px 8px; font-size:11px; cursor:pointer; color:var(--muted); white-space:nowrap; text-align:center; }
   .branch-tab.active { border-color:var(--accent2); color:var(--accent2); font-weight:700; }
+  @media (max-width:600px) { .branch-tab.active { font-weight:400; } }
   /* 산문뷰 박스 밖 왼쪽에 두둥실 */
   #story-prose-wrap.has-branch-tabs { overflow:visible; margin-left:58px; }
   #story-prose-wrap.has-branch-tabs .branch-side-indicator { position:absolute; right:calc(100% + 28px + 10px); top:4px; }
@@ -1379,6 +1380,12 @@ function _applyStoryData(res, story_id) {
 
   if (isFinished) {
     loadStoryComments(currentParam);
+  }
+
+  // 갈래 선택 상태가 있으면 재렌더 후에도 has-branch-tabs 복원
+  if (window._branchChoice && Object.keys(window._branchChoice).length > 0) {
+    const pw = document.getElementById('story-prose-wrap');
+    if (pw) pw.classList.add('has-branch-tabs');
   }
 
   // 이미 투표한 항목 pre-select

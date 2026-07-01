@@ -436,6 +436,8 @@ exports.aiParticipate = functions
 
           const subPrompt = `당신은 릴레이 소설에 참여하는 작가입니다.
 
+⚠️ 핵심 제약: 반드시 30자~50자 이내의 짧은 한 문장만 작성하세요. 50자 초과 시 잘립니다.
+
 지금까지의 이야기:
 ${storyText}
 
@@ -443,10 +445,10 @@ ${storyText}
 ${isClosing ? '이 문장이 이야기의 마지막 문장이 되어야 합니다. 자연스럽게 마무리해 주세요.' : '이야기가 계속 이어질 수 있도록 열린 결말로 써주세요.'}
 
 규칙:
-- 딱 한 문장만 (마침표 포함)
+- 딱 한 문장만, 마침표(. 또는 !)로 끝낼 것
 - 한국어로
-- 다른 설명 없이 문장만 출력
-- 50자 이내`;
+- 문장만 출력, 다른 설명 없음
+- 반드시 50자 이내 (공백 포함, 초과 금지)`;
 
           let content = null;
           try { content = await _callClaude(claudeKey, subPrompt, 200); } catch (e) { console.error('AI sub error:', e.message); }

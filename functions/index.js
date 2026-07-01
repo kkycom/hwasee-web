@@ -28,6 +28,7 @@ exports.sendPushOnNotification = functions
           title: '화씨.방',
           body: notif.message,
         },
+        data: { link },
         webpush: {
           notification: {
             icon:  'https://hwasee.me/bang/icon-192.png',

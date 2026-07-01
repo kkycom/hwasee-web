@@ -777,9 +777,18 @@ async function fbCreateSubmission(episode_id, content, author_id, derived_from, 
     .where('author_id','==',author_id).get();
   const prevCount = mySubsSnap.docs.filter(d => d.data().story_id === ep.story_id && d.id !== sub_id).length;
   if (prevCount === 0) {
-    await db.collection('stories').doc(ep.story_id).update({
-      participant_count: firebase.firestore.FieldValue.increment(1)
-    });
+    const storyRef = db.collection('stories').doc(ep.story_id);
+    await storyRef.update({ participant_count: firebase.firestore.FieldValue.increment(1) });
+    // 첫 사람 제출이 step 1이면 해당 오프닝을 used_openings에 기록 (씨앗 중복 방지)
+    if (author_id !== FB_ADMIN_ID && Number(ep.step) === 1) {
+      const storySnap = await storyRef.get();
+      const opening = storySnap.exists ? storySnap.data().opening : null;
+      if (opening) {
+        await db.collection('config').doc('used_openings').set(
+          { [opening]: true }, { merge: true }
+        );
+      }
+    }
   }
 
   return { ok: true, sub_id };
@@ -991,8 +1000,11 @@ async function _fbRecycleAbandonedSeeds(docs) {
   if (hasNotif) await nb.commit();
 }
 
-function fbGetSeeds() {
-  const src = FB_AI_OPENINGS.slice();
+async function fbGetSeeds() {
+  const usedSnap = await db.collection('config').doc('used_openings').get();
+  const usedSet  = usedSnap.exists ? new Set(Object.keys(usedSnap.data())) : new Set();
+  const available = FB_AI_OPENINGS.filter(o => !usedSet.has(o));
+  const src = available.length >= 5 ? available.slice() : FB_AI_OPENINGS.slice();
   const picked = [];
   while (picked.length < Math.min(5, src.length)) {
     const idx = Math.floor(Math.random() * src.length);

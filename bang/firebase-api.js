@@ -1827,7 +1827,7 @@ async function fbSetAIConfig(admin_id, updates) {
 
 async function fbSetClaudeKey(admin_id, key) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  if (!key || !key.startsWith('sk-ant-')) return { ok: false, error: '유효한 Claude API 키를 입력해주세요.' };
+  if (!key || key.length < 20) return { ok: false, error: '유효한 Claude API 키를 입력해주세요.' };
   await db.collection('config').doc('secrets').set({ claude_key: key }, { merge: true });
   return { ok: true };
 }

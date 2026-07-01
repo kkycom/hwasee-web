@@ -3299,12 +3299,14 @@ async function adminAI() {
 }
 
 async function saveClaudeKey() {
-  const key = document.getElementById('claude-key-input')?.value.trim();
-  if (!key) { toast('키를 입력해주세요.', true); return; }
-  const res = await api('setClaudeKey', { key });
-  if (!res.ok) { toast(res.error, true); return; }
-  toast('Claude API 키가 저장됐습니다.');
-  adminAI();
+  try {
+    const key = document.getElementById('claude-key-input')?.value.trim();
+    if (!key) { toast('키를 입력해주세요.', true); return; }
+    const res = await api('setClaudeKey', { key });
+    if (!res.ok) { toast(res.error, true); return; }
+    toast('Claude API 키가 저장됐습니다.');
+    adminAI();
+  } catch(e) { toast('오류: ' + e.message, true); }
 }
 
 async function toggleAIEnabled(val) {

@@ -381,6 +381,10 @@ exports.aiParticipate = functions
     const claudeKey = secretsSnap.exists ? secretsSnap.data().claude_key : null;
     if (!claudeKey) return null;
 
+    // 한국시간 09:00~22:00 외 비활성
+    const hourKST = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCHours();
+    if (hourKST < 9 || hourKST >= 22) return null;
+
     const configSnap = await db.collection('config').doc('ai_config').get();
     const aiConfig = configSnap.exists ? configSnap.data() : {};
     if (!aiConfig.enabled) return null;

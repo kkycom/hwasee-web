@@ -262,11 +262,11 @@ async function fbGetStories(page) {
     });
     const boostSet = new Set(boostsSnap.docs.map(d => d.data().story_id));
 
-    // 1시간 경과 + 참여자 0 + AI 씨앗 → inactive 처리 + 생성자에게 알림
-    const oneDayAgo = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
+    // 1시간 경과 + 참여자 0 + AI 씨앗 → inactive 처리 + 생성자에게 알림 + 오프닝 복구
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const abandoned = storiesSnap.docs.filter(d => {
       const s = d.data();
-      return s.is_ai_seed === true && (s.participant_count || 0) === 0 && (s.created_at || '') < oneDayAgo;
+      return s.is_ai_seed === true && (s.participant_count || 0) === 0 && (s.created_at || '') < oneHourAgo;
     });
     if (abandoned.length) await _fbRecycleAbandonedSeeds(abandoned);
     const recycledSet = new Set(abandoned.map(d => d.id));
@@ -999,6 +999,13 @@ async function _fbRecycleAbandonedSeeds(docs) {
   const batch = db.batch();
   docs.forEach(doc => batch.update(doc.ref, { status: 'inactive' }));
   await batch.commit();
+  // 폐기된 씨앗 오프닝을 used_openings에서 제거 (다시 씨앗 풀로 복귀)
+  const toRestore = docs.map(doc => doc.data().opening).filter(Boolean);
+  if (toRestore.length) {
+    const deleteFields = {};
+    toRestore.forEach(o => { deleteFields[o] = firebase.firestore.FieldValue.delete(); });
+    await db.collection('config').doc('used_openings').update(deleteFields).catch(() => {});
+  }
   const nb = db.batch();
   let hasNotif = false;
   docs.forEach(doc => {

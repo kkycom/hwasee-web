@@ -515,6 +515,7 @@
   .story-prose.selecting .prose-line + .prose-line { margin-top:20px; }
   .story-prose.selecting .prose-line:hover { border-left-color:var(--accent2); background:rgba(200,169,110,0.04); }
   .story-prose.selecting .prose-line.prose-selected { border-left-color:var(--accent2); background:rgba(200,130,58,.1); }
+  @media (hover: none) { .story-prose.viewvotes-active .prose-line { border-left-color:var(--accent2) !important; } }
   .prose-line-mvp { font-size:11px; color:var(--accent); font-weight:700; display:inline-flex; align-items:center; gap:3px; }
   .prose-line-my-mvp { font-size:10px; color:var(--accent2); margin-left:6px; }
   /* ── 분기 이야기 잠금 산문 */
@@ -1144,7 +1145,7 @@ async function startSeedStory() {
 function cardStickersHtml(s, alwaysBm) {
   const hasBm = alwaysBm || _bmIds.has(s.story_id);
   const parts = [
-    s.has_branch ? `<span class="card-branch-sticker">⑂ 분기</span>` : '',
+    s.is_continuation ? `<span class="card-branch-sticker">〜 연장</span>` : s.has_branch ? `<span class="card-branch-sticker">⑂ 분기</span>` : '',
     hasBm ? `<span class="card-bookmark-sticker">★</span>` : '',
   ].filter(Boolean).join('');
   return parts ? `<div class="card-stickers">${parts}</div>` : '';
@@ -1292,6 +1293,7 @@ function _applyStoryData(res, story_id) {
   // 분기 트리 산문 (전역 저장 → chooseBranch 재렌더용)
   const { branches = [], parent_chain = null, mvp_map = {}, my_mvp_episode_id = null } = res;
   window._storyData = { episodes, submissions, story: s, branches, parent_chain, mvp_map, my_mvp_episode_id, my_voted_sub_ids };
+  document.removeEventListener('click', _proseSelOutsideClick, { capture: true });
   window._proseSelMode = null; // 'mvp' | 'branch'
   window._proseSelEpId = null;
 
@@ -1317,6 +1319,7 @@ function _applyStoryData(res, story_id) {
   if (openEp) {
     actionHtml = buildStoryActionHtml(openEp);
   } else if (s.status === 'completed' || s.status === 'inactive') {
+    const continuation = branches.find(b => b.is_continuation);
     actionHtml = `
       <div class="prose-divider">완결된 이야기입니다</div>
       <div style="display:flex;gap:8px;justify-content:center;margin-bottom:8px;flex-wrap:wrap;align-items:center">
@@ -1331,7 +1334,15 @@ function _applyStoryData(res, story_id) {
         <button class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:5px" onclick="shareStory()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>공유하기
         </button>
-      </div>`;
+      </div>
+      ${s.status === 'completed' ? `
+      <div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--border);text-align:center">
+        ${continuation
+          ? `<button class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:5px" onclick="nav('story','${esc(continuation.story_id)}')">〜 연장된 이야기 이어보기 →</button>`
+          : user ? `<button class="btn btn-ghost" style="width:100%;margin-bottom:6px;border-width:1.5px;display:inline-flex;align-items:center;justify-content:center;gap:6px" onclick="extendStory('${esc(s.story_id)}')">〜 이야기 연장하기</button>
+            <div style="font-size:12px;color:var(--muted)">채택된 문구 이후로 이야기를 이어써요 · 30P 차감</div>` : ''
+        }
+      </div>` : ''}`;
   }
 
   const isFinished = s.status === 'completed' || s.status === 'inactive';
@@ -1339,7 +1350,7 @@ function _applyStoryData(res, story_id) {
   document.getElementById('app').innerHTML = `
     <div style="display:flex;align-items:center;gap:0;margin-bottom:24px;flex-wrap:wrap;row-gap:6px">
       <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="nav(window._prevRoute || 'home')">← 목록으로</button>
-      ${isFinished && s.branch_from_step ? `<span class="prose-branch-tag" style="margin-left:6px">⑂ ${s.branch_from_step}단계 분기</span>` : ''}
+      ${isFinished && s.is_continuation ? `<span class="prose-branch-tag" style="margin-left:6px">〜 연장 이야기</span>` : isFinished && s.branch_from_step ? `<span class="prose-branch-tag" style="margin-left:6px">⑂ ${s.branch_from_step}단계 분기</span>` : ''}
       <div style="margin-left:auto;display:inline-flex;align-items:center;gap:0">
         ${user ? `
           <button id="bm-btn" class="btn btn-ghost btn-sm" data-bm="${is_bookmarked?'1':''}" style="border:none;color:${is_bookmarked?'var(--accent2)':'var(--muted)'};display:inline-flex;align-items:center;gap:4px"
@@ -2082,7 +2093,7 @@ async function episodeVotes() {
     ${subsHtml}
     ${canBranch ? `
     <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border);text-align:center">
-      <button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="startBranchFromHere('${esc(story_id)}','${ep.step}')">⑂ 여기서 새 이야기 시작하기</button>
+      <button class="btn btn-ghost" style="width:100%;margin-bottom:8px;border-width:1.5px" onclick="startBranchFromHere('${esc(story_id)}','${ep.step}')">⑂ 이 부분 내용 바꿔보기</button>
       <div style="font-size:12px;color:var(--muted);line-height:1.7">이 단계에서 새로운 이야기를 시작할까요?<br>(채택된 문구는 경쟁에서 빠져요!) · 30P 차감</div>
     </div>` : ''}`;
 }
@@ -2093,6 +2104,18 @@ async function startBranchFromHere(story_id, step) {
   const res = await api('createBranch', { story_id, branch_from_step: branchStep });
   if (!res.ok) { toast(res.error, true); return; }
   toast('새로운 이야기가 시작됐어요!');
+  nav('story', res.new_story_id);
+}
+
+async function extendStory(story_id) {
+  if (!confirm('완결된 이야기를 이어갈까요?\n채택된 문구 이후부터 새 단계가 열립니다.\n30P가 차감됩니다.')) return;
+  const res = await api('extendStory', { story_id });
+  if (!res.ok) {
+    if (res.existing_id) { nav('story', res.existing_id); return; }
+    toast(res.error, true);
+    return;
+  }
+  toast('이야기가 연장됐습니다!');
   nav('story', res.new_story_id);
 }
 
@@ -2851,7 +2874,9 @@ function enterProseSelMode(mode, story_id) {
       </div>`}`;
     bar.classList.add('visible');
   }
-  if (mode !== 'viewvotes') {
+  if (mode === 'viewvotes') {
+    if (wrap) wrap.classList.add('viewvotes-active');
+  } else {
     setTimeout(() => document.addEventListener('click', _proseSelOutsideClick, { capture: true }), 100);
   }
 }
@@ -2916,7 +2941,7 @@ function cancelProseSelMode() {
   window._proseSelMode = null;
   window._proseSelEpId = null;
   const wrap = document.getElementById('story-prose-wrap');
-  if (wrap) { wrap.classList.remove('selecting'); wrap.querySelectorAll('.prose-selected').forEach(el => el.classList.remove('prose-selected')); wrap.querySelectorAll('.prose-author').forEach(el => el.classList.remove('visible')); }
+  if (wrap) { wrap.classList.remove('selecting', 'viewvotes-active'); wrap.querySelectorAll('.prose-selected').forEach(el => el.classList.remove('prose-selected')); wrap.querySelectorAll('.prose-author').forEach(el => el.classList.remove('visible')); }
   const bar = document.getElementById('prose-select-bar');
   if (bar) { bar.classList.remove('visible'); bar.innerHTML = ''; }
 }

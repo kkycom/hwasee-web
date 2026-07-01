@@ -378,6 +378,7 @@ async function fbGetStory(story_id, user_id) {
   const branches         = branchSnap.docs.map(d => ({
     story_id: d.data().story_id || d.id,
     branch_from_step: Number(d.data().branch_from_step),
+    is_continuation: !!d.data().is_continuation,
     status: d.data().status,
   }));
 
@@ -399,7 +400,7 @@ async function fbGetStory(story_id, user_id) {
     ]);
     const pEps = pEpsSnap.docs
       .map(d => ({ episode_id: d.id, ...d.data() }))
-      .filter(e => e.status === 'closed' && Number(e.step) < Number(story.branch_from_step) - 1);
+      .filter(e => e.status === 'closed' && (story.is_continuation || Number(e.step) < Number(story.branch_from_step) - 1));
     const pSubs = pSubsSnap.docs.map(d => ({
       ...d.data(),
       author_nickname: nickMap[d.data().author_id] || '익명',
@@ -1446,6 +1447,68 @@ async function fbCreateBranch(story_id, branch_from_step, user_id) {
   return { ok: true, new_story_id };
 }
 
+async function fbExtendStory(story_id, user_id) {
+  if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
+
+  const stSnap = await db.collection('stories').doc(story_id).get();
+  if (!stSnap.exists) return { ok: false, error: '이야기를 찾을 수 없습니다.' };
+  const st = stSnap.data();
+  if (st.status !== 'completed') return { ok: false, error: '완결된 이야기에서만 연장할 수 있습니다.' };
+
+  // 이미 연장본이 있으면 해당 id 반환
+  const existSnap = await db.collection('stories').where('parent_story_id','==',story_id).where('is_continuation','==',true).get();
+  if (!existSnap.empty) {
+    const existing_id = existSnap.docs[0].data().story_id || existSnap.docs[0].id;
+    return { ok: false, error: '이미 연장된 이야기가 있습니다.', existing_id };
+  }
+
+  const spendRes = await _fbSpendPoints(user_id, 30, 'extend_story');
+  if (!spendRes.ok) return spendRes;
+
+  const uSnap = await db.collection('users').doc(user_id).get();
+  const uData = uSnap.exists ? uSnap.data() : {};
+
+  const parentStep = Number(st.current_step) || 0;
+  const new_story_id = fbGenId();
+  const new_ep_id    = fbGenId();
+  const batch = db.batch();
+
+  batch.set(db.collection('stories').doc(new_story_id), {
+    story_id: new_story_id,
+    parent_story_id: story_id,
+    is_continuation: true,
+    branch_from_step: parentStep + 1, // calcDisplayStep 단계 표시용
+    opening: st.opening,
+    max_steps: 10,
+    current_step: 0,
+    status: 'active',
+    creator_id: user_id,
+    creator_nickname: uData.display_name || uData.nickname || '익명',
+    creator_badge: uData.badge || 'seed',
+    created_at: fbNow(),
+    participant_count: 0, like_count: 0, adoption_count: 0,
+    has_branch: false, batch: '',
+  });
+  batch.set(db.collection('episodes').doc(new_ep_id), {
+    episode_id: new_ep_id, story_id: new_story_id,
+    step: 1, status: 'open', vote_total: 0,
+    created_at: fbNow(), closed_at: '', pending_at: '', parent_sub_id: '',
+  });
+  await batch.commit();
+
+  // 원본 참여자 알림
+  const subsSnap = await db.collection('submissions').where('story_id','==',story_id).get();
+  const notifyIds = [...new Set(
+    subsSnap.docs.map(d => d.data().author_id).filter(id => id && id !== user_id && id !== FB_ADMIN_ID)
+  )];
+  const snippet = (st.opening || '').slice(0, 15);
+  if (notifyIds.length) {
+    await _fbCreateNotifications(notifyIds, new_story_id, `"${snippet}..." 이야기가 연장됐어요! 이어서 써봐요.`);
+  }
+
+  return { ok: true, new_story_id };
+}
+
 // ─── 부스트 / 추가제출 / 추천 ─────────────────────────────
 
 async function fbBoostStory(story_id, user_id) {
@@ -1878,6 +1941,7 @@ async function firebaseApi(action, params = {}) {
     case 'voteMvp':            return fbVoteMvp(params.story_id, params.episode_id, need().user_id);
     case 'getMvpVotes':        return fbGetMvpVotes(params.story_id, session?.user_id || null);
     case 'createBranch':       return fbCreateBranch(params.story_id, params.branch_from_step, need().user_id);
+    case 'extendStory':        return fbExtendStory(params.story_id, need().user_id);
 
     case 'deleteMySubmission': return fbDeleteMySubmission(params.sub_id, need().user_id);
 

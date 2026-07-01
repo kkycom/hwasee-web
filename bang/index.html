@@ -429,40 +429,37 @@
   h2 { font-size: 18px; margin-bottom: 16px; }
   p.desc { color: var(--muted); font-size: 14px; margin-bottom: 24px; line-height: 1.6; }
   @keyframes writing {
+    /* ① 왼쪽에서 끄적 */
     0%   { transform: translateX(-15px); }
-    3%   { transform: translateX(-12px); }
-    6%   { transform: translateX(-13px); }
-    10%  { transform: translateX(-10px); }
-    13%  { transform: translateX(-11px); }
-    17%  { transform: translateX(-8px);  }
-    20%  { transform: translateX(-9px);  }
-    24%  { transform: translateX(-6px);  }
-    27%  { transform: translateX(-7px);  }
-    31%  { transform: translateX(-4px);  }
-    34%  { transform: translateX(-5px);  }
-    38%  { transform: translateX(-2px);  }
-    41%  { transform: translateX(-3px);  }
-    45%  { transform: translateX(0px);   }
-    48%  { transform: translateX(-1px);  }
-    52%  { transform: translateX(2px);   }
-    55%  { transform: translateX(1px);   }
-    59%  { transform: translateX(4px);   }
-    62%  { transform: translateX(3px);   }
-    66%  { transform: translateX(6px);   }
-    69%  { transform: translateX(5px);   }
-    73%  { transform: translateX(8px);   }
-    76%  { transform: translateX(7px);   }
-    80%  { transform: translateX(10px);  }
-    83%  { transform: translateX(9px);   }
-    87%  { transform: translateX(12px);  }
-    90%  { transform: translateX(11px);  }
-    93%  { transform: translateX(14px);  }
-    95%  { transform: translateX(13px);  }
+    3%   { transform: translateX(-13px); }
+    6%   { transform: translateX(-15px); }
+    9%   { transform: translateX(-13px); }
+    13%  { transform: translateX(-15px); }
+    /* ② 중앙으로 슥 */
+    16%  { transform: translateX(-15px); }
+    35%  { transform: translateX(0px);   }
+    /* ③ 중앙에서 끄적 */
+    37%  { transform: translateX(2px);   }
+    40%  { transform: translateX(0px);   }
+    43%  { transform: translateX(2px);   }
+    46%  { transform: translateX(0px);   }
+    49%  { transform: translateX(0px);   }
+    /* ④ 오른쪽으로 슥 */
+    52%  { transform: translateX(0px);   }
+    68%  { transform: translateX(15px);  }
+    /* ⑤ 오른쪽에서 끄적 */
+    70%  { transform: translateX(13px);  }
+    73%  { transform: translateX(15px);  }
+    76%  { transform: translateX(13px);  }
+    79%  { transform: translateX(15px);  }
+    83%  { transform: translateX(15px);  }
+    /* ⑥ 처음으로 복귀 (빠르게) */
+    86%  { transform: translateX(15px);  }
     97%  { transform: translateX(-15px); }
     100% { transform: translateX(-15px); }
   }
   .loading { text-align: center; padding: 40px; color: var(--muted); }
-  .loading::before { content: '✍️'; display: inline-block; font-size: 20px; animation: writing 4.6s ease-in-out infinite; filter: saturate(0.55) brightness(1.1); }
+  .loading::before { content: '✍️'; display: inline-block; font-size: 20px; animation: writing 5s ease-in-out infinite; filter: saturate(0.55) brightness(1.1); }
   .loading::after  { content: '불러오는 중입니다'; display: block; font-size: 13px; color: var(--muted); margin-top: 10px; letter-spacing: .3px; }
   .empty   { text-align: center; padding: 48px 0; color: var(--muted); }
   .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--border); font-size: 12px; color: var(--muted); margin-right: 6px; white-space: nowrap; }

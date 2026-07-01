@@ -981,8 +981,8 @@ async function switchHomeTab(tab) {
     if (el) el.classList.toggle('active', t.key === tab);
   });
   const content = document.getElementById('home-content');
-  const cacheKey = tab === 'popular' ? 'pop' : tab;
-  const hasCached = tab !== 'seed' && !!_lsc.get(cacheKey);
+  const cacheKey = tab === 'popular' ? 'pop' : tab === 'seed' ? 'seeds' : tab;
+  const hasCached = !!_lsc.get(cacheKey);
   if (content && !hasCached) content.innerHTML = `<div class="loading"></div>`;
   await loadHomeTab(tab);
 }
@@ -992,12 +992,14 @@ async function loadHomeTab(tab) {
   if (!content) return;
 
   if (tab === 'seed') {
-    const res = await api('getSeeds');
+    const _cachedSeeds = _lsc.get('seeds');
+    const res = _cachedSeeds ? { ok: true, seeds: _cachedSeeds } : await api('getSeeds');
     if (currentRoute !== 'seed') return;
     if (!res.ok) {
       content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('seed')">다시 시도</button></div>`;
       return;
     }
+    if (!_cachedSeeds) _lsc.set('seeds', res.seeds, 300);
     content.innerHTML = '';
     window._seeds   = res.seeds;
     window._seedIdx = 0;
@@ -3553,6 +3555,12 @@ window.onload = async () => {
   parseHash();
   render();       // 캐시 데이터로 즉시 렌더
   renderNav();
+
+  // Firestore 연결 워밍업 + 씨앗·관심받는 탭 프리페치
+  setTimeout(() => {
+    if (!_lsc.get('seeds')) api('getSeeds').then(r => { if (r.ok) _lsc.set('seeds', r.seeds, 300); });
+    if (!_lsc.get('pop'))   api('getStories', { page: 1 }).then(r => { if (r.ok) _lsc.set('pop', { storiesRes: r, myRes: null }, 150); });
+  }, 300);
 
   // 하루 1회 방문자 카운트 (기기별 중복 방지)
   const _vkey = 'hwasee_visited_' + new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);

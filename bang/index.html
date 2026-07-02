@@ -3237,12 +3237,24 @@ async function adminStats() {
 }
 
 // ─── AI 활동내역 ──────────────────────────────────────────
+let _aiCache = null;
+
 async function adminAI() {
   if (!isAdmin()) { nav('seed'); return; }
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   const res = await api('getAIActivities', {});
   if (currentRoute !== 'admin-ai') return;
+  _aiCache = res;
+  _renderAdminAI('subs', 0);
+}
 
+function switchAITab(tab, page) {
+  if (!_aiCache) return;
+  _renderAdminAI(tab, page);
+}
+
+function _renderAdminAI(tab, page) {
+  const res = _aiCache;
   const nav_ = _adminNav('ai');
   if (!res.ok) {
     document.getElementById('app').innerHTML = nav_ + `<div class="empty">${esc(res.error)}</div>`;
@@ -3255,17 +3267,45 @@ async function adminAI() {
   const subH = (3 * 100 / speedPct).toFixed(1);
   const voteH = (2 * 100 / speedPct).toFixed(1);
 
-  const subsHtml = res.submissions.length === 0
-    ? `<div class="empty" style="padding:20px">AI 제출 내역이 없습니다.</div>`
-    : res.submissions.map(s => `
-      <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:flex-start">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:11px;color:var(--muted);margin-bottom:3px">${esc((s.story_opening||'').slice(0,30))} · ${s.is_closing?'<span style="color:var(--accent2)">마감글</span>':'열린글'}</div>
-          <div style="font-size:13px">${esc(s.content)}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:3px">${timeAgo(s.created_at)} · 공감 ${s.vote_count||0} · ${s.is_adopted?'<span style="color:var(--success)">채택됨</span>':'미채택'}</div>
-        </div>
-        <button onclick="nav('story','${esc(s.story_id)}')" class="btn btn-ghost btn-sm" style="border:none;font-size:11px;white-space:nowrap;flex-shrink:0">보기</button>
-      </div>`).join('');
+  const PAGE = 10;
+  const items = tab === 'subs' ? res.submissions : res.votes;
+  const total = tab === 'subs' ? res.total_subs : res.total_votes;
+  const pageItems = items.slice(page * PAGE, (page + 1) * PAGE);
+  const totalPages = Math.ceil(items.length / PAGE);
+
+  const listHtml = tab === 'subs'
+    ? (pageItems.length === 0
+        ? `<div class="empty" style="padding:20px">AI 제출 내역이 없습니다.</div>`
+        : pageItems.map(s => `
+          <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:flex-start">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:3px">${esc((s.story_opening||'').slice(0,30))} · ${s.is_closing?'<span style="color:var(--accent2)">마감글</span>':'열린글'}</div>
+              <div style="font-size:13px">${esc(s.content)}</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:3px">${timeAgo(s.created_at)} · 공감 ${s.vote_count||0} · ${s.is_adopted?'<span style="color:var(--success)">채택됨</span>':'미채택'}</div>
+            </div>
+            <button onclick="nav('story','${esc(s.story_id)}')" class="btn btn-ghost btn-sm" style="border:none;font-size:11px;white-space:nowrap;flex-shrink:0">보기</button>
+          </div>`).join(''))
+    : (pageItems.length === 0
+        ? `<div class="empty" style="padding:20px">AI 공감 내역이 없습니다.</div>`
+        : pageItems.map(v => `
+          <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:flex-start">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:3px">${esc((v.story_opening||'').slice(0,30))}</div>
+              <div style="font-size:13px">${esc(v.sub_content || '(내용 없음)')}</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:3px">${timeAgo(v.created_at)}</div>
+            </div>
+            <button onclick="nav('story','${esc(v.story_id)}')" class="btn btn-ghost btn-sm" style="border:none;font-size:11px;white-space:nowrap;flex-shrink:0">보기</button>
+          </div>`).join(''));
+
+  const pagNav = totalPages <= 1 ? '' : `
+    <div style="display:flex;justify-content:center;align-items:center;gap:12px;padding:12px 0">
+      ${page > 0 ? `<button class="btn btn-ghost btn-sm" onclick="switchAITab('${tab}',${page-1})">이전</button>` : '<span style="width:52px"></span>'}
+      <span style="font-size:12px;color:var(--muted)">${page+1} / ${totalPages}</span>
+      ${page < totalPages-1 ? `<button class="btn btn-ghost btn-sm" onclick="switchAITab('${tab}',${page+1})">다음</button>` : '<span style="width:52px"></span>'}
+    </div>`;
+
+  const tabBtn = (t, label) => `<button onclick="switchAITab('${t}',0)"
+    style="padding:8px 14px;font-size:13px;font-weight:${tab===t?700:400};color:${tab===t?'var(--text)':'var(--muted)'};background:none;border:none;border-bottom:2px solid ${tab===t?'var(--accent)':'transparent'};cursor:pointer;margin-bottom:-2px">${label}</button>`;
 
   document.getElementById('app').innerHTML = nav_ + `
     <div class="card" style="padding:16px 18px;margin-bottom:12px">
@@ -3297,8 +3337,12 @@ async function adminAI() {
       </div>
       <div style="font-size:11px;color:var(--muted);margin-top:6px">Anthropic Console → API Keys에서 발급. 여기 입력 시 Firestore에만 저장되며 외부 노출 없음.</div>
     </div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">AI 제출 내역 (최근 ${res.submissions.length}건)</div>
-    <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:20px">${subsHtml}</div>`;
+    <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:12px">
+      ${tabBtn('subs', `제출 내역 (${res.total_subs})`)}
+      ${tabBtn('votes', `공감 내역 (${res.total_votes})`)}
+    </div>
+    <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:4px">${listHtml}</div>
+    ${pagNav}`;
 }
 
 

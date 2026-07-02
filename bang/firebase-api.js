@@ -1807,19 +1807,31 @@ async function fbGetAIActivities(admin_id) {
     return { ok: true, ai_config: aiConfig, has_key: hasKey, submissions: [], votes: [], total_subs: 0, total_votes: 0 };
   }
   const subs = subsSnap.docs.map(d => d.data())
-    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).slice(0, 100);
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).slice(0, 200);
   const votes = votesSnap.docs.map(d => d.data())
-    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).slice(0, 50);
-  const storyIds = [...new Set([...subs.map(s => s.story_id), ...votes.map(v => v.story_id)].filter(Boolean))];
-  const storyMap = {};
-  if (storyIds.length) {
-    const sDocs = await Promise.all(storyIds.map(id => db.collection('stories').doc(id).get()));
-    sDocs.forEach(d => { if (d.exists) storyMap[d.id] = d.data().opening || ''; });
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).slice(0, 100);
+
+  const subStoryIds = [...new Set(subs.map(s => s.story_id).filter(Boolean))];
+  const voteEpIds   = [...new Set(votes.map(v => v.episode_id).filter(Boolean))];
+  const voteSubIds  = [...new Set(votes.map(v => v.sub_id).filter(Boolean))];
+
+  const storyMap = {}, epToStoryMap = {}, voteSubMap = {};
+  await Promise.all([
+    ...subStoryIds.map(id => db.collection('stories').doc(id).get().then(d => { if (d.exists) storyMap[d.id] = d.data().opening || ''; })),
+    ...voteEpIds.map(id => db.collection('episodes').doc(id).get().then(d => { if (d.exists) epToStoryMap[d.id] = d.data().story_id || ''; })),
+    ...voteSubIds.map(id => db.collection('submissions').doc(id).get().then(d => { if (d.exists) voteSubMap[d.id] = d.data().content || ''; })),
+  ]);
+  const voteStoryIds = [...new Set(Object.values(epToStoryMap).filter(id => id && !storyMap[id]))];
+  if (voteStoryIds.length) {
+    await Promise.all(voteStoryIds.map(id => db.collection('stories').doc(id).get().then(d => { if (d.exists) storyMap[d.id] = d.data().opening || ''; })));
   }
   return {
     ok: true, ai_config: aiConfig, has_key: hasKey,
     submissions: subs.map(s => ({ ...s, story_opening: storyMap[s.story_id] || '' })),
-    votes: votes.map(v => ({ ...v, story_opening: storyMap[v.story_id] || '' })),
+    votes: votes.map(v => {
+      const story_id = epToStoryMap[v.episode_id] || '';
+      return { ...v, story_id, story_opening: storyMap[story_id] || '', sub_content: voteSubMap[v.sub_id] || '' };
+    }),
     total_subs: subsSnap.size, total_votes: votesSnap.size,
   };
 }

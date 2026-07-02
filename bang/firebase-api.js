@@ -1775,6 +1775,15 @@ async function fbAdminDeleteSubmission(sub_id, admin_id) {
   return { ok: true };
 }
 
+async function fbAdminFixParticipantCount(story_id, admin_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  const subsSnap = await db.collection('submissions').where('story_id','==',story_id).get();
+  const uniqueAuthors = new Set(subsSnap.docs.filter(d => !d.data().is_ai).map(d => d.data().author_id).filter(Boolean));
+  const count = uniqueAuthors.size;
+  await db.collection('stories').doc(story_id).update({ participant_count: count });
+  return { ok: true, participant_count: count, submissions: subsSnap.size };
+}
+
 async function fbAdminCloseStory(story_id, admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   const stSnap = await db.collection('stories').doc(story_id).get();
@@ -2016,6 +2025,7 @@ async function firebaseApi(action, params = {}) {
     case 'adminForceAdopt':       return fbAdminForceAdopt(params.sub_id, need().user_id);
     case 'adminDeleteSubmission': return fbAdminDeleteSubmission(params.sub_id, need().user_id);
     case 'adminCloseStory':       return fbAdminCloseStory(params.story_id, need().user_id);
+    case 'adminFixParticipantCount': return fbAdminFixParticipantCount(params.story_id, need().user_id);
     case 'getAIActivities':       return fbGetAIActivities(need().user_id);
     case 'setAIConfig':           return fbSetAIConfig(need().user_id, params);
     case 'setClaudeKey':          return fbSetClaudeKey(need().user_id, params.key);

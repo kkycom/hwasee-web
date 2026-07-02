@@ -2194,14 +2194,31 @@ async function episodeVotes() {
   const ep = epSnap.data();
   const story_id = ep.story_id;
 
-  const [subsSnap, stSnap] = await Promise.all([
+  const [subsSnap, stSnap, commSnap] = await Promise.all([
     firebase.firestore().collection('submissions').where('episode_id', '==', episode_id).get(),
     firebase.firestore().collection('stories').doc(story_id).get(),
+    firebase.firestore().collection('comments').where('story_id', '==', story_id).get(),
   ]);
 
   const story = stSnap.data() || {};
   const subs = subsSnap.docs.map(d => ({ sub_id: d.id, ...d.data() }))
     .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0));
+
+  // 댓글 그룹핑 + 닉네임 조회
+  const subIdSet = new Set(subs.map(s => s.sub_id));
+  const rawComments = commSnap.docs.map(d => ({ comment_id: d.id, ...d.data() }))
+    .filter(c => subIdSet.has(c.sub_id) && !c.deleted);
+  const commentAuthorIds = [...new Set(rawComments.map(c => c.author_id).filter(Boolean))];
+  const commNickMap = {};
+  if (commentAuthorIds.length > 0) {
+    const uDocs = await Promise.all(commentAuthorIds.map(id => firebase.firestore().collection('users').doc(id).get()));
+    uDocs.forEach(d => { if (d.exists) commNickMap[d.id] = d.data().display_name || d.data().nickname; });
+  }
+  const commentsBySubId = {};
+  rawComments.forEach(c => {
+    c.author_nickname = commNickMap[c.author_id] || '익명';
+    (commentsBySubId[c.sub_id] = commentsBySubId[c.sub_id] || []).push(c);
+  });
 
   const stepNum = Number(ep.step) + 1;
   const totalVoters = ep.vote_total || 0;
@@ -2212,13 +2229,30 @@ async function episodeVotes() {
     : subs.map(sub => {
         const isAdopted = sub.is_adopted === true || sub.is_adopted === 'TRUE';
         const nickname = sub.author_nickname || '익명';
+        const comments = (commentsBySubId[sub.sub_id] || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        const COMM_LIMIT = 3;
+        const shown = comments.slice(0, COMM_LIMIT);
+        const hidden = comments.length - COMM_LIMIT;
+        const commentsHtml = comments.length === 0 ? '' : `
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:7px">
+            ${shown.map(c => `
+              <div style="display:flex;gap:7px;align-items:flex-start">
+                <span style="font-size:12px;color:var(--muted);flex-shrink:0;margin-top:1px">ㄴ</span>
+                <div style="flex:1">
+                  <span style="font-size:11px;font-weight:600;color:var(--muted);margin-right:6px">${esc(c.author_nickname)}</span>
+                  <span style="font-size:13px;line-height:1.5">${esc(c.content)}</span>
+                </div>
+              </div>`).join('')}
+            ${hidden > 0 ? `<button onclick="nav('story','${esc(story_id)}')" style="background:none;border:none;font-size:12px;color:var(--muted);text-align:left;cursor:pointer;padding:0">+ ${hidden}개 댓글 더 보기</button>` : ''}
+          </div>`;
         return `<div class="card" style="margin-bottom:10px;${isAdopted ? 'border-color:var(--accent2)' : ''}">
           ${isAdopted ? `<div style="font-size:10px;font-weight:700;color:var(--accent2);margin-bottom:6px;letter-spacing:.04em">✓ 채택됨</div>` : ''}
           <div style="font-size:14px;line-height:1.6;margin-bottom:10px">${esc(sub.content)}</div>
           <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted)">
-            <span style="${isAdopted ? 'color:var(--accent2);font-weight:700' : ''}">${sub.vote_count || 0}개 공감</span>
+            <span style="${isAdopted ? 'color:var(--accent2);font-weight:700' : ''}">${sub.vote_count || 0}개 공감${comments.length > 0 ? ` · ${comments.length}개 댓글` : ''}</span>
             <span><span style="font-size:10px;color:var(--muted);margin-right:3px">글쓴이</span>${esc(nickname)}</span>
           </div>
+          ${commentsHtml}
         </div>`;
       }).join('');
 

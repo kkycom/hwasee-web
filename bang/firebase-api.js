@@ -373,8 +373,8 @@ async function fbGetStory(story_id, user_id) {
   const submissions = subsSnap.docs.map(d => ({
     sub_id: d.id,
     ...d.data(),
-    author_nickname: nickMap[d.data().author_id] || '익명',
-    author_badge:    badgeMap[d.data().author_id] || 'seed',
+    author_nickname: d.data().is_ai ? '익명' : (nickMap[d.data().author_id] || '익명'),
+    author_badge:    d.data().is_ai ? 'seed' : (badgeMap[d.data().author_id] || 'seed'),
     comment_count:   commentCountMap[d.id] || 0,
   }));
 
@@ -412,8 +412,8 @@ async function fbGetStory(story_id, user_id) {
       .filter(e => e.status === 'closed' && (story.is_continuation || Number(e.step) < Number(story.branch_from_step) - 1));
     const pSubs = pSubsSnap.docs.map(d => ({
       ...d.data(),
-      author_nickname: nickMap[d.data().author_id] || '익명',
-      author_badge:    badgeMap[d.data().author_id] || 'seed',
+      author_nickname: d.data().is_ai ? '익명' : (nickMap[d.data().author_id] || '익명'),
+      author_badge:    d.data().is_ai ? 'seed' : (badgeMap[d.data().author_id] || 'seed'),
     }));
     parent_chain = { episodes: pEps, submissions: pSubs };
   }

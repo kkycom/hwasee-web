@@ -659,6 +659,10 @@ async function _fbCloseEpisode(episode_id, ep) {
       const orphan = orphanDoc.data();
       const newStoryId = fbGenId();
       const spinBatch = db.batch();
+      // 분리 전에 기존 제출자 수 확인 → participant_count 초기화에 사용
+      const subSnap = await db.collection('submissions')
+        .where('episode_id', '==', orphan.episode_id).get();
+      const uniqueAuthors = new Set(subSnap.docs.filter(d => !d.data().is_ai).map(d => d.data().author_id).filter(Boolean));
       spinBatch.set(db.collection('stories').doc(newStoryId), {
         story_id: newStoryId, parent_story_id: ep.story_id,
         branch_from_step: Number(orphan.step) + 1,
@@ -667,13 +671,11 @@ async function _fbCloseEpisode(episode_id, ep) {
         creator_id: st.creator_id,
         creator_nickname: st.creator_nickname || '익명',
         creator_badge: st.creator_badge || '',
-        participant_count: 0, like_count: 0, adoption_count: 0,
+        participant_count: uniqueAuthors.size, like_count: 0, adoption_count: 0,
         has_branch: false, created_at: fbNow(), batch: '',
       });
       spinBatch.update(orphanDoc.ref, { story_id: newStoryId });
       await spinBatch.commit();
-      const subSnap = await db.collection('submissions')
-        .where('episode_id', '==', orphan.episode_id).get();
       if (!subSnap.empty) {
         const subBatch = db.batch();
         subSnap.docs.forEach(d => subBatch.update(d.ref, { story_id: newStoryId }));

@@ -1779,12 +1779,24 @@ function toggleReport(sub_id) {
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
-async function submitReport(sub_id, reason) {
-  if (!confirm('이 문장을 신고하시겠습니까?')) return;
-  const res = await api('addReport', { sub_id, reason });
-  const el = document.getElementById('report-' + sub_id);
-  if (el) el.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:2px 0">신고가 접수됐습니다.</div>';
-  if (!res.ok) toast(res.error, true);
+function submitReport(sub_id, reason) {
+  const labelMap = { plagiarism:'표절', sexual:'성적 묘사', profanity:'욕설·혐오', spam:'스팸', other:'기타' };
+  const icon = `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent2)"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+  _modalCallbacks['report-confirm-modal'] = async (mid) => {
+    const btn = document.getElementById(`${mid}-confirm-btn`);
+    if (btn) { btn.disabled = true; btn.textContent = '신고 중...'; }
+    const res = await api('addReport', { sub_id, reason });
+    document.getElementById(mid)?.remove(); delete _modalCallbacks[mid];
+    const el = document.getElementById('report-' + sub_id);
+    if (el) el.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:2px 0">신고가 접수됐습니다.</div>';
+    if (!res.ok) toast(res.error, true);
+  };
+  showConfirmModal({
+    id: 'report-confirm-modal', icon,
+    title: '신고',
+    desc: `"<strong>${labelMap[reason] || reason}</strong>" 사유로 신고하시겠어요?`,
+    confirmLabel: '신고하기',
+  });
 }
 
 async function toggleComments(sub_id) {

@@ -827,7 +827,7 @@ async function fbVote(episode_id, sub_ids, voter_id) {
 
   const isRevote = !prevVoteSnap.empty;
   const prevVotedSubIds = prevVoteSnap.docs.map(d => d.data().sub_id);
-  const mySub = subsSnap.docs.find(d => d.data().author_id === voter_id);
+  const mySub = subsSnap.docs.find(d => d.data().author_id === voter_id && !d.data().is_ai);
   if (mySub && sub_ids.includes(mySub.id)) return { ok: false, error: '본인 제출에는 공감할 수 없습니다.' };
 
   const batch = db.batch();
@@ -1903,7 +1903,7 @@ async function fbAdminEditSub(admin_id, sub_id, new_content, old_content, story_
 
 async function fbGetAdminEdits(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const snap = await db.collection('admin_edits').limit(200).get();
+  const snap = await db.collection('admin_edits').orderBy('edited_at', 'desc').limit(200).get();
   if (snap.empty) return { ok: true, edits: [] };
   const storyIds = [...new Set(snap.docs.map(d => d.data().story_id).filter(Boolean))];
   const storyMap = {};

@@ -1872,6 +1872,12 @@ async function fbSubmitBugReport(content, user_id) {
   if (!content || content.trim().length < 5) return { ok: false, error: '내용을 5자 이상 입력해주세요.' };
   await db.collection('bug_reports').add({ user_id, content: content.trim(), created_at: fbNow(), status: 'open' });
   await _fbAddPoints(user_id, 10, 'bug_report', '');
+  await db.collection('notifications').doc(fbGenId()).set({
+    user_id: FB_ADMIN_ID, type: 'bug_report', story_id: '',
+    message: '새 버그 제보가 접수됐어요 🐛',
+    link: 'https://hwasee.me/bang/#admin-bugs',
+    is_read: false, created_at: fbNow(),
+  });
   return { ok: true };
 }
 

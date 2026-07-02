@@ -3612,7 +3612,7 @@ async function adminBugs() {
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
             <div style="flex:1">
               <div style="font-size:12px;color:var(--muted);margin-bottom:5px">${esc(b.user_nickname || '알 수 없음')} · ${timeAgo(b.created_at)}${b.status==='resolved'?` · <span style="color:var(--accent)">처리완료</span>`:''}</div>
-              <div style="font-size:14px;line-height:1.55">${esc(b.description)}</div>
+              <div style="font-size:14px;line-height:1.55">${esc(b.content)}</div>
               ${b.url ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">${esc(b.url)}</div>` : ''}
             </div>
             ${b.status !== 'resolved' ? `

@@ -1509,10 +1509,10 @@ function _applyStoryData(res, story_id) {
 
 }
 
-async function story() {
+async function story(preserveBranch = false) {
   const story_id = currentParam;
   selectedSubs = [];
-  window._branchChoice = {}; // 페이지 진입 시 1회만 초기화 (재렌더 시 보존)
+  if (!preserveBranch) window._branchChoice = {}; // 페이지 진입 시만 초기화
   const cached = _lsc.get('story_' + story_id);
   if (cached) {
     _applyStoryData(cached, story_id);
@@ -1942,7 +1942,7 @@ async function submitVoteInStory(episode_id) {
   _lsc.set('ep_vote_' + episode_id, [...selectedSubs], 86400 * 30);
   _lsc.del('pop', 'done', 'mine', 'story_' + currentParam);
   toast(wasRevote ? '공감이 변경됐어요!' : `공감 완료! 현재 ${res.total_voters}명 참여`);
-  story();
+  story(true); // 갈래 선택 유지
 }
 
 async function deleteComment(comment_id, sub_id) {

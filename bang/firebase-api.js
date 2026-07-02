@@ -327,7 +327,8 @@ async function fbGetStory(story_id, user_id) {
   // 동기 메타 추출
   const story    = storySnap.data();
   const episodes = episodesSnap.docs.map(d => ({ episode_id: d.id, ...d.data() }));
-  const openEp   = episodes.find(e => e.status === 'open');
+  const openEp    = episodes.find(e => e.status === 'open');
+  const openEpIds = episodes.filter(e => e.status === 'open').map(e => e.episode_id);
   const authorIds = [...new Set(subsSnap.docs.map(d => d.data().author_id).filter(Boolean))];
 
   const commentCountMap = {};
@@ -347,8 +348,8 @@ async function fbGetStory(story_id, user_id) {
     user_id
       ? db.collection('story_likes').where('story_id','==',story_id).where('user_id','==',user_id).limit(1).get()
       : Promise.resolve(null),
-    openEp
-      ? db.collection('votes').where('episode_id','==',openEp.episode_id).get()
+    openEpIds.length
+      ? db.collection('votes').where('episode_id','in', openEpIds.slice(0, 10)).get()
       : Promise.resolve(null),
     db.collection('stories').where('parent_story_id', '==', story_id).get(),
     story.parent_story_id

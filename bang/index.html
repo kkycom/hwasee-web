@@ -2368,6 +2368,8 @@ async function profile() {
           ['내 글 채택됨 (다듬기)','+10p','earn'],
           ['완결 이야기 MVP 선정','+10p','earn'],
           ['버그 제보','+10p','earn'],
+          ['분기 파생 (이어쓰기 새 갈래)','-30p','spend'],
+          ['이야기 연장 (완결 후 이어쓰기)','-30p','spend'],
           ['이야기 주목 (24시간 상단 노출)','-30p','spend'],
           ['에피소드 추가 제출권','-20p','spend'],
         ].map(([label, pts, type]) => `
@@ -3178,9 +3180,9 @@ function _adminNav(current) {
       ${svgs[key]}${label}
     </button>`;
   return `
-    <div style="display:flex;align-items:center;gap:0;margin-bottom:24px">
-      <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="nav('seed')">← 메인</button>
-      <div style="margin-left:auto;display:inline-flex;align-items:center">
+    <div style="margin-bottom:20px">
+      <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600;padding-left:0;margin-bottom:8px" onclick="nav('seed')">← 메인</button>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px 0;padding-bottom:10px;border-bottom:1px solid var(--border)">
         ${btn('이용통계','stats','admin-stats')}${sep}
         ${btn('AI 활동','ai','admin-ai')}${sep}
         ${btn('수정 내역','edits','admin-edits')}${sep}

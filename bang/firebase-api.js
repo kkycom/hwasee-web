@@ -466,7 +466,7 @@ async function fbGetMyStories(user_id) {
   ]);
 
   // 제출에서 story_id 직접 추출 (submissions에 story_id 저장돼 있음)
-  const storyIdSet = new Set(mySubsSnap.docs.map(d => d.data().story_id).filter(Boolean));
+  const storyIdSet = new Set(mySubsSnap.docs.filter(d => !d.data().is_ai).map(d => d.data().story_id).filter(Boolean));
   const voteEpIds  = [...new Set(myVotesSnap.docs.map(d => d.data().episode_id).filter(Boolean))];
 
   // 투표 episode_id → story_id 해석 (제출 없이 투표만 한 경우)
@@ -1629,7 +1629,7 @@ async function fbGetProfile(user_id) {
   }
   history.forEach(h => { if (h.sub_id && subStoryMap[h.sub_id]) h.story_id = subStoryMap[h.sub_id]; });
 
-  const writings = writingsSnap.docs.map(d => {
+  const writings = writingsSnap.docs.filter(d => !d.data().is_ai).map(d => {
     const s = d.data();
     const ep = epMap[s.episode_id];
     return {

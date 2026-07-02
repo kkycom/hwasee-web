@@ -1371,6 +1371,9 @@ async function fbVoteMvp(story_id, episode_id, voter_id) {
     story_id, voter_id, nominated_user_id: sub.author_id, episode_id, created_at: fbNow()
   });
   await _fbAddPoints(sub.author_id, 10, 'mvp_nomination', '');
+  const stSnap2 = await db.collection('stories').doc(story_id).get();
+  const snippet = ((stSnap2.exists ? stSnap2.data().opening : '') || '').slice(0, 20);
+  await _fbCreateNotifications([sub.author_id], story_id, `"${snippet}…" 이야기에서 내 글이 으뜸 글로 선정됐어요! +10P`);
   return { ok: true };
 }
 

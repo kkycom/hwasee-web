@@ -328,7 +328,8 @@ async function fbGetStory(story_id, user_id) {
   const story    = storySnap.data();
   const episodes = episodesSnap.docs.map(d => ({ episode_id: d.id, ...d.data() }));
   const openEp   = episodes.find(e => e.status === 'open');
-  console.log('[fbGetStory] story_id:', story_id, 'episodes:', episodes.map(e=>e.episode_id+'('+e.status+')'), 'openEp:', openEp?.episode_id);
+  window._dbgEpisodes = episodes.map(e=>e.episode_id.slice(-6)+'('+e.status+')').join(', ');
+  window._dbgOpenEp   = openEp?.episode_id?.slice(-6) || 'null';
   const authorIds = [...new Set(subsSnap.docs.map(d => d.data().author_id).filter(Boolean))];
 
   const commentCountMap = {};
@@ -385,7 +386,8 @@ async function fbGetStory(story_id, user_id) {
   const like_count       = storySnap.data().like_count || 0;
   const is_liked         = (user_id && likeSnap) ? !likeSnap.empty : false;
   const my_voted_sub_ids = voteSnap ? voteSnap.docs.map(d => d.data().sub_id) : [];
-  console.log('[fbGetStory] voteSnap:', voteSnap ? voteSnap.docs.length + '개' : 'null(openEp없음)', 'my_voted_sub_ids:', my_voted_sub_ids);
+  window._dbgVoted = my_voted_sub_ids.map(id=>id.slice(-6)).join(', ') || '없음';
+  window._dbgVoteSnap = voteSnap ? voteSnap.docs.length+'개' : 'null';
   const branches         = branchSnap.docs.map(d => ({
     story_id: d.data().story_id || d.id,
     branch_from_step: Number(d.data().branch_from_step),
@@ -811,7 +813,9 @@ async function fbVote(episode_id, sub_ids, voter_id) {
 
   const isRevote = !prevVoteSnap.empty;
   const prevVotedSubIds = prevVoteSnap.docs.map(d => d.data().sub_id);
-  console.log('[fbVote] episode_id:', episode_id, 'sub_ids:', sub_ids, 'isRevote:', isRevote, 'prevVotedSubIds:', prevVotedSubIds);
+  window._dbgVoteEp = episode_id.slice(-6);
+  window._dbgIsRevote = isRevote;
+  window._dbgPrevVoted = prevVotedSubIds.map(id=>id.slice(-6)).join(', ') || '없음';
   const mySub = subsSnap.docs.find(d => d.data().author_id === voter_id && !d.data().is_ai);
   if (mySub && sub_ids.includes(mySub.id)) return { ok: false, error: '본인 제출에는 공감할 수 없습니다.' };
 

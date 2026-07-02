@@ -1467,6 +1467,7 @@ function _applyStoryData(res, story_id) {
       <button class="btn btn-ghost btn-sm" style="border:none;color:var(--muted);font-size:12px;opacity:0.6;display:inline-flex;align-items:center;gap:3px;padding:4px 6px" onclick="adminCloseStory('${esc(s.story_id)}')"><svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>이야기 종료</button>
     </div>` : ''}
     <div id="story-action-wrap">${actionHtml}</div>
+    <div id="_dbg_panel"></div>
     ${isFinished ? `
       <div style="margin-top:8px">
         <button class="btn btn-ghost btn-sm" style="width:100%;color:var(--muted);font-size:12px"
@@ -1500,6 +1501,21 @@ function _applyStoryData(res, story_id) {
 
   // 이미 투표한 항목 pre-select
   _applyVoteSelections();
+
+  // 디버그 패널 (임시)
+  if (window._dbgOpenEp !== undefined) {
+    const dbgEl = document.getElementById('_dbg_panel');
+    if (dbgEl) dbgEl.innerHTML = `
+      <div style="font-size:10px;background:#222;color:#0f0;padding:8px;border-radius:6px;margin-top:8px;line-height:1.7;word-break:break-all">
+        <b>[ DEBUG ]</b><br>
+        episodes: ${window._dbgEpisodes}<br>
+        getStory openEp: …${window._dbgOpenEp}<br>
+        voteSnap: ${window._dbgVoteSnap} / voted: ${window._dbgVoted}<br>
+        action openEp: …${window._dbgActionEp || '?'}<br>
+        openSubs: ${window._dbgOpenSubIds || '?'}<br>
+        votedHere: ${window._dbgVotedHere ?? '?'}
+      </div>`;
+  }
 
 }
 
@@ -2786,7 +2802,6 @@ function buildStoryActionHtml(openEp) {
   const sd = window._storyData;
   if (!sd || !openEp) return '';
   const { episodes, submissions, story, my_voted_sub_ids = [] } = sd;
-  console.log('[buildStoryActionHtml] openEp.episode_id:', openEp.episode_id, 'my_voted_sub_ids:', my_voted_sub_ids);
   const myVotedSet  = new Set(my_voted_sub_ids);
   const closedCount = episodes.filter(e => e.status === 'closed').length;
   const parentSteps = story && story.branch_from_step ? Number(story.branch_from_step) - 1 : 0;
@@ -2797,7 +2812,9 @@ function buildStoryActionHtml(openEp) {
   const maxVotes    = openSubs.length ? Math.max(...openSubs.map(sub => Number(sub.vote_count)||0)) : 0;
   const epSubIds    = new Set(openSubs.map(s => s.sub_id));
   const votedHere   = my_voted_sub_ids.filter(id => epSubIds.has(id)).length;
-  console.log('[buildStoryActionHtml] openSubs ep_ids:', openSubs.map(s=>s.episode_id), 'sub_ids:', openSubs.map(s=>s.sub_id), 'epSubIds:', [...epSubIds], 'votedHere:', votedHere);
+  window._dbgActionEp   = openEp.episode_id.slice(-6);
+  window._dbgOpenSubIds = openSubs.map(s=>s.sub_id.slice(-6)).join(', ');
+  window._dbgVotedHere  = votedHere;
   return `
     <div class="prose-divider">이 이야기의 다음 문장을 결정합니다</div>
     ${user && !mySubId ? `

@@ -1843,15 +1843,6 @@ async function fbGetAIActivities(admin_id) {
   };
 }
 
-async function fbSetAIConfig(admin_id, updates) {
-  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const patch = { updated_at: fbNow() };
-  if (updates.enabled !== undefined) patch.enabled = Boolean(updates.enabled);
-  if (updates.speed_pct !== undefined) patch.speed_pct = Math.min(200, Math.max(50, Number(updates.speed_pct)));
-  await db.collection('config').doc('ai_config').set(patch, { merge: true });
-  return { ok: true };
-}
-
 async function fbSetClaudeKey(admin_id, key) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   if (!key || key.length < 20) return { ok: false, error: '유효한 Claude API 키를 입력해주세요.' };
@@ -1942,8 +1933,9 @@ async function fbMarkAiReviewed(admin_id, sub_ids) {
 async function fbSetAIConfig(admin_id, updates) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   const patch = { updated_at: fbNow() };
-  if (updates.enabled !== undefined) patch.enabled = Boolean(updates.enabled);
-  if (updates.speed_pct !== undefined) patch.speed_pct = Math.min(200, Math.max(50, Number(updates.speed_pct)));
+  if (updates.sub_enabled  !== undefined) patch.sub_enabled  = Boolean(updates.sub_enabled);
+  if (updates.vote_enabled !== undefined) patch.vote_enabled = Boolean(updates.vote_enabled);
+  if (updates.speed_pct    !== undefined) patch.speed_pct    = Math.min(200, Math.max(50, Number(updates.speed_pct)));
   await db.collection('config').doc('ai_config').set(patch, { merge: true });
   return { ok: true };
 }

@@ -3336,7 +3336,8 @@ function _renderAdminAI(tab, page) {
   }
 
   const cfg = res.ai_config || {};
-  const enabled = cfg.enabled === true;
+  const subEnabled  = cfg.sub_enabled  !== undefined ? cfg.sub_enabled  : !!cfg.enabled;
+  const voteEnabled = cfg.vote_enabled !== undefined ? cfg.vote_enabled : !!cfg.enabled;
   const speedPct = cfg.speed_pct || 100;
   const subH = (3 * 100 / speedPct).toFixed(1);
   const voteH = (2 * 100 / speedPct).toFixed(1);
@@ -3383,12 +3384,20 @@ function _renderAdminAI(tab, page) {
 
   document.getElementById('app').innerHTML = nav_ + `
     <div class="card" style="padding:16px 18px;margin-bottom:12px">
+      <div style="font-size:14px;font-weight:700;margin-bottom:12px">AI 참여 설정</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div>
+          <div style="font-size:13px;font-weight:600">제출 <span style="color:${subEnabled?'var(--success)':'var(--muted)'}">${subEnabled?'ON':'OFF'}</span></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:1px">${subH}h 간격 · 총 ${res.total_subs}회</div>
+        </div>
+        <button class="btn ${subEnabled?'btn-primary':'btn-ghost'} btn-sm" onclick="toggleAISubEnabled(${!subEnabled})">${subEnabled?'끄기':'켜기'}</button>
+      </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div>
-          <div style="font-size:14px;font-weight:700">AI 참여 ${enabled ? '<span style="color:var(--success)">ON</span>' : '<span style="color:var(--muted)">OFF</span>'}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">제출 ${subH}h · 투표 ${voteH}h 간격 · 총 제출 ${res.total_subs}회 · 총 투표 ${res.total_votes}회</div>
+          <div style="font-size:13px;font-weight:600">투표 <span style="color:${voteEnabled?'var(--success)':'var(--muted)'}">${voteEnabled?'ON':'OFF'}</span></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:1px">${voteH}h 간격 · 총 ${res.total_votes}회</div>
         </div>
-        <button id="ai-toggle-btn" class="btn ${enabled?'btn-primary':'btn-ghost'} btn-sm" onclick="toggleAIEnabled(${!enabled})">${enabled?'끄기':'켜기'}</button>
+        <button class="btn ${voteEnabled?'btn-primary':'btn-ghost'} btn-sm" onclick="toggleAIVoteEnabled(${!voteEnabled})">${voteEnabled?'끄기':'켜기'}</button>
       </div>
       <div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:6px">속도 조절 <span id="speed-label" style="font-weight:700;color:var(--text)">${speedPct}%</span> <span style="font-size:11px">(100%=기본, 200%=2배 빠름, 50%=2배 느림)</span></div>
@@ -3431,10 +3440,17 @@ async function saveClaudeKey() {
   } catch(e) { toast('오류: ' + e.message, true); }
 }
 
-async function toggleAIEnabled(val) {
-  const res = await api('setAIConfig', { enabled: val });
+async function toggleAISubEnabled(val) {
+  const res = await api('setAIConfig', { sub_enabled: val });
   if (!res.ok) { toast(res.error, true); return; }
-  toast(val ? 'AI 참여가 켜졌습니다.' : 'AI 참여가 꺼졌습니다.');
+  toast(val ? 'AI 제출이 켜졌습니다.' : 'AI 제출이 꺼졌습니다.');
+  adminAI();
+}
+
+async function toggleAIVoteEnabled(val) {
+  const res = await api('setAIConfig', { vote_enabled: val });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast(val ? 'AI 투표가 켜졌습니다.' : 'AI 투표가 꺼졌습니다.');
   adminAI();
 }
 

@@ -668,10 +668,13 @@ const _lsc = {
 // ─── 탭 정렬 상태 ──────────────────────────────────────────
 let _mineSort  = 'activity';
 let _mineCache = null; // { active, snapshot }
+let _mineLimit = 20;
 let _popSort   = 'activity';
 let _popCache  = null; // { stories }
+let _popLimit  = 20;
 let _doneSort  = 'activity';
 let _doneCache = null; // { stories }
+let _doneLimit = 20;
 let _bmIds     = new Set();
 async function _loadBmIds() {
   if (!user) { _bmIds = new Set(); return; }
@@ -696,7 +699,7 @@ function _sortBtns(prefix, keys, current) {
 }
 
 function setMineSort(key) {
-  _mineSort = key;
+  _mineSort = key; _mineLimit = 20;
   ['activity','step','latest'].forEach(k => {
     const el = document.getElementById('ms-' + k);
     if (el) el.classList.toggle('active', k === key);
@@ -710,20 +713,38 @@ function renderMineCards() {
   const { active } = _mineCache;
   const boosted = active.filter(s => s.is_boosted);
   const regular = _sortStories(active.filter(s => !s.is_boosted), _mineSort);
+  const visible = regular.slice(0, _mineLimit);
+  const remaining = regular.length - _mineLimit;
   const boostHtml = boosted.length ? `
     <div class="boost-section">
       <div class="boost-section-label">✦ 이런 이야기도 있어요</div>
       <div class="boost-scroll">${boosted.map(s => boostCardHtml(s)).join('')}</div>
     </div>` : '';
+  const loadMoreHtml = remaining > 0
+    ? `<button id="mine-load-more" class="btn btn-ghost" style="width:100%;margin-top:8px;color:var(--muted)" onclick="loadMoreMine()">더 보기 (${remaining}개)</button>`
+    : '';
   content.innerHTML = boostHtml
     + _sortBtns('ms', [['activity','참여도 순'],['step','진행도 순'],['latest','최신 순']], _mineSort)
     + (regular.length
-      ? regular.map(s => myStoryCardHtml(s)).join('')
+      ? visible.map(s => myStoryCardHtml(s)).join('') + loadMoreHtml
       : `<div class="empty" style="padding-top:30px">참여 중인 이야기가 없어요.<br>씨앗 탭에서 이야기를 시작해 보세요!</div>`);
 }
 
+function loadMoreMine() {
+  if (!_mineCache) return;
+  const regular = _sortStories(_mineCache.active.filter(s => !s.is_boosted), _mineSort);
+  const newItems = regular.slice(_mineLimit, _mineLimit + 20);
+  _mineLimit += 20;
+  const btn = document.getElementById('mine-load-more');
+  if (!btn) return;
+  const remaining = regular.length - _mineLimit;
+  btn.before(document.createRange().createContextualFragment(newItems.map(s => myStoryCardHtml(s)).join('')));
+  if (remaining > 0) btn.textContent = `더 보기 (${remaining}개)`;
+  else btn.remove();
+}
+
 function setPopSort(key) {
-  _popSort = key;
+  _popSort = key; _popLimit = 20;
   ['activity','step','latest'].forEach(k => {
     const el = document.getElementById('ps-' + k);
     if (el) el.classList.toggle('active', k === key);
@@ -736,20 +757,38 @@ function renderPopCards() {
   if (!content || !_popCache) return;
   const boosted = _popCache.stories.filter(s => s.is_boosted);
   const regular = _sortStories(_popCache.stories.filter(s => !s.is_boosted), _popSort);
+  const visible = regular.slice(0, _popLimit);
+  const remaining = regular.length - _popLimit;
   const boostHtml = boosted.length ? `
     <div class="boost-section">
       <div class="boost-section-label">✦ 이런 이야기도 있어요</div>
       <div class="boost-scroll">${boosted.map(s => boostCardHtml(s)).join('')}</div>
     </div>` : '';
+  const loadMoreHtml = remaining > 0
+    ? `<button id="pop-load-more" class="btn btn-ghost" style="width:100%;margin-top:8px;color:var(--muted)" onclick="loadMorePop()">더 보기 (${remaining}개)</button>`
+    : '';
   content.innerHTML = boostHtml
     + _sortBtns('ps', [['activity','참여도 순'],['step','진행도 순'],['latest','최신 순']], _popSort)
     + (regular.length
-      ? regular.map(s => popularCardHtml(s)).join('')
+      ? visible.map(s => popularCardHtml(s)).join('') + loadMoreHtml
       : `<div class="empty" style="padding-top:40px">아직 이야기가 없어요.<br>씨앗 탭에서 첫 이야기를 시작해 보세요!</div>`);
 }
 
+function loadMorePop() {
+  if (!_popCache) return;
+  const regular = _sortStories(_popCache.stories.filter(s => !s.is_boosted), _popSort);
+  const newItems = regular.slice(_popLimit, _popLimit + 20);
+  _popLimit += 20;
+  const btn = document.getElementById('pop-load-more');
+  if (!btn) return;
+  const remaining = regular.length - _popLimit;
+  btn.before(document.createRange().createContextualFragment(newItems.map(s => popularCardHtml(s)).join('')));
+  if (remaining > 0) btn.textContent = `더 보기 (${remaining}개)`;
+  else btn.remove();
+}
+
 function setDoneSort(key) {
-  _doneSort = key;
+  _doneSort = key; _doneLimit = 20;
   ['activity','likes','latest'].forEach(k => {
     const el = document.getElementById('ds-' + k);
     if (el) el.classList.toggle('active', k === key);
@@ -761,10 +800,28 @@ function renderDoneCards() {
   const content = document.getElementById('home-content');
   if (!content || !_doneCache) return;
   const sorted = _sortStories(_doneCache.stories, _doneSort);
+  const visible = sorted.slice(0, _doneLimit);
+  const remaining = sorted.length - _doneLimit;
+  const loadMoreHtml = remaining > 0
+    ? `<button id="done-load-more" class="btn btn-ghost" style="width:100%;margin-top:8px;color:var(--muted)" onclick="loadMoreDone()">더 보기 (${remaining}개)</button>`
+    : '';
   content.innerHTML = _sortBtns('ds', [['activity','참여도 순'],['likes','추천 순'],['latest','최신 순']], _doneSort)
     + (sorted.length
-      ? sorted.map(s => doneCardHtml(s)).join('')
+      ? visible.map(s => doneCardHtml(s)).join('') + loadMoreHtml
       : `<div class="empty" style="padding-top:40px">아직 완결된 이야기가 없어요.<br>이야기에 참여해 함께 만들어 가요!</div>`);
+}
+
+function loadMoreDone() {
+  if (!_doneCache) return;
+  const sorted = _sortStories(_doneCache.stories, _doneSort);
+  const newItems = sorted.slice(_doneLimit, _doneLimit + 20);
+  _doneLimit += 20;
+  const btn = document.getElementById('done-load-more');
+  if (!btn) return;
+  const remaining = sorted.length - _doneLimit;
+  btn.before(document.createRange().createContextualFragment(newItems.map(s => doneCardHtml(s)).join('')));
+  if (remaining > 0) btn.textContent = `더 보기 (${remaining}개)`;
+  else btn.remove();
 }
 
 // ─── 상태 ──────────────────────────────────────────────────

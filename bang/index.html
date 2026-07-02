@@ -1395,6 +1395,12 @@ function _applyStoryData(res, story_id) {
   // 열린/대기 에피소드 (현재 갈래 선택 반영)
   const openEp    = getChosenOpenEp(episodes, submissions, window._branchChoice);
 
+  // Firestore 투표 조회 결과가 없으면 로컬스토리지 캐시로 보완
+  if (openEp && !window._storyData.my_voted_sub_ids.length) {
+    const localVoted = _lsc.get('ep_vote_' + openEp.episode_id);
+    if (localVoted && localVoted.length) window._storyData.my_voted_sub_ids = localVoted;
+  }
+
   // 분기 이야기면 부모 단계 잠금 산문
   let inheritedHtml = '';
   if (parent_chain && parent_chain.episodes.length) {
@@ -1933,6 +1939,7 @@ async function submitVoteInStory(episode_id) {
   if (btn) { btn.disabled = true; btn.textContent = '공감 중...'; }
   const res = await api('vote', { episode_id, sub_ids: selectedSubs });
   if (!res.ok) { toast(res.error, true); if (btn) btn.disabled = false; return; }
+  _lsc.set('ep_vote_' + episode_id, [...selectedSubs], 86400 * 30);
   _lsc.del('pop', 'done', 'mine', 'story_' + currentParam);
   toast(wasRevote ? '공감이 변경됐어요!' : `공감 완료! 현재 ${res.total_voters}명 참여`);
   story();

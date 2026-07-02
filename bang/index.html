@@ -512,11 +512,14 @@
   .prose-select-bar.visible { display:block; }
   .prose-select-bar-title { font-size:13px; font-weight:700; margin-bottom:2px; }
   .prose-select-bar-hint { font-size:12px; color:var(--muted); }
-  .story-prose.selecting .prose-line { cursor:pointer; padding:8px 12px; border-radius:6px; border-left:2px solid transparent; margin-top:0; transition:border-left-color .15s, background .15s; }
+  .story-prose.selecting .prose-line { cursor:pointer; padding:8px 12px; border-radius:6px; border-left:2px solid transparent; margin-top:0; transition:border-left-color .15s, background .15s; touch-action:manipulation; }
   .story-prose.selecting .prose-line + .prose-line { margin-top:20px; }
   .story-prose.selecting .prose-line:hover { border-left-color:var(--accent2); background:rgba(200,169,110,0.04); }
   .story-prose.selecting .prose-line.prose-selected { border-left-color:var(--accent2); background:rgba(200,130,58,.1); }
-  @media (hover: none) { .story-prose.viewvotes-active .prose-line { border-left-color:var(--accent2) !important; } }
+  @media (hover: none) {
+    .story-prose.viewvotes-active .prose-line { border-left-color:var(--accent2) !important; }
+    .story-prose.selecting .prose-line:hover { border-left-color:transparent; background:none; }
+  }
   .prose-line-mvp { font-size:11px; color:var(--accent); font-weight:700; display:inline-flex; align-items:center; gap:3px; }
   .prose-line-my-mvp { font-size:10px; color:var(--accent2); margin-left:6px; }
   /* ── 분기 이야기 잠금 산문 */
@@ -1372,6 +1375,12 @@ function _applyStoryData(res, story_id) {
   document.removeEventListener('click', _proseSelOutsideClick, { capture: true });
   window._proseSelMode = null; // 'mvp' | 'branch'
   window._proseSelEpId = null;
+
+  // 완결 이야기: 채택 경로를 역추적해 갈림길 자동 선택
+  if (s.status === 'completed' || s.status === 'inactive') {
+    const autoPath = _buildCanonicalPath(episodes, submissions);
+    Object.assign(window._branchChoice, autoPath);
+  }
 
   // 열린/대기 에피소드 (현재 갈래 선택 반영)
   const openEp    = getChosenOpenEp(episodes, submissions, window._branchChoice);
@@ -2907,18 +2916,12 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
 function renderExtBranchFork(ep, originalSub, extBranch) {
   const isActive = extBranch.status === 'active';
   return `
-    <div class="ext-branch-fork">
-      <div class="ext-branch-fork-label">⑂ 이야기의 갈림길</div>
-      <div class="ext-branch-choices">
-        <button class="ext-branch-card" style="cursor:default;opacity:.7">
-          <div class="ext-branch-card-label">원본</div>
-          <div>${esc(originalSub.content)}</div>
-        </button>
-        <button class="ext-branch-card" onclick="nav('story','${extBranch.story_id}')">
-          <div class="ext-branch-card-label">분기 ${isActive ? '· 진행 중' : '· 완성됨'}</div>
-          <div style="font-size:12px;color:var(--muted)">${isActive ? '지금 참여해서 이야기를 이어가세요 →' : '분기된 이야기 보기 →'}</div>
-        </button>
-      </div>
+    <div class="ext-branch-fork" style="display:flex;align-items:center;gap:10px;padding:10px 12px">
+      <span style="font-size:10px;color:var(--muted);letter-spacing:1px;white-space:nowrap">⑂ 분기</span>
+      <button class="ext-branch-card" onclick="nav('story','${extBranch.story_id}')" style="flex:1;margin:0;padding:10px 12px">
+        <div class="ext-branch-card-label" style="margin-bottom:2px">${isActive ? '진행 중인 분기 이야기' : '완성된 분기 이야기'}</div>
+        <div style="font-size:12px;color:var(--muted)">${isActive ? '지금 참여해서 이야기를 이어가세요 →' : '분기된 이야기 보기 →'}</div>
+      </button>
     </div>`;
 }
 
@@ -2929,6 +2932,29 @@ function toggleProseAuthors(btn) {
   prose.querySelectorAll('.prose-author').forEach(el => el.classList.toggle('visible', !showing));
   btn.dataset.showing = showing ? '0' : '1';
   btn.textContent = showing ? '글쓴이 보기 ▾' : '글쓴이 숨기기 ▴';
+}
+
+function _buildCanonicalPath(episodes, submissions) {
+  const path = {};
+  // 완결 제출(is_closing)에서 역추적, 없으면 마지막 step 채택 글 기준
+  let traceSub = submissions.find(s => s.is_closing && s.is_adopted);
+  if (!traceSub) {
+    const maxStep = Math.max(...episodes.map(e => Number(e.step) || 0));
+    const lastEps = new Set(episodes.filter(e => Number(e.step) === maxStep).map(e => e.episode_id));
+    traceSub = submissions.find(s => lastEps.has(s.episode_id) && s.is_adopted);
+  }
+  while (traceSub) {
+    const ep = episodes.find(e => e.episode_id === traceSub.episode_id);
+    if (!ep || !ep.parent_sub_id) break;
+    const parentSub = submissions.find(s => s.sub_id === ep.parent_sub_id);
+    if (!parentSub) break;
+    const parentEp = episodes.find(e => e.episode_id === parentSub.episode_id);
+    if (!parentEp) break;
+    const parentAdopted = submissions.filter(s => s.episode_id === parentEp.episode_id && s.is_adopted);
+    if (parentAdopted.length > 1) path[parentEp.episode_id] = ep.parent_sub_id;
+    traceSub = parentSub;
+  }
+  return path;
 }
 
 function chooseBranch(episode_id, sub_id) {

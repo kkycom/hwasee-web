@@ -1998,7 +1998,7 @@ async function episode() {
   const storyOpening = res.story ? res.story.opening : '';
   const subs         = ep.submissions || [];
   const isClosed     = ep.status !== 'open';
-  const mySubId      = user ? (subs.find(s => s.author_id === user.user_id) || {}).sub_id : null;
+  const mySubId      = user ? (subs.find(s => s.author_id === user.user_id && !s.is_ai) || {}).sub_id : null;
   const maxVotes     = subs.length ? Math.max(...subs.map(s => Number(s.vote_count)||0)) : 0;
 
   // 이전 이야기 흐름
@@ -2754,7 +2754,7 @@ function buildStoryActionHtml(openEp) {
   const effectiveClosedCount = closedCount + parentSteps;
   const absStep     = parentSteps + Number(openEp.step);
   const openSubs    = submissions.filter(sub => sub.episode_id === openEp.episode_id);
-  const mySubId     = user ? (openSubs.find(sub => sub.author_id === user.user_id) || {}).sub_id || null : null;
+  const mySubId     = user ? (openSubs.find(sub => sub.author_id === user.user_id && !sub.is_ai) || {}).sub_id || null : null;
   const maxVotes    = openSubs.length ? Math.max(...openSubs.map(sub => Number(sub.vote_count)||0)) : 0;
   const epSubIds    = new Set(openSubs.map(s => s.sub_id));
   const votedHere   = my_voted_sub_ids.filter(id => epSubIds.has(id)).length;

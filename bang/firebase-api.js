@@ -1057,8 +1057,9 @@ async function fbGetNotifications(user_id) {
   if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
   const snap = await db.collection('notifications')
     .where('user_id', '==', user_id).get();
-  const notifications = snap.docs.map(d => d.data())
-    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+  const toIso = v => v?.toDate ? v.toDate().toISOString() : (v || '');
+  const notifications = snap.docs.map(d => ({ ...d.data(), created_at: toIso(d.data().created_at) }))
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .slice(0, 30);
   const unread_count  = notifications.filter(n => n.is_read === false || n.is_read === 'false').length;
   return { ok: true, notifications, unread_count };
@@ -1893,7 +1894,7 @@ async function fbAdminEditSub(admin_id, sub_id, new_content, old_content, story_
 
 async function fbGetAdminEdits(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const snap = await db.collection('admin_edits').orderBy('edited_at', 'desc').limit(200).get();
+  const snap = await db.collection('admin_edits').limit(200).get();
   if (snap.empty) return { ok: true, edits: [] };
   const storyIds = [...new Set(snap.docs.map(d => d.data().story_id).filter(Boolean))];
   const storyMap = {};
@@ -1901,9 +1902,12 @@ async function fbGetAdminEdits(admin_id) {
     const sDocs = await Promise.all(storyIds.map(id => db.collection('stories').doc(id).get()));
     sDocs.forEach(d => { if (d.exists) storyMap[d.id] = d.data().opening || ''; });
   }
+  const toIso = v => v?.toDate ? v.toDate().toISOString() : (v || '');
   return {
     ok: true,
-    edits: snap.docs.map(d => ({ edit_id: d.id, ...d.data(), story_opening: storyMap[d.data().story_id] || '' })),
+    edits: snap.docs
+      .map(d => ({ edit_id: d.id, ...d.data(), edited_at: toIso(d.data().edited_at), story_opening: storyMap[d.data().story_id] || '' }))
+      .sort((a, b) => b.edited_at.localeCompare(a.edited_at)),
   };
 }
 

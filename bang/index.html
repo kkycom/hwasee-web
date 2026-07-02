@@ -683,6 +683,8 @@ const _lsc = {
     try { localStorage.setItem('hc:' + k, JSON.stringify({ d, e: Date.now() + s * 1000 })); } catch {}
   },
   del(...ks) { ks.forEach(k => { try { localStorage.removeItem('hc:' + k); } catch {} }); },
+  // TTL을 0으로 만들어 expired지만 stale read는 가능하게 (즉시 렌더 + 백그라운드 갱신)
+  expire(...ks) { ks.forEach(k => { try { const r = localStorage.getItem('hc:'+k); if (r) { const p = JSON.parse(r); p.e = 0; localStorage.setItem('hc:'+k, JSON.stringify(p)); } } catch {} }); },
 };
 
 // ─── 렌더 에포크 (중복 비동기 렌더 방지) ───────────────────
@@ -1924,7 +1926,8 @@ async function submitSubInStory(episode_id, closing = false) {
   const res = await api('createSubmission', { episode_id, content, derived_from, closing });
   if (!res.ok) { toast(res.error, true); return; }
   window._polishFrom = null;
-  _lsc.del('pop', 'done', 'mine', 'story_' + currentParam);
+  _lsc.expire('pop', 'done', 'mine');
+  _lsc.del('story_' + currentParam);
   toast(closing ? '제출 완료! 이야기 마무리 공감이 시작됩니다.' : '제출 완료!');
   story();
 }
@@ -1967,7 +1970,8 @@ async function submitVoteInStory(episode_id) {
   const res = await api('vote', { episode_id, sub_ids: selectedSubs });
   if (!res.ok) { toast(res.error, true); if (btn) btn.disabled = false; return; }
   _lsc.set('ep_vote_' + episode_id, [...selectedSubs], 86400 * 30);
-  _lsc.del('pop', 'done', 'mine', 'story_' + currentParam);
+  _lsc.expire('pop', 'done', 'mine');
+  _lsc.del('story_' + currentParam);
   toast(wasRevote ? '공감이 변경됐어요!' : `공감 완료! 현재 ${res.total_voters}명 참여`);
   story(true); // 갈래 선택 유지
 }
@@ -2166,7 +2170,7 @@ async function submitSub(episode_id) {
   if (content.length > 50) { toast('조금 더 짧게 써주세요.', true); return; }
   const res = await api('createSubmission', { episode_id, content, derived_from: '' });
   if (!res.ok) { toast(res.error, true); return; }
-  _lsc.del('pop', 'done', 'mine');
+  _lsc.expire('pop', 'done', 'mine');
   toast('제출 완료!');
   episode();
 }
@@ -2177,7 +2181,7 @@ async function submitVote(episode_id) {
   btn.disabled = true; btn.textContent = '공감 중...';
   const res = await api('vote', { episode_id, sub_ids: selectedSubs });
   if (!res.ok) { toast(res.error, true); btn.disabled = false; return; }
-  _lsc.del('pop', 'done', 'mine');
+  _lsc.expire('pop', 'done', 'mine');
   toast(`공감 완료! 현재 ${res.total_voters}명 참여`);
   episode();
 }

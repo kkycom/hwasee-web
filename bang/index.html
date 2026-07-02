@@ -650,6 +650,15 @@ const _lsc = {
       return Date.now() < p.e ? p.d : null;
     } catch { return null; }
   },
+  // TTL 지나도 1시간 이내면 stale 데이터 반환 (즉시 표시 후 백그라운드 갱신용)
+  getStale(k) {
+    try {
+      const r = localStorage.getItem('hc:' + k);
+      if (!r) return null;
+      const p = JSON.parse(r);
+      return Date.now() < p.e + 3_600_000 ? p.d : null;
+    } catch { return null; }
+  },
   set(k, d, s) {
     try { localStorage.setItem('hc:' + k, JSON.stringify({ d, e: Date.now() + s * 1000 })); } catch {}
   },
@@ -987,8 +996,8 @@ async function switchHomeTab(tab) {
   });
   const content = document.getElementById('home-content');
   const cacheKey = tab === 'popular' ? 'pop' : tab === 'seed' ? 'seeds' : tab;
-  const hasCached = !!_lsc.get(cacheKey);
-  if (content && !hasCached) content.innerHTML = `<div class="loading"></div>`;
+  const hasAnyData = !!_lsc.getStale(cacheKey);
+  if (content && !hasAnyData) content.innerHTML = `<div class="loading"></div>`;
   await loadHomeTab(tab);
 }
 
@@ -998,13 +1007,18 @@ async function loadHomeTab(tab) {
 
   if (tab === 'seed') {
     const _cachedSeeds = _lsc.get('seeds');
-    const res = _cachedSeeds ? { ok: true, seeds: _cachedSeeds } : await api('getSeeds');
+    const _staleSeeds  = _cachedSeeds || _lsc.getStale('seeds');
+    const res = _staleSeeds ? { ok: true, seeds: _staleSeeds } : await api('getSeeds');
     if (currentRoute !== 'seed') return;
     if (!res.ok) {
       content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('seed')">다시 시도</button></div>`;
       return;
     }
-    if (!_cachedSeeds) _lsc.set('seeds', res.seeds, 300);
+    if (!_cachedSeeds) {
+      _lsc.set('seeds', res.seeds, 300);
+      // stale로 표시 중이면 배경에서 실제 갱신
+      if (_staleSeeds) api('getSeeds').then(r => { if (r.ok) _lsc.set('seeds', r.seeds, 300); });
+    }
     content.innerHTML = '';
     window._seeds   = res.seeds;
     window._seedIdx = 0;
@@ -1026,7 +1040,8 @@ async function loadHomeTab(tab) {
       if (currentRoute === 'popular') renderPopCards();
     };
     const _cachedPop = _lsc.get('pop');
-    if (_cachedPop) _applyPop(_cachedPop.storiesRes, _cachedPop.myRes);
+    const _stalePop  = _cachedPop || _lsc.getStale('pop');
+    if (_stalePop) _applyPop(_stalePop.storiesRes, _stalePop.myRes);
     const _fetchPop = async () => {
       let storiesRes, myRes;
       try {
@@ -1034,7 +1049,7 @@ async function loadHomeTab(tab) {
         if (user) p.push(api('getMyStories'));
         [storiesRes, myRes] = await Promise.all(p);
       } catch(e) {
-        if (!_cachedPop) content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('popular')">다시 시도</button></div>`;
+        if (!_stalePop) content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('popular')">다시 시도</button></div>`;
         return;
       }
       _lsc.set('pop', { storiesRes, myRes }, 150);
@@ -1054,11 +1069,12 @@ async function loadHomeTab(tab) {
       if (currentRoute === 'mine') renderMineCards();
     };
     const _cachedMine = _lsc.get('mine');
-    if (_cachedMine) _applyMine(_cachedMine);
+    const _staleMine  = _cachedMine || _lsc.getStale('mine');
+    if (_staleMine) _applyMine(_staleMine);
     const _fetchMine = async () => {
       let res;
       try { res = await api('getMyStories'); } catch(e) {
-        if (!_cachedMine) content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('mine')">다시 시도</button></div>`;
+        if (!_staleMine) content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('mine')">다시 시도</button></div>`;
         return;
       }
       _lsc.set('mine', res, 120);
@@ -1073,11 +1089,12 @@ async function loadHomeTab(tab) {
       if (currentRoute === 'done') renderDoneCards();
     };
     const _cachedDone = _lsc.get('done');
-    if (_cachedDone) _applyDone(_cachedDone);
+    const _staleDone  = _cachedDone || _lsc.getStale('done');
+    if (_staleDone) _applyDone(_staleDone);
     const _fetchDone = async () => {
       let res;
       try { res = await api('getStories', { page: 2 }); } catch(e) {
-        if (!_cachedDone) content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('done')">다시 시도</button></div>`;
+        if (!_staleDone) content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('done')">다시 시도</button></div>`;
         return;
       }
       _lsc.set('done', res, 660);

@@ -33,8 +33,7 @@ self.addEventListener('notificationclick', e => {
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const c of list) {
         if (c.url.includes('/bang') && 'focus' in c) {
-          c.navigate(link);
-          return c.focus();
+          return c.navigate(link).then(cl => (cl || c).focus()).catch(() => clients.openWindow(link));
         }
       }
       return clients.openWindow(link);
@@ -44,7 +43,7 @@ self.addEventListener('notificationclick', e => {
 
 // ── 캐시 전략 ───────────────────────────────────────────────
 
-const CACHE = 'hwasee-bang-v94';
+const CACHE = 'hwasee-bang-v95';
 const PRECACHE = [
   '/bang/',
   '/bang/index.html',

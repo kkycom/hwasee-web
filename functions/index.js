@@ -175,6 +175,18 @@ exports.aiReviewCompletedStories = functions
   .timeZone('Asia/Seoul')
   .onRun(async () => {
     const db = admin.firestore();
+
+    // at-least-once 중복 실행 방지 — 90분 이내 실행 기록 있으면 skip
+    const lockRef = db.collection('config').doc('ai_review_lock');
+    const shouldRun = await db.runTransaction(async tx => {
+      const snap = await tx.get(lockRef);
+      const last = snap.exists ? (snap.data().started_at?.toMillis() || 0) : 0;
+      if (Date.now() - last < 90 * 60 * 1000) return false;
+      tx.set(lockRef, { started_at: admin.firestore.Timestamp.now() });
+      return true;
+    });
+    if (!shouldRun) { console.log('AI review skipped: duplicate run within 90 min.'); return null; }
+
     const secretsSnap = await db.collection('config').doc('secrets').get();
     const claudeKey = secretsSnap.exists ? secretsSnap.data().claude_key : null;
     if (!claudeKey) {

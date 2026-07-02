@@ -767,7 +767,7 @@ async function fbCreateSubmission(episode_id, content, author_id, derived_from, 
   if (ep.status !== 'open') return { ok: false, error: '제출이 마감됐습니다.' };
 
   const prevSubsSnap = await db.collection('submissions').where('episode_id','==',episode_id).get();
-  const already = prevSubsSnap.docs.some(d => d.data().author_id === author_id);
+  const already = prevSubsSnap.docs.some(d => d.data().author_id === author_id && !d.data().is_ai);
   if (already) {
     const exSnap = await db.collection('extra_submits')
       .where('episode_id','==',episode_id).where('user_id','==',author_id).limit(1).get();

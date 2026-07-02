@@ -4082,7 +4082,7 @@ window.onload = async () => {
   // 하루 1회 방문자 카운트 (기기별 중복 방지)
   const _vkey = 'hwasee_visited_' + new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
   const _isUniqueVisit = !localStorage.getItem(_vkey);
-  api('trackVisit', { is_unique: _isUniqueVisit }).then(() => {
+  if (!user?.is_admin) api('trackVisit', { is_unique: _isUniqueVisit }).then(() => {
     if (_isUniqueVisit) localStorage.setItem(_vkey, '1');
   }).catch(() => {});
 

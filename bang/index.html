@@ -1331,7 +1331,7 @@ function myStoryCardHtml(s) {
         </div>` : ''}
       <div class="story-card-footer">
         <span class="step-pill"><span class="step-dot"></span>${s.status==='active' ? (s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`) : `${step+1}단계`} · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
-        ${(voteCount !== null && voteCount > 0) ? `<span style="font-size:11px;color:var(--success);font-weight:700">${voteCount >= 2 ? '공감 완료' : `✓ ${voteCount}개 공감`}</span>` : ''}
+        ${(voteCount !== null && voteCount > 0) ? `<span style="font-size:11px;color:var(--success);font-weight:700">공감 완료</span>` : ''}
       </div>
       </div>
     </div>`;

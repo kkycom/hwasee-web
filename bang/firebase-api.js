@@ -1259,14 +1259,12 @@ function _kstDate(offsetDays = 0) {
   return new Date(Date.now() + (9 + offsetDays * 24) * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-async function fbTrackVisit() {
+async function fbTrackVisit(is_unique) {
   const today = _kstDate();
   const ref   = db.collection('visits').doc(today);
-  const total = db.collection('visits').doc('_total');
-  await Promise.all([
-    ref.set({ date: today, count: firebase.firestore.FieldValue.increment(1) }, { merge: true }),
-    total.set({ count: firebase.firestore.FieldValue.increment(1) }, { merge: true }),
-  ]);
+  const patch = { date: today, raw_count: firebase.firestore.FieldValue.increment(1) };
+  if (is_unique) patch.count = firebase.firestore.FieldValue.increment(1);
+  await ref.set(patch, { merge: true });
   return { ok: true };
 }
 
@@ -1289,15 +1287,16 @@ async function fbGetAdminStats(admin_id) {
     .sort((a, b) => b[1] - a[1])
     .map(([label, count]) => ({ label, count }));
 
-  let visit_today = 0, visit_yesterday = 0, visit_total = 0;
+  let visit_today = 0, access_today = 0, visit_yesterday = 0, visit_total = 0;
   try {
     const [todaySnap, yesSnap, allSnap] = await Promise.all([
       db.collection('visits').doc(today).get(),
       db.collection('visits').doc(yesterday).get(),
       db.collection('visits').get(),
     ]);
-    visit_today     = todaySnap.exists ? (todaySnap.data().count || 0) : 0;
-    visit_yesterday = yesSnap.exists   ? (yesSnap.data().count   || 0) : 0;
+    visit_today     = todaySnap.exists ? (todaySnap.data().count     || 0) : 0;
+    access_today    = todaySnap.exists ? (todaySnap.data().raw_count || 0) : 0;
+    visit_yesterday = yesSnap.exists   ? (yesSnap.data().count       || 0) : 0;
     visit_total     = allSnap.docs
       .filter(d => d.id !== '_total')
       .reduce((sum, d) => sum + (d.data().count || 0), 0);
@@ -1305,7 +1304,7 @@ async function fbGetAdminStats(admin_id) {
   return {
     ok: true,
     user_count: uSnap.size, story_count: sSnap.size, submission_count: subSnap.size,
-    visit_today, visit_yesterday, visit_total, referral_stats,
+    visit_today, access_today, visit_yesterday, visit_total, referral_stats,
   };
 }
 
@@ -2020,7 +2019,7 @@ async function firebaseApi(action, params = {}) {
     case 'setClaudeKey':          return fbSetClaudeKey(need().user_id, params.key);
 
     case 'saveFcmToken':    return fbSaveFcmToken(need().user_id, params.fcm_token);
-    case 'trackVisit':      return fbTrackVisit();
+    case 'trackVisit':      return fbTrackVisit(params.is_unique);
     case 'checkDailyBonus': return { ok: true, bonus: await _fbCheckDailyBonus(need().user_id) };
     case 'submitBugReport':   return fbSubmitBugReport(params.content, need().user_id);
     case 'getBugReports':     return fbGetBugReports(need().user_id);

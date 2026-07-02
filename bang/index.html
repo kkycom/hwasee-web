@@ -1544,7 +1544,8 @@ async function story(preserveBranch = false) {
   const cached = _lsc.get('story_' + story_id);
   if (cached) {
     _applyStoryData(cached, story_id);
-  } else {
+  } else if (!preserveBranch) {
+    // preserveBranch(투표/제출 후 새로고침)는 현재 스토리 화면 유지, 로딩 플래시 없음
     document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   }
   const res = await api('getStory', { story_id });
@@ -1553,7 +1554,7 @@ async function story(preserveBranch = false) {
     if (!cached) document.getElementById('app').innerHTML = `<div class="empty">이야기를 불러오지 못했습니다.<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="story()">다시 시도</button></div>`;
     return;
   }
-  _lsc.set('story_' + story_id, res, 300);
+  _lsc.set('story_' + story_id, res, 600);
   _applyStoryData(res, story_id);
 }
 
@@ -2190,10 +2191,12 @@ async function submitVote(episode_id) {
 
 async function episodeVotes() {
   const episode_id = currentParam;
+  const epoch = _renderEpoch;
   if (!episode_id) { nav('seed'); return; }
   document.getElementById('app').innerHTML = `<div class="empty">불러오는 중...</div>`;
 
   const epSnap = await firebase.firestore().collection('episodes').doc(episode_id).get();
+  if (_renderEpoch !== epoch || currentParam !== episode_id) return;
   if (!epSnap.exists) { toast('에피소드를 찾을 수 없습니다.', true); nav('seed'); return; }
   const ep = epSnap.data();
   const story_id = ep.story_id;
@@ -2203,6 +2206,7 @@ async function episodeVotes() {
     firebase.firestore().collection('stories').doc(story_id).get(),
     firebase.firestore().collection('comments').where('story_id', '==', story_id).get(),
   ]);
+  if (_renderEpoch !== epoch || currentParam !== episode_id) return;
 
   const story = stSnap.data() || {};
   const subs = subsSnap.docs.map(d => ({ sub_id: d.id, ...d.data() }))
@@ -2216,6 +2220,7 @@ async function episodeVotes() {
   const commNickMap = {};
   if (commentAuthorIds.length > 0) {
     const uDocs = await Promise.all(commentAuthorIds.map(id => firebase.firestore().collection('users').doc(id).get()));
+    if (_renderEpoch !== epoch || currentParam !== episode_id) return;
     uDocs.forEach(d => { if (d.exists) commNickMap[d.id] = d.data().display_name || d.data().nickname; });
   }
   const commentsBySubId = {};
@@ -4119,7 +4124,7 @@ document.addEventListener('visibilitychange', () => {
     _hiddenAt = Date.now();
   } else if (_hiddenAt && Date.now() - _hiddenAt > 30000) {
     _hiddenAt = 0;
-    render();
+    render(); renderNav();
   }
 });
 
@@ -4132,7 +4137,7 @@ window.onload = async () => {
   // Firestore 연결 워밍업 + 씨앗·관심받는 탭 프리페치
   setTimeout(() => {
     if (!_lsc.get('seeds')) api('getSeeds').then(r => { if (r.ok) _lsc.set('seeds', r.seeds, 300); });
-    if (!_lsc.get('pop')) {
+    if (!_lsc.get('pop') && !_popFetching) {
       const _pp = [api('getStories', { page: 1 })];
       if (user) _pp.push(api('getMyStories'));
       Promise.all(_pp).then(([r, myR]) => { if (r.ok) _lsc.set('pop', { storiesRes: r, myRes: myR || null }, 150); });

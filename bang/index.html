@@ -2767,11 +2767,18 @@ function _applyVoteSelections() {
   if (!sd) return;
   const { my_voted_sub_ids = [] } = sd;
   if (!my_voted_sub_ids.length) return;
-  selectedSubs = [...my_voted_sub_ids];
-  my_voted_sub_ids.forEach(sid => {
+  // DOM에 실제 존재하는 카드만 selectedSubs에 반영 (에피소드 교체 후 stale ID 방지)
+  const found = my_voted_sub_ids.filter(sid => {
     const el = document.getElementById('sc-' + sid);
-    if (el) el.classList.add('selected');
+    if (el) { el.classList.add('selected'); return true; }
+    return false;
   });
+  if (!found.length) return;
+  selectedSubs = [...found];
+  const btn = document.getElementById('vote-btn');
+  if (btn) btn.textContent = found.length >= 2
+    ? '공감하기'
+    : '공감하기 · 1개 더 고를 수 있어요';
 }
 
 // 갈래 선택에 따른 action 섹션 HTML 생성

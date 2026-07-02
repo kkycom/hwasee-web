@@ -815,18 +815,19 @@ async function fbVote(episode_id, sub_ids, voter_id) {
   if (!Array.isArray(sub_ids) || sub_ids.length < 1 || sub_ids.length > 2)
     return { ok: false, error: '1개 또는 2개를 선택해주세요.' };
 
-  const epSnap = await db.collection('episodes').doc(episode_id).get();
+  const [epSnap, prevVoteSnap, subsSnap] = await Promise.all([
+    db.collection('episodes').doc(episode_id).get(),
+    db.collection('votes').where('episode_id','==',episode_id).where('voter_id','==',voter_id).get(),
+    db.collection('submissions').where('episode_id','==',episode_id).get(),
+  ]);
+
   if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
   const ep = epSnap.data();
   if (ep.status !== 'open') return { ok: false, error: '공감이 마감됐습니다.' };
 
-  const prevVoteSnap = await db.collection('votes')
-    .where('episode_id','==',episode_id).where('voter_id','==',voter_id).get();
   const isRevote = !prevVoteSnap.empty;
   const prevVotedSubIds = prevVoteSnap.docs.map(d => d.data().sub_id);
-
-  const subsSnap = await db.collection('submissions').where('episode_id','==',episode_id).get();
-  const mySub    = subsSnap.docs.find(d => d.data().author_id === voter_id);
+  const mySub = subsSnap.docs.find(d => d.data().author_id === voter_id);
   if (mySub && sub_ids.includes(mySub.id)) return { ok: false, error: '본인 제출에는 공감할 수 없습니다.' };
 
   const batch = db.batch();
@@ -851,13 +852,19 @@ async function fbVote(episode_id, sub_ids, voter_id) {
 
   const newTotal = isRevote ? (Number(ep.vote_total) || 0) : (Number(ep.vote_total) || 0) + 1;
   batch.update(epSnap.ref, { vote_total: newTotal });
-  await batch.commit();
 
-  if (!isRevote) await _fbAddPoints(voter_id, 1, 'vote', '');
+  // 로컬에서 최고 득표 계산 (Firestore 재조회 불필요)
+  const maxSubVotes = subsSnap.docs.reduce((m, d) => {
+    let c = Number(d.data().vote_count) || 0;
+    if (isRevote && prevVotedSubIds.includes(d.id)) c--;
+    if (sub_ids.includes(d.id)) c++;
+    return Math.max(m, c);
+  }, 0);
 
-  // 최고 득표 확인
-  const updSubsSnap = await db.collection('submissions').where('episode_id','==',episode_id).get();
-  const maxSubVotes = updSubsSnap.docs.reduce((m, d) => Math.max(m, Number(d.data().vote_count) || 0), 0);
+  await Promise.all([
+    batch.commit(),
+    isRevote ? Promise.resolve() : _fbAddPoints(voter_id, 1, 'vote', ''),
+  ]);
 
   if (maxSubVotes >= FB_VOTE_THRESHOLD) {
     await _fbCloseEpisode(episode_id, ep);

@@ -1172,7 +1172,7 @@ async function loadHomeTab(tab, epoch) {
         if (!_staleMine && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('mine')">다시 시도</button></div>`;
         return;
       } finally { _mineFetching = false; }
-      _lsc.set('mine', res, 120);
+      _lsc.set('mine', res, 300);
       _applyMine(res);
     };
     if (!_cachedMine) await _fetchMine(); else _fetchMine();
@@ -4140,7 +4140,10 @@ window.onload = async () => {
     if (!_lsc.get('pop') && !_popFetching) {
       const _pp = [api('getStories', { page: 1 })];
       if (user) _pp.push(api('getMyStories'));
-      Promise.all(_pp).then(([r, myR]) => { if (r.ok) _lsc.set('pop', { storiesRes: r, myRes: myR || null }, 150); });
+      Promise.all(_pp).then(([r, myR]) => {
+        if (r.ok) _lsc.set('pop', { storiesRes: r, myRes: myR || null }, 150);
+        if (myR?.ok) _lsc.set('mine', myR, 300); // mine 캐시도 함께 채워두기 (이중 호출 방지)
+      });
     }
   }, 300);
 

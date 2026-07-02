@@ -469,8 +469,8 @@ async function fbGetMyStories(user_id) {
   if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
 
   const [mySubsSnap, myVotesSnap] = await Promise.all([
-    db.collection('submissions').where('author_id', '==', user_id).get(),
-    db.collection('votes').where('voter_id', '==', user_id).get(),
+    db.collection('submissions').where('author_id', '==', user_id).limit(300).get(),
+    db.collection('votes').where('voter_id', '==', user_id).limit(300).get(),
   ]);
 
   // 제출에서 story_id 직접 추출 (submissions에 story_id 저장돼 있음)

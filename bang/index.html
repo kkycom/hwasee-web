@@ -2786,6 +2786,7 @@ function buildStoryActionHtml(openEp) {
   const sd = window._storyData;
   if (!sd || !openEp) return '';
   const { episodes, submissions, story, my_voted_sub_ids = [] } = sd;
+  console.log('[buildStoryActionHtml] openEp.episode_id:', openEp.episode_id, 'my_voted_sub_ids:', my_voted_sub_ids);
   const myVotedSet  = new Set(my_voted_sub_ids);
   const closedCount = episodes.filter(e => e.status === 'closed').length;
   const parentSteps = story && story.branch_from_step ? Number(story.branch_from_step) - 1 : 0;
@@ -2796,6 +2797,7 @@ function buildStoryActionHtml(openEp) {
   const maxVotes    = openSubs.length ? Math.max(...openSubs.map(sub => Number(sub.vote_count)||0)) : 0;
   const epSubIds    = new Set(openSubs.map(s => s.sub_id));
   const votedHere   = my_voted_sub_ids.filter(id => epSubIds.has(id)).length;
+  console.log('[buildStoryActionHtml] openSubs ep_ids:', openSubs.map(s=>s.episode_id), 'sub_ids:', openSubs.map(s=>s.sub_id), 'epSubIds:', [...epSubIds], 'votedHere:', votedHere);
   return `
     <div class="prose-divider">이 이야기의 다음 문장을 결정합니다</div>
     ${user && !mySubId ? `

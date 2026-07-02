@@ -642,7 +642,6 @@ async function _fbCloseEpisode(episode_id, ep) {
   const st       = storySnap.data();
   const nextStep = (Number(st.current_step) || 0) + 1;
   const anyClose = winners.some(w => w.is_closing === true);
-  const snippet  = (st.opening || '').slice(0, 25) + ((st.opening || '').length > 25 ? '…' : '');
 
   if (anyClose) {
     await storySnap.ref.update({ current_step: nextStep, status: 'completed' });
@@ -675,9 +674,6 @@ async function _fbCloseEpisode(episode_id, ep) {
         await subBatch.commit();
       }
     }
-
-    const ids = await _fbGetStoryParticipants(ep.story_id);
-    await _fbCreateNotifications(ids, ep.story_id, `"${snippet}" 이야기가 완결됐어요!`);
   } else {
     const storyUpdate = { current_step: nextStep };
     if (winners.length > 1) storyUpdate.has_branch = true;
@@ -692,29 +688,8 @@ async function _fbCloseEpisode(episode_id, ep) {
       });
     }
     await epBatch.commit();
-
-    const winnerAuthorIds = new Set(winners.map(w => w.author_id).filter(Boolean));
-    for (const uid of winnerAuthorIds) {
-      await _fbCreateNotifications([uid], ep.story_id, `"${snippet}" 이야기에서 내 문장이 채택됐어요!`);
-    }
-    const sourceAuthorIds = new Set();
-    for (const w of winners) {
-      const parent = allSubs.find(s => s.sub_id === w.derived_from);
-      if (parent && parent.author_id && !winnerAuthorIds.has(parent.author_id)) {
-        sourceAuthorIds.add(parent.author_id);
-      }
-    }
-    for (const uid of sourceAuthorIds) {
-      await _fbCreateNotifications([uid], ep.story_id, `"${snippet}" 이야기에서 내 글을 손본 문장이 채택됐어요! +10P`);
-    }
-    const allPart  = await _fbGetStoryParticipants(ep.story_id);
-    const excludeIds = new Set([...winnerAuthorIds, ...sourceAuthorIds]);
-    const otherIds = allPart.filter(id => !excludeIds.has(id));
-    const msg = winners.length > 1
-      ? `"${snippet}" 이야기가 ${nextStep + 2}단계에서 ${winners.length}개 갈림길로 나뉘었어요!`
-      : `"${snippet}" 이야기가 ${nextStep + 2}단계로 이어졌어요!`;
-    await _fbCreateNotifications(otherIds, ep.story_id, msg);
   }
+  // 알림은 onEpisodeClosed Cloud Function이 서버사이드에서 생성
   } finally {
     _closingEpisodes.delete(episode_id);
   }

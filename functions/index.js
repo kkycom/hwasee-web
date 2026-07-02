@@ -59,6 +59,115 @@ exports.sendPushOnNotification = functions
     return null;
   });
 
+// ── 에피소드 마감 → 서버사이드 알림 생성 ─────────────────────
+exports.onEpisodeClosed = functions
+  .region('asia-northeast3')
+  .firestore.document('episodes/{episodeId}')
+  .onWrite(async (change, context) => {
+    const before = change.before.exists ? change.before.data() : null;
+    const after  = change.after.exists  ? change.after.data()  : null;
+    if (!after || after.status !== 'closed') return null;
+    if (before && before.status === 'closed') return null; // 이미 닫힌 상태였으면 무시
+
+    const db = admin.firestore();
+    const epRef = change.after.ref;
+    const episode_id = context.params.episodeId;
+    const story_id   = after.story_id;
+
+    // 중복 처리 방지 — 트랜잭션으로 notif_sent 플래그 선점
+    try {
+      const shouldProcess = await db.runTransaction(async tx => {
+        const snap = await tx.get(epRef);
+        if (!snap.exists || snap.data().notif_sent) return false;
+        tx.update(epRef, { notif_sent: true });
+        return true;
+      });
+      if (!shouldProcess) return null;
+    } catch (e) {
+      return null;
+    }
+
+    // 제출 목록
+    const subsSnap = await db.collection('submissions').where('episode_id', '==', episode_id).get();
+    if (subsSnap.empty) return null;
+    const allSubs = subsSnap.docs.map(d => d.data());
+
+    // 채택 글 결정 (클라이언트와 동일 로직)
+    const maxVotes = Math.max(...allSubs.map(s => Number(s.vote_count) || 0));
+    let winners;
+    if (maxVotes === 0) {
+      const sorted = [...allSubs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      winners = [sorted[0]];
+    } else {
+      winners = allSubs.filter(s => (Number(s.vote_count) || 0) === maxVotes);
+    }
+
+    const storySnap = await db.collection('stories').doc(story_id).get();
+    if (!storySnap.exists) return null;
+    const st = storySnap.data();
+    const nextStep  = (Number(st.current_step) || 0) + 1;
+    const anyClose  = winners.some(w => w.is_closing === true);
+    const snippet   = (st.opening || '').slice(0, 25) + ((st.opening || '').length > 25 ? '…' : '');
+
+    // 참여자 조회 (submissions + bookmarks + comments + votes)
+    const [bmSnap, commSnap, epsSnap] = await Promise.all([
+      db.collection('bookmarks').where('story_id', '==', story_id).get(),
+      db.collection('comments').where('story_id', '==', story_id).get(),
+      db.collection('episodes').where('story_id', '==', story_id).get(),
+    ]);
+    const storySubsSnap = await db.collection('submissions').where('story_id', '==', story_id).get();
+    const epIds = [...new Set(epsSnap.docs.map(d => d.id))];
+    const partIds = [
+      ...storySubsSnap.docs.map(d => d.data().author_id),
+      ...bmSnap.docs.map(d => d.data().user_id),
+      ...commSnap.docs.map(d => d.data().author_id),
+    ];
+    if (epIds.length > 0) {
+      const batches = [];
+      for (let i = 0; i < epIds.length; i += 10) batches.push(epIds.slice(i, i + 10));
+      const vSnaps = await Promise.all(batches.map(b =>
+        db.collection('votes').where('episode_id', 'in', b).get()
+      ));
+      vSnaps.forEach(s => s.docs.forEach(d => partIds.push(d.data().voter_id)));
+    }
+    const allPart = [...new Set(partIds.filter(Boolean))];
+
+    // 알림 생성 헬퍼
+    const createNotifs = async (user_ids, message) => {
+      const unique = [...new Set(user_ids)].filter(Boolean);
+      if (!unique.length) return;
+      const batch = db.batch();
+      unique.forEach(uid => {
+        batch.set(db.collection('notifications').doc(), {
+          user_id: uid, type: 'story_advance', story_id, message,
+          is_read: false, created_at: admin.firestore.Timestamp.now(),
+        });
+      });
+      await batch.commit();
+    };
+
+    if (anyClose) {
+      await createNotifs(allPart, `"${snippet}" 이야기가 완결됐어요!`);
+    } else {
+      const winnerAuthorIds = new Set(winners.map(w => w.author_id).filter(Boolean));
+      const sourceAuthorIds = new Set();
+      for (const w of winners) {
+        const parent = allSubs.find(s => s.sub_id === w.derived_from);
+        if (parent && parent.author_id && !winnerAuthorIds.has(parent.author_id))
+          sourceAuthorIds.add(parent.author_id);
+      }
+      await createNotifs([...winnerAuthorIds], `"${snippet}" 이야기에서 내 문장이 채택됐어요!`);
+      await createNotifs([...sourceAuthorIds], `"${snippet}" 이야기에서 내 글을 손본 문장이 채택됐어요! +10P`);
+      const excludeIds = new Set([...winnerAuthorIds, ...sourceAuthorIds]);
+      const otherIds = allPart.filter(id => !excludeIds.has(id));
+      const msg = winners.length > 1
+        ? `"${snippet}" 이야기가 ${nextStep + 2}단계에서 ${winners.length}개 갈림길로 나뉘었어요!`
+        : `"${snippet}" 이야기가 ${nextStep + 2}단계로 이어졌어요!`;
+      await createNotifs(otherIds, msg);
+    }
+    return null;
+  });
+
 // ── 완성된 이야기 AI 교정 (2시간마다) ───────────────────────
 exports.aiReviewCompletedStories = functions
   .region('asia-northeast3')

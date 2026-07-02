@@ -1839,23 +1839,6 @@ async function fbSetClaudeKey(admin_id, key) {
   return { ok: true };
 }
 
-async function fbFixAINicknames(admin_id) {
-  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const snap = await db.collection('submissions').where('author_id', '==', FB_ADMIN_ID).get();
-  if (snap.empty) return { ok: true, count: 0 };
-  const BATCH_SIZE = 500;
-  let count = 0;
-  for (let i = 0; i < snap.docs.length; i += BATCH_SIZE) {
-    const batch = db.batch();
-    snap.docs.slice(i, i + BATCH_SIZE).forEach(doc => {
-      batch.update(doc.ref, { author_nickname: '익명' });
-    });
-    await batch.commit();
-    count += Math.min(BATCH_SIZE, snap.docs.length - i);
-  }
-  return { ok: true, count };
-}
-
 async function fbGetBugReports(user_id) {
   const uSnap = await db.collection('users').doc(user_id).get();
   if (!uSnap.exists || uSnap.data().badge !== 'treeguard') return { ok: false, error: '권한이 없습니다.' };
@@ -2020,7 +2003,6 @@ async function firebaseApi(action, params = {}) {
     case 'getAIActivities':       return fbGetAIActivities(need().user_id);
     case 'setAIConfig':           return fbSetAIConfig(need().user_id, params);
     case 'setClaudeKey':          return fbSetClaudeKey(need().user_id, params.key);
-    case 'fixAINicknames':        return fbFixAINicknames(need().user_id);
 
     case 'saveFcmToken':    return fbSaveFcmToken(need().user_id, params.fcm_token);
     case 'trackVisit':      return fbTrackVisit();

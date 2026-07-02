@@ -3294,21 +3294,10 @@ async function adminAI() {
       </div>
       <div style="font-size:11px;color:var(--muted);margin-top:6px">Anthropic Console → API Keys에서 발급. 여기 입력 시 Firestore에만 저장되며 외부 노출 없음.</div>
     </div>
-    <div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
-      <div style="font-size:13px">기존 AI 글 닉네임 일괄 수정 <span style="font-size:11px;color:var(--muted)">(kkycom → 익명)</span></div>
-      <button class="btn btn-ghost btn-sm" onclick="fixAINicknames()">실행</button>
-    </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">AI 제출 내역 (최근 ${res.submissions.length}건)</div>
     <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:20px">${subsHtml}</div>`;
 }
 
-async function fixAINicknames() {
-  try {
-    const res = await api('fixAINicknames', {});
-    if (!res.ok) { toast(res.error, true); return; }
-    toast(`${res.count}개 AI 글 닉네임을 익명으로 수정했습니다.`);
-  } catch(e) { toast('오류: ' + e.message, true); }
-}
 
 async function saveClaudeKey() {
   try {

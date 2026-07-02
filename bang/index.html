@@ -432,37 +432,50 @@
   h2 { font-size: 18px; margin-bottom: 16px; }
   p.desc { color: var(--muted); font-size: 14px; margin-bottom: 24px; line-height: 1.6; }
   @keyframes writing {
-    /* ① 왼쪽 끄적 */
+    /* ① 왼쪽 5번 끄적 */
     0%   { transform: translateX(-21px); }
-    4%   { transform: translateX(-19px); }
-    8%   { transform: translateX(-21px); }
-    12%  { transform: translateX(-19px); }
-    16%  { transform: translateX(-21px); }
-    /* ② 쭉 → 중앙 */
-    17%  { transform: translateX(-21px); }
-    28%  { transform: translateX(0px);   }
-    /* ③ 중앙 끄적 */
-    30%  { transform: translateX(1px);   }
-    33%  { transform: translateX(-1px);  }
-    37%  { transform: translateX(1px);   }
-    41%  { transform: translateX(-1px);  }
-    46%  { transform: translateX(0px);   }
-    /* ④ 쭉 → 오른쪽 */
-    48%  { transform: translateX(0px);   }
-    58%  { transform: translateX(21px);  }
-    /* ⑤ 오른쪽 끄적 */
-    60%  { transform: translateX(19px);  }
-    64%  { transform: translateX(21px);  }
-    68%  { transform: translateX(19px);  }
-    72%  { transform: translateX(21px);  }
-    76%  { transform: translateX(21px);  }
-    /* ⑥ 빠르게 복귀 */
+    3%   { transform: translateX(-17px); }
+    6%   { transform: translateX(-21px); }
+    9%   { transform: translateX(-17px); }
+    12%  { transform: translateX(-21px); }
+    15%  { transform: translateX(-17px); }
+    18%  { transform: translateX(-21px); }
+    21%  { transform: translateX(-17px); }
+    24%  { transform: translateX(-21px); }
+    27%  { transform: translateX(-17px); }
+    30%  { transform: translateX(-21px); }
+    /* ② 스윽 → 중앙 */
+    31%  { transform: translateX(-21px); }
+    43%  { transform: translateX(0px);   }
+    /* ③ 중앙 5번 끄적 */
+    45%  { transform: translateX(2px);   }
+    47%  { transform: translateX(-2px);  }
+    49%  { transform: translateX(2px);   }
+    51%  { transform: translateX(-2px);  }
+    53%  { transform: translateX(2px);   }
+    55%  { transform: translateX(-2px);  }
+    57%  { transform: translateX(2px);   }
+    59%  { transform: translateX(-2px);  }
+    61%  { transform: translateX(2px);   }
+    63%  { transform: translateX(0px);   }
+    /* ④ 스윽 → 오른쪽 */
+    64%  { transform: translateX(0px);   }
+    74%  { transform: translateX(21px);  }
+    /* ⑤ 오른쪽 5번 끄적 */
+    76%  { transform: translateX(17px);  }
     78%  { transform: translateX(21px);  }
-    92%  { transform: translateX(-21px); }
+    80%  { transform: translateX(17px);  }
+    82%  { transform: translateX(21px);  }
+    84%  { transform: translateX(17px);  }
+    86%  { transform: translateX(21px);  }
+    88%  { transform: translateX(17px);  }
+    90%  { transform: translateX(21px);  }
+    /* ⑥ 스윽 복귀 */
+    91%  { transform: translateX(21px);  }
     100% { transform: translateX(-21px); }
   }
   .loading { text-align: center; padding: 40px; color: var(--muted); }
-  .loading::before { content: '✍️'; display: inline-block; font-size: 20px; animation: writing 4s ease-in-out infinite; filter: saturate(0.55) brightness(1.1); }
+  .loading::before { content: '✍️'; display: inline-block; font-size: 20px; animation: writing 6s ease-in-out infinite; filter: saturate(0.55) brightness(1.1); }
   .loading::after  { content: '불러오는 중입니다'; display: block; font-size: 13px; color: var(--muted); margin-top: 10px; letter-spacing: .3px; }
   .empty   { text-align: center; padding: 48px 0; color: var(--muted); }
   .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--border); font-size: 12px; color: var(--muted); margin-right: 6px; white-space: nowrap; }

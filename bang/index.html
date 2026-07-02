@@ -3355,9 +3355,10 @@ function closeAdminMenu() {
 // ─── 이용통계 ────────────────────────────────────────────
 async function adminStats() {
   if (!isAdmin()) { nav('seed'); return; }
+  const epoch = _renderEpoch;
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   const stats = await api('getAdminStats', {});
-  if (currentRoute !== 'admin-stats') return;
+  if (_renderEpoch !== epoch || currentRoute !== 'admin-stats') return;
   const referralHtml = (stats.ok && stats.referral_stats?.length) ? `
     <div class="card" style="padding:14px 18px;margin-bottom:20px">
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px;font-weight:600">가입 경로</div>
@@ -3390,9 +3391,10 @@ let _aiCache = null;
 
 async function adminAI() {
   if (!isAdmin()) { nav('seed'); return; }
+  const epoch = _renderEpoch;
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   const res = await api('getAIActivities', {});
-  if (currentRoute !== 'admin-ai') return;
+  if (_renderEpoch !== epoch || currentRoute !== 'admin-ai') return;
   _aiCache = res;
   _renderAdminAI('subs', 0);
 }
@@ -3539,9 +3541,10 @@ async function saveAISpeed(pct) {
 // ─── 수정 내역 ────────────────────────────────────────────
 async function adminEdits() {
   if (!isAdmin()) { nav('seed'); return; }
+  const epoch = _renderEpoch;
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   const res = await api('getAdminEdits', {});
-  if (currentRoute !== 'admin-edits') return;
+  if (_renderEpoch !== epoch || currentRoute !== 'admin-edits') return;
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
   const edits = res.edits;
   const editTypeLabel = t => t === 'ai' ? '🤖 AI' : '✏️ 수동';
@@ -3565,9 +3568,10 @@ async function adminEdits() {
 // ─── 신고 내역 ────────────────────────────────────────────
 async function adminReports() {
   if (!isAdmin()) { nav('seed'); return; }
+  const epoch = _renderEpoch;
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   const res = await api('getReports', {});
-  if (currentRoute !== 'admin-reports') return;
+  if (_renderEpoch !== epoch || currentRoute !== 'admin-reports') return;
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
   const reports = res.reports;
   document.getElementById('app').innerHTML = `
@@ -3598,9 +3602,10 @@ async function adminReports() {
 // ─── 버그 내역 ────────────────────────────────────────────
 async function adminBugs() {
   if (!isAdmin()) { nav('seed'); return; }
+  const epoch = _renderEpoch;
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   const res = await api('getBugReports', {});
-  if (currentRoute !== 'admin-bugs') return;
+  if (_renderEpoch !== epoch || currentRoute !== 'admin-bugs') return;
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
   const bugs = res.reports || [];
   document.getElementById('app').innerHTML = `

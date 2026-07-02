@@ -3622,8 +3622,33 @@ async function adminBugs() {
         </div>`).join('')}`;
 }
 
-async function adminResolveBug(bug_id) {
-  const res = await api('resolveBugReport', { bug_id });
+function adminResolveBug(bug_id) {
+  const mid = 'bug-resolve-modal';
+  const existing = document.getElementById(mid);
+  if (existing) { existing.remove(); return; }
+  const modal = document.createElement('div');
+  modal.id = mid;
+  modal.className = 'modal-overlay';
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:320px">
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px;font-family:var(--serif)">버그 해결 처리</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:12px">유저에게 한마디 남기기 (선택)</div>
+      <textarea id="bug-resolve-comment" rows="3" placeholder="예) 다음 업데이트에서 수정될 거예요 🌱" style="width:100%;resize:vertical;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--text);font-family:inherit;line-height:1.6;box-sizing:border-box"></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('${mid}').remove()">취소</button>
+        <button class="btn btn-primary btn-sm" id="${mid}-btn" onclick="_doAdminResolveBug('${bug_id}','${mid}')">해결 완료</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function _doAdminResolveBug(bug_id, mid) {
+  const btn = document.getElementById(mid + '-btn');
+  if (btn) btn.disabled = true;
+  const comment = document.getElementById('bug-resolve-comment')?.value.trim() || '';
+  const res = await api('resolveBugReport', { report_id: bug_id, comment });
+  document.getElementById(mid)?.remove();
   if (!res.ok) { toast(res.error, true); return; }
   const card = document.getElementById('bug-card-' + bug_id);
   if (card) card.style.opacity = '.55';
@@ -3832,8 +3857,33 @@ async function loadBugReportList() {
     </div>`).join('');
 }
 
-async function doResolveBugReport(report_id) {
-  const res = await api('resolveBugReport', { report_id });
+function doResolveBugReport(report_id) {
+  const mid = 'bug-resolve-modal';
+  const existing = document.getElementById(mid);
+  if (existing) { existing.remove(); return; }
+  const modal = document.createElement('div');
+  modal.id = mid;
+  modal.className = 'modal-overlay';
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:320px">
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px;font-family:var(--serif)">버그 해결 처리</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:12px">유저에게 한마디 남기기 (선택)</div>
+      <textarea id="bug-resolve-comment" rows="3" placeholder="예) 다음 업데이트에서 수정될 거예요 🌱" style="width:100%;resize:vertical;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--text);font-family:inherit;line-height:1.6;box-sizing:border-box"></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('${mid}').remove()">취소</button>
+        <button class="btn btn-primary btn-sm" id="${mid}-btn" onclick="_doProfileResolveBug('${report_id}','${mid}')">해결 완료</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function _doProfileResolveBug(report_id, mid) {
+  const btn = document.getElementById(mid + '-btn');
+  if (btn) btn.disabled = true;
+  const comment = document.getElementById('bug-resolve-comment')?.value.trim() || '';
+  const res = await api('resolveBugReport', { report_id, comment });
+  document.getElementById(mid)?.remove();
   if (!res.ok) { toast(res.error, true); return; }
   loadBugReportList();
 }

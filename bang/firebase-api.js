@@ -1851,7 +1851,7 @@ async function fbGetBugReports(user_id) {
   return { ok: true, reports };
 }
 
-async function fbResolveBugReport(report_id, user_id) {
+async function fbResolveBugReport(report_id, user_id, comment) {
   const uSnap = await db.collection('users').doc(user_id).get();
   if (!uSnap.exists || uSnap.data().badge !== 'treeguard') return { ok: false, error: '권한이 없습니다.' };
   const rSnap = await db.collection('bug_reports').doc(report_id).get();
@@ -1859,10 +1859,11 @@ async function fbResolveBugReport(report_id, user_id) {
   await rSnap.ref.update({ status: 'resolved' });
   const reporter_id = rSnap.data().user_id;
   if (reporter_id) {
+    const base = '제보해주신 버그가 해결됐어요! 소중한 제보 감사합니다 🌱';
+    const message = comment ? `${base}\n"${comment}"` : base;
     await db.collection('notifications').doc(fbGenId()).set({
       user_id: reporter_id, type: 'bug_resolved', story_id: '',
-      message: '제보해주신 버그가 해결됐어요! 소중한 제보 감사합니다 🌱',
-      is_read: false, created_at: fbNow(),
+      message, is_read: false, created_at: fbNow(),
     });
   }
   return { ok: true };
@@ -2017,7 +2018,7 @@ async function firebaseApi(action, params = {}) {
     case 'checkDailyBonus': return { ok: true, bonus: await _fbCheckDailyBonus(need().user_id) };
     case 'submitBugReport':   return fbSubmitBugReport(params.content, need().user_id);
     case 'getBugReports':     return fbGetBugReports(need().user_id);
-    case 'resolveBugReport':  return fbResolveBugReport(params.report_id, need().user_id);
+    case 'resolveBugReport':  return fbResolveBugReport(params.report_id || params.bug_id, need().user_id, params.comment || '');
     case 'pingWarm': return { ok: true };
     default:         return { ok: false, error: '알 수 없는 요청입니다.' };
   }

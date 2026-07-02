@@ -678,6 +678,9 @@ const _lsc = {
   del(...ks) { ks.forEach(k => { try { localStorage.removeItem('hc:' + k); } catch {} }); },
 };
 
+// ─── 렌더 에포크 (중복 비동기 렌더 방지) ───────────────────
+let _renderEpoch = 0;
+
 // ─── 탭 정렬 상태 ──────────────────────────────────────────
 let _mineSort  = 'activity';
 let _mineCache = null; // { active, snapshot }
@@ -900,6 +903,7 @@ function nav(route, param) {
 }
 
 function render() {
+  _renderEpoch++;
   const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, create, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI };
   (routes[currentRoute] || home)();
 }
@@ -1042,6 +1046,7 @@ const HOME_TABS = [
 ];
 
 async function home() {
+  const epoch = _renderEpoch;
   const tab = ['seed','popular','mine','done'].includes(currentRoute) ? currentRoute : 'seed';
 
   const tabHtml = HOME_TABS.map(t => `
@@ -1053,10 +1058,12 @@ async function home() {
     <div class="home-tabs">${tabHtml}</div>
     <div id="home-content"><div class="loading"></div></div>`;
 
-  await loadHomeTab(tab);
+  await loadHomeTab(tab, epoch);
 }
 
 async function switchHomeTab(tab) {
+  _renderEpoch++;
+  const epoch = _renderEpoch;
   currentRoute = tab;
   _skipHashChange = true;
   location.hash = tab;
@@ -1068,38 +1075,38 @@ async function switchHomeTab(tab) {
   const cacheKey = tab === 'popular' ? 'pop' : tab === 'seed' ? 'seeds' : tab;
   const hasAnyData = !!_lsc.getStale(cacheKey);
   if (content && !hasAnyData) content.innerHTML = `<div class="loading"></div>`;
-  await loadHomeTab(tab);
+  await loadHomeTab(tab, epoch);
 }
 
-async function loadHomeTab(tab) {
-  const content = document.getElementById('home-content');
-  if (!content) return;
+async function loadHomeTab(tab, epoch) {
+  // gc() — always returns the LIVE home-content node (or null if home was re-rendered)
+  const gc = () => document.getElementById('home-content');
+  const ok = () => _renderEpoch === epoch && currentRoute === tab && !!gc();
+  if (!gc()) return;
 
   if (tab === 'seed') {
     const _cachedSeeds = _lsc.get('seeds');
     const _staleSeeds  = _cachedSeeds || _lsc.getStale('seeds');
     const res = _staleSeeds ? { ok: true, seeds: _staleSeeds } : await api('getSeeds');
-    if (currentRoute !== 'seed') return;
+    if (!ok()) return;
     if (!res.ok) {
-      content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('seed')">다시 시도</button></div>`;
+      gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('seed')">다시 시도</button></div>`;
       return;
     }
     if (!_cachedSeeds) {
       _lsc.set('seeds', res.seeds, 300);
-      // stale로 표시 중이면 배경에서 실제 갱신
       if (_staleSeeds) api('getSeeds').then(r => { if (r.ok) _lsc.set('seeds', r.seeds, 300); });
     }
-    content.innerHTML = '';
+    gc().innerHTML = '';
     window._seeds   = res.seeds;
     window._seedIdx = 0;
     renderSeedCard();
-    // 씨앗 탭 하단 랭킹
     const lbSection = document.createElement('div');
     lbSection.style.cssText = 'margin-top:32px;border-top:1px solid var(--border);padding-top:24px';
     lbSection.innerHTML = `
       <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:14px;letter-spacing:.5px">✦ 명예의 전당</div>
       <div id="seed-lb-body"><div style="font-size:12px;color:var(--muted)">불러오는 중...</div></div>`;
-    content.appendChild(lbSection);
+    gc()?.appendChild(lbSection);
     loadLeaderboard('seed-lb-body');
 
   } else if (tab === 'popular') {
@@ -1119,7 +1126,7 @@ async function loadHomeTab(tab) {
         if (user) p.push(api('getMyStories'));
         [storiesRes, myRes] = await Promise.all(p);
       } catch(e) {
-        if (!_stalePop) content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('popular')">다시 시도</button></div>`;
+        if (!_stalePop && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('popular')">다시 시도</button></div>`;
         return;
       }
       _lsc.set('pop', { storiesRes, myRes }, 150);
@@ -1129,7 +1136,7 @@ async function loadHomeTab(tab) {
 
   } else if (tab === 'mine') {
     if (!user) {
-      content.innerHTML = `<div class="empty" style="padding-top:60px">로그인하면 참여 중인 이야기를 볼 수 있어요.<br>
+      const c = gc(); if (c) c.innerHTML = `<div class="empty" style="padding-top:60px">로그인하면 참여 중인 이야기를 볼 수 있어요.<br>
         <button class="btn btn-primary" style="margin-top:20px" onclick="nav('auth','login')">로그인</button></div>`;
       return;
     }
@@ -1144,7 +1151,7 @@ async function loadHomeTab(tab) {
     const _fetchMine = async () => {
       let res;
       try { res = await api('getMyStories'); } catch(e) {
-        if (!_staleMine) content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('mine')">다시 시도</button></div>`;
+        if (!_staleMine && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('mine')">다시 시도</button></div>`;
         return;
       }
       _lsc.set('mine', res, 120);
@@ -1164,7 +1171,7 @@ async function loadHomeTab(tab) {
     const _fetchDone = async () => {
       let res;
       try { res = await api('getStories', { page: 2 }); } catch(e) {
-        if (!_staleDone) content.innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('done')">다시 시도</button></div>`;
+        if (!_staleDone && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('done')">다시 시도</button></div>`;
         return;
       }
       _lsc.set('done', res, 660);
@@ -1511,6 +1518,7 @@ function _applyStoryData(res, story_id) {
 
 async function story(preserveBranch = false) {
   const story_id = currentParam;
+  const epoch = _renderEpoch;
   selectedSubs = [];
   if (!preserveBranch) window._branchChoice = {}; // 페이지 진입 시만 초기화
   const cached = _lsc.get('story_' + story_id);
@@ -1520,6 +1528,7 @@ async function story(preserveBranch = false) {
     document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   }
   const res = await api('getStory', { story_id });
+  if (_renderEpoch !== epoch || currentParam !== story_id) return;
   if (!res.ok) {
     if (!cached) document.getElementById('app').innerHTML = `<div class="empty">이야기를 불러오지 못했습니다.<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="story()">다시 시도</button></div>`;
     return;
@@ -2019,6 +2028,7 @@ async function adminCloseStory(story_id) {
 async function episode() {
   if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; }
   const episode_id = currentParam;
+  const epoch = _renderEpoch;
   selectedSubs = [];
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
 
@@ -2026,9 +2036,11 @@ async function episode() {
   try {
     res = await api('getEpisode', { episode_id });
   } catch(e) {
+    if (_renderEpoch !== epoch || currentParam !== episode_id) return;
     document.getElementById('app').innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="episode()">다시 시도</button></div>`;
     return;
   }
+  if (_renderEpoch !== epoch || currentParam !== episode_id) return;
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">에피소드를 불러오지 못했습니다.<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="episode()">다시 시도</button></div>`; return; }
 
   const ep           = res.episode;
@@ -2418,9 +2430,10 @@ async function doRecover() {
 
 async function profile() {
   if (!user) { nav('auth','login'); return; }
+  const epoch = _renderEpoch;
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   const [res, bmRes] = await Promise.all([api('getProfile'), api('getBookmarks')]);
-  if (!user) return;
+  if (!user || _renderEpoch !== epoch || currentRoute !== 'profile') return;
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
 
   const u         = res.user;

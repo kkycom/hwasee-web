@@ -1399,18 +1399,18 @@ function _applyStoryData(res, story_id) {
     const _infSvg = `<svg width="16" height="10" viewBox="0 0 24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7 C10 3,2 3,2 7 C2 11,10 11,12 7 C14 3,22 3,22 7 C22 11,14 11,12 7 Z"/></svg>`;
     actionHtml = `
       <div class="prose-divider">완결된 이야기입니다</div>
-      <div style="display:flex;gap:8px;justify-content:center;margin-bottom:8px;flex-wrap:wrap;align-items:center">
+      <div style="display:flex;gap:8px;justify-content:center;margin-bottom:8px;align-items:center">
         ${user ? `
-        <button class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:5px" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">
+        <button class="btn btn-ghost btn-sm" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>으뜸 글 뽑기
         </button>
-        <button id="like-btn" class="btn ${is_liked ? 'btn-primary' : 'btn-ghost'} btn-sm" style="display:inline-flex;align-items:center;gap:5px"
+        <button id="like-btn" class="btn ${is_liked ? 'btn-primary' : 'btn-ghost'} btn-sm" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px"
           onclick="doToggleStoryLike('${esc(s.story_id)}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>이야기 추천해요${like_count > 0 ? ` (${like_count})` : ''}
         </button>
         ${s.status === 'completed' ? (continuation
-          ? `<button class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:5px" onclick="nav('story','${esc(continuation.story_id)}')">${_infSvg}연장된 이야기 →</button>`
-          : `<button class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:5px" onclick="showExtendModal('${esc(s.story_id)}')">${_infSvg}이야기 연장하기</button>`
+          ? `<button class="btn btn-ghost btn-sm" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px" onclick="nav('story','${esc(continuation.story_id)}')">${_infSvg}연장된 이야기 →</button>`
+          : `<button class="btn btn-ghost btn-sm" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px" onclick="showExtendModal('${esc(s.story_id)}')">${_infSvg}이야기 연장하기</button>`
         ) : ''}` : ''}
       </div>`;
   }

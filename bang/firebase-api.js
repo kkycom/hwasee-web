@@ -16,6 +16,7 @@ const db = firebase.firestore();
 
 const FB_ADMIN_ID        = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
 var FB_VOTE_THRESHOLD  = 3;
+const _closingEpisodes = new Set(); // 동시 중복 마감 방지
 
 // ─── 유틸 ────────────────────────────────────────────────
 
@@ -589,8 +590,10 @@ async function fbGetEpisode(episode_id) {
 
 
 async function _fbCloseEpisode(episode_id, ep) {
+  if (_closingEpisodes.has(episode_id)) return;
+  _closingEpisodes.add(episode_id);
+  try {
   const epRef = db.collection('episodes').doc(episode_id);
-  // 트랜잭션으로 pending 상태일 때만 closed로 변경 — 동시 호출 시 중복 처리 방지
   const alreadyClosed = await db.runTransaction(async tx => {
     const snap = await tx.get(epRef);
     const st = snap.data().status;
@@ -711,6 +714,9 @@ async function _fbCloseEpisode(episode_id, ep) {
       ? `"${snippet}" 이야기가 ${nextStep + 2}단계에서 ${winners.length}개 갈림길로 나뉘었어요!`
       : `"${snippet}" 이야기가 ${nextStep + 2}단계로 이어졌어요!`;
     await _fbCreateNotifications(otherIds, ep.story_id, msg);
+  }
+  } finally {
+    _closingEpisodes.delete(episode_id);
   }
 }
 

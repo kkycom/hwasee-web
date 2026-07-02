@@ -3831,6 +3831,8 @@ function parseHash() {
 
 window.addEventListener('hashchange', () => {
   if (_skipHashChange) { _skipHashChange = false; return; }
+  if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; }
+  Object.keys(commentCache).forEach(k => delete commentCache[k]);
   parseHash(); render(); renderNav();
 });
 

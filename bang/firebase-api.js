@@ -329,6 +329,7 @@ async function fbGetStory(story_id, user_id) {
   const episodes = episodesSnap.docs.map(d => ({ episode_id: d.id, ...d.data() }));
   const openEp    = episodes.find(e => e.status === 'open');
   const authorIds = [...new Set(subsSnap.docs.map(d => d.data().author_id).filter(Boolean))];
+  const storySubIds = new Set(subsSnap.docs.map(d => d.id));
 
   const commentCountMap = {};
   commSnap.docs.forEach(d => {
@@ -337,6 +338,7 @@ async function fbGetStory(story_id, user_id) {
   });
 
   // Round 2: 나머지 모든 조회를 한 번에 병렬 처리
+  const storySubIdArr = [...storySubIds];
   const [userDocs, bmSnap, likeSnap, voteSnap, branchSnap, pEpsSnap, pSubsSnap] = await Promise.all([
     authorIds.length > 0
       ? Promise.all(authorIds.map(id => db.collection('users').doc(id).get()))
@@ -347,8 +349,12 @@ async function fbGetStory(story_id, user_id) {
     user_id
       ? db.collection('story_likes').where('story_id','==',story_id).where('user_id','==',user_id).limit(1).get()
       : Promise.resolve(null),
-    user_id
-      ? db.collection('votes').where('voter_id','==',user_id).get()
+    user_id && storySubIdArr.length > 0
+      ? Promise.all(
+          Array.from({ length: Math.ceil(storySubIdArr.length / 30) }, (_, i) =>
+            db.collection('votes').where('voter_id','==',user_id).where('sub_id','in',storySubIdArr.slice(i*30,(i+1)*30)).get()
+          )
+        ).then(snaps => ({ docs: snaps.flatMap(s => s.docs) }))
       : Promise.resolve(null),
     db.collection('stories').where('parent_story_id', '==', story_id).get(),
     story.parent_story_id
@@ -383,8 +389,7 @@ async function fbGetStory(story_id, user_id) {
   const is_bookmarked    = bmSnap   ? !bmSnap.empty   : false;
   const like_count       = storySnap.data().like_count || 0;
   const is_liked         = (user_id && likeSnap) ? !likeSnap.empty : false;
-  const storySubIds = new Set(subsSnap.docs.map(d => d.id));
-  const my_voted_sub_ids = (voteSnap && user_id) ? voteSnap.docs.filter(d => storySubIds.has(d.data().sub_id)).map(d => d.data().sub_id) : [];
+  const my_voted_sub_ids = (voteSnap && user_id) ? voteSnap.docs.map(d => d.data().sub_id).filter(Boolean) : [];
   const branches         = branchSnap.docs.map(d => ({
     story_id: d.data().story_id || d.id,
     branch_from_step: Number(d.data().branch_from_step),

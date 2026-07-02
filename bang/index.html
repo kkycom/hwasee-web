@@ -691,6 +691,9 @@ let _popLimit  = 20;
 let _doneSort  = 'activity';
 let _doneCache = null; // { stories }
 let _doneLimit = 20;
+let _popFetching  = false;
+let _mineFetching = false;
+let _doneFetching = false;
 let _bmIds     = new Set();
 async function _loadBmIds() {
   if (!user) { _bmIds = new Set(); return; }
@@ -1120,6 +1123,8 @@ async function loadHomeTab(tab, epoch) {
     const _stalePop  = _cachedPop || _lsc.getStale('pop');
     if (_stalePop) _applyPop(_stalePop.storiesRes, _stalePop.myRes);
     const _fetchPop = async () => {
+      if (_popFetching) return;
+      _popFetching = true;
       let storiesRes, myRes;
       try {
         const p = [api('getStories', { page: 1 })];
@@ -1128,6 +1133,8 @@ async function loadHomeTab(tab, epoch) {
       } catch(e) {
         if (!_stalePop && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('popular')">다시 시도</button></div>`;
         return;
+      } finally {
+        _popFetching = false;
       }
       _lsc.set('pop', { storiesRes, myRes }, 150);
       _applyPop(storiesRes, myRes);
@@ -1149,11 +1156,13 @@ async function loadHomeTab(tab, epoch) {
     const _staleMine  = _cachedMine || _lsc.getStale('mine');
     if (_staleMine) _applyMine(_staleMine);
     const _fetchMine = async () => {
+      if (_mineFetching) return;
+      _mineFetching = true;
       let res;
       try { res = await api('getMyStories'); } catch(e) {
         if (!_staleMine && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('mine')">다시 시도</button></div>`;
         return;
-      }
+      } finally { _mineFetching = false; }
       _lsc.set('mine', res, 120);
       _applyMine(res);
     };
@@ -1169,11 +1178,13 @@ async function loadHomeTab(tab, epoch) {
     const _staleDone  = _cachedDone || _lsc.getStale('done');
     if (_staleDone) _applyDone(_staleDone);
     const _fetchDone = async () => {
+      if (_doneFetching) return;
+      _doneFetching = true;
       let res;
       try { res = await api('getStories', { page: 2 }); } catch(e) {
         if (!_staleDone && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('done')">다시 시도</button></div>`;
         return;
-      }
+      } finally { _doneFetching = false; }
       _lsc.set('done', res, 660);
       _applyDone(res);
     };

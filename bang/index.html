@@ -3899,7 +3899,7 @@ function parseHash() {
   const h     = location.hash.slice(1) || 'seed';
   const parts = h.split('/');
   const route = parts[0];
-  currentRoute = ['home','seed','popular','mine','done','story','episode','auth','profile','create','episode-votes','admin-stats','admin-edits','admin-reports','admin-bugs'].includes(route) ? route : 'seed';
+  currentRoute = ['home','seed','popular','mine','done','story','episode','auth','profile','create','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs'].includes(route) ? route : 'seed';
   currentParam = parts[1] || null;
 }
 

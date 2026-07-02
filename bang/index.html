@@ -1074,7 +1074,7 @@ async function switchHomeTab(tab) {
   const content = document.getElementById('home-content');
   const cacheKey = tab === 'popular' ? 'pop' : tab === 'seed' ? 'seeds' : tab;
   const hasAnyData = !!_lsc.getStale(cacheKey);
-  if (content && !hasAnyData) content.innerHTML = `<div class="loading"></div>`;
+  if (content) content.innerHTML = hasAnyData ? '' : `<div class="loading"></div>`;
   await loadHomeTab(tab, epoch);
 }
 
@@ -4076,7 +4076,11 @@ window.onload = async () => {
   // Firestore 연결 워밍업 + 씨앗·관심받는 탭 프리페치
   setTimeout(() => {
     if (!_lsc.get('seeds')) api('getSeeds').then(r => { if (r.ok) _lsc.set('seeds', r.seeds, 300); });
-    if (!_lsc.get('pop'))   api('getStories', { page: 1 }).then(r => { if (r.ok) _lsc.set('pop', { storiesRes: r, myRes: null }, 150); });
+    if (!_lsc.get('pop')) {
+      const _pp = [api('getStories', { page: 1 })];
+      if (user) _pp.push(api('getMyStories'));
+      Promise.all(_pp).then(([r, myR]) => { if (r.ok) _lsc.set('pop', { storiesRes: r, myRes: myR || null }, 150); });
+    }
   }, 300);
 
   // 하루 1회 방문자 카운트 (기기별 중복 방지)

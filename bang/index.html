@@ -501,7 +501,6 @@
   .branch-tab.active { border-color:var(--accent2); color:var(--accent2); font-weight:700; }
   @media (max-width:600px) {
     .branch-tab.active { font-weight:400; }
-    .branch-choice-card:hover { box-shadow:none; border-color:var(--border); }
   }
   /* 산문뷰 박스 밖 왼쪽에 두둥실 */
   #story-prose-wrap.has-branch-tabs { overflow:visible; margin-left:58px; }
@@ -517,8 +516,19 @@
   .story-prose.selecting .prose-line:hover { border-left-color:var(--accent2); background:rgba(200,169,110,0.04); }
   .story-prose.selecting .prose-line.prose-selected { border-left-color:var(--accent2); background:rgba(200,130,58,.1); }
   @media (hover: none) {
-    .story-prose.viewvotes-active .prose-line { border-left-color:var(--accent2) !important; }
+    /* 산문 선택 모드 — 첫 탭에 즉시 선택 */
     .story-prose.selecting .prose-line:hover { border-left-color:transparent; background:none; }
+    /* 투표 모드 — 강조 유지 */
+    .story-prose.viewvotes-active .prose-line { border-left-color:var(--accent2) !important; }
+    /* 스토리 카드 — 모바일 탭 시 들썩임 방지 */
+    .story-card:hover { transform:none; box-shadow:none; border-color:var(--border); }
+    /* 분기 선택 카드 */
+    .branch-choice-card:hover { box-shadow:none; border-color:var(--border); }
+    /* 외부 분기 카드 */
+    .ext-branch-card:hover { border-color:var(--border); }
+    /* 투표 카드, 알림 항목 */
+    .vote-card.clickable:hover { background:none; }
+    .notif-item:hover { background:none; }
   }
   .prose-line-mvp { font-size:11px; color:var(--accent); font-weight:700; display:inline-flex; align-items:center; gap:3px; }
   .prose-line-my-mvp { font-size:10px; color:var(--accent2); margin-left:6px; }

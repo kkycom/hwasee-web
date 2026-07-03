@@ -417,7 +417,7 @@ async function fbGetStory(story_id, user_id) {
     }
     const pEps = pEpsSnap.docs
       .map(d => ({ episode_id: d.id, ...d.data() }))
-      .filter(e => e.status === 'closed' && (story.is_continuation || Number(e.step) < Number(story.branch_from_step) - 1));
+      .filter(e => e.status === 'closed');
     const pSubs = pSubsSnap.docs.map(d => ({
       sub_id: d.id,
       ...d.data(),

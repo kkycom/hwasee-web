@@ -1446,7 +1446,11 @@ function _applyStoryData(res, story_id) {
   );
   // 완성된 이야기는 탭 없이 정경 경로만 표시 (분기 링크는 prose 내 카드로 충분)
   const _isFinishedStory = s.status === 'completed' || s.status === 'inactive';
-  const confirmedHtml = `<div id="story-prose-content">${inheritedHtml}${tree ? renderEpisodeTreeHtml(tree, window._branchChoice, mvp_map, branches, my_mvp_episode_id, _isFinishedStory) : ''}</div>`;
+  // 완성된 이야기: 분기 카드를 산문뷰 맨 하단에 표시 (중간 흐름 방해 없음)
+  const forkBranchHtml = _isFinishedStory
+    ? branches.filter(b => !b.is_continuation).map(b => renderExtBranchFork(null, null, b)).join('')
+    : '';
+  const confirmedHtml = `<div id="story-prose-content">${inheritedHtml}${tree ? renderEpisodeTreeHtml(tree, window._branchChoice, mvp_map, branches, my_mvp_episode_id, _isFinishedStory) : ''}${forkBranchHtml}</div>`;
 
   // ── 다음 단계 액션 ──
   let actionHtml = '';
@@ -1471,12 +1475,7 @@ function _applyStoryData(res, story_id) {
           : `<button class="btn btn-ghost btn-sm" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px" onclick="showExtendModal('${esc(s.story_id)}')">${_infSvg}이야기 연장하기</button>`
         ) : ''}` : ''}
       </div>
-      ${branches.filter(b => !b.is_continuation && b.status === 'active').map(b => `
-      <div class="ext-branch-fork" style="padding:12px;margin-top:0">
-        <div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;margin-bottom:8px">⑂ 진행 중인 분기 이야기</div>
-        <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:10px">갈래 탭으로 각 갈래의 흐름을 확인한 후, 원하는 분기 이야기에 참여해 보세요.</div>
-        <button class="ext-branch-card" onclick="nav('story','${b.story_id}')" style="width:100%;padding:10px 12px;text-align:center;font-weight:600">분기 이야기 참여하기 →</button>
-      </div>`).join('')}`;
+      `;
   }
 
   const isFinished = s.status === 'completed' || s.status === 'inactive';
@@ -2988,11 +2987,9 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
     const isForkChosen = forkSub && chosenSub && chosenSub.sub_id === forkSub.sub_id;
     const _editBtn = isAdmin() && chosenSub ? `<button class="prose-edit-btn" data-sub="${chosenSub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : '';
     const _proseDiv = `<div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')"><span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span><div class="prose-line-meta"><span>${mvpBadge}${myMvpMark}</span>${_editBtn}</div></div><span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>`;
-    // hideTabs(완성된 이야기)에서 A 선택 시에도 B갈래 포크 카드를 갈림길 지점에 표시
     const _nextHtml = isForkChosen
       ? renderExtBranchFork(ep, chosenSub, extBranch)
-      : (hideTabs && extBranch && forkSub ? renderExtBranchFork(ep, forkSub, extBranch) : '') +
-        (chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId, hideTabs) : '');
+      : (chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId, hideTabs) : '');
     if (hideTabs) return _proseDiv + _nextHtml;
     return `
       <div class="branch-prose-row">

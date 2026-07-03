@@ -1040,6 +1040,11 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function calcDisplayStep(story, epStep) {
+  // branch_display_offset: 분기 생성 시점에 정확히 계산해서 저장한 값(신뢰).
+  // 없는 옛날 데이터는 branch_from_step 어림짐작으로 fallback(부정확할 수 있음).
+  if (story.branch_display_offset !== undefined && story.branch_display_offset !== null) {
+    return Number(story.branch_display_offset) + Number(epStep);
+  }
   return story.branch_from_step
     ? (Number(story.branch_from_step) - 1) + Number(epStep)
     : Number(epStep) + 1;
@@ -1262,7 +1267,7 @@ async function startSeedStory() {
 function cardStickersHtml(s, alwaysBm) {
   const hasBm = alwaysBm || _bmIds.has(s.story_id);
   const parts = [
-    s.is_continuation ? `<span class="card-branch-sticker">〜 연장</span>` : s.has_branch ? `<span class="card-branch-sticker">⑂ 분기</span>` : '',
+    s.is_continuation ? `<span class="card-branch-sticker">〜 연장</span>` : (s.has_branch || s.branch_from_step) ? `<span class="card-branch-sticker">⑂ 분기</span>` : '',
     hasBm ? `<span class="card-bookmark-sticker">★</span>` : '',
   ].filter(Boolean).join('');
   return parts ? `<div class="card-stickers">${parts}</div>` : '';

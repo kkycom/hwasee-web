@@ -4,6 +4,16 @@ admin.initializeApp();
 
 const FB_ADMIN_ID = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
 
+// index.html의 calcDisplayStep과 동일한 규칙 — 분기 생성 시점에 정확한
+// branch_display_offset을 미리 계산해서 저장하기 위한 용도 (firebase-api.js와 동일하게 유지할 것)
+function _calcDisplayStepBackend(storyData, epStep) {
+  if (storyData.branch_display_offset !== undefined && storyData.branch_display_offset !== null) {
+    return Number(storyData.branch_display_offset) + Number(epStep);
+  }
+  if (storyData.branch_from_step) return (Number(storyData.branch_from_step) - 1) + Number(epStep);
+  return Number(epStep) + 1;
+}
+
 // ── 알림 생성 시 FCM 푸시 발송 ──────────────────────────────
 exports.sendPushOnNotification = functions
   .region('asia-northeast3')
@@ -526,12 +536,21 @@ async function _serverCloseEpisode(db, episode_id, ep) {
           curSubId = curEp.parent_sub_id || null;
         }
 
+        // 카드/산문뷰 단계 표시용: 원본 스토리 기준 진짜 이어지는 단계 번호를 정확히 계산
+        let branch_display_offset = null;
+        if (branch_leaf_episode_id) {
+          const leafEp = epById.get(branch_leaf_episode_id);
+          const leafDisplayStep = _calcDisplayStepBackend(st, Number(leafEp.step));
+          branch_display_offset = leafDisplayStep - Number(orphan.step) + 1;
+        }
+
         const spinBatch = db.batch();
         spinBatch.set(db.collection('stories').doc(newStoryId), {
           story_id: newStoryId, parent_story_id: ep.story_id,
           branch_from_step: Number(orphan.step) + 1,
           branch_episode_id, branch_sub_id,
           branch_leaf_episode_id, branch_leaf_sub_id,
+          branch_display_offset,
           opening: st.opening, max_steps: st.max_steps || 10,
           current_step: Number(orphan.step) - 1, status: 'active',
           creator_id: st.creator_id,

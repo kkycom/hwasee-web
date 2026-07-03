@@ -27,6 +27,16 @@ function fbGenId() {
 
 function fbNow() { return new Date().toISOString(); }
 
+// index.html의 calcDisplayStep과 동일한 규칙 — 분기 생성 시점에 정확한
+// branch_display_offset을 미리 계산해서 저장하기 위한 백엔드용 버전
+function _calcDisplayStepBackend(storyData, epStep) {
+  if (storyData.branch_display_offset !== undefined && storyData.branch_display_offset !== null) {
+    return Number(storyData.branch_display_offset) + Number(epStep);
+  }
+  if (storyData.branch_from_step) return (Number(storyData.branch_from_step) - 1) + Number(epStep);
+  return Number(epStep) + 1;
+}
+
 async function fbHashPw(pw) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
@@ -828,11 +838,20 @@ async function _fbCloseEpisode(episode_id, ep) {
           curSubId = curEp.parent_sub_id || null;
         }
 
+        // 카드/산문뷰 단계 표시용: 원본 스토리 기준 진짜 이어지는 단계 번호를 정확히 계산
+        let branch_display_offset = null;
+        if (branch_leaf_episode_id) {
+          const leafEp = epById.get(branch_leaf_episode_id);
+          const leafDisplayStep = _calcDisplayStepBackend(st, Number(leafEp.step));
+          branch_display_offset = leafDisplayStep - Number(orphan.step) + 1;
+        }
+
         spinBatch.set(db.collection('stories').doc(newStoryId), {
           story_id: newStoryId, parent_story_id: ep.story_id,
           branch_from_step: Number(orphan.step) + 1,
           branch_episode_id, branch_sub_id,
           branch_leaf_episode_id, branch_leaf_sub_id,
+          branch_display_offset,
           opening: st.opening, max_steps: st.max_steps || 10,
           current_step: Number(orphan.step) - 1, status: 'active',
           creator_id: st.creator_id,
@@ -1606,10 +1625,15 @@ async function fbCreateBranch(story_id, branch_from_step, user_id) {
   const new_ep_id    = fbGenId();
   const batch = db.batch();
 
+  // 카드/산문뷰 단계 표시용: 원본 스토리 기준 진짜 이어지는 단계 번호를 정확히 계산
+  const leafDisplayStep = _calcDisplayStepBackend(st, Number(targetEp.step));
+  const branch_display_offset = leafDisplayStep - (step - 1) + 1;
+
   batch.set(db.collection('stories').doc(new_story_id), {
     story_id: new_story_id, parent_story_id: story_id, branch_from_step: step,
     branch_episode_id: targetEp.episode_id,
     branch_leaf_episode_id: targetEp.episode_id,
+    branch_display_offset,
     opening: st.opening, max_steps: st.max_steps || 10,
     current_step: step - 2, status: 'active', creator_id: user_id,
     created_at: fbNow(), participant_count: 0, batch: '',

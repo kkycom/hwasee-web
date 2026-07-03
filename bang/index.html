@@ -642,7 +642,7 @@
 </div>
 
 <script>
-console.log('HWASEE BANG v129');
+console.log('HWASEE BANG v130');
 // ═══════════════════════════════════════════════════════════
 //  설정
 // ═══════════════════════════════════════════════════════════
@@ -1437,14 +1437,6 @@ function _applyStoryData(res, story_id) {
     const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions);
     const basePChoices = _buildForkPath(parent_chain.episodes, parent_chain.submissions, s, episodes);
     _pChoices = { ...basePChoices, ...window._branchChoice };
-    console.log('[fork-debug] branch_sub_id=', s.branch_sub_id, 'branch_episode_id=', s.branch_episode_id);
-    console.log('[fork-debug] pChoices=', JSON.stringify(_pChoices));
-    const _forkEpId = s.branch_episode_id;
-    const _pSubsForForkEp = parent_chain.submissions.filter(sub => sub.episode_id === _forkEpId);
-    console.log('[fork-debug] pSubs for fork ep:', JSON.stringify(_pSubsForForkEp.map(x => ({ sub_id: x.sub_id, episode_id: x.episode_id, is_adopted: x.is_adopted }))));
-    console.log('[fork-debug] B own episodes:', JSON.stringify(episodes.map(e => ({ id: e.episode_id, step: e.step, status: e.status, parent_sub_id: e.parent_sub_id }))));
-    const _bSubs = submissions.filter(sub => sub.is_adopted === true || sub.is_adopted === 'TRUE');
-    console.log('[fork-debug] B own adoptedSubs:', JSON.stringify(_bSubs.map(x => ({ sub_id: x.sub_id, episode_id: x.episode_id }))));
     inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, _pChoices, undefined, undefined, undefined, true)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
   }
 

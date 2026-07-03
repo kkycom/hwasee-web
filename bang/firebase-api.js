@@ -337,9 +337,17 @@ async function fbGetStory(story_id, user_id) {
     if (sid) commentCountMap[sid] = (commentCountMap[sid] || 0) + (d.data().deleted ? 0 : 1);
   });
 
+  // Round 2 전: B갈래 분기 sub_id 미리 계산 (Round 2에서 직접 fetch하기 위해)
+  const _preBranchSubId = (() => {
+    if (!story.parent_story_id || !story.branch_from_step) return null;
+    const orphanStep = Number(story.branch_from_step) - 1;
+    const orphanEp = episodes.find(e => Number(e.step) === orphanStep && e.parent_sub_id);
+    return orphanEp ? orphanEp.parent_sub_id : (story.branch_sub_id || null);
+  })();
+
   // Round 2: 나머지 모든 조회를 한 번에 병렬 처리
   const storySubIdArr = [...storySubIds];
-  const [userDocs, bmSnap, likeSnap, voteSnap, branchSnap, pEpsSnap, pSubsSnap] = await Promise.all([
+  const [userDocs, bmSnap, likeSnap, voteSnap, branchSnap, pEpsSnap, pSubsSnap, bSubSnap] = await Promise.all([
     authorIds.length > 0
       ? Promise.all(authorIds.map(id => db.collection('users').doc(id).get()))
       : Promise.resolve([]),
@@ -362,6 +370,9 @@ async function fbGetStory(story_id, user_id) {
       : Promise.resolve(null),
     story.parent_story_id
       ? db.collection('submissions').where('story_id', '==', story.parent_story_id).get()
+      : Promise.resolve(null),
+    _preBranchSubId
+      ? db.collection('submissions').doc(_preBranchSubId).get()
       : Promise.resolve(null),
   ]);
 
@@ -426,7 +437,10 @@ async function fbGetStory(story_id, user_id) {
     const pEps = pEpsSnap.docs
       .map(d => ({ episode_id: d.id, ...d.data() }))
       .filter(e => e.status === 'closed');
-    const pSubs = pSubsSnap.docs.map(d => ({
+    // B sub: story_id 없는 구형 데이터 대응 — pSubsSnap에 없으면 직접 fetch한 bSubSnap으로 보완
+    const pSubMap = new Map(pSubsSnap.docs.map(d => [d.id, d]));
+    if (bSubSnap && bSubSnap.exists && !pSubMap.has(bSubSnap.id)) pSubMap.set(bSubSnap.id, bSubSnap);
+    const pSubs = [...pSubMap.values()].map(d => ({
       sub_id: d.id,
       ...d.data(),
       author_nickname: d.data().is_ai ? '익명' : (nickMap[d.data().author_id] || '익명'),

@@ -642,7 +642,7 @@
 </div>
 
 <script>
-console.log('HWASEE BANG v139');
+console.log('HWASEE BANG v140');
 // ═══════════════════════════════════════════════════════════
 //  설정
 // ═══════════════════════════════════════════════════════════
@@ -1411,6 +1411,10 @@ function _applyStoryData(res, story_id) {
   if (currentParam !== story_id) return;
 
   const { story: s, episodes, submissions, is_bookmarked, is_liked = false, like_count = 0, my_voted_sub_ids = [] } = res;
+  // 분기 이야기: fork 갈래 자동 선택 (B이야기 로드 시 B갈래가 산문뷰에 보이도록)
+  if (s.branch_episode_id && s.branch_sub_id && !(s.branch_episode_id in window._branchChoice)) {
+    window._branchChoice[s.branch_episode_id] = s.branch_sub_id;
+  }
   const myVotedSet = new Set(my_voted_sub_ids);
 
   // 분기 트리 산문 (전역 저장 → chooseBranch 재렌더용)

@@ -2949,6 +2949,8 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
 
   // 외부 분기: 이 에피소드의 다음 단계(step+2, 1-based)에 분기가 있으면 포크 표시
   const extBranch = branches.find(b => b.branch_from_step === Number(ep.step) + 2);
+  // 갈림길에서 spin-off된 갈래: 자식 에피소드가 없는 채택 sub → fork story로 이동
+  const forkSub = extBranch ? adoptedSubs.find(sub => !children.some(c => c.ep.parent_sub_id === sub.sub_id)) : null;
 
   if (adoptedSubs.length === 1) {
     const sub = adoptedSubs[0];
@@ -2970,12 +2972,13 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
   if (chosenSubId) {
     const chosenSub   = adoptedSubs.find(s => s.sub_id === chosenSubId);
     const chosenChild = children.find(c => c.ep.parent_sub_id === chosenSubId);
+    const isForkChosen = forkSub && chosenSub && chosenSub.sub_id === forkSub.sub_id;
     return `
       <div class="branch-prose-row">
         <div class="branch-side-indicator">
           ${adoptedSubs.map((sub, i) => `
             <button class="branch-tab ${sub.sub_id === chosenSubId ? 'active' : ''}"
-              onclick="chooseBranch('${ep.episode_id}','${sub.sub_id}')">
+              onclick="${forkSub && sub.sub_id === forkSub.sub_id ? `nav('story','${extBranch.story_id}')` : `chooseBranch('${ep.episode_id}','${sub.sub_id}')`}">
               ${String.fromCharCode(65+i)}갈래</button>`).join('')}
         </div>
         <div>
@@ -2986,7 +2989,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
           <span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>
         </div>
       </div>
-      ${chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId) : ''}`;
+      ${isForkChosen ? renderExtBranchFork(ep, chosenSub, extBranch) : (chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId) : '')}`;
   }
 
   // 아직 선택 안 한 갈림길
@@ -3000,11 +3003,12 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
             ['rgba(160,100,30,.18)','#7a4a10'],
             ['rgba(100,50,160,.18)','#5a2a90'],
           ][i] || ['rgba(70,110,85,.18)','#2a6040'];
+          const isFork = forkSub && sub.sub_id === forkSub.sub_id;
           return `
-          <button class="branch-choice-card" onclick="chooseBranch('${ep.episode_id}','${sub.sub_id}')">
+          <button class="branch-choice-card" onclick="${isFork ? `nav('story','${extBranch.story_id}')` : `chooseBranch('${ep.episode_id}','${sub.sub_id}')`}">
             <div class="branch-choice-label" style="background:${bg};color:${fg};align-self:flex-start;margin-bottom:10px">${String.fromCharCode(65+i)}갈래</div>
             <div style="flex:1">${esc(sub.content)}</div>
-            <div style="font-size:11px;color:var(--muted);font-weight:700;margin-top:10px">공감 ${sub.vote_count}개</div>
+            <div style="font-size:11px;color:${isFork ? 'var(--accent2)' : 'var(--muted)'};font-weight:700;margin-top:10px">${isFork ? '⑂ 독립 이야기로 이어집니다 →' : `공감 ${sub.vote_count}개`}</div>
           </button>`;
         }).join('')}
       </div>

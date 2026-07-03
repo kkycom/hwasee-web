@@ -1434,7 +1434,7 @@ function _applyStoryData(res, story_id) {
   let inheritedHtml = '';
   if (parent_chain && parent_chain.episodes.length) {
     const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions);
-    const pChoices = _buildCanonicalPath(parent_chain.episodes, parent_chain.submissions);
+    const pChoices = _buildForkPath(parent_chain.episodes, parent_chain.submissions, s);
     inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, pChoices)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
   }
 
@@ -3070,6 +3070,24 @@ function _buildCanonicalPath(episodes, submissions) {
   return path;
 }
 
+// 분기 이야기의 inherited 산문에서 해당 분기로 이어지는 경로를 선택
+function _buildForkPath(parentEps, parentSubs, story) {
+  const canonical = _buildCanonicalPath(parentEps, parentSubs);
+  if (!story.branch_from_step || story.is_continuation) return canonical;
+  // tie 에피소드 step = branch_from_step - 2
+  const tieStep = Number(story.branch_from_step) - 2;
+  const tieEp = parentEps.find(e => Number(e.step) === tieStep);
+  if (!tieEp) return canonical;
+  const adoptedSubs = parentSubs.filter(s =>
+    s.episode_id === tieEp.episode_id && (s.is_adopted === true || s.is_adopted === 'TRUE')
+  );
+  if (adoptedSubs.length < 2) return canonical;
+  const canonicalSubId = canonical[tieEp.episode_id];
+  const forkSub = adoptedSubs.find(s => s.sub_id !== canonicalSubId);
+  if (!forkSub) return canonical;
+  return { ...canonical, [tieEp.episode_id]: forkSub.sub_id };
+}
+
 function chooseBranch(episode_id, sub_id) {
   window._branchChoice = window._branchChoice || {};
   window._branchChoice[episode_id] = sub_id;
@@ -3082,7 +3100,7 @@ function chooseBranch(episode_id, sub_id) {
     let inheritedHtml = '';
     if (parent_chain && parent_chain.episodes.length) {
       const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions);
-      const pChoices = _buildCanonicalPath(parent_chain.episodes, parent_chain.submissions);
+      const pChoices = _buildForkPath(parent_chain.episodes, parent_chain.submissions, window._storyData.story);
       inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, pChoices)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
     }
     const tree = getEpisodeTree(episodes.filter(e => e.status === 'closed'), submissions);

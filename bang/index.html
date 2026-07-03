@@ -642,7 +642,7 @@
 </div>
 
 <script>
-console.log('HWASEE BANG v138');
+console.log('HWASEE BANG v139');
 // ═══════════════════════════════════════════════════════════
 //  설정
 // ═══════════════════════════════════════════════════════════
@@ -3166,12 +3166,29 @@ function _buildForkPath(parentEps, parentSubs, story, forkEps) {
 
 function _getActiveBranch() {
   if (!window._storyData) return null;
-  const { branches = [] } = window._storyData;
+  const { branches = [], episodes = [], submissions = [] } = window._storyData;
   const choices = window._branchChoice || {};
+  const closedEps = episodes.filter(e => e.status === 'closed');
+  const canonical = _buildCanonicalPath(closedEps, submissions);
   const sorted = branches
-    .filter(b => !b.is_continuation && b.branch_episode_id && b.branch_sub_id)
+    .filter(b => !b.is_continuation && b.branch_from_step)
     .sort((a, b) => Number(a.branch_from_step) - Number(b.branch_from_step));
-  return sorted.find(b => choices[b.branch_episode_id] === b.branch_sub_id) || null;
+  return sorted.find(b => {
+    // branch_episode_id/branch_sub_id 있으면 직접 비교
+    if (b.branch_episode_id && b.branch_sub_id) {
+      return choices[b.branch_episode_id] === b.branch_sub_id;
+    }
+    // 없으면 branch_from_step으로 fork 에피소드·sub 유도
+    const forkStep = Number(b.branch_from_step) - 2;
+    const forkEp = closedEps.find(e => Number(e.step) === forkStep);
+    if (!forkEp) return false;
+    const canonicalSubId = canonical[forkEp.episode_id];
+    const adoptedAtFork = submissions.filter(s =>
+      s.episode_id === forkEp.episode_id && (s.is_adopted === true || s.is_adopted === 'TRUE')
+    );
+    const forkSub = adoptedAtFork.find(s => s.sub_id !== canonicalSubId);
+    return forkSub ? choices[forkEp.episode_id] === forkSub.sub_id : false;
+  }) || null;
 }
 
 function _updateBranchCta() {

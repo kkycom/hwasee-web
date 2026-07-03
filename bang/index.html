@@ -642,7 +642,7 @@
 </div>
 
 <script>
-console.log('HWASEE BANG v131');
+console.log('HWASEE BANG v132');
 // ═══════════════════════════════════════════════════════════
 //  설정
 // ═══════════════════════════════════════════════════════════
@@ -1458,7 +1458,7 @@ function _applyStoryData(res, story_id) {
     ? branches.filter(b => !b.is_continuation).map(b => renderExtBranchFork(null, null, b)).join('')
     : '';
   // 완성된 분기 이야기: 원본 이야기 링크 카드
-  const parentStoryHtml = _isFinishedStory && s.parent_story_id && !s.is_continuation && s.branch_from_step
+  const parentStoryHtml = _isFinishedStory && s.parent_story_id && !s.is_continuation
     ? `<div class="ext-branch-fork" style="display:flex;align-items:center;gap:10px;padding:10px 12px">
         <span style="font-size:10px;color:var(--muted);letter-spacing:1px;white-space:nowrap">⑂ 분기</span>
         <button class="ext-branch-card" onclick="nav('story','${esc(s.parent_story_id)}')" style="flex:1;margin:0;padding:10px 12px">
@@ -2958,11 +2958,11 @@ function getEpisodeTree(episodes, submissions, pinnedSubs) {
     let adoptedSubs = submissions.filter(s =>
       s.episode_id === ep.episode_id && (s.is_adopted === true || s.is_adopted === 'TRUE')
     );
-    // inherited 섹션에서 B fork sub를 강제 포함 (is_adopted=false여도 choices에 반영되도록)
+    // inherited 섹션: 포크 에피소드에서 B sub로 교체 (A canonical 대신 B 경로만 표시)
     const pinnedSubId = pinnedSubs[ep.episode_id];
-    if (pinnedSubId && !adoptedSubs.find(s => s.sub_id === pinnedSubId)) {
+    if (pinnedSubId) {
       const pinnedSub = submissions.find(s => s.sub_id === pinnedSubId);
-      if (pinnedSub) adoptedSubs = adoptedSubs.concat([pinnedSub]);
+      if (pinnedSub) adoptedSubs = [pinnedSub];
     }
     const children = adoptedSubs.flatMap(sub => (subToChildEps[sub.sub_id] || []).map(buildNode));
     return { ep, adoptedSubs, children };
@@ -3130,7 +3130,11 @@ function _buildForkPath(parentEps, parentSubs, story, forkEps) {
   const forkSubId = orphanEp ? orphanEp.parent_sub_id : null;
   if (forkSubId) {
     const tieSub = parentSubs.find(s => s.sub_id === forkSubId);
-    if (tieSub) return { ...canonical, [tieSub.episode_id]: forkSubId };
+    if (tieSub && tieSub.episode_id) return { ...canonical, [tieSub.episode_id]: forkSubId };
+    // episode_id 없으면 step으로 직접 찾기
+    const forkStep2 = Number(story.branch_from_step) - 2;
+    const forkEp2 = parentEps.find(e => Number(e.step) === forkStep2);
+    if (forkEp2) return { ...canonical, [forkEp2.episode_id]: forkSubId };
   }
   // 2순위 fallback: branch_from_step - 2 단계에서 canonical 아닌 sub
   const tieStep = Number(story.branch_from_step) - 2;

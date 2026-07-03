@@ -453,6 +453,7 @@ async function _serverCloseEpisode(db, episode_id, ep) {
   const allSubs = subsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const maxVotes = Math.max(...allSubs.map(s => Number(s.vote_count) || 0));
 
+  // 동률이면 여러 명 모두 채택 → 갈림길(분기) 생성. 사람 제출 우선, 없으면 AI 포함.
   let winners;
   if (maxVotes === 0) {
     const humanSubs = allSubs.filter(s => !s.is_ai);
@@ -461,8 +462,7 @@ async function _serverCloseEpisode(db, episode_id, ep) {
   } else {
     const tied = allSubs.filter(s => (Number(s.vote_count) || 0) === maxVotes);
     const humanTied = tied.filter(s => !s.is_ai);
-    winners = [((humanTied.length > 0 ? humanTied : tied)
-      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)))[0]];
+    winners = humanTied.length > 0 ? humanTied : tied;
   }
 
   for (const w of winners) {
@@ -479,17 +479,93 @@ async function _serverCloseEpisode(db, episode_id, ep) {
 
   if (anyClose) {
     await storySnap.ref.update({ current_step: nextStep, status: 'completed' });
+
+    // 남은 open 에피소드(다른 갈래)를 독립 active 스토리로 분리
+    // (firebase-api.js의 _fbCloseEpisode와 동일한 로직 — 반드시 함께 수정할 것)
+    const orphanSnap = await db.collection('episodes')
+      .where('story_id', '==', ep.story_id).where('status', '==', 'open').get();
+    if (!orphanSnap.empty) {
+      const [allEpsSnap, allSubsSnap] = await Promise.all([
+        db.collection('episodes').where('story_id', '==', ep.story_id).get(),
+        db.collection('submissions').where('story_id', '==', ep.story_id).get(),
+      ]);
+      const epById = new Map(allEpsSnap.docs.map(d => [d.id, { episode_id: d.id, ...d.data() }]));
+      const subsByEp = new Map();
+      allSubsSnap.docs.forEach(d => {
+        const s = { sub_id: d.id, ...d.data() };
+        if (!subsByEp.has(s.episode_id)) subsByEp.set(s.episode_id, []);
+        subsByEp.get(s.episode_id).push(s);
+      });
+      const subById = new Map(allSubsSnap.docs.map(d => [d.id, { sub_id: d.id, ...d.data() }]));
+
+      for (const orphanDoc of orphanSnap.docs) {
+        const orphan = orphanDoc.data();
+        const newStoryId = db.collection('stories').doc().id;
+        const subSnap = await db.collection('submissions')
+          .where('episode_id', '==', orphan.episode_id).get();
+        const uniqueAuthors = new Set(subSnap.docs.filter(d => !d.data().is_ai).map(d => d.data().author_id).filter(Boolean));
+
+        // orphan의 조상 체인을 거슬러 올라가며 두 지점을 구분해서 기록
+        let branch_episode_id = null, branch_sub_id = null;
+        let branch_leaf_episode_id = null, branch_leaf_sub_id = null;
+        let curSubId = orphan.parent_sub_id || null;
+        let isFirst = true;
+        while (curSubId) {
+          const curSub = subById.get(curSubId);
+          if (!curSub) break;
+          const curEp = epById.get(curSub.episode_id);
+          if (!curEp) break;
+          if (isFirst) {
+            branch_leaf_episode_id = curEp.episode_id;
+            branch_leaf_sub_id = curSubId;
+            isFirst = false;
+          }
+          const adoptedCount = (subsByEp.get(curEp.episode_id) || [])
+            .filter(s => s.is_adopted === true || s.is_adopted === 'TRUE').length;
+          if (adoptedCount > 1) { branch_episode_id = curEp.episode_id; branch_sub_id = curSubId; }
+          curSubId = curEp.parent_sub_id || null;
+        }
+
+        const spinBatch = db.batch();
+        spinBatch.set(db.collection('stories').doc(newStoryId), {
+          story_id: newStoryId, parent_story_id: ep.story_id,
+          branch_from_step: Number(orphan.step) + 1,
+          branch_episode_id, branch_sub_id,
+          branch_leaf_episode_id, branch_leaf_sub_id,
+          opening: st.opening, max_steps: st.max_steps || 10,
+          current_step: Number(orphan.step) - 1, status: 'active',
+          creator_id: st.creator_id,
+          creator_nickname: st.creator_nickname || '익명',
+          creator_badge: st.creator_badge || '',
+          participant_count: uniqueAuthors.size, like_count: 0, adoption_count: 0,
+          has_branch: false, created_at: new Date().toISOString(), batch: '',
+        });
+        spinBatch.update(orphanDoc.ref, { story_id: newStoryId });
+        await spinBatch.commit();
+        if (!subSnap.empty) {
+          const subBatch = db.batch();
+          subSnap.docs.forEach(d => subBatch.update(d.ref, { story_id: newStoryId }));
+          await subBatch.commit();
+        }
+      }
+    }
   } else {
-    await storySnap.ref.update({ current_step: nextStep });
-    const newEpId = db.collection('episodes').doc().id;
-    await db.collection('episodes').doc(newEpId).set({
-      episode_id: newEpId, story_id: ep.story_id,
-      step: nextStep + 1, parent_sub_id: winners[0].id,
-      status: 'open', vote_total: 0,
-      created_at: new Date().toISOString(), closed_at: '', pending_at: '',
-    });
+    const storyUpdate = { current_step: nextStep };
+    if (winners.length > 1) storyUpdate.has_branch = true;
+    await storySnap.ref.update(storyUpdate);
+    const epBatch = db.batch();
+    for (const w of winners) {
+      const newEpId = db.collection('episodes').doc().id;
+      epBatch.set(db.collection('episodes').doc(newEpId), {
+        episode_id: newEpId, story_id: ep.story_id,
+        step: nextStep + 1, parent_sub_id: w.id,
+        status: 'open', vote_total: 0,
+        created_at: new Date().toISOString(), closed_at: '', pending_at: '',
+      });
+    }
+    await epBatch.commit();
   }
-  console.log(`serverCloseEpisode: ${episode_id} → ${anyClose ? 'completed' : `step ${nextStep + 1}`}`);
+  console.log(`serverCloseEpisode: ${episode_id} → ${anyClose ? 'completed' : `step ${nextStep + 1}`} (winners: ${winners.length})`);
 }
 
 exports.aiParticipate = functions

@@ -435,12 +435,19 @@ async function fbGetStory(story_id, user_id) {
     parent_chain = { episodes: pEps, submissions: pSubs };
   }
 
-  // 분기 이야기: orphan 에피소드의 parent_sub_id를 서버에서 직접 계산
+  // 분기 이야기: orphan 에피소드의 parent_sub_id + episode_id를 서버에서 직접 계산
   let branch_sub_id = story.branch_sub_id || null;
-  if (!branch_sub_id && story.parent_story_id && story.branch_from_step) {
+  let branch_episode_id = story.branch_episode_id || null;
+  if (story.parent_story_id && story.branch_from_step && pSubsSnap) {
     const orphanStep = Number(story.branch_from_step) - 1;
     const orphanEp = episodes.find(e => Number(e.step) === orphanStep && e.parent_sub_id);
-    if (orphanEp) branch_sub_id = orphanEp.parent_sub_id;
+    if (orphanEp) {
+      if (!branch_sub_id) branch_sub_id = orphanEp.parent_sub_id;
+      if (!branch_episode_id && branch_sub_id) {
+        const bSubDoc = pSubsSnap.docs.find(d => d.id === branch_sub_id);
+        if (bSubDoc) branch_episode_id = bSubDoc.data().episode_id || null;
+      }
+    }
   }
 
   const storyWithCreator = {
@@ -448,6 +455,7 @@ async function fbGetStory(story_id, user_id) {
     creator_nickname: story.creator_nickname || '익명',
     creator_badge:    story.creator_badge    || '',
     branch_sub_id,
+    branch_episode_id,
   };
 
   return { ok: true, story: storyWithCreator, episodes, submissions, is_bookmarked, is_liked, like_count, my_voted_sub_ids, branches, parent_chain, mvp_map, my_mvp_episode_id };

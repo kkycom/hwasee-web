@@ -3006,8 +3006,8 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
   const mvpBadge  = mvpCount > 0 ? `<span class="prose-line-mvp">👍 ${mvpCount}</span>` : '';
   const myMvpMark = isMyMvp ? `<span class="prose-line-my-mvp">✦ 내가 선정함</span>` : '';
 
-  // 외부 분기: 이 에피소드의 다음 단계(step+2, 1-based)에 분기가 있으면 포크 표시
-  const extBranch = (branches || []).find(b => b.branch_from_step === Number(ep.step) + 2);
+  // 외부 분기: 이 에피소드가 분기의 실제 단절 지점(branch_leaf_episode_id)이면 포크 표시
+  const extBranch = (branches || []).find(b => b.branch_leaf_episode_id === ep.episode_id);
   // 갈림길에서 spin-off된 갈래: 자식 에피소드가 없는 채택 sub → fork story로 이동
   const forkSub = extBranch ? adoptedSubs.find(sub => !children.some(c => c.ep.parent_sub_id === sub.sub_id)) : null;
 
@@ -3015,7 +3015,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
     const sub = adoptedSubs[0];
     const childHtml = children.length === 1
       ? renderEpisodeTreeHtml(children[0], choices, mvpMap, branches, myMvpEpId, hideTabs, tabEpId) : '';
-    const forkHtml = (extBranch && !hideTabs) ? renderExtBranchFork(ep, sub, extBranch) : '';
+    const forkHtml = (extBranch && !hideTabs) ? renderExtBranchInline(extBranch) : '';
     const editBtnHtml = isAdmin() ? `<button class="prose-edit-btn" data-sub="${sub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : '';
     return `
       <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
@@ -3034,9 +3034,9 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
     const isForkChosen = forkSub && chosenSub && chosenSub.sub_id === forkSub.sub_id;
     const _editBtn = isAdmin() && chosenSub ? `<button class="prose-edit-btn" data-sub="${chosenSub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : '';
     const _proseDiv = `<div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')"><span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span><div class="prose-line-meta"><span>${mvpBadge}${myMvpMark}</span>${_editBtn}</div></div><span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>`;
-    // isForkChosen: 포크 갈래 선택 시 인라인 카드 억제 → 하단 story-branch-cta가 담당
+    // isForkChosen: 포크 갈래 선택 시 분기 이야기 자체 내용을 이어서 표시
     const _nextHtml = isForkChosen
-      ? ''
+      ? (!hideTabs ? renderExtBranchInline(extBranch) : '')
       : (chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId, hideTabs, tabEpId) : '');
     if (hideTabs && ep.episode_id !== tabEpId) return _proseDiv + _nextHtml;
     return `
@@ -3083,6 +3083,15 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
         }).join('')}
       </div>
     </div>`;
+}
+
+// 부모 이야기 산문뷰에서 분기가 끊기는 지점에 분기 이야기 자체 내용을 그 자리에서 이어서 보여줌
+// (서버가 fbGetStory에서 branches[].episodes/submissions로 이미 내려줌)
+function renderExtBranchInline(extBranch) {
+  const bTree = getEpisodeTree((extBranch.episodes || []).filter(e => e.status === 'closed'), extBranch.submissions || []);
+  if (!bTree) return renderExtBranchFork(null, null, extBranch);
+  const divider = `<div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>`;
+  return divider + renderEpisodeTreeHtml(bTree, {}, undefined, undefined, undefined, true);
 }
 
 function renderExtBranchFork(ep, originalSub, extBranch) {

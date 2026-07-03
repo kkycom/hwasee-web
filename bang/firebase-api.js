@@ -523,6 +523,38 @@ async function fbGetStory(story_id, user_id) {
     branch_episode_id,
   };
 
+  // 외부 분기(들)의 자체 콘텐츠(에피소드+제출물)도 같이 내려줌 —
+  // 부모 이야기 산문뷰에서 분기 탭을 눌렀을 때 별도 API 왕복 없이 그 자리에서 바로 보여주기 위함
+  const forkBranchList = branches.filter(b => !b.is_continuation);
+  if (forkBranchList.length) {
+    const branchDataArr = await Promise.all(forkBranchList.map(async b => {
+      const [bEpsSnap, bSubsSnap] = await Promise.all([
+        db.collection('episodes').where('story_id', '==', b.story_id).where('status', '==', 'closed').get(),
+        db.collection('submissions').where('story_id', '==', b.story_id).get(),
+      ]);
+      const bEps = bEpsSnap.docs.map(d => ({ episode_id: d.id, ...d.data() }));
+      const bAuthorIds = [...new Set(bSubsSnap.docs.map(d => d.data().author_id).filter(id => id && !nickMap[id]))];
+      if (bAuthorIds.length) {
+        const extraDocs = await Promise.all(bAuthorIds.map(id => db.collection('users').doc(id).get()));
+        extraDocs.forEach(d => { if (d.exists) { nickMap[d.id] = d.data().display_name || d.data().nickname; badgeMap[d.id] = d.data().badge; } });
+      }
+      const bSubs = bSubsSnap.docs.map(d => {
+        const data = d.data();
+        return {
+          sub_id: d.id, ...data,
+          author_nickname: data.is_ai ? '익명' : (nickMap[data.author_id] || '익명'),
+          author_badge:    data.is_ai ? 'seed' : (badgeMap[data.author_id] || 'seed'),
+        };
+      });
+      return { story_id: b.story_id, episodes: bEps, submissions: bSubs };
+    }));
+    const branchDataMap = new Map(branchDataArr.map(bd => [bd.story_id, bd]));
+    branches.forEach(b => {
+      const bd = branchDataMap.get(b.story_id);
+      if (bd) { b.episodes = bd.episodes; b.submissions = bd.submissions; }
+    });
+  }
+
   return { ok: true, story: storyWithCreator, episodes, submissions, is_bookmarked, is_liked, like_count, my_voted_sub_ids, branches, parent_chain, mvp_map, my_mvp_episode_id };
 }
 
@@ -772,14 +804,24 @@ async function _fbCloseEpisode(episode_id, ep) {
           .where('episode_id', '==', orphan.episode_id).get();
         const uniqueAuthors = new Set(subSnap.docs.filter(d => !d.data().is_ai).map(d => d.data().author_id).filter(Boolean));
 
-        // orphan의 진짜 분기 시작점(가장 위쪽 동률 지점)을 조상 체인에서 역추적
+        // orphan의 조상 체인을 거슬러 올라가며 두 지점을 구분해서 기록:
+        // - branch_episode_id/sub_id: 가장 위쪽 동률(진짜 갈라진 지점) — 상속 경로 재구성용(_buildForkPath)
+        // - branch_leaf_episode_id/sub_id: 원본 스토리 안에서 이 갈래가 끊기는 마지막 지점(orphan 바로 위)
+        //   — "분기 이야기로 이동" 카드/탭을 표시할 정확한 위치용
         let branch_episode_id = null, branch_sub_id = null;
+        let branch_leaf_episode_id = null, branch_leaf_sub_id = null;
         let curSubId = orphan.parent_sub_id || null;
+        let isFirst = true;
         while (curSubId) {
           const curSub = subById.get(curSubId);
           if (!curSub) break;
           const curEp = epById.get(curSub.episode_id);
           if (!curEp) break;
+          if (isFirst) {
+            branch_leaf_episode_id = curEp.episode_id;
+            branch_leaf_sub_id = curSubId;
+            isFirst = false;
+          }
           const adoptedCount = (subsByEp.get(curEp.episode_id) || [])
             .filter(s => s.is_adopted === true || s.is_adopted === 'TRUE').length;
           if (adoptedCount > 1) { branch_episode_id = curEp.episode_id; branch_sub_id = curSubId; }
@@ -790,6 +832,7 @@ async function _fbCloseEpisode(episode_id, ep) {
           story_id: newStoryId, parent_story_id: ep.story_id,
           branch_from_step: Number(orphan.step) + 1,
           branch_episode_id, branch_sub_id,
+          branch_leaf_episode_id, branch_leaf_sub_id,
           opening: st.opening, max_steps: st.max_steps || 10,
           current_step: Number(orphan.step) - 1, status: 'active',
           creator_id: st.creator_id,
@@ -1566,6 +1609,7 @@ async function fbCreateBranch(story_id, branch_from_step, user_id) {
   batch.set(db.collection('stories').doc(new_story_id), {
     story_id: new_story_id, parent_story_id: story_id, branch_from_step: step,
     branch_episode_id: targetEp.episode_id,
+    branch_leaf_episode_id: targetEp.episode_id,
     opening: st.opening, max_steps: st.max_steps || 10,
     current_step: step - 2, status: 'active', creator_id: user_id,
     created_at: fbNow(), participant_count: 0, batch: '',

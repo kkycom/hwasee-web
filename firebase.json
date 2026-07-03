@@ -2,5 +2,9 @@
   "functions": {
     "source": "functions",
     "runtime": "nodejs20"
+  },
+  "firestore": {
+    "rules": "bang/firestore.rules",
+    "indexes": "bang/firestore.indexes.json"
   }
 }

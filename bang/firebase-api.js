@@ -1864,7 +1864,7 @@ async function fbGetPublicProfile(user_id) {
 
   const _toChunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
 
-  const writingsSnap = await db.collection('submissions').where('author_id','==',user_id).get();
+  const writingsSnap = await db.collection('submissions').where('author_id','==',user_id).orderBy('created_at','desc').limit(60).get();
 
   const epMap = {}, storyMap = {};
   const allEpIds    = [...new Set(writingsSnap.docs.map(d => d.data().episode_id).filter(Boolean))];

@@ -40,19 +40,15 @@
 <style>
 @font-face {
   font-family: 'GyelonggiBatang';
-  src: url('/bang/fonts/GyelonggiBatang-Regular.otf') format('opentype');
+  src: url('/bang/fonts/GyelonggiBatang-Regular.woff2') format('woff2');
   font-weight: 400; font-style: normal; font-display: swap;
-}
-@font-face {
-  font-family: 'GyelonggiBatang';
-  src: url('/bang/fonts/GyelonggiBatang-Bold.otf') format('opentype');
-  font-weight: 700; font-style: normal; font-display: swap;
+  unicode-range: U+2E,U+bc29,U+d654,U+c528; /* 화씨.방 */
 }
 </style>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
-<script src="firebase-api.js?v=3"></script>
+<script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
+<script defer src="firebase-api.js?v=3"></script>
 <style>
   :root {
     --bg:      #f0ead8;
@@ -642,7 +638,7 @@
 </div>
 
 <script>
-console.log('HWASEE BANG v143');
+console.log('HWASEE BANG v154');
 // ═══════════════════════════════════════════════════════════
 //  설정
 // ═══════════════════════════════════════════════════════════
@@ -918,7 +914,7 @@ function nav(route, param) {
 
 function render() {
   _renderEpoch++;
-  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, create, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI };
+  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, user: userProfile, create, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI };
   (routes[currentRoute] || home)();
 }
 
@@ -973,7 +969,7 @@ function renderNav() {
 function badgeAvatar(b) {
   const map = { seed:'seed', seed1:'seed', seed2:'seed', sprout:'sprout', sprout1:'sprout', sprout2:'sprout', leaf:'leaf', leaf1:'leaf', leaf2:'leaf', bud:'bud', flower:'flower', flower1:'flower1', fruit:'fruit', treeguard:'treeguard' };
   const key = map[b];
-  if (key) return `<img src="badges/${key}.png" style="width:22px;height:22px;object-fit:contain;vertical-align:middle;display:inline-block">`;
+  if (key) return `<img src="badges/${key}.webp" style="width:22px;height:22px;object-fit:contain;vertical-align:middle;display:inline-block">`;
   return '🌱';
 }
 const AVATAR_SHOP_ITEMS = [
@@ -1000,7 +996,7 @@ function badgeEmoji(b, size=18) {
   const key = alias[b] || b;
   const valid = ['seed','seed1','seed2','sprout','sprout1','sprout2','leaf','leaf1','leaf2','bud','flower','flower1','fruit','treeguard'];
   const src = valid.includes(key) ? key : 'seed';
-  return `<img src="badges/${src}.png" style="width:${size}px;height:${size}px;object-fit:contain;vertical-align:middle;display:inline-block">`;
+  return `<img src="badges/${src}.webp" style="width:${size}px;height:${size}px;object-fit:contain;vertical-align:middle;display:inline-block">`;
 }
 function badgeLabel(b) {
   return {
@@ -1562,9 +1558,7 @@ function _applyStoryData(res, story_id) {
       </div>
       <div style="margin-top:32px">
         <h3 style="margin-bottom:14px;font-size:16px">이야기 감상 나누기</h3>
-        <div id="story-comment-list">
-          <div style="color:var(--muted);font-size:13px">불러오는 중...</div>
-        </div>
+        <div id="story-comment-list">${s.story_comments ? renderStoryCommentList(s.story_comments, s.story_id) : '<div style="color:var(--muted);font-size:13px">불러오는 중...</div>'}</div>
         ${user ? `
           <div class="comment-input-row" style="margin-top:12px">
             <input type="text" id="sc-input" maxlength="300" placeholder="감상을 남겨보세요..."
@@ -1573,7 +1567,7 @@ function _applyStoryData(res, story_id) {
           </div>` : `<div style="font-size:13px;color:var(--muted);margin-top:12px">로그인 후 감상을 남길 수 있어요.</div>`}
       </div>` : ''}`;
 
-  if (isFinished) {
+  if (isFinished && !s.story_comments) {
     loadStoryComments(currentParam);
   }
 
@@ -1749,7 +1743,7 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1
       <div class="vote-meta">
         <span class="vote-count">공감 ${voteCount}/${FB_VOTE_THRESHOLD}개</span>
         ${isAdopted ? '<span style="color:var(--success)">✓ 채택됨</span>' : ''}
-        <span style="margin-left:auto;font-size:11px;color:var(--muted)">${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--muted)${sub.is_ai ? '' : ';cursor:pointer'}"${sub.is_ai ? '' : ` onclick="event.stopPropagation();goToUserProfile('${sub.author_id}')"`}>${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
       </div>
       <div class="vote-bar"><div class="vote-fill" style="width:${barPct}%"></div></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
@@ -1829,7 +1823,7 @@ function lbBodyHtml(limit) {
         <div class="lb-row">
           <span class="lb-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</span>
           <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;flex-shrink:0">${badgeEmoji(r.badge||'seed')}</span>
-          <span class="lb-name">${esc(r.nickname)}</span>
+          <span class="lb-name" style="cursor:pointer" onclick="goToUserProfile('${r.user_id}',event)">${esc(r.nickname)}</span>
           <span class="lb-value">${r.value||0}p</span>
         </div>`).join('')
     : emptyHtml;
@@ -1840,7 +1834,7 @@ function lbBodyHtml(limit) {
         <div class="lb-row">
           <span class="lb-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</span>
           <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;flex-shrink:0">${badgeEmoji(r.badge||'seed')}</span>
-          <span class="lb-name">${esc(r.nickname)}</span>
+          <span class="lb-name" style="cursor:pointer" onclick="goToUserProfile('${r.user_id}',event)">${esc(r.nickname)}</span>
           <span class="lb-value">${r.value||0}편</span>
         </div>`).join('')
     : emptyHtml;
@@ -2774,6 +2768,75 @@ function switchProfileTab(tab) {
     tab === 'settings' ? window._profileData.settingsTab : tab === 'bugreport' ? window._profileData.bugreportTab : window._profileData.pointsTab;
 }
 
+// ─── 다른 유저 프로필 (공개) ─────────────────────────────
+
+function goToUserProfile(user_id, event) {
+  if (event) event.stopPropagation();
+  if (!user) { nav('auth', 'login'); return; }
+  nav(user.user_id === user_id ? 'profile' : 'user', user.user_id === user_id ? null : user_id);
+}
+
+async function userProfile() {
+  if (!user) { nav('auth', 'login'); return; }
+  const target_id = currentParam;
+  if (!target_id) { nav('seed'); return; }
+  if (target_id === user.user_id) { nav('profile'); return; }
+
+  const epoch = _renderEpoch;
+  document.getElementById('app').innerHTML = `<div class="loading"></div>`;
+  const res = await api('getPublicProfile', { user_id: target_id });
+  if (_renderEpoch !== epoch || currentRoute !== 'user') return;
+  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+
+  const u = res.user;
+  const joinedDate = u.created_at ? new Date(u.created_at).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }) : '알 수 없음';
+
+  document.getElementById('app').innerHTML = `
+    <button class="btn btn-ghost btn-sm" style="margin-bottom:20px;border:none;font-weight:600" onclick="nav('seed')">← 메인</button>
+    <div class="card" style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:16px">
+        <div style="width:56px;height:56px;border-radius:50%;background:var(--surface);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:30px">
+          ${u.avatar || badgeAvatar(u.badge)}
+        </div>
+        <div>
+          <div style="font-size:20px;font-weight:700">${esc(u.display_name)}</div>
+          <span class="badge badge-${u.badge}">${badgeEmoji(u.badge)}</span>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">가입일 ${joinedDate}</div>
+        </div>
+        <div style="margin-left:auto;text-align:right">
+          <div style="font-size:26px;font-weight:800;color:var(--accent)">${u.total_points}</div>
+          <div style="font-size:12px;color:var(--muted)">포인트</div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <div style="padding:11px 16px;background:var(--surface);font-size:13px;font-weight:600">
+        ✏ 작성한 글 <span style="font-size:12px;font-weight:400;color:var(--muted)">${res.writings.length}편</span>
+      </div>
+      <div style="padding:12px 16px">
+        ${res.writings.length ? res.writings.map(a => `
+          <div style="padding:10px 14px;margin-bottom:8px;cursor:pointer;
+            border-left:3px solid ${a.is_adopted ? 'var(--success)' : 'var(--border)'};
+            border-radius:6px;background:var(--bg)"
+            onclick="nav('story','${esc(a.story_id)}')">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">
+              ${a.step+1}단계 · "${esc((a.story_opening||'').slice(0,30))}${(a.story_opening||'').length>30?'…':''}"
+            </div>
+            <div style="font-size:14px;line-height:1.6;${a.is_adopted ? 'font-weight:700' : ''}">"${esc(a.content)}"</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px;display:flex;gap:8px;align-items:center">
+              <span>공감 ${a.vote_count}개</span>
+              ${a.is_adopted
+                ? '<span style="color:var(--success);font-weight:700">✓ 채택됨</span>'
+                : a.ep_status === 'open'
+                  ? '<span style="color:var(--accent)">진행 중</span>'
+                  : '<span>탈락</span>'}
+            </div>
+          </div>`).join('')
+        : '<div class="empty" style="padding:20px 0">아직 쓴 글이 없어요.</div>'}
+      </div>
+    </div>`;
+}
+
 // ─── 알림 ──────────────────────────────────────────────
 let _notifOpen = false;
 let _notifCache = null;
@@ -3449,7 +3512,7 @@ async function loadMvpSection(story_id, submissions) {
   winners.forEach(s => {
     if (!seenIds.has(s.author_id) && s.author_id && s.author_id !== 'SYSTEM') {
       seenIds.add(s.author_id);
-      authors.push({ user_id: s.author_id, nickname: s.author_nickname || '익명', badge: s.author_badge || 'seed' });
+      authors.push({ user_id: s.author_id, nickname: s.author_nickname || '익명', badge: s.author_badge || 'seed', is_ai: !!s.is_ai });
     }
   });
 
@@ -3474,14 +3537,14 @@ function renderMvpHtml(story_id, authors, res) {
       return `
         <div class="mvp-author-card" id="mvp-${a.user_id}" onclick="toggleMvpVote('${story_id}','${a.user_id}','${esc(a.nickname)}')">
           <span class="badge badge-${a.badge}" style="font-size:9px;padding:1px 5px">${badgeEmoji(a.badge)}</span>
-          <span style="font-size:14px;font-weight:600;flex:1">${esc(a.nickname)}</span>
+          <span style="font-size:14px;font-weight:600;flex:1${a.is_ai ? '' : ';cursor:pointer'}"${a.is_ai ? '' : ` onclick="goToUserProfile('${a.user_id}',event)"`}>${esc(a.nickname)}</span>
           <span style="font-size:20px">🤍</span>
         </div>`;
     } else {
       return `
         <div class="mvp-author-card result">
           <span class="badge badge-${a.badge}" style="font-size:9px;padding:1px 5px">${badgeEmoji(a.badge)}</span>
-          <span style="font-size:14px;font-weight:600;flex:1">${esc(a.nickname)}</span>
+          <span style="font-size:14px;font-weight:600;flex:1${a.is_ai ? '' : ';cursor:pointer'}"${a.is_ai ? '' : ` onclick="goToUserProfile('${a.user_id}',event)"`}>${esc(a.nickname)}</span>
           ${count > 0 ? `
             <div class="mvp-bar" style="max-width:80px"><div class="mvp-bar-fill" style="width:${Math.round(count/maxCount*100)}%"></div></div>
             <span style="font-size:12px;color:var(--accent);font-weight:700;min-width:28px;text-align:right">${count}</span>` : ''}
@@ -4294,8 +4357,8 @@ function parseHash() {
   const h     = location.hash.slice(1) || 'seed';
   const parts = h.split('/');
   const route = parts[0];
-  currentRoute = ['home','seed','popular','mine','done','story','episode','auth','profile','create','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs'].includes(route) ? route : 'seed';
-  currentParam = parts[1] || null;
+  currentRoute = ['home','seed','popular','mine','done','story','episode','auth','profile','user','create','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs'].includes(route) ? route : 'seed';
+  currentParam = parts.slice(1).join('/') || null;
 }
 
 window.addEventListener('hashchange', () => {

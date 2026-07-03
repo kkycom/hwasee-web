@@ -338,7 +338,11 @@ async function fbGetStory(story_id, user_id) {
   const story    = storySnap.data();
   const episodes = episodesSnap.docs.map(d => ({ episode_id: d.id, ...d.data() }));
   const openEp    = episodes.find(e => e.status === 'open');
-  const authorIds = [...new Set(subsSnap.docs.map(d => d.data().author_id).filter(Boolean))];
+  const storyCommentDocs = commSnap.docs.filter(d => (d.data().sub_id || '') === '');
+  const authorIds = [...new Set([
+    ...subsSnap.docs.map(d => d.data().author_id),
+    ...storyCommentDocs.map(d => d.data().author_id),
+  ].filter(Boolean))];
   const storySubIds = new Set(subsSnap.docs.map(d => d.id));
 
   const commentCountMap = {};
@@ -565,7 +569,11 @@ async function fbGetStory(story_id, user_id) {
     });
   }
 
-  return { ok: true, story: storyWithCreator, episodes, submissions, is_bookmarked, is_liked, like_count, my_voted_sub_ids, branches, parent_chain, mvp_map, my_mvp_episode_id };
+  const story_comments = storyCommentDocs
+    .map(d => ({ comment_id: d.id, ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }))
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+  return { ok: true, story: storyWithCreator, episodes, submissions, is_bookmarked, is_liked, like_count, my_voted_sub_ids, branches, parent_chain, mvp_map, my_mvp_episode_id, story_comments };
 }
 
 async function fbCreateStory(opening, creator_id, is_ai_seed) {
@@ -1385,7 +1393,7 @@ async function fbAddReport(sub_id, reason, reporter_id) {
 
 async function fbGetReports(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const rSnap = await db.collection('reports').orderBy('created_at', 'desc').get();
+  const rSnap = await db.collection('reports').orderBy('created_at', 'desc').limit(200).get();
   if (rSnap.empty) return { ok: true, reports: [] };
 
   const subIds     = [...new Set(rSnap.docs.map(d => d.data().sub_id).filter(Boolean))];
@@ -1490,19 +1498,20 @@ async function fbGetAdminStats(admin_id) {
 // ─── 랭킹 ────────────────────────────────────────────────
 
 async function fbGetLeaderboard() {
-  const uSnap = await db.collection('users').get();
+  const [ptsSnap, adpSnap] = await Promise.all([
+    db.collection('users').orderBy('total_points', 'desc').limit(11).get(),
+    db.collection('users').orderBy('adoption_count', 'desc').limit(11).get(),
+  ]);
 
-  const pointsRank = uSnap.docs
+  const pointsRank = ptsSnap.docs
     .filter(d => Number(d.data().total_points) > 0 && d.id !== FB_ADMIN_ID)
-    .sort((a,b) => Number(b.data().total_points) - Number(a.data().total_points))
     .slice(0, 10)
-    .map(d => ({ nickname: d.data().display_name || d.data().nickname, badge: d.data().badge, value: Number(d.data().total_points) }));
+    .map(d => ({ user_id: d.id, nickname: d.data().display_name || d.data().nickname, badge: d.data().badge, value: Number(d.data().total_points) }));
 
-  const adoptionsRank = uSnap.docs
+  const adoptionsRank = adpSnap.docs
     .filter(d => d.id !== FB_ADMIN_ID && (d.data().adoption_count || 0) > 0)
-    .sort((a,b) => (b.data().adoption_count || 0) - (a.data().adoption_count || 0))
     .slice(0, 10)
-    .map(d => ({ nickname: d.data().display_name || d.data().nickname, badge: d.data().badge, value: d.data().adoption_count || 0 }));
+    .map(d => ({ user_id: d.id, nickname: d.data().display_name || d.data().nickname, badge: d.data().badge, value: d.data().adoption_count || 0 }));
 
   return { ok: true, points: pointsRank, adoptions: adoptionsRank };
 }
@@ -1792,8 +1801,8 @@ async function fbGetProfile(user_id) {
   const _toChunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
 
   const [histSnap, writingsSnap] = await Promise.all([
-    db.collection('point_ledger').where('user_id','==',user_id).get(),
-    db.collection('submissions').where('author_id','==',user_id).get(),
+    db.collection('point_ledger').where('user_id','==',user_id).orderBy('created_at','desc').limit(20).get(),
+    db.collection('submissions').where('author_id','==',user_id).orderBy('created_at','desc').limit(60).get(),
   ]);
 
   // 제출글에서 실제 참조하는 ID만 배치 조회
@@ -1845,6 +1854,59 @@ async function fbGetProfile(user_id) {
     ok: true,
     user: { user_id, nickname: u.nickname, display_name: u.display_name || u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed', avatar: u.avatar || null, owned_avatars: u.owned_avatars || [], created_at: u.created_at },
     history, writings,
+  };
+}
+
+async function fbGetPublicProfile(user_id) {
+  const uSnap = await db.collection('users').doc(user_id).get();
+  if (!uSnap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
+  const u = uSnap.data();
+
+  const _toChunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
+
+  const writingsSnap = await db.collection('submissions').where('author_id','==',user_id).get();
+
+  const epMap = {}, storyMap = {};
+  const allEpIds    = [...new Set(writingsSnap.docs.map(d => d.data().episode_id).filter(Boolean))];
+  const allStoryIds = [...new Set(writingsSnap.docs.map(d => d.data().story_id).filter(Boolean))];
+  await Promise.all([
+    ..._toChunks(allEpIds).map(ch =>
+      db.collection('episodes').where(firebase.firestore.FieldPath.documentId(), 'in', ch).get()
+        .then(s => s.docs.forEach(d => { epMap[d.id] = d.data(); }))
+    ),
+    ..._toChunks(allStoryIds).map(ch =>
+      db.collection('stories').where(firebase.firestore.FieldPath.documentId(), 'in', ch).get()
+        .then(s => s.docs.forEach(d => { storyMap[d.id] = d.data().opening; }))
+    ),
+  ]);
+
+  const writings = writingsSnap.docs.filter(d => !d.data().is_ai).map(d => {
+    const s = d.data();
+    const ep = epMap[s.episode_id];
+    return {
+      sub_id: s.sub_id || d.id,
+      content: s.content,
+      vote_count: s.vote_count || 0,
+      is_adopted: s.is_adopted === true || s.is_adopted === 'TRUE',
+      ep_status: ep ? ep.status : null,
+      story_id: s.story_id,
+      story_opening: storyMap[s.story_id] || '',
+      step: ep ? Number(ep.step) : 0,
+      created_at: s.created_at,
+    };
+  }).sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 50);
+
+  return {
+    ok: true,
+    user: {
+      user_id,
+      display_name: u.display_name || u.nickname,
+      total_points: u.total_points || 0,
+      badge: u.badge || 'seed',
+      avatar: u.avatar || null,
+      created_at: u.created_at || null,
+    },
+    writings,
   };
 }
 
@@ -2004,8 +2066,8 @@ async function fbGetAIActivities(admin_id) {
   let subsSnap, votesSnap;
   try {
     [subsSnap, votesSnap] = await Promise.all([
-      db.collection('submissions').where('author_id', '==', FB_ADMIN_ID).where('is_ai', '==', true).get(),
-      db.collection('votes').where('voter_id', '==', FB_ADMIN_ID).where('is_ai', '==', true).get(),
+      db.collection('submissions').where('author_id', '==', FB_ADMIN_ID).where('is_ai', '==', true).orderBy('created_at', 'desc').limit(300).get(),
+      db.collection('votes').where('voter_id', '==', FB_ADMIN_ID).where('is_ai', '==', true).orderBy('created_at', 'desc').limit(300).get(),
     ]);
   } catch(e) {
     return { ok: true, ai_config: aiConfig, has_key: hasKey, submissions: [], votes: [], total_subs: 0, total_votes: 0 };
@@ -2200,6 +2262,7 @@ async function firebaseApi(action, params = {}) {
     case 'backfillAdoptionCounts':  return fbBackfillAdoptionCounts(need().user_id);
     case 'backfillLikeCounts':      return fbBackfillLikeCounts(need().user_id);
     case 'getProfile':           return fbGetProfile(need().user_id);
+    case 'getPublicProfile':     need(); return fbGetPublicProfile(params.user_id);
     case 'buyAvatar':            return fbBuyAvatar(params.emoji_id, need().user_id);
     case 'setAvatar':            return fbSetAvatar(params.emoji_id, need().user_id);
     case 'checkDisplayName':     return fbCheckDisplayName(params.display_name);

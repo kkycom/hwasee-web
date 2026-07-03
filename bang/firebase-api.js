@@ -437,19 +437,30 @@ async function fbGetStory(story_id, user_id) {
     const pEps = pEpsSnap.docs
       .map(d => ({ episode_id: d.id, ...d.data() }))
       .filter(e => e.status === 'closed');
-    // fork 에피소드 ID 계산 (B sub의 episode_id 패치용)
+    // fork 에피소드 ID 계산: branch_from_step-1 단계 (fbCreateBranch에서 targetEp.step=branch_from_step-1)
     const _preBranchEpisodeId = (() => {
       if (!story.branch_from_step) return null;
-      const forkStep = Number(story.branch_from_step) - 2;
+      const forkStep = Number(story.branch_from_step) - 1;
       const doc = pEpsSnap.docs.find(d => Number(d.data().step) === forkStep);
       return doc ? doc.id : null;
+    })();
+    // B sub: fork 에피소드에서 non-adopted sub 직접 조회 (orphan ep parent_sub_id='' 대응)
+    const _actualBranchSubId = (() => {
+      if (_preBranchSubId) return _preBranchSubId;
+      if (!_preBranchEpisodeId) return null;
+      const nonAdopted = pSubsSnap.docs.find(d => {
+        const data = d.data();
+        return data.episode_id === _preBranchEpisodeId &&
+               data.is_adopted !== true && data.is_adopted !== 'TRUE';
+      });
+      return nonAdopted ? nonAdopted.id : null;
     })();
     // B sub: story_id/episode_id 없는 구형 데이터 대응
     const pSubMap = new Map(pSubsSnap.docs.map(d => [d.id, d]));
     if (bSubSnap && bSubSnap.exists && !pSubMap.has(bSubSnap.id)) pSubMap.set(bSubSnap.id, bSubSnap);
     const pSubs = [...pSubMap.values()].map(d => {
       const data = d.data();
-      const isBranchSub = _preBranchSubId && d.id === _preBranchSubId;
+      const isBranchSub = _actualBranchSubId && d.id === _actualBranchSubId;
       return {
         sub_id: d.id,
         ...data,
@@ -463,18 +474,27 @@ async function fbGetStory(story_id, user_id) {
     parent_chain = { episodes: pEps, submissions: pSubs };
   }
 
-  // 분기 이야기: orphan 에피소드의 parent_sub_id + fork 에피소드 ID를 서버에서 직접 계산
+  // 분기 이야기: fork 에피소드 ID + B갈래 sub_id 서버에서 직접 계산
   let branch_sub_id = story.branch_sub_id || null;
   let branch_episode_id = story.branch_episode_id || null;
   if (story.parent_story_id && story.branch_from_step && pEpsSnap) {
+    // fork 에피소드 = branch_from_step - 1 단계 (fbCreateBranch: targetEp.step = step-1)
+    if (!branch_episode_id) {
+      const forkStep = Number(story.branch_from_step) - 1;
+      const forkEpDoc = pEpsSnap.docs.find(d => Number(d.data().step) === forkStep);
+      if (forkEpDoc) branch_episode_id = forkEpDoc.id;
+    }
+    // orphan ep parent_sub_id (연장 이야기 방식, 분기 이야기는 '' 이므로 fallback 우선)
     const orphanStep = Number(story.branch_from_step) - 1;
     const orphanEp = episodes.find(e => Number(e.step) === orphanStep && e.parent_sub_id);
     if (orphanEp && !branch_sub_id) branch_sub_id = orphanEp.parent_sub_id;
-    // fork 에피소드 = branch_from_step - 2 단계의 부모 이야기 에피소드
-    if (!branch_episode_id) {
-      const forkStep = Number(story.branch_from_step) - 2;
-      const forkEpDoc = pEpsSnap.docs.find(d => Number(d.data().step) === forkStep);
-      if (forkEpDoc) branch_episode_id = forkEpDoc.id;
+    // fallback: fork 에피소드의 non-adopted sub = B갈래 sub
+    if (!branch_sub_id && branch_episode_id && pSubsSnap) {
+      const nonAdopted = pSubsSnap.docs.find(d =>
+        d.data().episode_id === branch_episode_id &&
+        d.data().is_adopted !== true && d.data().is_adopted !== 'TRUE'
+      );
+      if (nonAdopted) branch_sub_id = nonAdopted.id;
     }
   }
 

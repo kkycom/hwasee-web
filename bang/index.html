@@ -3047,8 +3047,8 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
       ${_nextHtml}`;
   }
 
-  // hideTabs(완성된 이야기): 갈림길에서 canonical sub(비포크) 자동 선택
-  if (hideTabs) {
+  // hideTabs(완성된 이야기): 갈림길에서 canonical sub(비포크) 자동 선택 (tabEpId 예외)
+  if (hideTabs && ep.episode_id !== tabEpId) {
     const autoSub = adoptedSubs.find(s => !forkSub || s.sub_id !== forkSub.sub_id) || adoptedSubs[0];
     if (autoSub) {
       const autoChild = children.find(c => c.ep.parent_sub_id === autoSub.sub_id);
@@ -3136,7 +3136,7 @@ function _buildForkPath(parentEps, parentSubs, story, forkEps) {
   // 1순위: branch_sub_id + parentEps에서 step으로 fork 에피소드 직접 찾기
   const serverForkSubId = story.branch_sub_id || null;
   if (serverForkSubId) {
-    const forkStep = Number(story.branch_from_step) - 2;
+    const forkStep = Number(story.branch_from_step) - 1;
     const forkEp = parentEps.find(e => Number(e.step) === forkStep);
     if (forkEp) return { ...canonical, [forkEp.episode_id]: serverForkSubId };
     // fallback: parentSubs에서 episode_id 찾기
@@ -3151,12 +3151,12 @@ function _buildForkPath(parentEps, parentSubs, story, forkEps) {
     const tieSub = parentSubs.find(s => s.sub_id === forkSubId);
     if (tieSub && tieSub.episode_id) return { ...canonical, [tieSub.episode_id]: forkSubId };
     // episode_id 없으면 step으로 직접 찾기
-    const forkStep2 = Number(story.branch_from_step) - 2;
+    const forkStep2 = Number(story.branch_from_step) - 1;
     const forkEp2 = parentEps.find(e => Number(e.step) === forkStep2);
     if (forkEp2) return { ...canonical, [forkEp2.episode_id]: forkSubId };
   }
-  // 2순위 fallback: branch_from_step - 2 단계에서 canonical 아닌 sub
-  const tieStep = Number(story.branch_from_step) - 2;
+  // 2순위 fallback: branch_from_step - 1 단계에서 canonical 아닌 sub
+  const tieStep = Number(story.branch_from_step) - 1;
   const tieEp = parentEps.find(e => Number(e.step) === tieStep);
   if (!tieEp) return canonical;
   const adoptedSubs = parentSubs.filter(s =>
@@ -3183,7 +3183,7 @@ function _getActiveBranch() {
       return choices[b.branch_episode_id] === b.branch_sub_id;
     }
     // 없으면 branch_from_step으로 fork 에피소드·sub 유도
-    const forkStep = Number(b.branch_from_step) - 2;
+    const forkStep = Number(b.branch_from_step) - 1;
     const forkEp = closedEps.find(e => Number(e.step) === forkStep);
     if (!forkEp) return false;
     const canonicalSubId = canonical[forkEp.episode_id];

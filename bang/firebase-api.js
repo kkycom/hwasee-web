@@ -437,15 +437,27 @@ async function fbGetStory(story_id, user_id) {
     const pEps = pEpsSnap.docs
       .map(d => ({ episode_id: d.id, ...d.data() }))
       .filter(e => e.status === 'closed');
-    // B sub: story_id 없는 구형 데이터 대응 — pSubsSnap에 없으면 직접 fetch한 bSubSnap으로 보완
+    // fork 에피소드 ID 계산 (B sub의 episode_id 패치용)
+    const _preBranchEpisodeId = (() => {
+      if (!story.branch_from_step) return null;
+      const forkStep = Number(story.branch_from_step) - 2;
+      const doc = pEpsSnap.docs.find(d => Number(d.data().step) === forkStep);
+      return doc ? doc.id : null;
+    })();
+    // B sub: story_id/episode_id 없는 구형 데이터 대응
     const pSubMap = new Map(pSubsSnap.docs.map(d => [d.id, d]));
     if (bSubSnap && bSubSnap.exists && !pSubMap.has(bSubSnap.id)) pSubMap.set(bSubSnap.id, bSubSnap);
-    const pSubs = [...pSubMap.values()].map(d => ({
-      sub_id: d.id,
-      ...d.data(),
-      author_nickname: d.data().is_ai ? '익명' : (nickMap[d.data().author_id] || '익명'),
-      author_badge:    d.data().is_ai ? 'seed' : (badgeMap[d.data().author_id] || 'seed'),
-    }));
+    const pSubs = [...pSubMap.values()].map(d => {
+      const data = d.data();
+      return {
+        sub_id: d.id,
+        ...data,
+        // episode_id 누락 보완: B sub에 episode_id 없으면 fork 에피소드 ID로 설정
+        episode_id: data.episode_id || (d.id === _preBranchSubId ? _preBranchEpisodeId : null),
+        author_nickname: data.is_ai ? '익명' : (nickMap[data.author_id] || '익명'),
+        author_badge:    data.is_ai ? 'seed' : (badgeMap[data.author_id] || 'seed'),
+      };
+    });
     parent_chain = { episodes: pEps, submissions: pSubs };
   }
 

@@ -390,12 +390,20 @@ async function fbGetStory(story_id, user_id) {
   const like_count       = storySnap.data().like_count || 0;
   const is_liked         = (user_id && likeSnap) ? !likeSnap.empty : false;
   const my_voted_sub_ids = (voteSnap && user_id) ? voteSnap.docs.map(d => d.data().sub_id).filter(Boolean) : [];
-  const branches         = branchSnap.docs.map(d => ({
+  // branch_from_step 기준 중복 제거 (같은 단계에 여러 fork가 생긴 경우 active 우선)
+  const _branchRaw = branchSnap.docs.map(d => ({
     story_id: d.data().story_id || d.id,
     branch_from_step: Number(d.data().branch_from_step),
     is_continuation: !!d.data().is_continuation,
     status: d.data().status,
-  }));
+  })).sort((a, b) => (a.status === 'active' ? -1 : 1));
+  const _branchSeen = new Set();
+  const branches = _branchRaw.filter(b => {
+    const key = `${b.branch_from_step}_${b.is_continuation}`;
+    if (_branchSeen.has(key)) return false;
+    _branchSeen.add(key);
+    return true;
+  });
 
   // MVP 투표 현황
   const mvp_map = {};
@@ -427,10 +435,19 @@ async function fbGetStory(story_id, user_id) {
     parent_chain = { episodes: pEps, submissions: pSubs };
   }
 
+  // 분기 이야기: orphan 에피소드의 parent_sub_id를 서버에서 직접 계산
+  let branch_sub_id = story.branch_sub_id || null;
+  if (!branch_sub_id && story.parent_story_id && story.branch_from_step) {
+    const orphanStep = Number(story.branch_from_step) - 1;
+    const orphanEp = episodes.find(e => Number(e.step) === orphanStep && e.parent_sub_id);
+    if (orphanEp) branch_sub_id = orphanEp.parent_sub_id;
+  }
+
   const storyWithCreator = {
     ...story,
     creator_nickname: story.creator_nickname || '익명',
     creator_badge:    story.creator_badge    || '',
+    branch_sub_id,
   };
 
   return { ok: true, story: storyWithCreator, episodes, submissions, is_bookmarked, is_liked, like_count, my_voted_sub_ids, branches, parent_chain, mvp_map, my_mvp_episode_id };

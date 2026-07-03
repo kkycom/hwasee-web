@@ -449,10 +449,13 @@ async function fbGetStory(story_id, user_id) {
     if (bSubSnap && bSubSnap.exists && !pSubMap.has(bSubSnap.id)) pSubMap.set(bSubSnap.id, bSubSnap);
     const pSubs = [...pSubMap.values()].map(d => {
       const data = d.data();
+      const isBranchSub = _preBranchSubId && d.id === _preBranchSubId;
       return {
         sub_id: d.id,
         ...data,
-        episode_id: data.episode_id || (_preBranchSubId && d.id === _preBranchSubId ? _preBranchEpisodeId : null),
+        episode_id: data.episode_id || (isBranchSub ? _preBranchEpisodeId : null),
+        // B갈래 sub: fork 에피소드에서 탭 표시를 위해 adopted로 처리 (Firestore 변경 없음)
+        is_adopted: isBranchSub ? true : data.is_adopted,
         author_nickname: data.is_ai ? '익명' : (nickMap[data.author_id] || '익명'),
         author_badge:    data.is_ai ? 'seed' : (badgeMap[data.author_id] || 'seed'),
       };

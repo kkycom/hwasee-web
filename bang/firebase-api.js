@@ -493,9 +493,9 @@ async function fbGetStory(story_id, user_id) {
       const sd = pSubsSnap.docs.find(d => d.id === branch_sub_id);
       if (sd && sd.data().episode_id) branch_episode_id = sd.data().episode_id;
     }
-    // 2순위: branch_from_step - 1 단계로 역산
+    // 2순위: branch_from_step - 2 단계로 역산 (branch_from_step = lastEp.step + 2)
     if (!branch_episode_id && pEpsSnap) {
-      const forkStep = Number(story.branch_from_step) - 1;
+      const forkStep = Number(story.branch_from_step) - 2;
       const forkEpDoc = pEpsSnap.docs.find(d => Number(d.data().step) === forkStep);
       if (forkEpDoc) branch_episode_id = forkEpDoc.id;
     }

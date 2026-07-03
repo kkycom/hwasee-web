@@ -642,7 +642,7 @@
 </div>
 
 <script>
-console.log('HWASEE BANG v132');
+console.log('HWASEE BANG v133');
 // ═══════════════════════════════════════════════════════════
 //  설정
 // ═══════════════════════════════════════════════════════════
@@ -2951,7 +2951,10 @@ function getEpisodeTree(episodes, submissions, pinnedSubs) {
       subToChildEps[ep.parent_sub_id].push(ep);
     }
   });
-  const rootEp = episodes.find(ep => !ep.parent_sub_id || ep.parent_sub_id === '');
+  // 분기 이야기의 첫 에피소드는 parent_sub_id가 부모 스토리 sub를 가리키므로
+  // 현재 스토리 submissions에 없는 parent_sub_id를 가진 에피소드를 루트로 인식
+  const subIds = new Set(submissions.map(s => s.sub_id));
+  const rootEp = episodes.find(ep => !ep.parent_sub_id || ep.parent_sub_id === '' || !subIds.has(ep.parent_sub_id));
   if (!rootEp) return null;
 
   function buildNode(ep) {

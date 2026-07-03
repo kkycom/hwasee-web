@@ -1447,6 +1447,7 @@ function _applyStoryData(res, story_id) {
   // 완성된 이야기는 탭 없이 정경 경로만 표시 (분기 링크는 prose 내 카드로 충분)
   const _isFinishedStory = s.status === 'completed' || s.status === 'inactive';
   // 완성된 이야기: 분기 카드를 산문뷰 맨 하단에 표시 (중간 흐름 방해 없음)
+  console.log('[forkBranch] branches=', branches, '_isFinishedStory=', _isFinishedStory);
   const forkBranchHtml = _isFinishedStory
     ? branches.filter(b => !b.is_continuation).map(b => renderExtBranchFork(null, null, b)).join('')
     : '';
@@ -2968,7 +2969,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
     const sub = adoptedSubs[0];
     const childHtml = children.length === 1
       ? renderEpisodeTreeHtml(children[0], choices, mvpMap, branches, myMvpEpId, hideTabs) : '';
-    const forkHtml = extBranch ? renderExtBranchFork(ep, sub, extBranch) : '';
+    const forkHtml = (extBranch && !hideTabs) ? renderExtBranchFork(ep, sub, extBranch) : '';
     const editBtnHtml = isAdmin() ? `<button class="prose-edit-btn" data-sub="${sub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : '';
     return `
       <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
@@ -2988,7 +2989,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
     const _editBtn = isAdmin() && chosenSub ? `<button class="prose-edit-btn" data-sub="${chosenSub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : '';
     const _proseDiv = `<div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')"><span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span><div class="prose-line-meta"><span>${mvpBadge}${myMvpMark}</span>${_editBtn}</div></div><span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>`;
     const _nextHtml = isForkChosen
-      ? renderExtBranchFork(ep, chosenSub, extBranch)
+      ? (hideTabs ? '' : renderExtBranchFork(ep, chosenSub, extBranch))
       : (chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId, hideTabs) : '');
     if (hideTabs) return _proseDiv + _nextHtml;
     return `
@@ -3002,6 +3003,16 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
         <div>${_proseDiv}</div>
       </div>
       ${_nextHtml}`;
+  }
+
+  // hideTabs(완성된 이야기): 갈림길에서 canonical sub(비포크) 자동 선택
+  if (hideTabs) {
+    const autoSub = adoptedSubs.find(s => !forkSub || s.sub_id !== forkSub.sub_id) || adoptedSubs[0];
+    if (autoSub) {
+      const autoChild = children.find(c => c.ep.parent_sub_id === autoSub.sub_id);
+      const childHtml = autoChild ? renderEpisodeTreeHtml(autoChild, choices, mvpMap, branches, myMvpEpId, hideTabs) : '';
+      return `<div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')"><span class="prose-sentence">${esc(autoSub.content)}</span><div class="prose-line-meta"><span>${mvpBadge}${myMvpMark}</span></div></div><span class="prose-author">— ${autoSub.author_badge?`<span class="badge badge-${autoSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(autoSub.author_badge)}</span>`:''}${esc(autoSub.author_nickname||'익명')}</span>${childHtml}`;
+    }
   }
 
   // 아직 선택 안 한 갈림길
@@ -3075,11 +3086,13 @@ function _buildCanonicalPath(episodes, submissions) {
 // forkEps: 포크 이야기 자체 에피소드 (orphan의 parent_sub_id로 B갈래 sub 특정)
 function _buildForkPath(parentEps, parentSubs, story, forkEps) {
   const canonical = _buildCanonicalPath(parentEps, parentSubs);
+  console.log('[forkPath] canonical=', canonical, 'branch_from_step=', story.branch_from_step, 'branch_sub_id=', story.branch_sub_id);
   if (!story.branch_from_step || story.is_continuation) return canonical;
   // 0순위: 서버가 직접 계산한 branch_sub_id (가장 신뢰할 수 있음)
   const serverForkSubId = story.branch_sub_id || null;
   if (serverForkSubId) {
     const tieSub = parentSubs.find(s => s.sub_id === serverForkSubId);
+    console.log('[forkPath] serverForkSubId=', serverForkSubId, 'tieSub=', tieSub);
     if (tieSub) return { ...canonical, [tieSub.episode_id]: serverForkSubId };
   }
   // 1순위: orphan 에피소드(branch_from_step-1 단계)의 parent_sub_id = B갈래 sub_id

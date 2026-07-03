@@ -642,7 +642,7 @@
 </div>
 
 <script>
-console.log('HWASEE BANG v133');
+console.log('HWASEE BANG v134');
 // ═══════════════════════════════════════════════════════════
 //  설정
 // ═══════════════════════════════════════════════════════════
@@ -1443,7 +1443,7 @@ function _applyStoryData(res, story_id) {
     _pChoices = { ...basePChoices, ...window._branchChoice };
     // basePChoices를 pinnedSubs로 전달 → fork sub(is_adopted=false)도 inherited 트리에 포함
     const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
-    inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, _pChoices, undefined, undefined, undefined, true)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
+    inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, _pChoices)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
   }
 
   // 분기 트리 HTML (closed 에피소드들의 채택 내용만)
@@ -2951,21 +2951,21 @@ function getEpisodeTree(episodes, submissions, pinnedSubs) {
       subToChildEps[ep.parent_sub_id].push(ep);
     }
   });
-  // 분기 이야기의 첫 에피소드는 parent_sub_id가 부모 스토리 sub를 가리키므로
-  // 현재 스토리 submissions에 없는 parent_sub_id를 가진 에피소드를 루트로 인식
-  const subIds = new Set(submissions.map(s => s.sub_id));
-  const rootEp = episodes.find(ep => !ep.parent_sub_id || ep.parent_sub_id === '' || !subIds.has(ep.parent_sub_id));
+  // 분기 이야기 첫 에피소드는 parent_sub_id가 있어도 부모 스토리 sub를 가리킴
+  // parent_sub_id 없는 ep 우선, 없으면 step 번호가 가장 작은 ep를 루트로
+  const rootEp = episodes.find(ep => !ep.parent_sub_id || ep.parent_sub_id === '')
+    || (episodes.length ? episodes.reduce((a, b) => Number(a.step) <= Number(b.step) ? a : b) : null);
   if (!rootEp) return null;
 
   function buildNode(ep) {
     let adoptedSubs = submissions.filter(s =>
       s.episode_id === ep.episode_id && (s.is_adopted === true || s.is_adopted === 'TRUE')
     );
-    // inherited 섹션: 포크 에피소드에서 B sub로 교체 (A canonical 대신 B 경로만 표시)
+    // inherited 섹션: 포크 에피소드에 B sub 추가 → A/B 탭 표시 가능
     const pinnedSubId = pinnedSubs[ep.episode_id];
-    if (pinnedSubId) {
+    if (pinnedSubId && !adoptedSubs.some(s => s.sub_id === pinnedSubId)) {
       const pinnedSub = submissions.find(s => s.sub_id === pinnedSubId);
-      if (pinnedSub) adoptedSubs = [pinnedSub];
+      if (pinnedSub) adoptedSubs = [...adoptedSubs, pinnedSub];
     }
     const children = adoptedSubs.flatMap(sub => (subToChildEps[sub.sub_id] || []).map(buildNode));
     return { ep, adoptedSubs, children };
@@ -3166,7 +3166,7 @@ function chooseBranch(episode_id, sub_id) {
       const basePChoices = _buildForkPath(parent_chain.episodes, parent_chain.submissions, window._storyData.story, window._storyData.episodes);
       const pChoices = { ...basePChoices, ...window._branchChoice };
       const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
-      inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, pChoices, undefined, undefined, undefined, true)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
+      inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, pChoices)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
     }
     const tree = getEpisodeTree(episodes.filter(e => e.status === 'closed'), submissions);
     el.innerHTML = inheritedHtml + (tree ? renderEpisodeTreeHtml(tree, window._branchChoice, mvp_map, branches, my_mvp_episode_id) : '');

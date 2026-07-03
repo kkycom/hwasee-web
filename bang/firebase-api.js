@@ -435,18 +435,18 @@ async function fbGetStory(story_id, user_id) {
     parent_chain = { episodes: pEps, submissions: pSubs };
   }
 
-  // 분기 이야기: orphan 에피소드의 parent_sub_id + episode_id를 서버에서 직접 계산
+  // 분기 이야기: orphan 에피소드의 parent_sub_id + fork 에피소드 ID를 서버에서 직접 계산
   let branch_sub_id = story.branch_sub_id || null;
   let branch_episode_id = story.branch_episode_id || null;
-  if (story.parent_story_id && story.branch_from_step && pSubsSnap) {
+  if (story.parent_story_id && story.branch_from_step && pEpsSnap) {
     const orphanStep = Number(story.branch_from_step) - 1;
     const orphanEp = episodes.find(e => Number(e.step) === orphanStep && e.parent_sub_id);
-    if (orphanEp) {
-      if (!branch_sub_id) branch_sub_id = orphanEp.parent_sub_id;
-      if (!branch_episode_id && branch_sub_id) {
-        const bSubDoc = pSubsSnap.docs.find(d => d.id === branch_sub_id);
-        if (bSubDoc) branch_episode_id = bSubDoc.data().episode_id || null;
-      }
+    if (orphanEp && !branch_sub_id) branch_sub_id = orphanEp.parent_sub_id;
+    // fork 에피소드 = branch_from_step - 2 단계의 부모 이야기 에피소드
+    if (!branch_episode_id) {
+      const forkStep = Number(story.branch_from_step) - 2;
+      const forkEpDoc = pEpsSnap.docs.find(d => Number(d.data().step) === forkStep);
+      if (forkEpDoc) branch_episode_id = forkEpDoc.id;
     }
   }
 

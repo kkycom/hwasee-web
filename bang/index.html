@@ -642,7 +642,7 @@
 </div>
 
 <script>
-console.log('HWASEE BANG v124');
+console.log('HWASEE BANG v125');
 // ═══════════════════════════════════════════════════════════
 //  설정
 // ═══════════════════════════════════════════════════════════
@@ -3091,9 +3091,13 @@ function _buildForkPath(parentEps, parentSubs, story, forkEps) {
   if (story.branch_sub_id && story.branch_episode_id) {
     return { ...canonical, [story.branch_episode_id]: story.branch_sub_id };
   }
-  // 1순위: branch_sub_id만 있으면 parentSubs에서 episode_id 찾기
+  // 1순위: branch_sub_id + parentEps에서 step으로 fork 에피소드 직접 찾기
   const serverForkSubId = story.branch_sub_id || null;
   if (serverForkSubId) {
+    const forkStep = Number(story.branch_from_step) - 2;
+    const forkEp = parentEps.find(e => Number(e.step) === forkStep);
+    if (forkEp) return { ...canonical, [forkEp.episode_id]: serverForkSubId };
+    // fallback: parentSubs에서 episode_id 찾기
     const tieSub = parentSubs.find(s => s.sub_id === serverForkSubId);
     if (tieSub && tieSub.episode_id) return { ...canonical, [tieSub.episode_id]: serverForkSubId };
   }

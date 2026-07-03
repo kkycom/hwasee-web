@@ -3079,8 +3079,10 @@ function _buildCanonicalPath(episodes, submissions) {
 function _buildForkPath(parentEps, parentSubs, story, forkEps) {
   const canonical = _buildCanonicalPath(parentEps, parentSubs);
   if (!story.branch_from_step || story.is_continuation) return canonical;
-  // 1순위: orphan 에피소드의 parent_sub_id = B갈래 sub_id
-  const orphanEp = forkEps && forkEps.find(e => e.parent_sub_id);
+  // 1순위: orphan 에피소드(branch_from_step-1 단계)의 parent_sub_id = B갈래 sub_id
+  // 포크 이야기가 진행돼 에피소드가 여럿일 때 순서에 무관하게 정확히 찾음
+  const orphanStep = Number(story.branch_from_step) - 1;
+  const orphanEp = forkEps && forkEps.find(e => Number(e.step) === orphanStep && e.parent_sub_id);
   const forkSubId = orphanEp ? orphanEp.parent_sub_id : null;
   if (forkSubId) {
     const tieSub = parentSubs.find(s => s.sub_id === forkSubId);

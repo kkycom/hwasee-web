@@ -1436,7 +1436,7 @@ function _applyStoryData(res, story_id) {
     const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions);
     const basePChoices = _buildForkPath(parent_chain.episodes, parent_chain.submissions, s, episodes);
     _pChoices = { ...basePChoices, ...window._branchChoice };
-    inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, _pChoices)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
+    inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, _pChoices, undefined, undefined, undefined, true)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
   }
 
   // 분기 트리 HTML (closed 에피소드들의 채택 내용만)
@@ -1444,7 +1444,9 @@ function _applyStoryData(res, story_id) {
     episodes.filter(e => e.status === 'closed'),
     submissions
   );
-  const confirmedHtml = `<div id="story-prose-content">${inheritedHtml}${tree ? renderEpisodeTreeHtml(tree, window._branchChoice, mvp_map, branches, my_mvp_episode_id) : ''}</div>`;
+  // 완성된 이야기는 탭 없이 정경 경로만 표시 (분기 링크는 prose 내 카드로 충분)
+  const _isFinishedStory = s.status === 'completed' || s.status === 'inactive';
+  const confirmedHtml = `<div id="story-prose-content">${inheritedHtml}${tree ? renderEpisodeTreeHtml(tree, window._branchChoice, mvp_map, branches, my_mvp_episode_id, _isFinishedStory) : ''}</div>`;
 
   // ── 다음 단계 액션 ──
   let actionHtml = '';
@@ -1535,9 +1537,9 @@ function _applyStoryData(res, story_id) {
     loadStoryComments(currentParam);
   }
 
-  // 갈래 선택 또는 분기 inherited 탭이 있으면 has-branch-tabs 적용
-  if ((window._branchChoice && Object.keys(window._branchChoice).length > 0) ||
-      (_pChoices && Object.keys(_pChoices).length > 0)) {
+  // 활성 이야기에서 사용자가 갈래를 선택한 경우만 왼쪽 탭 마진 적용
+  // (완성된 이야기와 inherited 섹션은 탭을 표시하지 않으므로 마진 불필요)
+  if (!_isFinishedStory && window._branchChoice && Object.keys(window._branchChoice).length > 0) {
     const pw = document.getElementById('story-prose-wrap');
     if (pw) pw.classList.add('has-branch-tabs');
   }
@@ -2945,7 +2947,7 @@ function getEpisodeTree(episodes, submissions) {
   return buildNode(rootEp);
 }
 
-function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
+function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideTabs) {
   if (!node) return '';
   mvpMap   = mvpMap   || {};
   branches = branches || [];
@@ -2966,7 +2968,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
   if (adoptedSubs.length === 1) {
     const sub = adoptedSubs[0];
     const childHtml = children.length === 1
-      ? renderEpisodeTreeHtml(children[0], choices, mvpMap, branches, myMvpEpId) : '';
+      ? renderEpisodeTreeHtml(children[0], choices, mvpMap, branches, myMvpEpId, hideTabs) : '';
     const forkHtml = extBranch ? renderExtBranchFork(ep, sub, extBranch) : '';
     const editBtnHtml = isAdmin() ? `<button class="prose-edit-btn" data-sub="${sub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : '';
     return `
@@ -2984,6 +2986,10 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
     const chosenSub   = adoptedSubs.find(s => s.sub_id === chosenSubId);
     const chosenChild = children.find(c => c.ep.parent_sub_id === chosenSubId);
     const isForkChosen = forkSub && chosenSub && chosenSub.sub_id === forkSub.sub_id;
+    const _editBtn = isAdmin() && chosenSub ? `<button class="prose-edit-btn" data-sub="${chosenSub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : '';
+    const _proseDiv = `<div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')"><span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span><div class="prose-line-meta"><span>${mvpBadge}${myMvpMark}</span>${_editBtn}</div></div><span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>`;
+    const _nextHtml = isForkChosen ? renderExtBranchFork(ep, chosenSub, extBranch) : (chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId, hideTabs) : '');
+    if (hideTabs) return _proseDiv + _nextHtml;
     return `
       <div class="branch-prose-row">
         <div class="branch-side-indicator">
@@ -2992,15 +2998,9 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId) {
               onclick="${forkSub && sub.sub_id === forkSub.sub_id ? `nav('story','${extBranch.story_id}')` : `chooseBranch('${ep.episode_id}','${sub.sub_id}')`}">
               ${String.fromCharCode(65+i)}갈래</button>`).join('')}
         </div>
-        <div>
-          <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
-            <span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span>
-            <div class="prose-line-meta"><span>${mvpBadge}${myMvpMark}</span>${isAdmin() && chosenSub ? `<button class="prose-edit-btn" data-sub="${chosenSub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : ''}</div>
-          </div>
-          <span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>
-        </div>
+        <div>${_proseDiv}</div>
       </div>
-      ${isForkChosen ? renderExtBranchFork(ep, chosenSub, extBranch) : (chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId) : '')}`;
+      ${_nextHtml}`;
   }
 
   // 아직 선택 안 한 갈림길
@@ -3109,15 +3109,15 @@ function chooseBranch(episode_id, sub_id) {
       const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions);
       const basePChoices = _buildForkPath(parent_chain.episodes, parent_chain.submissions, window._storyData.story, window._storyData.episodes);
       const pChoices = { ...basePChoices, ...window._branchChoice };
-      inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, pChoices)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
+      inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, pChoices, undefined, undefined, undefined, true)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
     }
     const tree = getEpisodeTree(episodes.filter(e => e.status === 'closed'), submissions);
     el.innerHTML = inheritedHtml + (tree ? renderEpisodeTreeHtml(tree, window._branchChoice, mvp_map, branches, my_mvp_episode_id) : '');
   }
 
-  // 갈래 선택 시 산문뷰 왼쪽 탭 공간 확보
+  // 갈래 선택 시 산문뷰 왼쪽 탭 공간 확보 (활성 이야기만)
   const pw = document.getElementById('story-prose-wrap');
-  if (pw) {
+  if (pw && window._storyData.story.status === 'active') {
     pw.classList.add('has-branch-tabs');
     // 공감현황/으뜸글 모드 중이면 재렌더된 prose-author도 visible 복원
     if (window._proseSelMode) pw.querySelectorAll('.prose-author').forEach(el => el.classList.add('visible'));

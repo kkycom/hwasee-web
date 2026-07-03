@@ -746,31 +746,65 @@ async function _fbCloseEpisode(episode_id, ep) {
     // 남은 open 에피소드(다른 갈래)를 독립 active 스토리로 분리
     const orphanSnap = await db.collection('episodes')
       .where('story_id', '==', ep.story_id).where('status', '==', 'open').get();
-    for (const orphanDoc of orphanSnap.docs) {
-      const orphan = orphanDoc.data();
-      const newStoryId = fbGenId();
-      const spinBatch = db.batch();
-      // 분리 전에 기존 제출자 수 확인 → participant_count 초기화에 사용
-      const subSnap = await db.collection('submissions')
-        .where('episode_id', '==', orphan.episode_id).get();
-      const uniqueAuthors = new Set(subSnap.docs.filter(d => !d.data().is_ai).map(d => d.data().author_id).filter(Boolean));
-      spinBatch.set(db.collection('stories').doc(newStoryId), {
-        story_id: newStoryId, parent_story_id: ep.story_id,
-        branch_from_step: Number(orphan.step) + 1,
-        opening: st.opening, max_steps: st.max_steps || 10,
-        current_step: Number(orphan.step) - 1, status: 'active',
-        creator_id: st.creator_id,
-        creator_nickname: st.creator_nickname || '익명',
-        creator_badge: st.creator_badge || '',
-        participant_count: uniqueAuthors.size, like_count: 0, adoption_count: 0,
-        has_branch: false, created_at: fbNow(), batch: '',
+    if (!orphanSnap.empty) {
+      // 갈림길 역추적용: 원본 스토리의 모든 에피소드/제출물 미리 조회
+      // (orphan의 parent_sub_id를 거슬러 올라가 실제로 동률이 갈라진 지점을 찾기 위함 —
+      //  branch_from_step 숫자 역산은 신뢰할 수 없어 직접 조상 체인을 추적함)
+      const [allEpsSnap, allSubsSnap] = await Promise.all([
+        db.collection('episodes').where('story_id', '==', ep.story_id).get(),
+        db.collection('submissions').where('story_id', '==', ep.story_id).get(),
+      ]);
+      const epById = new Map(allEpsSnap.docs.map(d => [d.id, { episode_id: d.id, ...d.data() }]));
+      const subsByEp = new Map();
+      allSubsSnap.docs.forEach(d => {
+        const s = { sub_id: d.id, ...d.data() };
+        if (!subsByEp.has(s.episode_id)) subsByEp.set(s.episode_id, []);
+        subsByEp.get(s.episode_id).push(s);
       });
-      spinBatch.update(orphanDoc.ref, { story_id: newStoryId });
-      await spinBatch.commit();
-      if (!subSnap.empty) {
-        const subBatch = db.batch();
-        subSnap.docs.forEach(d => subBatch.update(d.ref, { story_id: newStoryId }));
-        await subBatch.commit();
+      const subById = new Map(allSubsSnap.docs.map(d => [d.id, { sub_id: d.id, ...d.data() }]));
+
+      for (const orphanDoc of orphanSnap.docs) {
+        const orphan = orphanDoc.data();
+        const newStoryId = fbGenId();
+        const spinBatch = db.batch();
+        // 분리 전에 기존 제출자 수 확인 → participant_count 초기화에 사용
+        const subSnap = await db.collection('submissions')
+          .where('episode_id', '==', orphan.episode_id).get();
+        const uniqueAuthors = new Set(subSnap.docs.filter(d => !d.data().is_ai).map(d => d.data().author_id).filter(Boolean));
+
+        // orphan의 진짜 분기 시작점(가장 위쪽 동률 지점)을 조상 체인에서 역추적
+        let branch_episode_id = null, branch_sub_id = null;
+        let curSubId = orphan.parent_sub_id || null;
+        while (curSubId) {
+          const curSub = subById.get(curSubId);
+          if (!curSub) break;
+          const curEp = epById.get(curSub.episode_id);
+          if (!curEp) break;
+          const adoptedCount = (subsByEp.get(curEp.episode_id) || [])
+            .filter(s => s.is_adopted === true || s.is_adopted === 'TRUE').length;
+          if (adoptedCount > 1) { branch_episode_id = curEp.episode_id; branch_sub_id = curSubId; }
+          curSubId = curEp.parent_sub_id || null;
+        }
+
+        spinBatch.set(db.collection('stories').doc(newStoryId), {
+          story_id: newStoryId, parent_story_id: ep.story_id,
+          branch_from_step: Number(orphan.step) + 1,
+          branch_episode_id, branch_sub_id,
+          opening: st.opening, max_steps: st.max_steps || 10,
+          current_step: Number(orphan.step) - 1, status: 'active',
+          creator_id: st.creator_id,
+          creator_nickname: st.creator_nickname || '익명',
+          creator_badge: st.creator_badge || '',
+          participant_count: uniqueAuthors.size, like_count: 0, adoption_count: 0,
+          has_branch: false, created_at: fbNow(), batch: '',
+        });
+        spinBatch.update(orphanDoc.ref, { story_id: newStoryId });
+        await spinBatch.commit();
+        if (!subSnap.empty) {
+          const subBatch = db.batch();
+          subSnap.docs.forEach(d => subBatch.update(d.ref, { story_id: newStoryId }));
+          await subBatch.commit();
+        }
       }
     }
   } else {
@@ -1531,6 +1565,7 @@ async function fbCreateBranch(story_id, branch_from_step, user_id) {
 
   batch.set(db.collection('stories').doc(new_story_id), {
     story_id: new_story_id, parent_story_id: story_id, branch_from_step: step,
+    branch_episode_id: targetEp.episode_id,
     opening: st.opening, max_steps: st.max_steps || 10,
     current_step: step - 2, status: 'active', creator_id: user_id,
     created_at: fbNow(), participant_count: 0, batch: '',

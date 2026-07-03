@@ -419,6 +419,7 @@ async function fbGetStory(story_id, user_id) {
       .map(d => ({ episode_id: d.id, ...d.data() }))
       .filter(e => e.status === 'closed' && (story.is_continuation || Number(e.step) < Number(story.branch_from_step) - 1));
     const pSubs = pSubsSnap.docs.map(d => ({
+      sub_id: d.id,
       ...d.data(),
       author_nickname: d.data().is_ai ? '익명' : (nickMap[d.data().author_id] || '익명'),
       author_badge:    d.data().is_ai ? 'seed' : (badgeMap[d.data().author_id] || 'seed'),

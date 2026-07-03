@@ -541,8 +541,7 @@
   .prose-line-my-mvp { font-size:10px; color:var(--accent2); margin-left:6px; }
   /* ── 분기 이야기 잠금 산문 */
   .prose-inherited { opacity:0.65; pointer-events:none; }
-  .prose-inherited .branch-side-indicator { display:none; }
-  .prose-inherited .branch-prose-row > div:last-child { margin-left:0; }
+  .prose-inherited .branch-side-indicator { pointer-events:auto; }
   .prose-branch-tag { display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--accent2); font-weight:700; border:1px solid rgba(128,151,140,.4); border-radius:12px; padding:3px 10px; margin-bottom:10px; }
   /* ── 외부 분기 포크 */
   .ext-branch-fork { border:1px dashed rgba(128,151,140,.4); border-radius:10px; padding:12px; margin:10px 0; }
@@ -1430,12 +1429,14 @@ function _applyStoryData(res, story_id) {
     if (localVoted && localVoted.length) window._storyData.my_voted_sub_ids = localVoted;
   }
 
-  // 분기 이야기면 부모 단계 잠금 산문 (갈림길은 canonical path로 자동 선택해 선형 표시)
+  // 분기 이야기면 부모 단계 잠금 산문 (B갈래 경로 우선 표시, 탭 선택 가능)
   let inheritedHtml = '';
+  let _pChoices = null;
   if (parent_chain && parent_chain.episodes.length) {
     const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions);
-    const pChoices = _buildForkPath(parent_chain.episodes, parent_chain.submissions, s);
-    inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, pChoices)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
+    const basePChoices = _buildForkPath(parent_chain.episodes, parent_chain.submissions, s, episodes);
+    _pChoices = { ...basePChoices, ...window._branchChoice };
+    inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, _pChoices)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
   }
 
   // 분기 트리 HTML (closed 에피소드들의 채택 내용만)
@@ -1536,8 +1537,9 @@ function _applyStoryData(res, story_id) {
     loadStoryComments(currentParam);
   }
 
-  // 갈래 선택 상태가 있으면 재렌더 후에도 has-branch-tabs 복원
-  if (window._branchChoice && Object.keys(window._branchChoice).length > 0) {
+  // 갈래 선택 또는 분기 inherited 탭이 있으면 has-branch-tabs 적용
+  if ((window._branchChoice && Object.keys(window._branchChoice).length > 0) ||
+      (_pChoices && Object.keys(_pChoices).length > 0)) {
     const pw = document.getElementById('story-prose-wrap');
     if (pw) pw.classList.add('has-branch-tabs');
   }
@@ -3071,10 +3073,18 @@ function _buildCanonicalPath(episodes, submissions) {
 }
 
 // 분기 이야기의 inherited 산문에서 해당 분기로 이어지는 경로를 선택
-function _buildForkPath(parentEps, parentSubs, story) {
+// forkEps: 포크 이야기 자체 에피소드 (orphan의 parent_sub_id로 B갈래 sub 특정)
+function _buildForkPath(parentEps, parentSubs, story, forkEps) {
   const canonical = _buildCanonicalPath(parentEps, parentSubs);
   if (!story.branch_from_step || story.is_continuation) return canonical;
-  // tie 에피소드 step = branch_from_step - 2
+  // 1순위: orphan 에피소드의 parent_sub_id = B갈래 sub_id
+  const orphanEp = forkEps && forkEps.find(e => e.parent_sub_id);
+  const forkSubId = orphanEp ? orphanEp.parent_sub_id : null;
+  if (forkSubId) {
+    const tieSub = parentSubs.find(s => s.sub_id === forkSubId);
+    if (tieSub) return { ...canonical, [tieSub.episode_id]: forkSubId };
+  }
+  // 2순위 fallback: branch_from_step - 2 단계에서 canonical 아닌 sub
   const tieStep = Number(story.branch_from_step) - 2;
   const tieEp = parentEps.find(e => Number(e.step) === tieStep);
   if (!tieEp) return canonical;
@@ -3084,8 +3094,7 @@ function _buildForkPath(parentEps, parentSubs, story) {
   if (adoptedSubs.length < 2) return canonical;
   const canonicalSubId = canonical[tieEp.episode_id];
   const forkSub = adoptedSubs.find(s => s.sub_id !== canonicalSubId);
-  if (!forkSub) return canonical;
-  return { ...canonical, [tieEp.episode_id]: forkSub.sub_id };
+  return forkSub ? { ...canonical, [tieEp.episode_id]: forkSub.sub_id } : canonical;
 }
 
 function chooseBranch(episode_id, sub_id) {
@@ -3100,7 +3109,8 @@ function chooseBranch(episode_id, sub_id) {
     let inheritedHtml = '';
     if (parent_chain && parent_chain.episodes.length) {
       const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions);
-      const pChoices = _buildForkPath(parent_chain.episodes, parent_chain.submissions, window._storyData.story);
+      const basePChoices = _buildForkPath(parent_chain.episodes, parent_chain.submissions, window._storyData.story, window._storyData.episodes);
+      const pChoices = { ...basePChoices, ...window._branchChoice };
       inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, pChoices)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
     }
     const tree = getEpisodeTree(episodes.filter(e => e.status === 'closed'), submissions);

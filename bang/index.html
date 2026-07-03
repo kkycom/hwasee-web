@@ -1448,10 +1448,11 @@ function _applyStoryData(res, story_id) {
     _pChoices = { ...basePChoices, ...window._branchChoice };
     const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
     const _branchEpId = s.branch_episode_id;
-    // DEBUG v144
+    // DEBUG v146
     console.log('[DEBUG] branch_from_step:', s.branch_from_step, '| branch_episode_id:', s.branch_episode_id, '| branch_sub_id:', s.branch_sub_id);
+    console.log('[DEBUG] pEps steps:', parent_chain.episodes.map(e=>e.step));
+    console.log('[DEBUG] branchSub in pSubs:', parent_chain.submissions.find(x=>x.sub_id===s.branch_sub_id));
     console.log('[DEBUG] pChoices[branchEpId]:', _pChoices[_branchEpId], '| pSubs at fork:', parent_chain.submissions.filter(x => x.episode_id === _branchEpId).map(x => ({id:x.sub_id, adopted:x.is_adopted})));
-    if (pTree) { const node = (function findNode(n){ if(n.ep.episode_id===_branchEpId) return n; for(const c of n.children){const f=findNode(c);if(f)return f;} return null; })(pTree); console.log('[DEBUG] fork node adoptedSubs:', node ? node.adoptedSubs.map(x=>({id:x.sub_id,adopted:x.is_adopted})) : 'not found'); }
     // B갈래(fork sub)가 활성인지 → 아니면 own tree 숨김
     _isBranchActive = !_branchEpId || !s.branch_sub_id || _pChoices[_branchEpId] === s.branch_sub_id;
     const _divider = _isBranchActive ? `<div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';

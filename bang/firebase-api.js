@@ -449,13 +449,10 @@ async function fbGetStory(story_id, user_id) {
     if (bSubSnap && bSubSnap.exists && !pSubMap.has(bSubSnap.id)) pSubMap.set(bSubSnap.id, bSubSnap);
     const pSubs = [...pSubMap.values()].map(d => {
       const data = d.data();
-      const isBSub = _preBranchSubId && d.id === _preBranchSubId;
       return {
         sub_id: d.id,
         ...data,
-        // B sub: episode_id와 is_adopted를 강제 보정 (is_adopted=false인 fork sub도 inherited 섹션에 표시)
-        episode_id: isBSub ? _preBranchEpisodeId : (data.episode_id || null),
-        is_adopted: isBSub ? true : (data.is_adopted || false),
+        episode_id: data.episode_id || (_preBranchSubId && d.id === _preBranchSubId ? _preBranchEpisodeId : null),
         author_nickname: data.is_ai ? '익명' : (nickMap[data.author_id] || '익명'),
         author_badge:    data.is_ai ? 'seed' : (badgeMap[data.author_id] || 'seed'),
       };

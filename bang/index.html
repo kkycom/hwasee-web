@@ -642,7 +642,7 @@
 </div>
 
 <script>
-console.log('HWASEE BANG v130');
+console.log('HWASEE BANG v131');
 // ═══════════════════════════════════════════════════════════
 //  설정
 // ═══════════════════════════════════════════════════════════
@@ -1403,6 +1403,11 @@ const commentCache = {};
 let _epUnsubscribe = null; // 에피소드 실시간 리스너 정리용
 
 function _applyStoryData(res, story_id) {
+  // 다른 이야기로 이동 시 _branchChoice 리셋 (이전 이야기 자동경로가 오염 방지)
+  if (window._branchChoiceStoryId !== story_id) {
+    window._branchChoice = {};
+    window._branchChoiceStoryId = story_id;
+  }
   if (currentParam !== story_id) return;
 
   const { story: s, episodes, submissions, is_bookmarked, is_liked = false, like_count = 0, my_voted_sub_ids = [] } = res;
@@ -1434,9 +1439,10 @@ function _applyStoryData(res, story_id) {
   let inheritedHtml = '';
   let _pChoices = null;
   if (parent_chain && parent_chain.episodes.length) {
-    const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions);
     const basePChoices = _buildForkPath(parent_chain.episodes, parent_chain.submissions, s, episodes);
     _pChoices = { ...basePChoices, ...window._branchChoice };
+    // basePChoices를 pinnedSubs로 전달 → fork sub(is_adopted=false)도 inherited 트리에 포함
+    const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
     inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, _pChoices, undefined, undefined, undefined, true)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
   }
 
@@ -1452,7 +1458,7 @@ function _applyStoryData(res, story_id) {
     ? branches.filter(b => !b.is_continuation).map(b => renderExtBranchFork(null, null, b)).join('')
     : '';
   // 완성된 분기 이야기: 원본 이야기 링크 카드
-  const parentStoryHtml = _isFinishedStory && s.parent_story_id && !s.is_continuation
+  const parentStoryHtml = _isFinishedStory && s.parent_story_id && !s.is_continuation && s.branch_from_step
     ? `<div class="ext-branch-fork" style="display:flex;align-items:center;gap:10px;padding:10px 12px">
         <span style="font-size:10px;color:var(--muted);letter-spacing:1px;white-space:nowrap">⑂ 분기</span>
         <button class="ext-branch-card" onclick="nav('story','${esc(s.parent_story_id)}')" style="flex:1;margin:0;padding:10px 12px">
@@ -2936,7 +2942,8 @@ function buildStoryActionHtml(openEp) {
       </div>` : ''}`;
 }
 
-function getEpisodeTree(episodes, submissions) {
+function getEpisodeTree(episodes, submissions, pinnedSubs) {
+  pinnedSubs = pinnedSubs || {};
   const subToChildEps = {};
   episodes.forEach(ep => {
     if (ep.parent_sub_id) {
@@ -2948,9 +2955,15 @@ function getEpisodeTree(episodes, submissions) {
   if (!rootEp) return null;
 
   function buildNode(ep) {
-    const adoptedSubs = submissions.filter(s =>
+    let adoptedSubs = submissions.filter(s =>
       s.episode_id === ep.episode_id && (s.is_adopted === true || s.is_adopted === 'TRUE')
     );
+    // inherited 섹션에서 B fork sub를 강제 포함 (is_adopted=false여도 choices에 반영되도록)
+    const pinnedSubId = pinnedSubs[ep.episode_id];
+    if (pinnedSubId && !adoptedSubs.find(s => s.sub_id === pinnedSubId)) {
+      const pinnedSub = submissions.find(s => s.sub_id === pinnedSubId);
+      if (pinnedSub) adoptedSubs = adoptedSubs.concat([pinnedSub]);
+    }
     const children = adoptedSubs.flatMap(sub => (subToChildEps[sub.sub_id] || []).map(buildNode));
     return { ep, adoptedSubs, children };
   }
@@ -3143,9 +3156,9 @@ function chooseBranch(episode_id, sub_id) {
   if (el) {
     let inheritedHtml = '';
     if (parent_chain && parent_chain.episodes.length) {
-      const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions);
       const basePChoices = _buildForkPath(parent_chain.episodes, parent_chain.submissions, window._storyData.story, window._storyData.episodes);
       const pChoices = { ...basePChoices, ...window._branchChoice };
+      const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
       inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, pChoices, undefined, undefined, undefined, true)}</div><div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 분기 이야기 시작</div>` : '';
     }
     const tree = getEpisodeTree(episodes.filter(e => e.status === 'closed'), submissions);

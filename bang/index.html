@@ -327,6 +327,7 @@
   }
   .toast.show { opacity: 1; }
   .toast.err { border-color: var(--accent2); }
+  .toast.wide { white-space: normal; max-width: 340px; line-height: 1.5; text-align: left; }
 
   /* ── 홈 탭 (4개, 가로 스크롤) */
   .home-tabs {
@@ -638,7 +639,7 @@
 </div>
 
 <script>
-console.log('HWASEE BANG v154');
+console.log('HWASEE BANG v156');
 // ═══════════════════════════════════════════════════════════
 //  설정
 // ═══════════════════════════════════════════════════════════
@@ -890,6 +891,26 @@ function toast(msg, isErr) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.className = 'toast'; }, 2800);
 }
+function toastPatchNote(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = '📢 ' + msg;
+  el.className   = 'toast show wide';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = 'toast'; }, 5000);
+}
+
+let _patchCheckDone = false;
+async function checkPatchNoteAnnouncement() {
+  if (!user || _patchCheckDone) return;
+  _patchCheckDone = true;
+  try {
+    const res = await api('getUnseenPatchNote', {});
+    if (res.ok && res.unseen && res.patch) {
+      toastPatchNote(res.patch.content);
+      api('markPatchNoteSeen', { patch_id: res.patch.patch_id });
+    }
+  } catch(e) {}
+}
 
 // ─── 네비게이션 ───────────────────────────────────────────
 
@@ -914,7 +935,7 @@ function nav(route, param) {
 
 function render() {
   _renderEpoch++;
-  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, user: userProfile, create, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI };
+  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, user: userProfile, create, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI, 'admin-patchnotes': adminPatchNotes };
   (routes[currentRoute] || home)();
 }
 
@@ -939,6 +960,7 @@ function renderNav() {
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-edits')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> 수정 내역</button>
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-reports')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg> 신고 내역</button>
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-bugs')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9V6a3 3 0 0 1 6 0v3"/><path d="M5 13a7 7 0 0 0 14 0v-3H5v3z"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="5" y1="10" x2="2" y2="8"/><line x1="19" y1="10" x2="22" y2="8"/><line x1="5" y1="16" x2="2" y2="18"/><line x1="19" y1="16" x2="22" y2="18"/></svg> 버그 내역</button>
+          <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-patchnotes')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> 패치 내역</button>
         </div>
       </div>` : ''}
       <div class="profile-menu-wrap" id="profile-menu-wrap">
@@ -2471,6 +2493,7 @@ async function doLogin() {
   if (res.daily_bonus) setTimeout(() => toast(`🌿 출석 점수 +${res.daily_bonus}p 지급됐어요!`), 600);
   nav('seed');
   if (!localStorage.getItem('hwasee_onboarding_seen')) setTimeout(showOnboarding, 400);
+  setTimeout(checkPatchNoteAnnouncement, 1400);
 }
 
 let _dnCheckTimer;
@@ -3636,6 +3659,7 @@ function _adminNav(current) {
     edits: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
     reports: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>`,
     bugs: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9V6a3 3 0 0 1 6 0v3"/><path d="M5 13a7 7 0 0 0 14 0v-3H5v3z"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="5" y1="10" x2="2" y2="8"/><line x1="19" y1="10" x2="22" y2="8"/><line x1="5" y1="16" x2="2" y2="18"/><line x1="19" y1="16" x2="22" y2="18"/></svg>`,
+    patchnotes: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
   };
   const btn = (label, key, route) => `
     <button onclick="nav('${route}')" style="background:none;border:none;cursor:pointer;font-size:13px;color:${current===key?'var(--text)':'var(--muted)'};font-weight:${current===key?'700':'400'};display:inline-flex;align-items:center;gap:5px;padding:4px 2px">
@@ -3649,7 +3673,8 @@ function _adminNav(current) {
         ${btn('AI 활동','ai','admin-ai')}${sep}
         ${btn('수정 내역','edits','admin-edits')}${sep}
         ${btn('신고 내역','reports','admin-reports')}${sep}
-        ${btn('버그 내역','bugs','admin-bugs')}
+        ${btn('버그 내역','bugs','admin-bugs')}${sep}
+        ${btn('패치 내역','patchnotes','admin-patchnotes')}
       </div>
     </div>`;
 }
@@ -3970,6 +3995,42 @@ async function _doAdminResolveBug(bug_id, mid) {
   const card = document.getElementById('bug-card-' + bug_id);
   if (card) card.style.opacity = '.55';
   toast('처리 완료로 표시했어요.');
+}
+
+async function adminPatchNotes() {
+  if (!isAdmin()) { nav('seed'); return; }
+  const epoch = _renderEpoch;
+  document.getElementById('app').innerHTML = `<div class="loading"></div>`;
+  const res = await api('getPatchNotes', {});
+  if (_renderEpoch !== epoch || currentRoute !== 'admin-patchnotes') return;
+  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+  const notes = res.notes || [];
+  document.getElementById('app').innerHTML = `
+    ${_adminNav('patchnotes')}
+    <h2 style="margin:0 0 12px">📋 패치 내역 <span style="font-size:14px;font-weight:400;color:var(--muted)">${notes.length}건</span></h2>
+    <div class="card" style="margin-bottom:20px">
+      <div class="form-group">
+        <label>새 패치 내용 (등록하면 모든 유저에게 공지로 표시돼요)</label>
+        <textarea id="patchnote-content" rows="3" placeholder="예) 랭킹에서 닉네임을 누르면 프로필을 볼 수 있어요!" style="width:100%;resize:vertical;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--text);font-family:inherit;line-height:1.6;box-sizing:border-box"></textarea>
+      </div>
+      <button class="btn btn-primary" style="width:100%" onclick="_doAddPatchNote()">등록하기</button>
+    </div>
+    ${notes.length === 0 ? `<div class="empty">등록된 패치 내역이 없습니다.</div>` :
+      notes.map(n => `
+        <div class="card" style="padding:14px 16px;margin-bottom:10px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:5px">${timeAgo(n.created_at)}</div>
+          <div style="font-size:14px;line-height:1.55;white-space:pre-wrap">${esc(n.content)}</div>
+        </div>`).join('')}`;
+}
+
+async function _doAddPatchNote() {
+  const el = document.getElementById('patchnote-content');
+  const content = (el?.value || '').trim();
+  if (!content) { toast('내용을 입력해주세요.', true); return; }
+  const res = await api('addPatchNote', { content });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast('패치 내역이 등록됐어요.');
+  adminPatchNotes();
 }
 
 async function adminDeleteFromReport(sub_id, report_id) {
@@ -4357,7 +4418,7 @@ function parseHash() {
   const h     = location.hash.slice(1) || 'seed';
   const parts = h.split('/');
   const route = parts[0];
-  currentRoute = ['home','seed','popular','mine','done','story','episode','auth','profile','user','create','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs'].includes(route) ? route : 'seed';
+  currentRoute = ['home','seed','popular','mine','done','story','episode','auth','profile','user','create','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes'].includes(route) ? route : 'seed';
   currentParam = parts.slice(1).join('/') || null;
 }
 
@@ -4384,6 +4445,7 @@ window.onload = async () => {
   parseHash();
   render();       // 캐시 데이터로 즉시 렌더
   renderNav();
+  if (user) setTimeout(checkPatchNoteAnnouncement, 1200);
 
   // Firestore 연결 워밍업 + 씨앗·관심받는 탭 프리페치
   setTimeout(() => {

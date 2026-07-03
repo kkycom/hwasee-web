@@ -2154,6 +2154,41 @@ async function fbSubmitBugReport(content, user_id) {
   return { ok: true };
 }
 
+// ─── 패치 내역 ───────────────────────────────────────────
+
+async function fbAddPatchNote(admin_id, content) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  if (!content || !content.trim()) return { ok: false, error: '내용을 입력해주세요.' };
+  const patch_id = fbGenId();
+  await db.collection('patch_notes').doc(patch_id).set({
+    patch_id, content: content.trim(), admin_id, created_at: fbNow(),
+  });
+  return { ok: true, patch_id };
+}
+
+async function fbGetPatchNotes(admin_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  const snap = await db.collection('patch_notes').orderBy('created_at', 'desc').limit(100).get();
+  return { ok: true, notes: snap.docs.map(d => d.data()) };
+}
+
+async function fbGetUnseenPatchNote(user_id) {
+  const [uSnap, snap] = await Promise.all([
+    db.collection('users').doc(user_id).get(),
+    db.collection('patch_notes').orderBy('created_at', 'desc').limit(1).get(),
+  ]);
+  if (snap.empty) return { ok: true, unseen: false };
+  const latest = snap.docs[0].data();
+  const lastSeen = uSnap.exists ? uSnap.data().last_seen_patch_id : null;
+  if (latest.patch_id === lastSeen) return { ok: true, unseen: false };
+  return { ok: true, unseen: true, patch: latest };
+}
+
+async function fbMarkPatchNoteSeen(user_id, patch_id) {
+  await db.collection('users').doc(user_id).update({ last_seen_patch_id: patch_id });
+  return { ok: true };
+}
+
 // ─── 관리자 글 수정 ──────────────────────────────────────
 
 async function fbAdminEditSub(admin_id, sub_id, new_content, old_content, story_id, edit_type) {
@@ -2293,6 +2328,11 @@ async function firebaseApi(action, params = {}) {
     case 'submitBugReport':   return fbSubmitBugReport(params.content, need().user_id);
     case 'getBugReports':     return fbGetBugReports(need().user_id);
     case 'resolveBugReport':  return fbResolveBugReport(params.report_id || params.bug_id, need().user_id, params.comment || '');
+
+    case 'addPatchNote':      return fbAddPatchNote(need().user_id, params.content);
+    case 'getPatchNotes':     return fbGetPatchNotes(need().user_id);
+    case 'getUnseenPatchNote': return fbGetUnseenPatchNote(need().user_id);
+    case 'markPatchNoteSeen': return fbMarkPatchNoteSeen(need().user_id, params.patch_id);
     case 'pingWarm': return { ok: true };
     default:         return { ok: false, error: '알 수 없는 요청입니다.' };
   }

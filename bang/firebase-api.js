@@ -758,7 +758,7 @@ async function _fbCloseEpisode(episode_id, ep) {
         story_id: newStoryId, parent_story_id: ep.story_id,
         branch_from_step: Number(orphan.step) + 1,
         opening: st.opening, max_steps: st.max_steps || 10,
-        current_step: Number(orphan.step), status: 'active',
+        current_step: Number(orphan.step) - 1, status: 'active',
         creator_id: st.creator_id,
         creator_nickname: st.creator_nickname || '익명',
         creator_badge: st.creator_badge || '',
@@ -1532,7 +1532,7 @@ async function fbCreateBranch(story_id, branch_from_step, user_id) {
   batch.set(db.collection('stories').doc(new_story_id), {
     story_id: new_story_id, parent_story_id: story_id, branch_from_step: step,
     opening: st.opening, max_steps: st.max_steps || 10,
-    current_step: step - 1, status: 'active', creator_id: user_id,
+    current_step: step - 2, status: 'active', creator_id: user_id,
     created_at: fbNow(), participant_count: 0, batch: '',
   });
   batch.set(db.collection('episodes').doc(new_ep_id), {

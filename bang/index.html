@@ -2988,7 +2988,11 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
     const isForkChosen = forkSub && chosenSub && chosenSub.sub_id === forkSub.sub_id;
     const _editBtn = isAdmin() && chosenSub ? `<button class="prose-edit-btn" data-sub="${chosenSub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : '';
     const _proseDiv = `<div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')"><span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span><div class="prose-line-meta"><span>${mvpBadge}${myMvpMark}</span>${_editBtn}</div></div><span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>`;
-    const _nextHtml = isForkChosen ? renderExtBranchFork(ep, chosenSub, extBranch) : (chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId, hideTabs) : '');
+    // hideTabs(완성된 이야기)에서 A 선택 시에도 B갈래 포크 카드를 갈림길 지점에 표시
+    const _nextHtml = isForkChosen
+      ? renderExtBranchFork(ep, chosenSub, extBranch)
+      : (hideTabs && extBranch && forkSub ? renderExtBranchFork(ep, forkSub, extBranch) : '') +
+        (chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId, hideTabs) : '');
     if (hideTabs) return _proseDiv + _nextHtml;
     return `
       <div class="branch-prose-row">

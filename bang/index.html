@@ -3232,6 +3232,7 @@ function openImmersiveProse() {
   overlay.id = 'immersive-prose-overlay';
   overlay.className = 'immersive-prose-overlay';
   overlay.innerHTML = `<div class="story-prose immersive-prose-inner">${wrap.innerHTML}</div>`;
+  overlay.querySelectorAll('.branch-side-indicator, .ext-branch-fork').forEach(el => el.remove());
   overlay.onclick = closeImmersiveProse;
   document.body.appendChild(overlay);
   document.body.style.overflow = 'hidden';

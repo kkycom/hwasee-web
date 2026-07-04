@@ -132,7 +132,7 @@
   /* ── 산문 수정 버튼 */
   .prose-edit-btn { opacity: 0; background: none; border: 1px solid var(--border); border-radius: 4px; font-size: 10px; cursor: pointer; padding: 2px 5px; color: var(--muted); transition: opacity .15s; flex-shrink: 0; display: flex; align-items: center; }
   .prose-line:hover .prose-edit-btn { opacity: 1; }
-  .prose-line-meta { position: absolute; left: 0; right: 0; top: 100%; height: 25px; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
+  .prose-line-meta { position: absolute; left: 0; right: 0; top: 100%; height: 25px; padding-top: 4px; box-sizing: border-box; display: flex; align-items: flex-start; justify-content: space-between; pointer-events: none; }
   .prose-line-meta > * { pointer-events: auto; }
   .prose-inline-editor { margin: 6px 0 12px; }
 
@@ -534,8 +534,11 @@
     .vote-card.clickable:hover { background:none; }
     .notif-item:hover { background:none; }
   }
-  .prose-line-mvp { font-size:11px; color:var(--accent); font-weight:700; display:inline-flex; align-items:center; gap:3px; }
-  .prose-line-my-mvp { font-size:10px; color:var(--accent2); margin-left:6px; }
+  .prose-line-mvp { font-size:11px; color:var(--accent); font-weight:700; display:none; align-items:center; gap:3px; }
+  .prose-line-my-mvp { font-size:10px; color:var(--accent2); margin-left:6px; display:none; }
+  /* 으뜸글 표시는 공감현황 모드에서만 — 평소엔 산문 몰입을 방해하지 않도록 숨김 */
+  .story-prose.viewvotes-active .prose-line-mvp { display:inline-flex; }
+  .story-prose.viewvotes-active .prose-line-my-mvp { display:inline; }
   /* ── 분기 이야기 잠금 산문 */
   .prose-inherited { opacity:0.65; pointer-events:none; }
   .prose-inherited .branch-side-indicator { pointer-events:auto; }
@@ -1335,7 +1338,7 @@ function doneCardHtml(s) {
       <div class="story-card-title">${esc(s.opening)}</div>
       <div class="story-card-footer">
         <span class="step-pill">${step}단계 완성 · 참여자 ${count}명</span>
-        ${likes > 0 ? `<span style="font-size:12px;color:var(--accent);margin-left:8px">👍 ${likes}</span>` : ''}
+        ${likes > 0 ? `<span style="font-size:12px;color:var(--accent);margin-left:8px;display:inline-flex;align-items:center;gap:3px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>${likes}</span>` : ''}
       </div>
     </div>
     </div>`;
@@ -1627,7 +1630,13 @@ async function story(preserveBranch = false) {
     return;
   }
   _lsc.set('story_' + story_id, res, 600);
+  // 캐시로 먼저 그려진 화면에서 유저가 재빨리 공감현황 등을 켰는데,
+  // 그 직후 최신 데이터 도착으로 화면이 통째로 다시 그려지면서 그 상태가
+  // 사라져버리는 문제 방지 — 다시 그리기 전 상태를 저장했다가 복원
+  const _savedSelMode  = window._proseSelMode;
+  const _savedSelStory = window._proseSelStory;
   _applyStoryData(res, story_id);
+  if (_savedSelMode && _savedSelStory === story_id) enterProseSelMode(_savedSelMode, _savedSelStory);
 }
 
 function toggleHistory() {
@@ -3098,7 +3107,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
 
   const mvpCount  = mvpMap[ep.episode_id] || 0;
   const isMyMvp   = myMvpEpId === ep.episode_id;
-  const mvpBadge  = mvpCount > 0 ? `<span class="prose-line-mvp">👍 ${mvpCount}</span>` : '';
+  const mvpBadge  = mvpCount > 0 ? `<span class="prose-line-mvp"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>${mvpCount}</span>` : '';
   const myMvpMark = isMyMvp ? `<span class="prose-line-my-mvp">✦ 내가 선정함</span>` : '';
 
   // 외부 분기: 이 에피소드가 분기의 실제 단절 지점(branch_leaf_episode_id)이면 포크 표시

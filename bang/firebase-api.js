@@ -19,12 +19,21 @@ const functionsRegion = firebase.app().functions('asia-northeast3');
 // 브라우저마다 진짜 Firebase Auth 신원을 부여해두는 준비 작업 — 아직 Firestore
 // 규칙은 이 값을 검사하지 않으므로 지금 당장 접근 제어에 영향은 없음.
 // 실패해도 회원가입/로그인 등 기존 흐름이 절대 막히면 안 되므로 항상 catch로 감싸 null 반환.
-const _authReady = firebase.auth().signInAnonymously()
-  .then(cred => cred.user.uid)
-  .catch(() => null);
+// 지연 초기화: 페이지 로드마다 무조건 쏘지 않고, 실제로 필요한 시점(로그인/가입/
+// 세션 백필)에만 첫 호출에서 signInAnonymously()가 발생하도록 함 — 단순 열람
+// 경로의 초기 네트워크 부하를 줄이기 위함(성능 관련, 보안 로직 자체는 동일).
+let _authReadyPromise = null;
+function _fbEnsureAuth() {
+  if (!_authReadyPromise) {
+    _authReadyPromise = firebase.auth().signInAnonymously()
+      .then(cred => cred.user.uid)
+      .catch(() => null);
+  }
+  return _authReadyPromise;
+}
 
 async function fbGetAuthUid() {
-  try { return await _authReady; } catch (e) { return null; }
+  try { return await _fbEnsureAuth(); } catch (e) { return null; }
 }
 
 const _authBackfillDone = new Set();

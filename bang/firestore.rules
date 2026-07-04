@@ -20,6 +20,7 @@ service cloud.firestore {
     // 신원을 관리하는 구조라 request.auth 기반 소유권 검증이 불가능함.
     // (실제 소유권/역할 검증을 하려면 Firebase Auth 도입이 선행되어야 함 — 별도 논의 필요)
     match /users/{docId} { allow read, write: if true; }
+    match /user_secrets/{docId} { allow read, write: if true; }
     match /stories/{docId} { allow read, write: if true; }
     match /episodes/{docId} { allow read, write: if true; }
     match /submissions/{docId} { allow read, write: if true; }

@@ -837,3 +837,61 @@ exports.setClaudeKey = functions
     await db.collection('config').doc('secrets').set({ claude_key: key }, { merge: true });
     return { ok: true };
   });
+
+// ── 에피소드 마감 보상 지급 (Callable — 클라이언트가 남의 계정에 직접 점수/입양수를
+//    쓰지 못하게 하기 위함. 클라이언트는 is_adopted만 표시하고 이 함수를 호출함) ──
+exports.distributeEpisodeRewards = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const episode_id = data.episode_id;
+    if (!episode_id) throw new functions.https.HttpsError('invalid-argument', 'episode_id가 필요합니다.');
+    const db = admin.firestore();
+    const epRef = db.collection('episodes').doc(episode_id);
+
+    const shouldProcess = await db.runTransaction(async tx => {
+      const snap = await tx.get(epRef);
+      if (!snap.exists || snap.data().status !== 'closed' || snap.data().rewards_distributed) return false;
+      tx.update(epRef, { rewards_distributed: true });
+      return true;
+    });
+    if (!shouldProcess) return { ok: true };
+
+    const subsSnap = await db.collection('submissions').where('episode_id', '==', episode_id).get();
+    const allSubs = subsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const winners = allSubs.filter(s => s.is_adopted === true);
+
+    for (const w of winners) {
+      if (w.author_id && w.author_id !== FB_ADMIN_ID && w.author_id !== FB_AI_ID) {
+        const uRef = db.collection('users').doc(w.author_id);
+        await db.runTransaction(async tx => {
+          const snap = await tx.get(uRef);
+          if (!snap.exists) return;
+          tx.update(uRef, { adoption_count: (snap.data().adoption_count || 0) + 1 });
+        });
+      }
+      await _serverDistributePoints(db, w, allSubs);
+    }
+    return { ok: true };
+  });
+
+// ── MVP 공감 포인트 지급 (Callable — 공감한 사람이 아니라 글쓴이에게 점수가 가야 하는데,
+//    그 지급을 클라이언트가 직접 하지 못하게 서버로 이전) ──
+exports.grantMvpPoints = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const mvp_id = data.mvp_id;
+    if (!mvp_id) throw new functions.https.HttpsError('invalid-argument', 'mvp_id가 필요합니다.');
+    const db = admin.firestore();
+    const mvpRef = db.collection('story_mvp').doc(mvp_id);
+
+    const nominatedUserId = await db.runTransaction(async tx => {
+      const snap = await tx.get(mvpRef);
+      if (!snap.exists || snap.data().points_granted) return null;
+      tx.update(mvpRef, { points_granted: true });
+      return snap.data().nominated_user_id;
+    });
+    if (!nominatedUserId) return { ok: true };
+
+    await _serverAddPoints(db, nominatedUserId, 10, 'mvp_nomination', '');
+    return { ok: true };
+  });

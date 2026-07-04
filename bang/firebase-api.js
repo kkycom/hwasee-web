@@ -818,16 +818,9 @@ async function _fbCloseEpisode(episode_id, ep) {
   }
   for (const w of winners) {
     await w._ref.update({ is_adopted: true });
-    if (w.author_id && w.author_id !== FB_ADMIN_ID && w.author_id !== FB_AI_ID) {
-      const uRef = db.collection('users').doc(w.author_id);
-      await db.runTransaction(async tx => {
-        const snap = await tx.get(uRef);
-        if (!snap.exists) return;
-        tx.update(uRef, { adoption_count: (snap.data().adoption_count || 0) + 1 });
-      });
-    }
-    await _fbDistributePoints(w, allSubs);
   }
+  // 포인트 지급/입양수 증가는 클라이언트가 남의 계정에 직접 쓰지 않도록 서버(Cloud Function)로 이전됨
+  await functionsRegion.httpsCallable('distributeEpisodeRewards')({ episode_id }).catch(() => {});
 
   const storySnap = await db.collection('stories').doc(ep.story_id).get();
   if (!storySnap.exists) return;
@@ -941,23 +934,6 @@ async function _fbCloseEpisode(episode_id, ep) {
   // 알림은 onEpisodeClosed Cloud Function이 서버사이드에서 생성
   } finally {
     _closingEpisodes.delete(episode_id);
-  }
-}
-
-async function _fbDistributePoints(winner, allSubs) {
-  const parent = allSubs.find(s => s.sub_id === winner.derived_from);
-  if (!parent) {
-    await _fbAddPoints(winner.author_id, 20, 'direct', winner.sub_id);
-  } else {
-    const gp = allSubs.find(s => s.sub_id === parent.derived_from);
-    if (!gp) {
-      await _fbAddPoints(parent.author_id, 10, 'source',  winner.sub_id);
-      await _fbAddPoints(winner.author_id, 10, 'derived', winner.sub_id);
-    } else {
-      await _fbAddPoints(gp.author_id,     10, 'source',  winner.sub_id);
-      await _fbAddPoints(parent.author_id,  5, 'mid',     winner.sub_id);
-      await _fbAddPoints(winner.author_id,  5, 'derived', winner.sub_id);
-    }
   }
 }
 
@@ -1632,10 +1608,12 @@ async function fbVoteMvp(story_id, episode_id, voter_id) {
   if (sub.author_id === voter_id) return { ok: false, error: '본인 글에는 공감할 수 없습니다.' };
   if (!sub.author_id || sub.author_id === 'SYSTEM') return { ok: false, error: '공감할 수 없는 글입니다.' };
 
-  await db.collection('story_mvp').doc(fbGenId()).set({
+  const mvpId = fbGenId();
+  await db.collection('story_mvp').doc(mvpId).set({
     story_id, voter_id, nominated_user_id: sub.author_id, episode_id, created_at: fbNow()
   });
-  await _fbAddPoints(sub.author_id, 10, 'mvp_nomination', '');
+  // 포인트 지급은 클라이언트가 남의 계정에 직접 쓰지 않도록 서버(Cloud Function)로 이전됨
+  await functionsRegion.httpsCallable('grantMvpPoints')({ mvp_id: mvpId }).catch(() => {});
   const stSnap2 = await db.collection('stories').doc(story_id).get();
   const snippet = ((stSnap2.exists ? stSnap2.data().opening : '') || '').slice(0, 20);
   await _fbCreateNotifications([sub.author_id], story_id, `"${snippet}…" 이야기에서 내 글이 으뜸 글로 선정됐어요! +10P`);

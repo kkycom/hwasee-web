@@ -15,6 +15,7 @@ firebase.initializeApp(FB_CONFIG);
 const db = firebase.firestore();
 
 const FB_ADMIN_ID        = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
+const FB_AI_ID           = '578873e7-47b7-48d3-9cd8-894546196205'; // AI 자동참여 전용 봇 계정 (관리자 계정과 분리)
 var FB_VOTE_THRESHOLD  = 3;
 const _closingEpisodes = new Set(); // 동시 중복 마감 방지
 
@@ -94,7 +95,7 @@ async function fbGetSession(token) {
 // ─── 포인트 ──────────────────────────────────────────────
 
 async function _fbAddPoints(user_id, pts, reason, sub_id) {
-  if (!user_id || pts <= 0) return;
+  if (!user_id || pts <= 0 || user_id === FB_AI_ID) return;
   const uRef = db.collection('users').doc(user_id);
   await db.runTransaction(async tx => {
     const snap = await tx.get(uRef);
@@ -776,7 +777,7 @@ async function _fbCloseEpisode(episode_id, ep) {
   }
   for (const w of winners) {
     await w._ref.update({ is_adopted: true });
-    if (w.author_id && w.author_id !== FB_ADMIN_ID) {
+    if (w.author_id && w.author_id !== FB_ADMIN_ID && w.author_id !== FB_AI_ID) {
       const uRef = db.collection('users').doc(w.author_id);
       await db.runTransaction(async tx => {
         const snap = await tx.get(uRef);
@@ -1508,12 +1509,12 @@ async function fbGetLeaderboard() {
   ]);
 
   const pointsRank = ptsSnap.docs
-    .filter(d => Number(d.data().total_points) > 0 && d.id !== FB_ADMIN_ID)
+    .filter(d => Number(d.data().total_points) > 0 && d.id !== FB_ADMIN_ID && d.id !== FB_AI_ID)
     .slice(0, 10)
     .map(d => ({ user_id: d.id, nickname: d.data().display_name || d.data().nickname, badge: d.data().badge, value: Number(d.data().total_points) }));
 
   const adoptionsRank = adpSnap.docs
-    .filter(d => d.id !== FB_ADMIN_ID && (d.data().adoption_count || 0) > 0)
+    .filter(d => d.id !== FB_ADMIN_ID && d.id !== FB_AI_ID && (d.data().adoption_count || 0) > 0)
     .slice(0, 10)
     .map(d => ({ user_id: d.id, nickname: d.data().display_name || d.data().nickname, badge: d.data().badge, value: d.data().adoption_count || 0 }));
 
@@ -1542,7 +1543,7 @@ async function fbBackfillAdoptionCounts(admin_id) {
   const countMap = {};
   sSnap.docs.forEach(d => {
     const uid = d.data().author_id;
-    if (uid && uid !== FB_ADMIN_ID) countMap[uid] = (countMap[uid] || 0) + 1;
+    if (uid && uid !== FB_ADMIN_ID && uid !== FB_AI_ID) countMap[uid] = (countMap[uid] || 0) + 1;
   });
   const batch = db.batch();
   Object.entries(countMap).forEach(([uid, cnt]) => {
@@ -1729,7 +1730,7 @@ async function fbExtendStory(story_id, user_id) {
   // 원본 참여자 알림
   const subsSnap = await db.collection('submissions').where('story_id','==',story_id).get();
   const notifyIds = [...new Set(
-    subsSnap.docs.map(d => d.data().author_id).filter(id => id && id !== user_id && id !== FB_ADMIN_ID)
+    subsSnap.docs.map(d => d.data().author_id).filter(id => id && id !== user_id && id !== FB_ADMIN_ID && id !== FB_AI_ID)
   )];
   const snippet = (st.opening || '').slice(0, 15);
   if (notifyIds.length) {
@@ -2072,8 +2073,8 @@ async function fbGetAIActivities(admin_id) {
   let subsSnap, votesSnap;
   try {
     [subsSnap, votesSnap] = await Promise.all([
-      db.collection('submissions').where('author_id', '==', FB_ADMIN_ID).where('is_ai', '==', true).orderBy('created_at', 'desc').limit(300).get(),
-      db.collection('votes').where('voter_id', '==', FB_ADMIN_ID).where('is_ai', '==', true).orderBy('created_at', 'desc').limit(300).get(),
+      db.collection('submissions').where('author_id', '==', FB_AI_ID).where('is_ai', '==', true).orderBy('created_at', 'desc').limit(300).get(),
+      db.collection('votes').where('voter_id', '==', FB_AI_ID).where('is_ai', '==', true).orderBy('created_at', 'desc').limit(300).get(),
     ]);
   } catch(e) {
     return { ok: true, ai_config: aiConfig, has_key: hasKey, submissions: [], votes: [], total_subs: 0, total_votes: 0 };

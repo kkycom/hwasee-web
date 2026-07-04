@@ -421,6 +421,10 @@ async function fbGetStory(story_id, user_id) {
     branch_from_step: Number(d.data().branch_from_step),
     is_continuation: !!d.data().is_continuation,
     status: d.data().status,
+    branch_episode_id: d.data().branch_episode_id || null,
+    branch_sub_id: d.data().branch_sub_id || null,
+    branch_leaf_episode_id: d.data().branch_leaf_episode_id || null,
+    branch_leaf_sub_id: d.data().branch_leaf_sub_id || null,
   })).sort((a, b) => (a.status === 'active' ? -1 : 1));
   const _branchSeen = new Set();
   const branches = _branchRaw.filter(b => {

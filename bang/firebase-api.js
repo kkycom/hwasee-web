@@ -2318,14 +2318,22 @@ async function firebaseApi(action, params = {}) {
   // localStorage 값은 누구나 브라우저 콘솔에서 조작 가능 — 매 호출마다 Firestore의
   // 실제 token과 대조해서 검증해야 타인 user_id를 임의로 넣어 행세하는 걸 막을 수 있음
   let session = null;
+  let sessionCheckFailed = false; // Firestore 조회 자체가 실패한 경우(네트워크 등) — 진짜 세션 만료와 구분해야 함
   if (token && uid) {
     try {
       const snap = await db.collection('user_secrets').doc(uid).get();
       if (snap.exists && snap.data().token === token) session = { user_id: uid };
-    } catch (e) { /* Firestore 오류 시 세션 없음으로 처리 */ }
+    } catch (e) { sessionCheckFailed = true; }
   }
   if (session) _fbBackfillAuthUid(uid); // 기존 세션 유지 중인 유저도 점진적으로 auth_uid 바인딩 (fire-and-forget)
-  const need = () => { if (!session) throw new Error('로그인이 필요합니다.'); return session; };
+  // sessionCheckFailed일 땐 '로그인이 필요합니다.'를 던지지 않음 — 그 문자열은 클라이언트
+  // api()에서 "진짜 세션 만료"로 해석해 강제 로그아웃+홈 이동을 트리거하는데, 단순 조회
+  // 실패(네트워크 hiccup 등)까지 그렇게 처리하면 토큰이 멀쩡한데도 로그아웃당하고
+  // 관리자 페이지 등에서 "로딩하다가 튕겨나가는" 간헐적 증상으로 이어짐.
+  const need = () => {
+    if (session) return session;
+    throw new Error(sessionCheckFailed ? '일시적인 오류입니다. 다시 시도해주세요.' : '로그인이 필요합니다.');
+  };
 
   switch (action) {
     case 'register':           return fbRegister(params.nickname, params.password, params.name, params.display_name, params.referral);

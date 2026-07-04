@@ -15,6 +15,32 @@ firebase.initializeApp(FB_CONFIG);
 const db = firebase.firestore();
 const functionsRegion = firebase.app().functions('asia-northeast3');
 
+// ─── 익명 인증 (Auth 마이그레이션 1단계) ──────────────────
+// 브라우저마다 진짜 Firebase Auth 신원을 부여해두는 준비 작업 — 아직 Firestore
+// 규칙은 이 값을 검사하지 않으므로 지금 당장 접근 제어에 영향은 없음.
+// 실패해도 회원가입/로그인 등 기존 흐름이 절대 막히면 안 되므로 항상 catch로 감싸 null 반환.
+const _authReady = firebase.auth().signInAnonymously()
+  .then(cred => cred.user.uid)
+  .catch(() => null);
+
+async function fbGetAuthUid() {
+  try { return await _authReady; } catch (e) { return null; }
+}
+
+const _authBackfillDone = new Set();
+async function _fbBackfillAuthUid(uid) {
+  if (_authBackfillDone.has(uid)) return;
+  _authBackfillDone.add(uid);
+  try {
+    const authUid = await fbGetAuthUid();
+    if (!authUid) return;
+    const snap = await db.collection('users').doc(uid).get();
+    if (snap.exists && snap.data().auth_uid !== authUid) {
+      await snap.ref.update({ auth_uid: authUid });
+    }
+  } catch (e) { /* best-effort, 실패해도 무시 */ }
+}
+
 const FB_ADMIN_ID        = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
 const FB_AI_ID           = '578873e7-47b7-48d3-9cd8-894546196205'; // AI 자동참여 전용 봇 계정 (관리자 계정과 분리)
 var FB_VOTE_THRESHOLD  = 3;
@@ -161,7 +187,8 @@ async function fbRegister(nickname, password, name, display_name, referral) {
   await db.collection('users').doc(user_id).set({
     user_id, nickname, display_name: dn,
     total_points: 0, adoption_count: 0, badge: 'seed', name: (name || '').trim(),
-    referral: (referral || '').trim(), created_at: fbNow()
+    referral: (referral || '').trim(), created_at: fbNow(),
+    auth_uid: await fbGetAuthUid()
   });
   await db.collection('user_secrets').doc(user_id).set({
     pw_hash: await fbHashPw(password), token, token_exp
@@ -186,6 +213,8 @@ async function fbLogin(nickname, password) {
   const token     = fbGenId();
   const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
   await db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true });
+  const authUid = await fbGetAuthUid();
+  if (authUid) await doc.ref.update({ auth_uid: authUid }).catch(() => {});
   localStorage.setItem('hwasee_uid', u.user_id);
 
   const daily_bonus = await _fbCheckDailyBonus(u.user_id);
@@ -2298,6 +2327,7 @@ async function firebaseApi(action, params = {}) {
       if (snap.exists && snap.data().token === token) session = { user_id: uid };
     } catch (e) { /* Firestore 오류 시 세션 없음으로 처리 */ }
   }
+  if (session) _fbBackfillAuthUid(uid); // 기존 세션 유지 중인 유저도 점진적으로 auth_uid 바인딩 (fire-and-forget)
   const need = () => { if (!session) throw new Error('로그인이 필요합니다.'); return session; };
 
   switch (action) {

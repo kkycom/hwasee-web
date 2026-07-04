@@ -327,7 +327,11 @@
   }
   .toast.show { opacity: 1; }
   .toast.err { border-color: var(--accent2); }
-  .toast.wide { white-space: normal; max-width: 340px; line-height: 1.5; text-align: left; }
+  .toast.wide {
+    white-space: pre-wrap; max-width: 340px; max-height: 45vh; overflow-y: auto;
+    line-height: 1.5; text-align: left; pointer-events: auto; cursor: pointer;
+    bottom: max(24px, env(safe-area-inset-bottom));
+  }
 
   /* ── 홈 탭 (4개, 가로 스크롤) */
   .home-tabs {
@@ -910,8 +914,10 @@ function toastPatchNote(msg) {
   const el = document.getElementById('toast');
   el.textContent = '📢 ' + msg;
   el.className   = 'toast show wide';
+  el.onclick     = () => { el.className = 'toast'; clearTimeout(toastTimer); };
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.className = 'toast'; }, 5000);
+  const duration = Math.min(Math.max(msg.length * 90, 5000), 15000);
+  toastTimer = setTimeout(() => { el.className = 'toast'; }, duration);
 }
 
 let _patchCheckDone = false;

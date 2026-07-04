@@ -81,13 +81,17 @@ async function fbGetSession(token) {
   const uid = localStorage.getItem('hwasee_uid');
   if (!uid) return null;
   try {
-    const snap = await db.collection('users').doc(uid).get();
-    if (!snap.exists) return null;
+    const [snap, secSnap] = await Promise.all([
+      db.collection('users').doc(uid).get(),
+      db.collection('user_secrets').doc(uid).get(),
+    ]);
+    if (!snap.exists || !secSnap.exists) return null;
     const u = snap.data();
-    if (u.token !== token) return null;
-    if (new Date(u.token_exp) < new Date()) {
+    const sec = secSnap.data();
+    if (sec.token !== token) return null;
+    if (new Date(sec.token_exp) < new Date()) {
       const new_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-      await snap.ref.update({ token_exp: new_exp });
+      await secSnap.ref.update({ token_exp: new_exp });
     }
     return { user_id: uid, nickname: u.nickname, display_name: u.display_name || u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed' };
   } catch(e) { return undefined; } // undefined = 네트워크 오류 (null = 확실한 토큰 무효)
@@ -155,9 +159,12 @@ async function fbRegister(nickname, password, name, display_name, referral) {
   const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   await db.collection('users').doc(user_id).set({
-    user_id, nickname, display_name: dn, pw_hash: await fbHashPw(password), token, token_exp,
+    user_id, nickname, display_name: dn,
     total_points: 0, adoption_count: 0, badge: 'seed', name: (name || '').trim(),
     referral: (referral || '').trim(), created_at: fbNow()
+  });
+  await db.collection('user_secrets').doc(user_id).set({
+    pw_hash: await fbHashPw(password), token, token_exp
   });
 
   localStorage.setItem('hwasee_uid', user_id);
@@ -170,13 +177,15 @@ async function fbLogin(nickname, password) {
   const snap = await db.collection('users').where('nickname', '==', nickname).limit(1).get();
   if (snap.empty) return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
 
-  const doc  = snap.docs[0];
-  const u    = doc.data();
-  if (u.pw_hash !== await fbHashPw(password)) return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
+  const doc     = snap.docs[0];
+  const u       = doc.data();
+  const secSnap = await db.collection('user_secrets').doc(doc.id).get();
+  const sec     = secSnap.exists ? secSnap.data() : {};
+  if (sec.pw_hash !== await fbHashPw(password)) return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
 
   const token     = fbGenId();
   const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-  await doc.ref.update({ token, token_exp });
+  await db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true });
   localStorage.setItem('hwasee_uid', u.user_id);
 
   const daily_bonus = await _fbCheckDailyBonus(u.user_id);
@@ -204,11 +213,12 @@ async function _fbCheckDailyBonus(user_id) {
 
 async function fbChangePassword(user_id, current_password, new_password) {
   if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
-  const snap = await db.collection('users').doc(user_id).get();
-  if (!snap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
-  const u = snap.data();
-  if (u.pw_hash !== await fbHashPw(current_password)) return { ok: false, error: '현재 비밀번호가 올바르지 않습니다.' };
-  await snap.ref.update({ pw_hash: await fbHashPw(new_password) });
+  const secRef  = db.collection('user_secrets').doc(user_id);
+  const secSnap = await secRef.get();
+  if (!secSnap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
+  const sec = secSnap.data();
+  if (sec.pw_hash !== await fbHashPw(current_password)) return { ok: false, error: '현재 비밀번호가 올바르지 않습니다.' };
+  await secRef.update({ pw_hash: await fbHashPw(new_password) });
   return { ok: true };
 }
 
@@ -217,6 +227,7 @@ async function fbDeleteAccount(user_id) {
   if (user_id === FB_ADMIN_ID) return { ok: false, error: '관리자 계정은 탈퇴할 수 없습니다.' };
   const batch = db.batch();
   batch.delete(db.collection('users').doc(user_id));
+  batch.delete(db.collection('user_secrets').doc(user_id));
   const [bmSnap, nSnap] = await Promise.all([
     db.collection('bookmarks').where('user_id', '==', user_id).get(),
     db.collection('notifications').where('user_id', '==', user_id).get(),
@@ -249,7 +260,7 @@ async function fbResetPassword(nickname, name, new_password) {
   const doc = snap.docs[0];
   const u   = doc.data();
   if (!u.name || u.name.trim() !== name.trim()) return { ok: false, error: '닉네임 또는 이름이 일치하지 않습니다.' };
-  await doc.ref.update({ pw_hash: await fbHashPw(new_password) });
+  await db.collection('user_secrets').doc(doc.id).set({ pw_hash: await fbHashPw(new_password) }, { merge: true });
   return { ok: true };
 }
 
@@ -2276,11 +2287,18 @@ async function fbSetAIConfig(admin_id, updates) {
 // ─── 메인 디스패처 ───────────────────────────────────────
 
 async function firebaseApi(action, params = {}) {
-  const token   = localStorage.getItem('hwasee_token');
-  const uid     = localStorage.getItem('hwasee_uid');
-  // 매 호출마다 Firestore 재검증 대신 localStorage uid를 직접 신뢰 (세션 만료는 앱 시작 시 검증)
-  const session = (token && uid) ? { user_id: uid } : null;
-  const need    = () => { if (!session) throw new Error('로그인이 필요합니다.'); return session; };
+  const token = localStorage.getItem('hwasee_token');
+  const uid   = localStorage.getItem('hwasee_uid');
+  // localStorage 값은 누구나 브라우저 콘솔에서 조작 가능 — 매 호출마다 Firestore의
+  // 실제 token과 대조해서 검증해야 타인 user_id를 임의로 넣어 행세하는 걸 막을 수 있음
+  let session = null;
+  if (token && uid) {
+    try {
+      const snap = await db.collection('user_secrets').doc(uid).get();
+      if (snap.exists && snap.data().token === token) session = { user_id: uid };
+    } catch (e) { /* Firestore 오류 시 세션 없음으로 처리 */ }
+  }
+  const need = () => { if (!session) throw new Error('로그인이 필요합니다.'); return session; };
 
   switch (action) {
     case 'register':           return fbRegister(params.nickname, params.password, params.name, params.display_name, params.referral);

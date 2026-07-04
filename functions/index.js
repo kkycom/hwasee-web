@@ -404,6 +404,25 @@ async function _serverAddPoints(db, user_id, amount, reason, sub_id) {
   }
 }
 
+// firebase-api.js의 _fbDistributePoints와 동일 — 다듬기(derived_from) 체인에 따라
+// 원작자/다듬은 사람에게 점수를 나눠줌. 반드시 함께 수정할 것.
+async function _serverDistributePoints(db, winner, allSubs) {
+  const parent = allSubs.find(s => s.id === winner.derived_from);
+  if (!parent) {
+    await _serverAddPoints(db, winner.author_id, 20, 'direct', winner.id);
+  } else {
+    const gp = allSubs.find(s => s.id === parent.derived_from);
+    if (!gp) {
+      await _serverAddPoints(db, parent.author_id, 10, 'source',  winner.id);
+      await _serverAddPoints(db, winner.author_id, 10, 'derived', winner.id);
+    } else {
+      await _serverAddPoints(db, gp.author_id,     10, 'source',  winner.id);
+      await _serverAddPoints(db, parent.author_id,  5, 'mid',     winner.id);
+      await _serverAddPoints(db, winner.author_id,  5, 'derived', winner.id);
+    }
+  }
+}
+
 async function _buildStoryContext(db, story_id, story) {
   let text = story.opening || '';
   const adoptedSnap = await db.collection('submissions')
@@ -478,7 +497,9 @@ async function _serverCloseEpisode(db, episode_id, ep) {
 
   for (const w of winners) {
     await db.collection('submissions').doc(w.id).update({ is_adopted: true });
-    await _serverAddPoints(db, w.author_id, 20, 'direct', w.id);
+    // firebase-api.js의 _fbDistributePoints와 동일 — 다듬기(derived_from) 체인 반영해서 분배
+    // (누락되어 있던 부분 — 원작자 없이 채택자에게 20점을 무조건 몰아주고 있었음)
+    await _serverDistributePoints(db, w, allSubs);
     // firebase-api.js의 _fbCloseEpisode와 동일하게 채택 횟수 반영 (누락되어 있던 부분 — AI가
     // 마감시킨 경우 실제 채택자의 adoption_count가 하나도 안 올라가고 있었음)
     if (w.author_id && w.author_id !== FB_ADMIN_ID && w.author_id !== FB_AI_ID) {

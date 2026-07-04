@@ -4516,7 +4516,14 @@ window.onload = async () => {
   renderNav();
   if (user) setTimeout(checkPatchNoteAnnouncement, 1200);
 
-  // Firestore 연결 워밍업 + 씨앗·관심받는 탭 프리페치
+  // Firestore 연결(WebChannel) 워밍업 — 캐시 적중 여부와 무관하게 항상 실행.
+  // 세션당 첫 쿼리는 채널 협상 비용 때문에 이후 쿼리보다 눈에 띄게 느린데,
+  // 아래 프리페치 블록은 seeds/pop 캐시가 이미 있으면 통째로 스킵돼서
+  // 그 경우 실제 첫 네트워크 왕복이 유저가 처음 누르는 메뉴에서 발생해버림 —
+  // 그걸 막기 위해 결과가 필요 없는 최소 read를 무조건 먼저 날려 채널을 미리 열어둠.
+  firebase.firestore().collection('config').doc('stats').get().catch(() => {});
+
+  // 씨앗·관심받는 탭 프리페치 (캐시 없을 때만)
   setTimeout(() => {
     if (!_lsc.get('seeds')) api('getSeeds').then(r => { if (r.ok) _lsc.set('seeds', r.seeds, 300); });
     if (!_lsc.get('pop') && !_popFetching) {

@@ -48,6 +48,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script defer src="firebase-api.js?v=3"></script>
 <style>
   :root {
@@ -3906,7 +3907,7 @@ function _renderAdminAI(tab, page) {
           style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--bg);color:var(--text)">
         <button class="btn btn-primary btn-sm" onclick="saveClaudeKey()">저장</button>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:6px">Anthropic Console → API Keys에서 발급. 여기 입력 시 Firestore에만 저장되며 외부 노출 없음.</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Anthropic Console → API Keys에서 발급. 서버(Cloud Functions) 경로로만 저장되며 클라이언트에 원문이 노출되지 않음.</div>
     </div>
     <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:12px">
       ${tabBtn('subs', `제출 내역 (${res.total_subs})`)}

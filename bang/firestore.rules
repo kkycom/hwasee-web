@@ -1,9 +1,41 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 개발 중 테스트 모드 — 추후 강화 예정
-    match /{document=**} {
-      allow read, write: if true;
+    // 주의: Firestore 규칙은 매칭되는 모든 match 블록을 OR로 평가함
+    // (더 구체적인 규칙이 우선하는 게 아님). 그래서 하위 경로를 개별 차단하려면
+    // 상위에 `{document=**}` 같은 전체 허용 와일드카드를 절대 두면 안 되고,
+    // 아래처럼 컬렉션을 하나씩 명시해야 함.
+
+    // config: ai_config/used_openings/stats 등은 클라이언트가 직접 읽고 씀.
+    // secrets(Claude API 키 등 평문 비밀값)만 예외적으로 완전 차단 —
+    // Cloud Functions(getClaudeKeyStatus/setClaudeKey, Admin SDK)만 접근 가능.
+    match /config/secrets {
+      allow read, write: if false;
     }
+    match /config/{configId} {
+      allow read, write: if configId != 'secrets';
+    }
+
+    // 그 외 컬렉션: 앱이 Firebase Auth를 쓰지 않고 자체 발급 user_id(localStorage)로
+    // 신원을 관리하는 구조라 request.auth 기반 소유권 검증이 불가능함.
+    // (실제 소유권/역할 검증을 하려면 Firebase Auth 도입이 선행되어야 함 — 별도 논의 필요)
+    match /users/{docId} { allow read, write: if true; }
+    match /stories/{docId} { allow read, write: if true; }
+    match /episodes/{docId} { allow read, write: if true; }
+    match /submissions/{docId} { allow read, write: if true; }
+    match /votes/{docId} { allow read, write: if true; }
+    match /comments/{docId} { allow read, write: if true; }
+    match /bookmarks/{docId} { allow read, write: if true; }
+    match /notifications/{docId} { allow read, write: if true; }
+    match /point_ledger/{docId} { allow read, write: if true; }
+    match /story_likes/{docId} { allow read, write: if true; }
+    match /story_mvp/{docId} { allow read, write: if true; }
+    match /boosts/{docId} { allow read, write: if true; }
+    match /extra_submits/{docId} { allow read, write: if true; }
+    match /reports/{docId} { allow read, write: if true; }
+    match /bug_reports/{docId} { allow read, write: if true; }
+    match /patch_notes/{docId} { allow read, write: if true; }
+    match /admin_edits/{docId} { allow read, write: if true; }
+    match /visits/{docId} { allow read, write: if true; }
   }
 }

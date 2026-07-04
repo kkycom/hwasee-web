@@ -808,3 +808,32 @@ ${votable.map((s, i) => `[${i + 1}] sub_id=${s.id} | ${s.content}`).join('\n')}
 
     return null;
   });
+
+// ── Claude API 키 관리 (클라이언트는 Firestore config 컬렉션에 직접 접근 불가 —
+//    firestore.rules에서 config/** 전체를 차단하므로 이 두 함수를 통해서만 조회/저장 가능) ──
+exports.getClaudeKeyStatus = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    if (data.admin_id !== FB_ADMIN_ID) {
+      throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    }
+    const db = admin.firestore();
+    const secretsSnap = await db.collection('config').doc('secrets').get();
+    const hasKey = secretsSnap.exists && !!secretsSnap.data().claude_key;
+    return { ok: true, has_key: hasKey };
+  });
+
+exports.setClaudeKey = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    if (data.admin_id !== FB_ADMIN_ID) {
+      throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    }
+    const key = data.key;
+    if (!key || key.length < 20) {
+      throw new functions.https.HttpsError('invalid-argument', '유효한 Claude API 키를 입력해주세요.');
+    }
+    const db = admin.firestore();
+    await db.collection('config').doc('secrets').set({ claude_key: key }, { merge: true });
+    return { ok: true };
+  });

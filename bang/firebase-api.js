@@ -13,6 +13,7 @@ const FB_CONFIG = {
 
 firebase.initializeApp(FB_CONFIG);
 const db = firebase.firestore();
+const functionsRegion = firebase.app().functions('asia-northeast3');
 
 const FB_ADMIN_ID        = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
 const FB_AI_ID           = '578873e7-47b7-48d3-9cd8-894546196205'; // AI 자동참여 전용 봇 계정 (관리자 계정과 분리)
@@ -2079,12 +2080,12 @@ async function fbAdminCloseStory(story_id, admin_id) {
 
 async function fbGetAIActivities(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const [configSnap, secretsSnap] = await Promise.all([
+  const [configSnap, keyStatus] = await Promise.all([
     db.collection('config').doc('ai_config').get(),
-    db.collection('config').doc('secrets').get(),
+    functionsRegion.httpsCallable('getClaudeKeyStatus')({ admin_id }).then(r => r.data).catch(() => ({ has_key: false })),
   ]);
   const aiConfig = configSnap.exists ? configSnap.data() : { enabled: false, speed_pct: 100 };
-  const hasKey = secretsSnap.exists && !!secretsSnap.data().claude_key;
+  const hasKey = !!keyStatus.has_key;
   let subsSnap, votesSnap;
   try {
     [subsSnap, votesSnap] = await Promise.all([
@@ -2127,8 +2128,12 @@ async function fbGetAIActivities(admin_id) {
 async function fbSetClaudeKey(admin_id, key) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   if (!key || key.length < 20) return { ok: false, error: '유효한 Claude API 키를 입력해주세요.' };
-  await db.collection('config').doc('secrets').set({ claude_key: key }, { merge: true });
-  return { ok: true };
+  try {
+    await functionsRegion.httpsCallable('setClaudeKey')({ admin_id, key });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || '저장에 실패했습니다.' };
+  }
 }
 
 async function fbGetBugReports(user_id) {

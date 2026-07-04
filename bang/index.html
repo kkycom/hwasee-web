@@ -430,7 +430,8 @@
   .tab.active { color: #3a5548; background: var(--accent); border-bottom-color: var(--accent); }
   @media (max-width: 480px) {
     .tab { padding: 8px 4px; font-size: 11px; }
-    .admin-nav-tabs { justify-content: center; }
+    .admin-nav-tabs { display: grid !important; grid-template-columns: repeat(3, 1fr); justify-items: center; gap: 8px 4px; }
+    .admin-nav-tabs > span { display: none; }
   }
 
   /* ── 기타 */
@@ -1492,7 +1493,7 @@ function _applyStoryData(res, story_id) {
     console.log('[DEBUG] pChoices[branchEpId]:', _pChoices[_branchEpId], '| pSubs at fork:', parent_chain.submissions.filter(x => x.episode_id === _branchEpId).map(x => ({id:x.sub_id, adopted:x.is_adopted})));
     // B갈래(fork sub)가 활성인지 → 아니면 own tree 숨김
     _isBranchActive = !_branchEpId || !s.branch_sub_id || _pChoices[_branchEpId] === s.branch_sub_id;
-    const _divider = _isBranchActive ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--border)"></div></div><div style="height:29px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center">⑂ 여기부터는 이 이야기에서만 볼 수 있어요</div>` : '';
+    const _divider = _isBranchActive ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--border)"></div></div><div style="height:29px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center">⑂ 여기부터는 이 이야기만의 새로운 내용이에요</div>` : '';
     inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, _pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_divider}` : '';
   }
 
@@ -3203,7 +3204,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
 function renderExtBranchInline(extBranch) {
   const bTree = getEpisodeTree((extBranch.episodes || []).filter(e => e.status === 'closed'), extBranch.submissions || []);
   if (!bTree) return renderExtBranchFork(null, null, extBranch);
-  const divider = `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--border)"></div></div><div style="height:29px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center">⑂ 여기부터는 이 이야기에서만 볼 수 있어요</div>`;
+  const divider = `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--border)"></div></div><div style="height:29px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center">⑂ 여기부터는 이 이야기만의 새로운 내용이에요</div>`;
   return divider + renderEpisodeTreeHtml(bTree, {}, undefined, undefined, undefined, true);
 }
 
@@ -3405,7 +3406,7 @@ function chooseBranch(episode_id, sub_id) {
       const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
       const _branchEpId = _s.branch_episode_id;
       _isBActive = !_branchEpId || !_s.branch_sub_id || pChoices[_branchEpId] === _s.branch_sub_id;
-      const _divider = _isBActive ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--border)"></div></div><div style="height:29px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center">⑂ 여기부터는 이 이야기에서만 볼 수 있어요</div>` : '';
+      const _divider = _isBActive ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--border)"></div></div><div style="height:29px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center">⑂ 여기부터는 이 이야기만의 새로운 내용이에요</div>` : '';
       inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_divider}` : '';
     }
     const tree = getEpisodeTree(episodes.filter(e => e.status === 'closed'), submissions);
@@ -3731,7 +3732,7 @@ function _adminNav(current) {
     patchnotes: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
   };
   const btn = (label, key, route) => `
-    <button onclick="nav('${route}')" style="background:none;border:none;cursor:pointer;font-size:13px;color:${current===key?'var(--text)':'var(--muted)'};font-weight:${current===key?'700':'400'};display:inline-flex;align-items:center;gap:5px;padding:4px 2px">
+    <button onclick="nav('${route}')" style="background:none;border:none;cursor:pointer;font-size:13px;color:${current===key?'var(--text)':'var(--muted)'};font-weight:${current===key?'700':'400'};display:inline-flex;align-items:center;gap:5px;padding:5px 2px">
       ${svgs[key]}${label}
     </button>`;
   return `

@@ -80,27 +80,37 @@ async function fbHashPw(pw) {
 }
 
 const FB_AVATAR_SHOP = [
-  { id:'🍂', label:'낙엽',    price: 300 },
-  { id:'🌾', label:'벼이삭',  price: 300 },
-  { id:'🍄', label:'버섯',    price: 500 },
-  { id:'🌵', label:'선인장',  price: 500 },
-  { id:'🎋', label:'대나무',  price: 500 },
-  { id:'🌻', label:'해바라기', price: 500 },
-  { id:'🦋', label:'나비',    price: 800 },
-  { id:'🌊', label:'파도',    price: 800 },
-  { id:'🌙', label:'달',      price: 800 },
-  { id:'⭐', label:'별',      price:1000 },
-  { id:'🔥', label:'불꽃',   price:1000 },
+  { id:'🍂', label:'낙엽',    price: 1000 },
+  { id:'🌾', label:'벼이삭',  price: 1000 },
+  { id:'🍄', label:'버섯',    price: 1400 },
+  { id:'🌵', label:'선인장',  price: 1400 },
+  { id:'🎋', label:'대나무',  price: 1600 },
+  { id:'🌻', label:'해바라기', price: 1600 },
+  { id:'🌰', label:'씨앗',    price: 2000 },
+  { id:'🌱', label:'새싹',    price: 2000 },
+  { id:'🦋', label:'나비',    price: 2400 },
+  { id:'🌊', label:'파도',    price: 2400 },
+  { id:'🌙', label:'달',      price: 3000 },
+  { id:'🌸', label:'꽃봉오리', price: 3000 },
+  { id:'🌼', label:'꽃',      price: 3000 },
+  { id:'⭐', label:'별',      price: 4000 },
+  { id:'🔥', label:'불꽃',   price: 4000 },
+  { id:'🍎', label:'사과',    price: 5000 },
+  { id:'🌳', label:'나무',    price: 6000 },
+  { id:'🍁', label:'단풍',    price: 7000 },
+  { id:'🍀', label:'네잎클로버', price: 8500 },
+  { id:'🌈', label:'무지개',  price: 10000 },
+  { id:'👑', label:'왕관',    price: 15000 },
 ];
 
 function fbCalcBadge(pts) {
-  if (pts >= 5000) return 'fruit';
-  if (pts >= 4000) return 'flower1';
-  if (pts >= 3000) return 'flower';
-  if (pts >= 2000) return 'bud';
-  if (pts >= 1700) return 'leaf2';
-  if (pts >= 1200) return 'leaf1';
-  if (pts >= 700)  return 'leaf';
+  if (pts >= 10000) return 'fruit';
+  if (pts >= 7000) return 'flower1';
+  if (pts >= 5000) return 'flower';
+  if (pts >= 3500) return 'bud';
+  if (pts >= 2500) return 'leaf2';
+  if (pts >= 1700) return 'leaf1';
+  if (pts >= 1000) return 'leaf';
   if (pts >= 550)  return 'sprout2';
   if (pts >= 350)  return 'sprout1';
   if (pts >= 150)  return 'sprout';

@@ -1039,23 +1039,27 @@ function badgeAvatar(b) {
   return '🌱';
 }
 const AVATAR_SHOP_ITEMS = [
-  { id:'🍂', label:'낙엽',    price:  500 },
-  { id:'🌾', label:'벼이삭',  price:  500 },
-  { id:'🍄', label:'버섯',    price:  700 },
-  { id:'🌵', label:'선인장',  price:  700 },
-  { id:'🎋', label:'대나무',  price:  800 },
-  { id:'🌻', label:'해바라기', price:  800 },
-  { id:'🌰', label:'씨앗',    price: 1000 },
-  { id:'🌱', label:'새싹',    price: 1000 },
-  { id:'🦋', label:'나비',    price: 1200 },
-  { id:'🌊', label:'파도',    price: 1200 },
-  { id:'🌙', label:'달',      price: 1500 },
-  { id:'🌸', label:'꽃봉오리', price: 1500 },
-  { id:'🌼', label:'꽃',      price: 1500 },
-  { id:'⭐', label:'별',      price: 2000 },
-  { id:'🔥', label:'불꽃',    price: 2000 },
-  { id:'🍎', label:'사과',    price: 2500 },
-  { id:'🌳', label:'나무',    price: 3000 },
+  { id:'🍂', label:'낙엽',    price:  1000 },
+  { id:'🌾', label:'벼이삭',  price:  1000 },
+  { id:'🍄', label:'버섯',    price:  1400 },
+  { id:'🌵', label:'선인장',  price:  1400 },
+  { id:'🎋', label:'대나무',  price:  1600 },
+  { id:'🌻', label:'해바라기', price:  1600 },
+  { id:'🌰', label:'씨앗',    price:  2000 },
+  { id:'🌱', label:'새싹',    price:  2000 },
+  { id:'🦋', label:'나비',    price:  2400 },
+  { id:'🌊', label:'파도',    price:  2400 },
+  { id:'🌙', label:'달',      price:  3000 },
+  { id:'🌸', label:'꽃봉오리', price:  3000 },
+  { id:'🌼', label:'꽃',      price:  3000 },
+  { id:'⭐', label:'별',      price:  4000 },
+  { id:'🔥', label:'불꽃',    price:  4000 },
+  { id:'🍎', label:'사과',    price:  5000 },
+  { id:'🌳', label:'나무',    price:  6000 },
+  { id:'🍁', label:'단풍',    price:  7000 },
+  { id:'🍀', label:'네잎클로버', price:  8500 },
+  { id:'🌈', label:'무지개',  price: 10000 },
+  { id:'👑', label:'왕관',    price: 15000 },
 ];
 function badgeEmoji(b, size=18) {
   const alias = { new:'seed', rookie:'sprout', writer:'leaf', expert:'bud', master:'fruit' };
@@ -2635,9 +2639,9 @@ async function profile() {
   const tab       = currentParam === 'settings' ? 'settings' : currentParam === 'bugreport' ? 'bugreport' : 'points';
   const nextBadge = {
     seed:'금간 씨앗(20p)', seed1:'발아하는 씨앗(60p)', seed2:'여린 새싹(150p)',
-    sprout:'새싹(350p)', sprout1:'무성한 새싹(550p)', sprout2:'여린 잎(700p)',
-    leaf:'잎(1,200p)', leaf1:'무성한 잎(1,700p)', leaf2:'꽃봉오리(2,000p)',
-    bud:'꽃(3,000p)', flower:'만개한 꽃(4,000p)', flower1:'열매(5,000p)',
+    sprout:'새싹(350p)', sprout1:'무성한 새싹(550p)', sprout2:'여린 잎(1,000p)',
+    leaf:'잎(1,700p)', leaf1:'무성한 잎(2,500p)', leaf2:'꽃봉오리(3,500p)',
+    bud:'꽃(5,000p)', flower:'만개한 꽃(7,000p)', flower1:'열매(10,000p)',
   }[u.badge] || '';
 
   const pointsTab = `
@@ -2654,9 +2658,9 @@ async function profile() {
         ${[
           [['seed','씨앗','0'],['seed1','금간 씨앗','20'],['seed2','발아하는 씨앗','60']],
           [['sprout','여린 새싹','150'],['sprout1','새싹','350'],['sprout2','무성한 새싹','550']],
-          [['leaf','여린 잎','700'],['leaf1','잎','1,200'],['leaf2','무성한 잎','1,700']],
-          [['bud','꽃봉오리','2,000'],['flower','꽃','3,000'],['flower1','만개한 꽃','4,000']],
-          [['fruit','열매','5,000']],
+          [['leaf','여린 잎','1,000'],['leaf1','잎','1,700'],['leaf2','무성한 잎','2,500']],
+          [['bud','꽃봉오리','3,500'],['flower','꽃','5,000'],['flower1','만개한 꽃','7,000']],
+          [['fruit','열매','10,000']],
         ].map((stages, i) => `
           <div style="${i>0?'margin-top:8px;padding-top:8px;border-top:1px solid var(--border)':''}">
             ${stages.map(([badge,label,pts]) => `

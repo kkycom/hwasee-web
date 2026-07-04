@@ -370,13 +370,13 @@ ${JSON.stringify(sortedAdopted.map(s => ({ sub_id: s.sub_id, content: s.content 
 const AI_VOTE_THRESHOLD = 3;
 
 function _serverCalcBadge(pts) {
-  if (pts >= 5000) return 'fruit';
-  if (pts >= 4000) return 'flower1';
-  if (pts >= 3000) return 'flower';
-  if (pts >= 2000) return 'bud';
-  if (pts >= 1700) return 'leaf2';
-  if (pts >= 1200) return 'leaf1';
-  if (pts >= 700)  return 'leaf';
+  if (pts >= 10000) return 'fruit';
+  if (pts >= 7000) return 'flower1';
+  if (pts >= 5000) return 'flower';
+  if (pts >= 3500) return 'bud';
+  if (pts >= 2500) return 'leaf2';
+  if (pts >= 1700) return 'leaf1';
+  if (pts >= 1000) return 'leaf';
   if (pts >= 550)  return 'sprout2';
   if (pts >= 350)  return 'sprout1';
   if (pts >= 150)  return 'sprout';

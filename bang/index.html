@@ -3203,7 +3203,9 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
 // (서버가 fbGetStory에서 branches[].episodes/submissions로 이미 내려줌)
 function renderExtBranchInline(extBranch) {
   const bTree = getEpisodeTree((extBranch.episodes || []).filter(e => e.status === 'closed'), extBranch.submissions || []);
-  if (!bTree) return renderExtBranchFork(null, null, extBranch);
+  // 아직 마감된 에피소드가 없으면 인라인에 보여줄 내용이 없음 — 안내 카드는
+  // 하단 story-branch-cta가 항상 표시하므로 여기선 중복 없이 빈 값 반환
+  if (!bTree) return '';
   const divider = `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--border)"></div></div><div style="height:29px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center">⑂ 여기부터는 이 이야기만의 새로운 내용이에요</div>`;
   return divider + renderEpisodeTreeHtml(bTree, {}, undefined, undefined, undefined, true);
 }

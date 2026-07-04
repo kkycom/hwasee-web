@@ -479,6 +479,16 @@ async function _serverCloseEpisode(db, episode_id, ep) {
   for (const w of winners) {
     await db.collection('submissions').doc(w.id).update({ is_adopted: true });
     await _serverAddPoints(db, w.author_id, 20, 'direct', w.id);
+    // firebase-api.js의 _fbCloseEpisode와 동일하게 채택 횟수 반영 (누락되어 있던 부분 — AI가
+    // 마감시킨 경우 실제 채택자의 adoption_count가 하나도 안 올라가고 있었음)
+    if (w.author_id && w.author_id !== FB_ADMIN_ID && w.author_id !== FB_AI_ID) {
+      const uRef = db.collection('users').doc(w.author_id);
+      await db.runTransaction(async tx => {
+        const snap = await tx.get(uRef);
+        if (!snap.exists) return;
+        tx.update(uRef, { adoption_count: (snap.data().adoption_count || 0) + 1 });
+      });
+    }
   }
 
   const storySnap = await db.collection('stories').doc(ep.story_id).get();

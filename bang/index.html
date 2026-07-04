@@ -1642,9 +1642,11 @@ function toggleHistory() {
 }
 
 function renderHistoryPanel(episodes, submissions, opening) {
-  const closedEps = episodes
-    .filter(e => e.status === 'closed')
-    .sort((a, b) => Number(a.step) - Number(b.step));
+  // 동률로 갈라졌던 다른 트랙은 제외하고, 실제로 완결까지 이어진 경로만 표시
+  const closedEps = _buildCanonicalEpisodeList(
+    episodes.filter(e => e.status === 'closed'),
+    submissions
+  );
   const openingCard = opening ? `
     <div style="margin-bottom:20px">
       <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;letter-spacing:1px">1단계</div>
@@ -3227,6 +3229,28 @@ function _buildCanonicalPath(episodes, submissions) {
     traceSub = parentSub;
   }
   return path;
+}
+
+// 완결로 이어진 canonical 경로만 순서대로 뽑아냄 (만들어진 과정 패널용)
+// 동률로 갈라졌다가 다른 쪽으로 orphan 분리된 트랙의 에피소드는 제외 —
+// "만들어진 과정"은 이 이야기가 실제로 완결까지 온 경로만 보여줘야 함
+function _buildCanonicalEpisodeList(episodes, submissions) {
+  const canonical = _buildCanonicalPath(episodes, submissions);
+  const result = [];
+  let curEp = episodes.find(e => !e.parent_sub_id || e.parent_sub_id === '')
+    || (episodes.length ? episodes.reduce((a, b) => Number(a.step) <= Number(b.step) ? a : b) : null);
+  const seen = new Set();
+  while (curEp && !seen.has(curEp.episode_id)) {
+    seen.add(curEp.episode_id);
+    result.push(curEp);
+    const adopted = submissions.filter(s => s.episode_id === curEp.episode_id && (s.is_adopted === true || s.is_adopted === 'TRUE'));
+    if (!adopted.length) break;
+    const chosen = adopted.length > 1
+      ? (adopted.find(s => s.sub_id === canonical[curEp.episode_id]) || adopted[0])
+      : adopted[0];
+    curEp = episodes.find(e => e.parent_sub_id === chosen.sub_id) || null;
+  }
+  return result;
 }
 
 // 분기 이야기의 inherited 산문에서 해당 분기로 이어지는 경로를 선택

@@ -1184,10 +1184,15 @@ async function loadHomeTab(tab, epoch) {
       if (_popFetching) return;
       _popFetching = true;
       let storiesRes, myRes;
+      const _freshMine = user ? _lsc.get('mine') : null; // mine 탭에서 이미 받아온 게 있으면 재사용
       try {
-        const p = [api('getStories', { page: 1 })];
-        if (user) p.push(api('getMyStories'));
-        [storiesRes, myRes] = await Promise.all(p);
+        if (_freshMine) {
+          [storiesRes, myRes] = await Promise.all([api('getStories', { page: 1 }), Promise.resolve(_freshMine)]);
+        } else {
+          const p = [api('getStories', { page: 1 })];
+          if (user) p.push(api('getMyStories'));
+          [storiesRes, myRes] = await Promise.all(p);
+        }
       } catch(e) {
         if (!_stalePop && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('popular')">다시 시도</button></div>`;
         return;
@@ -1195,6 +1200,7 @@ async function loadHomeTab(tab, epoch) {
         _popFetching = false;
       }
       _lsc.set('pop', { storiesRes, myRes }, 150);
+      if (myRes?.ok) _lsc.set('mine', myRes, 300); // mine 캐시도 함께 채워서 mine 탭 전환 시 getMyStories 재호출 방지
       _applyPop(storiesRes, myRes);
     };
     if (!_cachedPop) await _fetchPop(); else _fetchPop();

@@ -414,6 +414,15 @@
   }
   .prose-author-toggle:hover { opacity: 1; border-color: var(--accent); color: var(--text); }
 
+  /* ── 산문 몰입 읽기 모드 */
+  .immersive-prose-overlay {
+    position: fixed; inset: 0; z-index: 10000;
+    background: var(--bg); overflow-y: auto;
+    padding: 48px 24px 80px; box-sizing: border-box;
+    -webkit-overflow-scrolling: touch;
+  }
+  .immersive-prose-inner { max-width: 640px; margin: 0 auto; }
+
   /* ── 탭 */
   .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
   .tab { flex: 1; text-align: center; padding: 10px 8px; font-size: 13px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted); margin-bottom: -1px; transition: .15s; white-space: nowrap; border-right: 1px solid var(--border); }
@@ -1565,7 +1574,7 @@ function _applyStoryData(res, story_id) {
       </div>
     </div>
     <div id="prose-select-bar" class="prose-select-bar"></div>
-    <div class="story-prose" id="story-prose-wrap">
+    <div class="story-prose" id="story-prose-wrap" onclick="handleProseWrapClick(event)">
       <div class="prose-opening">${esc(s.opening)}</div>
       <span class="prose-author">— ${s.creator_badge ? `<span class="badge badge-${s.creator_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(s.creator_badge)}</span>` : ''}${esc(s.creator_nickname || '익명')}</span>
       ${confirmedHtml || ''}
@@ -3148,7 +3157,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
         <div class="branch-side-indicator">
           ${adoptedSubs.map((sub, i) => `
             <button class="branch-tab ${sub.sub_id === chosenSubId ? 'active' : ''}"
-              onclick="chooseBranch('${ep.episode_id}','${sub.sub_id}')">
+              onclick="event.stopPropagation();chooseBranch('${ep.episode_id}','${sub.sub_id}')">
               ${String.fromCharCode(65+i)}갈래</button>`).join('')}
         </div>
         <div>${_proseDiv}</div>
@@ -3208,6 +3217,30 @@ function renderExtBranchFork(ep, originalSub, extBranch) {
         <div style="font-size:12px;color:var(--muted)">${isActive ? '지금 참여해서 이야기를 이어가세요 →' : '분기된 이야기 보기 →'}</div>
       </button>
     </div>`;
+}
+
+function handleProseWrapClick(e) {
+  if (window._proseSelMode) return;
+  if (e.target.closest('button, a')) return;
+  openImmersiveProse();
+}
+
+function openImmersiveProse() {
+  const wrap = document.getElementById('story-prose-wrap');
+  if (!wrap || document.getElementById('immersive-prose-overlay')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'immersive-prose-overlay';
+  overlay.className = 'immersive-prose-overlay';
+  overlay.innerHTML = `<div class="story-prose immersive-prose-inner">${wrap.innerHTML}</div>`;
+  overlay.onclick = closeImmersiveProse;
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+}
+
+function closeImmersiveProse() {
+  const overlay = document.getElementById('immersive-prose-overlay');
+  if (overlay) overlay.remove();
+  document.body.style.overflow = '';
 }
 
 function toggleProseAuthors(btn) {

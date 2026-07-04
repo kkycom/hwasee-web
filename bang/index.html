@@ -1480,7 +1480,7 @@ function _applyStoryData(res, story_id) {
     console.log('[DEBUG] pChoices[branchEpId]:', _pChoices[_branchEpId], '| pSubs at fork:', parent_chain.submissions.filter(x => x.episode_id === _branchEpId).map(x => ({id:x.sub_id, adopted:x.is_adopted})));
     // B갈래(fork sub)가 활성인지 → 아니면 own tree 숨김
     _isBranchActive = !_branchEpId || !s.branch_sub_id || _pChoices[_branchEpId] === s.branch_sub_id;
-    const _divider = _isBranchActive ? `<div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 여기부터는 이 이야기에서만 볼 수 있어요</div>` : '';
+    const _divider = _isBranchActive ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--border)"></div></div><div style="height:29px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center">⑂ 여기부터는 이 이야기에서만 볼 수 있어요</div>` : '';
     inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, _pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_divider}` : '';
   }
 
@@ -3185,7 +3185,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
 function renderExtBranchInline(extBranch) {
   const bTree = getEpisodeTree((extBranch.episodes || []).filter(e => e.status === 'closed'), extBranch.submissions || []);
   if (!bTree) return renderExtBranchFork(null, null, extBranch);
-  const divider = `<div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 여기부터는 이 이야기에서만 볼 수 있어요</div>`;
+  const divider = `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--border)"></div></div><div style="height:29px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center">⑂ 여기부터는 이 이야기에서만 볼 수 있어요</div>`;
   return divider + renderEpisodeTreeHtml(bTree, {}, undefined, undefined, undefined, true);
 }
 
@@ -3362,7 +3362,7 @@ function chooseBranch(episode_id, sub_id) {
       const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
       const _branchEpId = _s.branch_episode_id;
       _isBActive = !_branchEpId || !_s.branch_sub_id || pChoices[_branchEpId] === _s.branch_sub_id;
-      const _divider = _isBActive ? `<div style="border-top:1px dashed var(--border);margin:14px 0 8px"></div><div style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center;margin-bottom:12px">⑂ 여기부터는 이 이야기에서만 볼 수 있어요</div>` : '';
+      const _divider = _isBActive ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--border)"></div></div><div style="height:29px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center">⑂ 여기부터는 이 이야기에서만 볼 수 있어요</div>` : '';
       inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_divider}` : '';
     }
     const tree = getEpisodeTree(episodes.filter(e => e.status === 'closed'), submissions);

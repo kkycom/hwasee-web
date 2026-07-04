@@ -329,11 +329,6 @@
   }
   .toast.show { opacity: 1; }
   .toast.err { border-color: var(--accent2); }
-  .toast.wide {
-    white-space: pre-wrap; max-width: 340px; max-height: 45vh; overflow-y: auto;
-    line-height: 1.5; text-align: left; pointer-events: auto; cursor: pointer;
-    bottom: max(24px, env(safe-area-inset-bottom));
-  }
 
   /* ── 홈 탭 (4개, 가로 스크롤) */
   .home-tabs {
@@ -611,6 +606,23 @@
   .ob-dot.active { background:var(--accent2); width:18px; border-radius:3px; }
   .ob-btn-start { width:100%; padding:12px; background:var(--accent2); border:none; border-radius:10px; font-size:14px; font-weight:700; color:#fff; cursor:pointer; transition:opacity .15s; }
   .ob-btn-start:hover { opacity:.85; }
+
+  /* ── 패치 공지 모달 */
+  .patchnote-modal-overlay {
+    position:fixed; inset:0; z-index:9500;
+    background:rgba(0,0,0,.72); backdrop-filter:blur(6px);
+    display:flex; align-items:center; justify-content:center; padding:20px;
+    cursor:pointer;
+  }
+  .patchnote-modal-card {
+    background:var(--surface); border:1px solid var(--border); border-radius:20px;
+    width:100%; max-width:360px; max-height:70vh; overflow-y:auto;
+    padding:32px 28px 24px; display:flex; flex-direction:column; gap:12px;
+  }
+  .patchnote-modal-icon { font-size:36px; text-align:center; }
+  .patchnote-modal-title { font-size:17px; font-weight:700; text-align:center; font-family:var(--serif); }
+  .patchnote-modal-body { font-size:14px; color:var(--text); line-height:1.7; text-align:left; white-space:pre-wrap; }
+  .patchnote-modal-hint { font-size:11px; color:var(--muted); text-align:center; margin-top:4px; }
 </style>
 </head>
 <body>
@@ -912,14 +924,21 @@ function toast(msg, isErr) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.className = 'toast'; }, 2800);
 }
-function toastPatchNote(msg) {
-  const el = document.getElementById('toast');
-  el.textContent = '📢 ' + msg;
-  el.className   = 'toast show wide';
-  el.onclick     = () => { el.className = 'toast'; clearTimeout(toastTimer); };
-  clearTimeout(toastTimer);
-  const duration = Math.min(Math.max(msg.length * 90, 5000), 15000);
-  toastTimer = setTimeout(() => { el.className = 'toast'; }, duration);
+function showPatchNoteModal(msg) {
+  const existing = document.getElementById('patchnote-modal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'patchnote-modal';
+  modal.className = 'patchnote-modal-overlay';
+  modal.innerHTML = `
+    <div class="patchnote-modal-card">
+      <div class="patchnote-modal-icon">📢</div>
+      <div class="patchnote-modal-title">업데이트 소식</div>
+      <div class="patchnote-modal-body">${esc(msg)}</div>
+      <div class="patchnote-modal-hint">화면을 누르면 닫혀요</div>
+    </div>`;
+  modal.onclick = () => modal.remove();
+  document.body.appendChild(modal);
 }
 
 let _patchCheckDone = false;
@@ -929,7 +948,7 @@ async function checkPatchNoteAnnouncement() {
   try {
     const res = await api('getUnseenPatchNote', {});
     if (res.ok && res.unseen && res.patch) {
-      toastPatchNote(res.patch.content);
+      showPatchNoteModal(res.patch.content);
       api('markPatchNoteSeen', { patch_id: res.patch.patch_id });
     }
   } catch(e) {}

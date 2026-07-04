@@ -2176,6 +2176,11 @@ async function fbGetPatchNotes(admin_id) {
   return { ok: true, notes: snap.docs.map(d => d.data()) };
 }
 
+async function fbGetPatchNotesFeed() {
+  const snap = await db.collection('patch_notes').orderBy('created_at', 'desc').limit(50).get();
+  return { ok: true, notes: snap.docs.map(d => d.data()) };
+}
+
 async function fbGetUnseenPatchNote(user_id) {
   const [uSnap, snap] = await Promise.all([
     db.collection('users').doc(user_id).get(),
@@ -2337,6 +2342,7 @@ async function firebaseApi(action, params = {}) {
     case 'getPatchNotes':     return fbGetPatchNotes(need().user_id);
     case 'getUnseenPatchNote': return fbGetUnseenPatchNote(need().user_id);
     case 'markPatchNoteSeen': return fbMarkPatchNoteSeen(need().user_id, params.patch_id);
+    case 'getPatchNotesFeed': need(); return fbGetPatchNotesFeed();
     case 'pingWarm': return { ok: true };
     default:         return { ok: false, error: '알 수 없는 요청입니다.' };
   }

@@ -3379,12 +3379,7 @@ function _updateBranchCta() {
   const activeBranch = _getActiveBranch();
   const forkBranches = branches.filter(b => !b.is_continuation);
   if (activeBranch) {
-    el.innerHTML = `<div class="ext-branch-fork" style="display:flex;align-items:center;gap:10px;padding:10px 12px">
-      <span style="font-size:10px;color:var(--muted);letter-spacing:1px;white-space:nowrap">⑂ 분기</span>
-      <button class="ext-branch-card" onclick="nav('story','${activeBranch.story_id}')" style="flex:1;margin:0;padding:10px 12px">
-        <div style="font-size:12px;color:var(--muted)">이 분기 이야기로 이동하기 →</div>
-      </button>
-    </div>`;
+    el.innerHTML = renderExtBranchFork(null, null, activeBranch);
   } else {
     el.innerHTML = forkBranches.map(b => renderExtBranchFork(null, null, b)).join('');
   }

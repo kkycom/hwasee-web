@@ -943,7 +943,8 @@ function showPatchNoteModal(msg) {
 
 let _patchCheckDone = false;
 async function checkPatchNoteAnnouncement() {
-  if (!user || _patchCheckDone) return;
+  // 온보딩이 아직 안 끝난 유저는 온보딩 모달과 겹쳐 뜨는 걸 막기 위해 건너뜀 (다음 접속 때 노출)
+  if (!user || _patchCheckDone || !localStorage.getItem('hwasee_onboarding_seen')) return;
   _patchCheckDone = true;
   try {
     const res = await api('getUnseenPatchNote', {});

@@ -1196,11 +1196,23 @@ const FB_AI_OPENINGS = [
 
 async function _fbRecycleAbandonedSeeds(docs) {
   if (!docs.length) return;
-  const batch = db.batch();
-  docs.forEach(doc => batch.update(doc.ref, { status: 'inactive' }));
-  await batch.commit();
+  // 여러 유저(탭)가 거의 동시에 홈 탭을 열면 같은 방치 이야기를 각자 발견해서
+  // 중복 처리(알림도 중복 발송)하는 문제가 있었음 — 트랜잭션으로 문서별로
+  // "먼저 처리한 쪽"만 실제로 진행하도록 선점
+  const claimed = [];
+  for (const doc of docs) {
+    const won = await db.runTransaction(async tx => {
+      const snap = await tx.get(doc.ref);
+      if (!snap.exists || snap.data().status !== 'active') return false;
+      tx.update(doc.ref, { status: 'inactive' });
+      return true;
+    });
+    if (won) claimed.push(doc);
+  }
+  if (!claimed.length) return;
+
   // 폐기된 씨앗 오프닝을 used_openings에서 제거 (다시 씨앗 풀로 복귀)
-  const toRestore = docs.map(doc => doc.data().opening).filter(Boolean);
+  const toRestore = claimed.map(doc => doc.data().opening).filter(Boolean);
   if (toRestore.length) {
     const deleteFields = {};
     toRestore.forEach(o => { deleteFields[o] = firebase.firestore.FieldValue.delete(); });
@@ -1208,7 +1220,7 @@ async function _fbRecycleAbandonedSeeds(docs) {
   }
   const nb = db.batch();
   let hasNotif = false;
-  docs.forEach(doc => {
+  claimed.forEach(doc => {
     const s = doc.data();
     if (!s.creator_id) return;
     const snippet = (s.opening || '').length > 30 ? s.opening.substring(0, 30) + '…' : (s.opening || '');

@@ -1086,7 +1086,11 @@ async function fbVote(episode_id, sub_ids, voter_id) {
   ]);
 
   if (maxSubVotes >= FB_VOTE_THRESHOLD) {
-    await _fbCloseEpisode(episode_id, ep);
+    // await하지 않음 — 마감 처리(당선작 결정/분기 분리/포인트 지급)는 무겁고
+    // 투표 자체의 결과와 무관하므로 백그라운드로 흘려보냄. 투표 집계는 이미
+    // 위 batch.commit()으로 커밋 완료된 상태라 응답을 늦출 이유가 없음.
+    // fbGetStory의 stuck-episode 복구 경로와 동일한 fire-and-forget 패턴.
+    _fbCloseEpisode(episode_id, ep).catch(() => {});
   }
 
   return { ok: true, total_voters: newTotal, max_votes: maxSubVotes };

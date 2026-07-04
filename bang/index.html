@@ -1405,7 +1405,7 @@ function myStoryCardHtml(s) {
         </div>` : ''}
       <div class="story-card-footer">
         <span class="step-pill"><span class="step-dot"></span>${s.status==='active' ? (s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`) : `${step+1}단계`} · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
-        ${(voteCount !== null && voteCount > 0) ? `<span style="font-size:11px;color:var(--success);font-weight:700">공감 완료</span>` : ''}
+        ${(voteCount !== null && voteCount >= 2) ? `<span style="font-size:11px;color:var(--success);font-weight:700">공감 완료</span>` : ''}
       </div>
       </div>
     </div>`;
@@ -2016,7 +2016,7 @@ function toggleSub(sub_id) {
     ? '2개 선택 가능'
     : selectedSubs.length >= 2
       ? '공감하기'
-      : '공감하기 · 1개 더 고를 수 있어요';
+      : '공감하기 · 1개 더 가능해요';
 }
 
 async function submitSubInStory(episode_id, closing = false) {
@@ -3029,7 +3029,7 @@ function _applyVoteSelections() {
   const btn = document.getElementById('vote-btn');
   if (btn) btn.textContent = found.length >= 2
     ? '공감하기'
-    : '공감하기 · 1개 더 고를 수 있어요';
+    : '공감하기 · 1개 더 가능해요';
 }
 
 // 갈래 선택에 따른 action 섹션 HTML 생성

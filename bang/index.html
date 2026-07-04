@@ -4593,7 +4593,7 @@ window.onload = async () => {
 
   // PWA Service Worker 등록 + FCM 초기화
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/bang/sw.js').then(async reg => {
+    navigator.serviceWorker.register('/bang/sw.js', { updateViaCache: 'none' }).then(async reg => {
       if (!user || !('Notification' in window)) return;
       if (Notification.permission === 'denied') return;
 

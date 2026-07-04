@@ -974,7 +974,7 @@ async function fbCreateSubmission(episode_id, content, author_id, derived_from, 
     derived_from: derived_from || '', vote_count: 0,
     is_adopted: false, created_at: fbNow(), is_closing
   });
-  await _fbAddPoints(author_id, 5, 'submit', sub_id);
+  await _fbAddPoints(author_id, 10, 'submit', sub_id);
 
   // participant_count 증가 (첫 제출 시) — 복합 인덱스 없이 단일 필드 쿼리 후 클라이언트 필터
   const mySubsSnap = await db.collection('submissions')
@@ -1052,7 +1052,7 @@ async function fbVote(episode_id, sub_ids, voter_id) {
 
   await Promise.all([
     batch.commit(),
-    isRevote ? Promise.resolve() : _fbAddPoints(voter_id, 1, 'vote', ''),
+    isRevote ? Promise.resolve() : _fbAddPoints(voter_id, 5, 'vote', ''),
   ]);
 
   if (maxSubVotes >= FB_VOTE_THRESHOLD) {
@@ -1806,7 +1806,8 @@ async function fbGetProfile(user_id) {
 
   const [histSnap, writingsSnap] = await Promise.all([
     db.collection('point_ledger').where('user_id','==',user_id).orderBy('created_at','desc').limit(20).get(),
-    db.collection('submissions').where('author_id','==',user_id).orderBy('created_at','desc').limit(60).get(),
+    // limit 낮으면 AI가 관리자 계정으로 쓴 글이 최근순 상위를 채워서 실제 글이 밀려날 수 있음(is_ai 필터는 아래에서 적용)
+    db.collection('submissions').where('author_id','==',user_id).orderBy('created_at','desc').limit(300).get(),
   ]);
 
   // 제출글에서 실제 참조하는 ID만 배치 조회
@@ -1868,7 +1869,8 @@ async function fbGetPublicProfile(user_id) {
 
   const _toChunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
 
-  const writingsSnap = await db.collection('submissions').where('author_id','==',user_id).orderBy('created_at','desc').limit(60).get();
+  // limit 낮으면 AI가 관리자 계정으로 쓴 글이 최근순 상위를 채워서 실제 글이 밀려날 수 있음(is_ai 필터는 아래에서 적용)
+  const writingsSnap = await db.collection('submissions').where('author_id','==',user_id).orderBy('created_at','desc').limit(300).get();
 
   const epMap = {}, storyMap = {};
   const allEpIds    = [...new Set(writingsSnap.docs.map(d => d.data().episode_id).filter(Boolean))];

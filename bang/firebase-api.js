@@ -957,8 +957,11 @@ async function fbCreateSubmission(episode_id, content, author_id, derived_from, 
   if (ep.status !== 'open') return { ok: false, error: '제출이 마감됐습니다.' };
 
   const prevSubsSnap = await db.collection('submissions').where('episode_id','==',episode_id).get();
-  const already = prevSubsSnap.docs.some(d => d.data().author_id === author_id && !d.data().is_ai);
-  if (already) {
+  const myPrevCount = prevSubsSnap.docs.filter(d => d.data().author_id === author_id && !d.data().is_ai).length;
+  // 기본 1개 + 추가 제출권 구매 시 1개 더(최대 2개) — extra_submits 문서는 소모되지 않고
+  // 계속 남아있어서, 예전엔 "존재 여부"만 확인해 2개를 넘겨도 계속 허용되는 버그가 있었음
+  if (myPrevCount >= 2) return { ok: false, error: '이미 제출하셨습니다.' };
+  if (myPrevCount === 1) {
     const exSnap = await db.collection('extra_submits')
       .where('episode_id','==',episode_id).where('user_id','==',author_id).limit(1).get();
     if (exSnap.empty) return { ok: false, error: '이미 제출하셨습니다.' };

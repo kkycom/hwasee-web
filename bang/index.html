@@ -1488,7 +1488,7 @@ function _applyStoryData(res, story_id) {
   }
   if (currentParam !== story_id) return;
 
-  const { story: s, episodes, submissions, is_bookmarked, is_liked = false, like_count = 0, my_voted_sub_ids = [] } = res;
+  const { story: s, episodes, submissions, is_bookmarked, is_liked = false, like_count = 0, my_voted_sub_ids = [], story_comments } = res;
   // 분기 이야기: fork 갈래 자동 선택 (B이야기 로드 시 B갈래가 산문뷰에 보이도록)
   if (s.branch_episode_id && s.branch_sub_id && !(s.branch_episode_id in window._branchChoice)) {
     window._branchChoice[s.branch_episode_id] = s.branch_sub_id;
@@ -1635,7 +1635,7 @@ function _applyStoryData(res, story_id) {
       </div>
       <div style="margin-top:32px">
         <h3 style="margin-bottom:14px;font-size:16px">이야기 감상 나누기</h3>
-        <div id="story-comment-list">${s.story_comments ? renderStoryCommentList(s.story_comments, s.story_id) : '<div style="color:var(--muted);font-size:13px">불러오는 중...</div>'}</div>
+        <div id="story-comment-list">${story_comments ? renderStoryCommentList(story_comments, s.story_id) : '<div style="color:var(--muted);font-size:13px">불러오는 중...</div>'}</div>
         ${user ? `
           <div class="comment-input-row" style="margin-top:12px">
             <input type="text" id="sc-input" maxlength="300" placeholder="감상을 남겨보세요..."
@@ -1644,7 +1644,7 @@ function _applyStoryData(res, story_id) {
           </div>` : `<div style="font-size:13px;color:var(--muted);margin-top:12px">로그인 후 감상을 남길 수 있어요.</div>`}
       </div>` : ''}`;
 
-  if (isFinished && !s.story_comments) {
+  if (isFinished && !story_comments) {
     loadStoryComments(currentParam);
   }
 

@@ -551,9 +551,9 @@
     display: none; flex-direction: column; align-items: center; justify-content: center; gap: 1px; line-height: 1;
   }
   .prose-line-mvp.my-mvp { color: #a8503f; }
-  /* 으뜸글 표시는 공감현황/으뜸글 뽑기 모드에서만 — 평소엔 산문 몰입을 방해하지 않도록 숨김.
-     으뜸글 뽑기 중엔 이미 누가 선정됐는지 알아야 헷갈리지 않음 */
-  .story-prose.viewvotes-active .prose-line-mvp,
+  /* 으뜸글 표시는 으뜸글 뽑기 모드에서만 — 공감현황은 이번 단계 투표 결과(공감 개수)에
+     집중하는 화면이라 스토리 전체 히스토리인 트로피까지 같이 보이면 맥락이 섞임.
+     평소 산문 몰입 방해 방지 목적도 동일하게 유지 */
   .story-prose.mvp-active .prose-line-mvp { display:flex; }
   /* ── 분기 이야기 잠금 산문 */
   .prose-inherited { opacity:0.65; pointer-events:none; }

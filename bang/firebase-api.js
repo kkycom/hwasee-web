@@ -192,9 +192,13 @@ async function fbRegister(nickname, password, name, display_name, referral) {
   const dn = (display_name || '').trim() || nickname;
   if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(dn)) return { ok: false, error: '닉네임은 2~12자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
 
-  const [dupId, dupDn] = await Promise.all([
+  // 신규 가입자는 가입 이전 패치 내역을 볼 필요 없으니, 현재 시점 최신 패치를
+  // "이미 본 것"으로 시작해서 공지 팝업이 뜨지 않게 함 (가입 이후 새로 올라오는 것만 노출)
+  // — dup 체크와 서로 무관해서 같이 병렬 처리
+  const [dupId, dupDn, latestPatchSnap] = await Promise.all([
     db.collection('users').where('nickname', '==', nickname).limit(1).get(),
     db.collection('users').where('display_name', '==', dn).limit(1).get(),
+    db.collection('patch_notes').orderBy('created_at', 'desc').limit(1).get(),
   ]);
   if (!dupId.empty) return { ok: false, error: '이미 사용 중인 아이디입니다.' };
   if (!dupDn.empty) return { ok: false, error: '이미 사용 중인 닉네임입니다.' };
@@ -202,22 +206,23 @@ async function fbRegister(nickname, password, name, display_name, referral) {
   const user_id   = fbGenId();
   const token     = fbGenId();
   const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
-  // 신규 가입자는 가입 이전 패치 내역을 볼 필요 없으니, 현재 시점 최신 패치를
-  // "이미 본 것"으로 시작해서 공지 팝업이 뜨지 않게 함 (가입 이후 새로 올라오는 것만 노출)
-  const latestPatchSnap = await db.collection('patch_notes').orderBy('created_at', 'desc').limit(1).get();
   const initialSeenPatchId = latestPatchSnap.empty ? '' : latestPatchSnap.docs[0].data().patch_id;
 
-  await db.collection('users').doc(user_id).set({
-    user_id, nickname, display_name: dn,
-    total_points: 0, adoption_count: 0, badge: 'seed', name: (name || '').trim(),
-    referral: (referral || '').trim(), created_at: fbNow(),
-    last_seen_patch_id: initialSeenPatchId,
-    auth_uid: await fbGetAuthUid()
-  });
-  await db.collection('user_secrets').doc(user_id).set({
-    pw_hash: await fbHashPw(password), token, token_exp
-  });
+  // 익명 인증 uid 조회/비밀번호 해시는 서로 무관 — 병렬 계산 후, users/user_secrets
+  // 두 문서 쓰기도 서로 다른 문서라 병렬로 커밋
+  const [authUid, pwHash] = await Promise.all([fbGetAuthUid(), fbHashPw(password)]);
+  await Promise.all([
+    db.collection('users').doc(user_id).set({
+      user_id, nickname, display_name: dn,
+      total_points: 0, adoption_count: 0, badge: 'seed', name: (name || '').trim(),
+      referral: (referral || '').trim(), created_at: fbNow(),
+      last_seen_patch_id: initialSeenPatchId,
+      auth_uid: authUid
+    }),
+    db.collection('user_secrets').doc(user_id).set({
+      pw_hash: pwHash, token, token_exp
+    }),
+  ]);
 
   localStorage.setItem('hwasee_uid', user_id);
   return { ok: true, token, user_id, nickname, display_name: dn, total_points: 0, badge: 'seed', is_admin: user_id === FB_ADMIN_ID };

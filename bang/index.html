@@ -440,31 +440,34 @@
   h2 { font-size: 18px; margin-bottom: 16px; }
   p.desc { color: var(--muted); font-size: 14px; margin-bottom: 24px; line-height: 1.6; }
   @keyframes writing {
-    /* ① 왼쪽에서 끄적 (2칸-1칸 불규칙 리듬, 0~20%) */
+    /* ① 왼쪽에서 끄적 (완전 불규칙 자모 스트로크, 0~20%) */
     0%   { transform: translateX(-21px); }
-    3%   { transform: translateX(-19px); }
-    6%   { transform: translateX(-20px); }
-    10%  { transform: translateX(-18px); }
-    13%  { transform: translateX(-20px); }
-    16%  { transform: translateX(-19px); }
+    3%   { transform: translateX(-26px); }
+    6%   { transform: translateX(-24px); }
+    9%   { transform: translateX(-25px); }
+    12%  { transform: translateX(-23px); }
+    15%  { transform: translateX(-25px); }
+    18%  { transform: translateX(-22px); }
     20%  { transform: translateX(-21px); }
     /* ② 스윽 → 중앙 */
     33%  { transform: translateX(0px);   }
     /* ③ 중앙에서 끄적 (동일 리듬, 33~53%) */
-    36%  { transform: translateX(2px);   }
-    39%  { transform: translateX(1px);   }
-    43%  { transform: translateX(3px);   }
-    46%  { transform: translateX(1px);   }
-    49%  { transform: translateX(2px);   }
+    36%  { transform: translateX(-5px);  }
+    39%  { transform: translateX(-3px);  }
+    42%  { transform: translateX(-4px);  }
+    45%  { transform: translateX(-2px);  }
+    48%  { transform: translateX(-4px);  }
+    51%  { transform: translateX(-1px);  }
     53%  { transform: translateX(0px);   }
     /* ④ 스윽 → 오른쪽 */
     66%  { transform: translateX(21px);  }
     /* ⑤ 오른쪽에서 끄적 (동일 리듬, 66~86%) */
-    69%  { transform: translateX(23px);  }
-    72%  { transform: translateX(22px);  }
-    76%  { transform: translateX(24px);  }
-    79%  { transform: translateX(22px);  }
-    82%  { transform: translateX(23px);  }
+    69%  { transform: translateX(16px);  }
+    72%  { transform: translateX(18px);  }
+    75%  { transform: translateX(17px);  }
+    78%  { transform: translateX(19px);  }
+    81%  { transform: translateX(17px);  }
+    84%  { transform: translateX(20px);  }
     86%  { transform: translateX(21px);  }
     /* ⑥ 스윽 복귀 */
     100% { transform: translateX(-21px); }

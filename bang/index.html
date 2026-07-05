@@ -1111,12 +1111,6 @@ function calcDisplayStep(story, epStep) {
     ? (Number(story.branch_from_step) - 1) + Number(epStep)
     : Number(epStep) + 1;
 }
-function stepRangeLabel(story, minStep, maxStep) {
-  const min = calcDisplayStep(story, minStep);
-  if (maxStep == null || maxStep === minStep) return `${min}단계`;
-  return `${min}~${calcDisplayStep(story, maxStep)}단계`;
-}
-
 // ─── 홈 (4탭) ────────────────────────────────────────────
 
 const HOME_TABS = [
@@ -1341,17 +1335,25 @@ function cardStickersHtml(s, alwaysBm) {
   return parts ? `<div class="card-stickers">${parts}</div>` : '';
 }
 
+// 분기로 열린 에피소드가 여러 개면 각각 자기 줄에 "N단계 · 제출 N개"로, 참여자 수는 공용으로 한 번만 표시
+function stepPillsHtml(s, participantCount, fallbackLabel) {
+  const eps = (s.open_eps || []).length ? s.open_eps : null;
+  const pillsInner = eps
+    ? eps.map(e => `<span class="step-pill"><span class="step-dot"></span>${calcDisplayStep(s, e.step)}단계 · 제출 ${e.sub_count}개</span>`).join('')
+    : `<span class="step-pill"><span class="step-dot"></span>${fallbackLabel}</span>`;
+  return `<div style="display:flex;flex-direction:column;gap:4px">${pillsInner}</div><span style="font-size:11px;color:var(--muted)">참여자 ${participantCount}명</span>`;
+}
+
 function boostCardHtml(s) {
   const step  = Number(s.current_step) || 0;
   const count = Number(s.activity_count || s.participant_count) || 0;
-  const subCountLabel = s.open_ep_sub_count != null ? ` · 제출 ${s.open_ep_sub_count}개` : '';
   return `
     <div class="boost-card-wrap">
       <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
         ${cardStickersHtml(s)}
         <div class="story-card-title" style="-webkit-line-clamp:2;line-clamp:2">${esc(s.opening)}</div>
         <div class="story-card-footer">
-          <span class="step-pill"><span class="step-dot"></span>${s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`}${subCountLabel} · 참여자 ${count}명</span>
+          ${stepPillsHtml(s, count, `${step+2}단계`)}
         </div>
       </div>
     </div>`;
@@ -1360,14 +1362,13 @@ function boostCardHtml(s) {
 function popularCardHtml(s) {
   const step  = Number(s.current_step) || 0;
   const count = Number(s.activity_count || s.participant_count) || 0;
-  const subCountLabel = s.open_ep_sub_count != null ? ` · 제출 ${s.open_ep_sub_count}개` : '';
   return `
     <div class="story-card-wrap${s.is_boosted ? ' has-boost' : ''}">
       <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
         ${cardStickersHtml(s)}
         <div class="story-card-title">${esc(s.opening)}</div>
         <div class="story-card-footer">
-          <span class="step-pill"><span class="step-dot"></span>${s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`}${subCountLabel} · 참여자 ${count}명</span>
+          ${stepPillsHtml(s, count, `${step+2}단계`)}
         </div>
       </div>
     </div>`;
@@ -1434,7 +1435,9 @@ function myStoryCardHtml(s) {
             </div>`;}).join('')}
         </div>` : ''}
       <div class="story-card-footer">
-        <span class="step-pill"><span class="step-dot"></span>${s.status==='active' ? (s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`) : `${step+1}단계`}${s.status==='active' && s.open_ep_sub_count != null ? ` · 제출 ${s.open_ep_sub_count}개` : ''} · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
+        ${s.status==='active'
+          ? stepPillsHtml(s, Number(s.activity_count||s.participant_count)||0, `${step+2}단계`)
+          : `<span class="step-pill"><span class="step-dot"></span>${step+1}단계 · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>`}
         ${(voteCount !== null && voteCount >= 2) ? `<span style="font-size:11px;color:var(--success);font-weight:700">공감 완료</span>` : ''}
       </div>
       </div>

@@ -330,16 +330,31 @@ async function fbGetStories(page) {
       db.collection('boosts').where('expires_at', '>', fbNow()).get(),
     ]);
 
-    const openVoteMap = {}, openStepMap = {}, openStepMaxMap = {};
+    const openVoteMap = {}, openStepMap = {}, openStepMaxMap = {}, openEpIdMap = {};
     episodesSnap.docs.forEach(d => {
       const e = d.data();
       const cur = openVoteMap[e.story_id] || 0;
       if ((e.vote_total || 0) > cur) openVoteMap[e.story_id] = e.vote_total || 0;
       const step = Number(e.step);
-      if (openStepMap[e.story_id] === undefined || step < openStepMap[e.story_id]) openStepMap[e.story_id] = step;
+      if (openStepMap[e.story_id] === undefined || step < openStepMap[e.story_id]) { openStepMap[e.story_id] = step; openEpIdMap[e.story_id] = d.id; }
       if (openStepMaxMap[e.story_id] === undefined || step > openStepMaxMap[e.story_id]) openStepMaxMap[e.story_id] = step;
     });
     const boostSet = new Set(boostsSnap.docs.map(d => d.data().story_id));
+
+    // 현재 열린 단계에 제출된 글 개수 (카드에 "N개" 표시용) — 대표 열린 에피소드 기준
+    const subCountMap = {};
+    const openEpIds = [...new Set(Object.values(openEpIdMap))];
+    if (openEpIds.length) {
+      const _chunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
+      const subChunkSnaps = await Promise.all(
+        _chunks(openEpIds).map(ch => db.collection('submissions').where('episode_id', 'in', ch).get())
+      );
+      subChunkSnaps.forEach(snap => snap.docs.forEach(d => {
+        if (d.data().is_ai) return;
+        const epId = d.data().episode_id;
+        subCountMap[epId] = (subCountMap[epId] || 0) + 1;
+      }));
+    }
 
     // 1시간 경과 + 참여자 0 + AI 씨앗 → inactive 처리 + 생성자에게 알림 + 오프닝 복구
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -358,6 +373,7 @@ async function fbGetStories(page) {
       creator_badge:     d.data().creator_badge    || '',
       open_ep_step:      openStepMap[d.id]    ?? null,
       open_ep_step_max:  openStepMaxMap[d.id] ?? null,
+      open_ep_sub_count: openEpIdMap[d.id] != null ? (subCountMap[openEpIdMap[d.id]] || 0) : null,
     }));
 
     stories.sort((a, b) => {
@@ -730,6 +746,21 @@ async function fbGetMyStories(user_id) {
     if (epId) myVoteCountMap[epId] = (myVoteCountMap[epId] || 0) + 1;
   });
 
+  // 현재 열린 단계에 제출된 글 개수 (카드에 "N개" 표시용) — 대표 열린 에피소드 기준
+  const subCountMap = {};
+  const openEpIds = [...new Set(Object.values(openEpMap))];
+  if (openEpIds.length) {
+    const _chunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
+    const subChunkSnaps = await Promise.all(
+      _chunks(openEpIds).map(ch => db.collection('submissions').where('episode_id', 'in', ch).get())
+    );
+    subChunkSnaps.forEach(snap => snap.docs.forEach(d => {
+      if (d.data().is_ai) return;
+      const epId = d.data().episode_id;
+      subCountMap[epId] = (subCountMap[epId] || 0) + 1;
+    }));
+  }
+
   const mySubsArr = mySubsSnap.docs.map(d => ({
     ...d.data(),
     step:      epMap[d.data().episode_id] ? Number(epMap[d.data().episode_id].step) : 0,
@@ -748,6 +779,7 @@ async function fbGetMyStories(user_id) {
       has_voted_current: openEpId != null ? (myVoteCountMap[openEpId] || 0) : null,
       open_ep_step:      openEpId && epMap[openEpId] ? Number(epMap[openEpId].step) : null,
       open_ep_step_max:  (() => { const id = openEpMaxMap[s.story_id]; return id && epMap[id] ? Number(epMap[id].step) : null; })(),
+      open_ep_sub_count: openEpId != null ? (subCountMap[openEpId] || 0) : null,
     });
   }));
 

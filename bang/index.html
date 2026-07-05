@@ -1344,13 +1344,14 @@ function cardStickersHtml(s, alwaysBm) {
 function boostCardHtml(s) {
   const step  = Number(s.current_step) || 0;
   const count = Number(s.activity_count || s.participant_count) || 0;
+  const subCountLabel = s.open_ep_sub_count != null ? ` · 제출 ${s.open_ep_sub_count}개` : '';
   return `
     <div class="boost-card-wrap">
       <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
         ${cardStickersHtml(s)}
         <div class="story-card-title" style="-webkit-line-clamp:2;line-clamp:2">${esc(s.opening)}</div>
         <div class="story-card-footer">
-          <span class="step-pill"><span class="step-dot"></span>${s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`} · 참여자 ${count}명</span>
+          <span class="step-pill"><span class="step-dot"></span>${s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`}${subCountLabel} · 참여자 ${count}명</span>
         </div>
       </div>
     </div>`;
@@ -1359,13 +1360,14 @@ function boostCardHtml(s) {
 function popularCardHtml(s) {
   const step  = Number(s.current_step) || 0;
   const count = Number(s.activity_count || s.participant_count) || 0;
+  const subCountLabel = s.open_ep_sub_count != null ? ` · 제출 ${s.open_ep_sub_count}개` : '';
   return `
     <div class="story-card-wrap${s.is_boosted ? ' has-boost' : ''}">
       <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
         ${cardStickersHtml(s)}
         <div class="story-card-title">${esc(s.opening)}</div>
         <div class="story-card-footer">
-          <span class="step-pill"><span class="step-dot"></span>${s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`} · 참여자 ${count}명</span>
+          <span class="step-pill"><span class="step-dot"></span>${s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`}${subCountLabel} · 참여자 ${count}명</span>
         </div>
       </div>
     </div>`;
@@ -1432,7 +1434,7 @@ function myStoryCardHtml(s) {
             </div>`;}).join('')}
         </div>` : ''}
       <div class="story-card-footer">
-        <span class="step-pill"><span class="step-dot"></span>${s.status==='active' ? (s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`) : `${step+1}단계`} · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
+        <span class="step-pill"><span class="step-dot"></span>${s.status==='active' ? (s.open_ep_step != null ? stepRangeLabel(s, s.open_ep_step, s.open_ep_step_max) : `${step+2}단계`) : `${step+1}단계`}${s.status==='active' && s.open_ep_sub_count != null ? ` · 제출 ${s.open_ep_sub_count}개` : ''} · 참여자 ${Number(s.activity_count||s.participant_count)||0}명</span>
         ${(voteCount !== null && voteCount >= 2) ? `<span style="font-size:11px;color:var(--success);font-weight:700">공감 완료</span>` : ''}
       </div>
       </div>

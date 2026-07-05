@@ -229,23 +229,32 @@ async function fbLogin(nickname, password) {
   const snap = await db.collection('users').where('nickname', '==', nickname).limit(1).get();
   if (snap.empty) return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
 
-  const doc     = snap.docs[0];
-  const u       = doc.data();
-  const secSnap = await db.collection('user_secrets').doc(doc.id).get();
-  const sec     = secSnap.exists ? secSnap.data() : {};
-  if (sec.pw_hash !== await fbHashPw(password)) return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
+  const doc = snap.docs[0];
+  const u   = doc.data();
+
+  // user_secrets 조회와 비밀번호 해시 계산은 서로 독립적 — 병렬 처리
+  const [secSnap, pwHash] = await Promise.all([
+    db.collection('user_secrets').doc(doc.id).get(),
+    fbHashPw(password),
+  ]);
+  const sec = secSnap.exists ? secSnap.data() : {};
+  if (sec.pw_hash !== pwHash) return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
 
   const token     = fbGenId();
   const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-  await db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true });
-  const authUid = await fbGetAuthUid();
-  if (authUid) await doc.ref.update({ auth_uid: authUid }).catch(() => {});
+
+  // 토큰 발급/출석 보너스 처리/익명 인증 uid 조회는 서로 독립적 — 병렬 처리.
+  // dailyBonus엔 이미 위에서 읽어둔 u를 넘겨서 내부 재조회를 생략함.
+  const [, authUid, dailyResult] = await Promise.all([
+    db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true }),
+    fbGetAuthUid(),
+    _fbCheckDailyBonus(u.user_id, doc.ref, u),
+  ]);
+  // auth_uid 백필/display_name 마이그레이션은 로그인 응답과 무관한 best-effort라
+  // 기다리지 않음(실패해도 다음 액션에서 다시 시도됨)
+  if (authUid) doc.ref.update({ auth_uid: authUid }).catch(() => {});
   localStorage.setItem('hwasee_uid', u.user_id);
-
-  const dailyResult = await _fbCheckDailyBonus(u.user_id);
-
-  // 기존 유저 display_name 자동 마이그레이션
-  if (!u.display_name) await doc.ref.update({ display_name: u.nickname });
+  if (!u.display_name) doc.ref.update({ display_name: u.nickname }).catch(() => {});
 
   return {
     ok: true, token, user_id: u.user_id, nickname: u.nickname,
@@ -260,17 +269,20 @@ async function fbLogin(nickname, password) {
 // 5/10/20/30일 연속 출석 마일스톤 보너스 (총점, 매일 지급되는 10p와 별도)
 const LOGIN_STREAK_MILESTONES = { 5: 20, 10: 30, 20: 50, 30: 100 };
 
-async function _fbCheckDailyBonus(user_id) {
+async function _fbCheckDailyBonus(user_id, uRef, prefetchedUser) {
   const today     = new Date().toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const uRef  = db.collection('users').doc(user_id);
-  const uSnap = await uRef.get();
-  if (!uSnap.exists) return { bonus: 0, streak: 0, milestone_bonus: 0 };
-  const u = uSnap.data();
+  const ref = uRef || db.collection('users').doc(user_id);
+  let u = prefetchedUser;
+  if (!u) {
+    const uSnap = await ref.get();
+    if (!uSnap.exists) return { bonus: 0, streak: 0, milestone_bonus: 0 };
+    u = uSnap.data();
+  }
   if (u.last_daily_bonus_date === today) return { bonus: 0, streak: u.login_streak || 0, milestone_bonus: 0 };
 
   const streak = u.last_daily_bonus_date === yesterday ? (u.login_streak || 0) + 1 : 1;
-  await uRef.update({ last_daily_bonus_date: today, login_streak: streak });
+  await ref.update({ last_daily_bonus_date: today, login_streak: streak });
   await _fbAddPoints(user_id, 10, 'daily_login', '');
 
   const milestone_bonus = LOGIN_STREAK_MILESTONES[streak] || 0;

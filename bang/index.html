@@ -541,11 +541,16 @@
     .vote-card.clickable:hover { background:none; }
     .notif-item:hover { background:none; }
   }
-  .prose-line-mvp { font-size:11px; color:var(--accent); font-weight:700; display:none; align-items:center; gap:3px; }
-  .prose-line-my-mvp { font-size:10px; color:var(--accent2); margin-left:6px; display:none; }
+  /* 으뜸글 메달: 문장 왼쪽 여백(브라켓 바깥쪽) 공간에 세로로 아이콘+개수 배치.
+     내가 선정한 으뜸글이면 색을 빨갛게 구분 */
+  .prose-line-mvp {
+    position: absolute; left: -34px; top: 2px;
+    font-size: 10px; font-weight: 700; color: var(--accent);
+    display: none; flex-direction: column; align-items: center; gap: 1px; line-height: 1;
+  }
+  .prose-line-mvp.my-mvp { color: #c0392b; }
   /* 으뜸글 표시는 공감현황 모드에서만 — 평소엔 산문 몰입을 방해하지 않도록 숨김 */
-  .story-prose.viewvotes-active .prose-line-mvp { display:inline-flex; }
-  .story-prose.viewvotes-active .prose-line-my-mvp { display:inline; }
+  .story-prose.viewvotes-active .prose-line-mvp { display:flex; }
   /* ── 분기 이야기 잠금 산문 */
   .prose-inherited { opacity:0.65; pointer-events:none; }
   .prose-inherited .branch-side-indicator { pointer-events:auto; }
@@ -3202,8 +3207,8 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
 
   const mvpCount  = mvpMap[ep.episode_id] || 0;
   const isMyMvp   = myMvpEpId === ep.episode_id;
-  const mvpBadge  = mvpCount > 0 ? `<span class="prose-line-mvp"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>${mvpCount}</span>` : '';
-  const myMvpMark = isMyMvp ? `<span class="prose-line-my-mvp">✦ 내가 선정함</span>` : '';
+  const mvpBadge  = mvpCount > 0 ? `<span class="prose-line-mvp${isMyMvp ? ' my-mvp' : ''}"${isMyMvp ? ' title="내가 선정한 으뜸 글"' : ''}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg><span>${mvpCount}</span></span>` : '';
+  const myMvpMark = '';
 
   // 외부 분기: 이 에피소드가 분기의 실제 단절 지점(branch_leaf_episode_id)이면 포크 표시
   const extBranch = (branches || []).find(b => b.branch_leaf_episode_id === ep.episode_id);

@@ -1275,17 +1275,17 @@ async function _fbRecycleAbandonedSeeds(docs) {
   if (!docs.length) return;
   // 여러 유저(탭)가 거의 동시에 홈 탭을 열면 같은 방치 이야기를 각자 발견해서
   // 중복 처리(알림도 중복 발송)하는 문제가 있었음 — 트랜잭션으로 문서별로
-  // "먼저 처리한 쪽"만 실제로 진행하도록 선점
-  const claimed = [];
-  for (const doc of docs) {
-    const won = await db.runTransaction(async tx => {
+  // "먼저 처리한 쪽"만 실제로 진행하도록 선점. 문서마다 독립적이라 병렬 처리
+  // 가능 — 순차 await는 방치 이야기 개수만큼 관심받는 탭 로딩을 늦추고 있었음
+  const wonDocs = await Promise.all(docs.map(doc =>
+    db.runTransaction(async tx => {
       const snap = await tx.get(doc.ref);
-      if (!snap.exists || snap.data().status !== 'active') return false;
+      if (!snap.exists || snap.data().status !== 'active') return null;
       tx.update(doc.ref, { status: 'inactive' });
-      return true;
-    });
-    if (won) claimed.push(doc);
-  }
+      return doc;
+    })
+  ));
+  const claimed = wonDocs.filter(Boolean);
   if (!claimed.length) return;
 
   // 폐기된 씨앗 오프닝을 used_openings에서 제거 (다시 씨앗 풀로 복귀)
@@ -2098,7 +2098,9 @@ async function fbAdminForceAdopt(sub_id, admin_id) {
   if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
   if (epSnap.data().status !== 'open') return { ok: false, error: '이미 마감된 에피소드입니다.' };
   await subSnap.ref.update({ vote_count: 9999 });
-  await _fbCloseEpisode(sub.episode_id, { episode_id: sub.episode_id, ...epSnap.data() });
+  // 투표 마감과 동일하게 fire-and-forget — 채택 자체는 이미 커밋됐고, 뒤따르는
+  // 무거운 마감 처리(다음 단계 생성/분기 분리 등)를 기다릴 이유가 없음
+  _fbCloseEpisode(sub.episode_id, { episode_id: sub.episode_id, ...epSnap.data() }).catch(() => {});
   return { ok: true };
 }
 

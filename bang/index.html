@@ -2120,9 +2120,15 @@ function _waitForEpisodeClosed(episode_id, timeoutMs = 6000) {
 
 async function submitVoteInStory(episode_id) {
   if (!selectedSubs.length) { toast('문장을 선택해주세요.', true); return; }
-  const wasRevote = window._storyData?.my_voted_sub_ids?.length > 0;
+  // my_voted_sub_ids는 스토리 전체(모든 단계) 기준이라, 이 에피소드에서 실제로
+  // 투표한 적이 있는지 확인하려면 이 단계 제출물로만 좁혀야 함 — 안 그러면
+  // 이전 단계에서 공감했던 유저가 새 단계에서 첫 공감을 해도 "변경됨"으로 잘못 표시됨
+  const epSubIds = (window._storyData?.submissions || [])
+    .filter(s => s.episode_id === episode_id)
+    .map(s => s.sub_id);
+  const prev = (window._storyData?.my_voted_sub_ids || []).filter(id => epSubIds.includes(id));
+  const wasRevote = prev.length > 0;
   if (wasRevote) {
-    const prev = window._storyData.my_voted_sub_ids;
     const unchanged = selectedSubs.length === prev.length && selectedSubs.every(id => prev.includes(id));
     if (unchanged) { toast('선택이 이전과 같아요. 다른 문장을 골라 변경할 수 있어요.', false); return; }
   }

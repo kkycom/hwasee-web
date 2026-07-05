@@ -495,6 +495,25 @@ async function fbGetStory(story_id, user_id) {
     }
   }
 
+  // 마감은 됐는데 다음 단계 생성이 중간에 끊긴 경우 복구 — _fbCloseEpisode가
+  // fire-and-forget이라 투표한 사람이 마감 처리 도중(당첨작 채택 이후, 다음
+  // 에피소드 생성 이전) 앱을 나가면 이 상태로 영구히 멈출 수 있음.
+  // 단, 동률(분기)·완결(is_closing) 케이스는 로직이 복잡하고 조상 체인
+  // 추적 등 fragile한 부분과 얽혀있어 여기서 자동 복구하지 않고 단순
+  // "단독 승자 → 다음 단계 진행" 케이스만 처리함.
+  if (story.status !== 'completed' && story.status !== 'inactive') {
+    episodes.filter(e => e.status === 'closed').forEach(ce => {
+      const epSubs = subsSnap.docs.filter(d => d.data().episode_id === ce.episode_id).map(d => d.data());
+      const winners = epSubs.filter(s => s.is_adopted === true);
+      if (winners.length !== 1) return;
+      const winner = winners[0];
+      if (winner.is_closing === true) return;
+      const hasChild = episodes.some(e => e.parent_sub_id === winner.sub_id);
+      if (hasChild) return;
+      _fbFinishStuckAdvance(story_id, ce, winner).catch(() => {});
+    });
+  }
+
   const nickMap = {}, badgeMap = {};
   userDocs.forEach(d => { if (d.exists) { nickMap[d.id] = d.data().display_name || d.data().nickname; badgeMap[d.id] = d.data().badge; } });
 
@@ -851,6 +870,35 @@ async function fbGetEpisode(episode_id) {
   return { ok: true, episode: ep, story, prevChain };
 }
 
+// 마감(에피소드 status→closed, 채택 표시, 포인트 지급)까지는 끝났는데 다음
+// 에피소드 생성 전에 중단된 "단독 승자" 케이스만 복구. _fbCloseEpisode의
+// alreadyClosed 가드 때문에 그 함수 자체는 재호출해도 아무 일도 안 하므로,
+// 여기서 마지막 단계(스토리 current_step 갱신 + 다음 에피소드 생성)만 재현함.
+async function _fbFinishStuckAdvance(story_id, ep, winner) {
+  const key = 'finish_' + ep.episode_id;
+  if (_closingEpisodes.has(key)) return;
+  _closingEpisodes.add(key);
+  try {
+    // 재확인 — 그 사이 다른 탭에서 이미 처리했을 수 있음
+    const dup = await db.collection('episodes').where('parent_sub_id', '==', winner.sub_id).limit(1).get();
+    if (!dup.empty) return;
+    const storySnap = await db.collection('stories').doc(story_id).get();
+    if (!storySnap.exists) return;
+    const st = storySnap.data();
+    if (st.status === 'completed' || st.status === 'inactive') return;
+
+    const nextStep = (Number(st.current_step) || 0) + 1;
+    const newEpId  = fbGenId();
+    await storySnap.ref.update({ current_step: nextStep });
+    await db.collection('episodes').doc(newEpId).set({
+      episode_id: newEpId, story_id, step: nextStep + 1,
+      parent_sub_id: winner.sub_id, status: 'open', vote_total: 0,
+      created_at: fbNow(), closed_at: '', pending_at: ''
+    });
+  } finally {
+    _closingEpisodes.delete(key);
+  }
+}
 
 async function _fbCloseEpisode(episode_id, ep) {
   if (_closingEpisodes.has(episode_id)) return;

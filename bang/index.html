@@ -2721,6 +2721,7 @@ async function profile() {
           ['글 제출','+10p','earn'],
           ['공감 참여','+5p','earn'],
           ['내 글 채택됨 (직접 제출)','+20p','earn'],
+          ['내 글로 이야기를 완결지음','+30p','earn'],
           ['내 글 채택됨 (다듬기)','+10p','earn'],
           ['완결 이야기 MVP 선정','+10p','earn'],
           ['버그 제보','+10p','earn'],
@@ -4260,7 +4261,7 @@ async function saveProseEdit() {
 
 function reasonLabel(r) {
   return {
-    direct:'채택 (직접 제출)', source:'다듬기 원저자 보상', mid:'중간 다듬기 보상', derived:'다듬기 채택 보상',
+    direct:'채택 (직접 제출)', direct_close:'채택 (이야기 완결)', source:'다듬기 원저자 보상', mid:'중간 다듬기 보상', derived:'다듬기 채택 보상',
     submit:'제출 참여', vote:'공감 참여', daily_login:'출석 점수', mvp_nomination:'MVP 선정', bug_report:'버그 제보',
     boost_story:'이야기 주목 사용', extra_submit:'추가 제출권 사용', buy_avatar:'아바타 아이콘 구매',
     delete_submission:'제출 삭제 패널티',

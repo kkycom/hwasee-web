@@ -404,12 +404,16 @@ async function _serverAddPoints(db, user_id, amount, reason, sub_id) {
   }
 }
 
-// firebase-api.js의 _fbDistributePoints와 동일 — 다듬기(derived_from) 체인에 따라
-// 원작자/다듬은 사람에게 점수를 나눠줌. 반드시 함께 수정할 것.
+// 다듬기(derived_from) 체인에 따라 원작자/다듬은 사람에게 점수를 나눠줌.
+// 직접 제출이 이야기를 완결지은 경우(is_closing) 20p 대신 30p 지급.
 async function _serverDistributePoints(db, winner, allSubs) {
   const parent = allSubs.find(s => s.id === winner.derived_from);
   if (!parent) {
-    await _serverAddPoints(db, winner.author_id, 20, 'direct', winner.id);
+    if (winner.is_closing === true) {
+      await _serverAddPoints(db, winner.author_id, 30, 'direct_close', winner.id);
+    } else {
+      await _serverAddPoints(db, winner.author_id, 20, 'direct', winner.id);
+    }
   } else {
     const gp = allSubs.find(s => s.id === parent.derived_from);
     if (!gp) {

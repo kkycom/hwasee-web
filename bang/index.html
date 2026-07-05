@@ -440,40 +440,33 @@
   h2 { font-size: 18px; margin-bottom: 16px; }
   p.desc { color: var(--muted); font-size: 14px; margin-bottom: 24px; line-height: 1.6; }
   @keyframes writing {
-    /* ① 왼쪽 4번 끄적 */
+    /* ① 왼쪽에서 끄적 (2칸-1칸 불규칙 리듬, 0~20%) */
     0%   { transform: translateX(-21px); }
-    4%   { transform: translateX(-17px); }
-    8%   { transform: translateX(-21px); }
-    12%  { transform: translateX(-17px); }
-    16%  { transform: translateX(-21px); }
-    20%  { transform: translateX(-17px); }
-    24%  { transform: translateX(-21px); }
-    28%  { transform: translateX(-17px); }
-    32%  { transform: translateX(-21px); }
+    3%   { transform: translateX(-19px); }
+    6%   { transform: translateX(-20px); }
+    10%  { transform: translateX(-18px); }
+    13%  { transform: translateX(-20px); }
+    16%  { transform: translateX(-19px); }
+    20%  { transform: translateX(-21px); }
     /* ② 스윽 → 중앙 */
-    33%  { transform: translateX(-21px); }
-    44%  { transform: translateX(0px);   }
-    /* ③ 중앙 4번 끄적 */
-    46%  { transform: translateX(2px);   }
-    48%  { transform: translateX(-2px);  }
-    50%  { transform: translateX(2px);   }
-    52%  { transform: translateX(-2px);  }
-    54%  { transform: translateX(2px);   }
-    56%  { transform: translateX(-2px);  }
-    58%  { transform: translateX(2px);   }
-    60%  { transform: translateX(0px);   }
+    33%  { transform: translateX(0px);   }
+    /* ③ 중앙에서 끄적 (동일 리듬, 33~53%) */
+    36%  { transform: translateX(2px);   }
+    39%  { transform: translateX(1px);   }
+    43%  { transform: translateX(3px);   }
+    46%  { transform: translateX(1px);   }
+    49%  { transform: translateX(2px);   }
+    53%  { transform: translateX(0px);   }
     /* ④ 스윽 → 오른쪽 */
-    62%  { transform: translateX(0px);   }
-    72%  { transform: translateX(21px);  }
-    /* ⑤ 오른쪽 4번 끄적 */
-    74%  { transform: translateX(17px);  }
-    77%  { transform: translateX(21px);  }
-    80%  { transform: translateX(17px);  }
-    83%  { transform: translateX(21px);  }
-    86%  { transform: translateX(17px);  }
-    89%  { transform: translateX(21px);  }
+    66%  { transform: translateX(21px);  }
+    /* ⑤ 오른쪽에서 끄적 (동일 리듬, 66~86%) */
+    69%  { transform: translateX(23px);  }
+    72%  { transform: translateX(22px);  }
+    76%  { transform: translateX(24px);  }
+    79%  { transform: translateX(22px);  }
+    82%  { transform: translateX(23px);  }
+    86%  { transform: translateX(21px);  }
     /* ⑥ 스윽 복귀 */
-    90%  { transform: translateX(21px);  }
     100% { transform: translateX(-21px); }
   }
   .loading { text-align: center; padding: 40px; color: var(--muted); }

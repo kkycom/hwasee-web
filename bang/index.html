@@ -2091,6 +2091,21 @@ async function toggleBookmark(story_id, btn) {
   toast(isMarked ? '책갈피 해제됐습니다.' : '책갈피에 추가됐습니다.');
 }
 
+// 공감이 마감 임계값을 넘기면 서버의 _fbCloseEpisode가 백그라운드(fire-and-forget)로
+// 돌기 때문에, vote API 응답 시점엔 아직 다음 단계가 안 만들어져 있을 수 있음 —
+// episodes/{id}.status가 open이 아니게 될 때까지 짧게 폴링해서 화면이 그 사이
+// 낀 상태(방금 단계 산문뷰만 덩그러니)로 안 보이게 함
+async function _waitForEpisodeClosed(episode_id, maxTries = 8, delayMs = 700) {
+  for (let i = 0; i < maxTries; i++) {
+    try {
+      const snap = await firebase.firestore().collection('episodes').doc(episode_id).get();
+      if (snap.exists && snap.data().status !== 'open') return true;
+    } catch (e) {}
+    await new Promise(r => setTimeout(r, delayMs));
+  }
+  return false;
+}
+
 async function submitVoteInStory(episode_id) {
   if (!selectedSubs.length) { toast('문장을 선택해주세요.', true); return; }
   const wasRevote = window._storyData?.my_voted_sub_ids?.length > 0;
@@ -2107,6 +2122,10 @@ async function submitVoteInStory(episode_id) {
   _lsc.expire('pop', 'done', 'mine');
   _lsc.del('story_' + currentParam);
   toast(wasRevote ? '공감이 변경됐어요!' : '공감 완료!');
+  if (res.max_votes >= FB_VOTE_THRESHOLD) {
+    if (btn) btn.textContent = '다음 단계로 넘어가는 중...';
+    await _waitForEpisodeClosed(episode_id);
+  }
   story(true); // 갈래 선택 유지
 }
 
@@ -2317,6 +2336,10 @@ async function submitVote(episode_id) {
   if (!res.ok) { toast(res.error, true); btn.disabled = false; return; }
   _lsc.expire('pop', 'done', 'mine');
   toast('공감 완료!');
+  if (res.max_votes >= FB_VOTE_THRESHOLD) {
+    btn.textContent = '다음 단계로 넘어가는 중...';
+    await _waitForEpisodeClosed(episode_id);
+  }
   episode();
 }
 

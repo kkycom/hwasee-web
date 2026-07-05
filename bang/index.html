@@ -544,9 +544,9 @@
   /* 으뜸글 메달: 문장 왼쪽 여백(브라켓 바깥쪽) 공간에 세로로 아이콘+개수 배치.
      내가 선정한 으뜸글이면 색을 빨갛게 구분 */
   .prose-line-mvp {
-    position: absolute; left: -34px; top: 2px;
+    position: absolute; left: -28px; top: 0; width: 28px; height: 100%;
     font-size: 10px; font-weight: 700; color: var(--accent);
-    display: none; flex-direction: column; align-items: center; gap: 1px; line-height: 1;
+    display: none; flex-direction: column; align-items: center; justify-content: center; gap: 1px; line-height: 1;
   }
   .prose-line-mvp.my-mvp { color: #c0392b; }
   /* 으뜸글 표시는 공감현황 모드에서만 — 평소엔 산문 몰입을 방해하지 않도록 숨김 */
@@ -3223,8 +3223,9 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
     const editBtnHtml = isAdmin() ? `<button class="prose-edit-btn" data-sub="${sub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : '';
     return `
       <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
+        ${mvpBadge}
         <span class="prose-sentence">${esc(sub.content)}</span>
-        <div class="prose-line-meta"><span>${mvpBadge}${myMvpMark}</span>${editBtnHtml}</div>
+        <div class="prose-line-meta">${editBtnHtml}</div>
       </div>
       <span class="prose-author">— ${sub.author_badge?`<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>`:''}${esc(sub.author_nickname || '익명')}</span>
       ${forkHtml}${childHtml}`;
@@ -3237,7 +3238,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
     const chosenChild = children.find(c => c.ep.parent_sub_id === chosenSubId);
     const isForkChosen = forkSub && chosenSub && chosenSub.sub_id === forkSub.sub_id;
     const _editBtn = isAdmin() && chosenSub ? `<button class="prose-edit-btn" data-sub="${chosenSub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : '';
-    const _proseDiv = `<div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')"><span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span><div class="prose-line-meta"><span>${mvpBadge}${myMvpMark}</span>${_editBtn}</div></div><span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>`;
+    const _proseDiv = `<div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">${mvpBadge}<span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span><div class="prose-line-meta">${_editBtn}</div></div><span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(chosenSub.author_badge)}</span>`:''}${esc(chosenSub?(chosenSub.author_nickname||'익명'):'')}</span>`;
     // isForkChosen: 포크 갈래 선택 시 분기 이야기 자체 내용을 이어서 표시
     const _nextHtml = isForkChosen
       ? (!hideTabs ? renderExtBranchInline(extBranch) : '')
@@ -3262,7 +3263,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
     if (autoSub) {
       const autoChild = children.find(c => c.ep.parent_sub_id === autoSub.sub_id);
       const childHtml = autoChild ? renderEpisodeTreeHtml(autoChild, choices, mvpMap, branches, myMvpEpId, hideTabs, tabEpId) : '';
-      return `<div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')"><span class="prose-sentence">${esc(autoSub.content)}</span><div class="prose-line-meta"><span>${mvpBadge}${myMvpMark}</span></div></div><span class="prose-author">— ${autoSub.author_badge?`<span class="badge badge-${autoSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(autoSub.author_badge)}</span>`:''}${esc(autoSub.author_nickname||'익명')}</span>${childHtml}`;
+      return `<div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">${mvpBadge}<span class="prose-sentence">${esc(autoSub.content)}</span><div class="prose-line-meta"></div></div><span class="prose-author">— ${autoSub.author_badge?`<span class="badge badge-${autoSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(autoSub.author_badge)}</span>`:''}${esc(autoSub.author_nickname||'익명')}</span>${childHtml}`;
     }
   }
 

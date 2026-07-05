@@ -2093,17 +2093,29 @@ async function toggleBookmark(story_id, btn) {
 
 // 공감이 마감 임계값을 넘기면 서버의 _fbCloseEpisode가 백그라운드(fire-and-forget)로
 // 돌기 때문에, vote API 응답 시점엔 아직 다음 단계가 안 만들어져 있을 수 있음 —
-// episodes/{id}.status가 open이 아니게 될 때까지 짧게 폴링해서 화면이 그 사이
-// 낀 상태(방금 단계 산문뷰만 덩그러니)로 안 보이게 함
-async function _waitForEpisodeClosed(episode_id, maxTries = 8, delayMs = 700) {
-  for (let i = 0; i < maxTries; i++) {
-    try {
-      const snap = await firebase.firestore().collection('episodes').doc(episode_id).get();
-      if (snap.exists && snap.data().status !== 'open') return true;
-    } catch (e) {}
-    await new Promise(r => setTimeout(r, delayMs));
-  }
-  return false;
+// episodes/{id}.status가 open이 아니게 될 때까지 실시간 리스너로 기다려서 화면이
+// 그 사이 낀 상태(방금 단계 산문뷰만 덩그러니)로 안 보이게 함.
+// 고정 간격 폴링 대신 onSnapshot을 쓰는 이유: 마감 처리가 (분기/orphan 분리 없는
+// 흔한 경우) 빠르게 끝나도 폴링은 다음 틱까지 그냥 기다리는데, onSnapshot은
+// 커밋되는 즉시 반응해서 흔한 경우 체감 대기가 훨씬 짧아짐 — 최악의 경우를 위한
+// 타임아웃 상한(6초)은 그대로 유지.
+function _waitForEpisodeClosed(episode_id, timeoutMs = 6000) {
+  return new Promise(resolve => {
+    let done = false;
+    const finish = result => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      unsub();
+      resolve(result);
+    };
+    const unsub = firebase.firestore().collection('episodes').doc(episode_id)
+      .onSnapshot(
+        snap => { if (snap.exists && snap.data().status !== 'open') finish(true); },
+        () => finish(false)
+      );
+    const timer = setTimeout(() => finish(false), timeoutMs);
+  });
 }
 
 async function submitVoteInStory(episode_id) {

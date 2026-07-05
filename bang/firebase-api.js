@@ -1722,7 +1722,7 @@ async function fbVoteMvp(story_id, episode_id, voter_id) {
 
   const dup = await db.collection('story_mvp')
     .where('story_id','==',story_id).where('voter_id','==',voter_id).limit(1).get();
-  if (!dup.empty) return { ok: false, error: '이미 공감하셨습니다.' };
+  if (!dup.empty) return { ok: false, error: '이미 으뜸 글을 선정하셨습니다.' };
 
   const subSnap = await db.collection('submissions')
     .where('episode_id','==',episode_id).where('is_adopted','==',true).limit(1).get();

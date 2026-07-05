@@ -527,8 +527,10 @@
   .story-prose.selecting .prose-line:hover { border-left-color:var(--accent2); background:rgba(200,169,110,0.04); }
   .story-prose.selecting .prose-line.prose-selected { border-left-color:var(--accent2); background:rgba(200,130,58,.1); }
   @media (hover: none) {
-    /* 산문 선택 모드 — 첫 탭에 즉시 선택 */
-    .story-prose.selecting .prose-line:hover { border-left-color:transparent; background:none; }
+    /* 산문 선택 모드 — 첫 탭에 즉시 선택. 단, 이미 선택된(.prose-selected) 줄은
+       탭 후에도 :hover가 계속 걸려있는 터치 기기 특성상 이 리셋에 걸려 표시가
+       사라지면 안 되므로 제외 (탭해도 반응 없다가 손을 떼야 표시되던 버그) */
+    .story-prose.selecting .prose-line:hover:not(.prose-selected) { border-left-color:transparent; background:none; }
     /* 투표 모드 — 강조 유지 */
     .story-prose.viewvotes-active .prose-line { border-left-color:var(--accent2) !important; }
     /* 스토리 카드 — 모바일 탭 시 들썩임 방지 */
@@ -549,8 +551,10 @@
     display: none; flex-direction: column; align-items: center; justify-content: center; gap: 1px; line-height: 1;
   }
   .prose-line-mvp.my-mvp { color: #a8503f; }
-  /* 으뜸글 표시는 공감현황 모드에서만 — 평소엔 산문 몰입을 방해하지 않도록 숨김 */
-  .story-prose.viewvotes-active .prose-line-mvp { display:flex; }
+  /* 으뜸글 표시는 공감현황/으뜸글 뽑기 모드에서만 — 평소엔 산문 몰입을 방해하지 않도록 숨김.
+     으뜸글 뽑기 중엔 이미 누가 선정됐는지 알아야 헷갈리지 않음 */
+  .story-prose.viewvotes-active .prose-line-mvp,
+  .story-prose.mvp-active .prose-line-mvp { display:flex; }
   /* ── 분기 이야기 잠금 산문 */
   .prose-inherited { opacity:0.65; pointer-events:none; }
   .prose-inherited .branch-side-indicator { pointer-events:auto; }
@@ -3568,6 +3572,7 @@ function enterProseSelMode(mode, story_id) {
   if (mode === 'viewvotes') {
     if (wrap) wrap.classList.add('viewvotes-active');
   } else {
+    if (mode === 'mvp' && wrap) wrap.classList.add('mvp-active');
     setTimeout(() => document.addEventListener('click', _proseSelOutsideClick, { capture: true }), 100);
   }
 }
@@ -3632,7 +3637,7 @@ function cancelProseSelMode() {
   window._proseSelMode = null;
   window._proseSelEpId = null;
   const wrap = document.getElementById('story-prose-wrap');
-  if (wrap) { wrap.classList.remove('selecting', 'viewvotes-active'); wrap.querySelectorAll('.prose-selected').forEach(el => el.classList.remove('prose-selected')); wrap.querySelectorAll('.prose-author').forEach(el => el.classList.remove('visible')); }
+  if (wrap) { wrap.classList.remove('selecting', 'viewvotes-active', 'mvp-active'); wrap.querySelectorAll('.prose-selected').forEach(el => el.classList.remove('prose-selected')); wrap.querySelectorAll('.prose-author').forEach(el => el.classList.remove('visible')); }
   const bar = document.getElementById('prose-select-bar');
   if (bar) { bar.classList.remove('visible'); bar.innerHTML = ''; }
 }

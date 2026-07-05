@@ -242,7 +242,7 @@ async function fbLogin(nickname, password) {
   if (authUid) await doc.ref.update({ auth_uid: authUid }).catch(() => {});
   localStorage.setItem('hwasee_uid', u.user_id);
 
-  const daily_bonus = await _fbCheckDailyBonus(u.user_id);
+  const dailyResult = await _fbCheckDailyBonus(u.user_id);
 
   // 기존 유저 display_name 자동 마이그레이션
   if (!u.display_name) await doc.ref.update({ display_name: u.nickname });
@@ -251,18 +251,32 @@ async function fbLogin(nickname, password) {
     ok: true, token, user_id: u.user_id, nickname: u.nickname,
     display_name: u.display_name || u.nickname,
     total_points: u.total_points || 0, badge: u.badge || 'seed',
-    is_admin: u.user_id === FB_ADMIN_ID, daily_bonus, adoption_count: u.adoption_count || 0
+    is_admin: u.user_id === FB_ADMIN_ID, daily_bonus: dailyResult.bonus,
+    login_streak: dailyResult.streak, milestone_bonus: dailyResult.milestone_bonus,
+    adoption_count: u.adoption_count || 0
   };
 }
 
+// 5/10/20/30일 연속 출석 마일스톤 보너스 (총점, 매일 지급되는 10p와 별도)
+const LOGIN_STREAK_MILESTONES = { 5: 20, 10: 30, 20: 50, 30: 100 };
+
 async function _fbCheckDailyBonus(user_id) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today     = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const uRef  = db.collection('users').doc(user_id);
   const uSnap = await uRef.get();
-  if (!uSnap.exists || uSnap.data().last_daily_bonus_date === today) return 0;
-  await uRef.update({ last_daily_bonus_date: today });
+  if (!uSnap.exists) return { bonus: 0, streak: 0, milestone_bonus: 0 };
+  const u = uSnap.data();
+  if (u.last_daily_bonus_date === today) return { bonus: 0, streak: u.login_streak || 0, milestone_bonus: 0 };
+
+  const streak = u.last_daily_bonus_date === yesterday ? (u.login_streak || 0) + 1 : 1;
+  await uRef.update({ last_daily_bonus_date: today, login_streak: streak });
   await _fbAddPoints(user_id, 10, 'daily_login', '');
-  return 10;
+
+  const milestone_bonus = LOGIN_STREAK_MILESTONES[streak] || 0;
+  if (milestone_bonus > 0) await _fbAddPoints(user_id, milestone_bonus, `login_streak_${streak}`, '');
+
+  return { bonus: 10, streak, milestone_bonus };
 }
 
 async function fbChangePassword(user_id, current_password, new_password) {
@@ -2435,7 +2449,7 @@ async function firebaseApi(action, params = {}) {
 
     case 'saveFcmToken':    return fbSaveFcmToken(need().user_id, params.fcm_token);
     case 'trackVisit':      return fbTrackVisit(params.is_unique);
-    case 'checkDailyBonus': return { ok: true, bonus: await _fbCheckDailyBonus(need().user_id) };
+    case 'checkDailyBonus': return { ok: true, ...(await _fbCheckDailyBonus(need().user_id)) };
     case 'submitBugReport':   return fbSubmitBugReport(params.content, need().user_id);
     case 'getBugReports':     return fbGetBugReports(need().user_id);
     case 'resolveBugReport':  return fbResolveBugReport(params.report_id || params.bug_id, need().user_id, params.comment || '');

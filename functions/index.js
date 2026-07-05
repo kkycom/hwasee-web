@@ -405,7 +405,8 @@ async function _serverAddPoints(db, user_id, amount, reason, sub_id) {
 }
 
 // 다듬기(derived_from) 체인에 따라 원작자/다듬은 사람에게 점수를 나눠줌.
-// 직접 제출이 이야기를 완결지은 경우(is_closing) 20p 대신 30p 지급.
+// 이야기를 완결지은 경우(is_closing): 직접 제출은 20→30p, 원저자+다듬은 사람 2인 체인은 10/10→15/15p.
+// 3인 체인(gp/parent/winner)은 이번 보너스 범위 밖 — 기존 10/5/5 그대로.
 async function _serverDistributePoints(db, winner, allSubs) {
   const parent = allSubs.find(s => s.id === winner.derived_from);
   if (!parent) {
@@ -417,8 +418,13 @@ async function _serverDistributePoints(db, winner, allSubs) {
   } else {
     const gp = allSubs.find(s => s.id === parent.derived_from);
     if (!gp) {
-      await _serverAddPoints(db, parent.author_id, 10, 'source',  winner.id);
-      await _serverAddPoints(db, winner.author_id, 10, 'derived', winner.id);
+      if (winner.is_closing === true) {
+        await _serverAddPoints(db, parent.author_id, 15, 'source_close',  winner.id);
+        await _serverAddPoints(db, winner.author_id, 15, 'derived_close', winner.id);
+      } else {
+        await _serverAddPoints(db, parent.author_id, 10, 'source',  winner.id);
+        await _serverAddPoints(db, winner.author_id, 10, 'derived', winner.id);
+      }
     } else {
       await _serverAddPoints(db, gp.author_id,     10, 'source',  winner.id);
       await _serverAddPoints(db, parent.author_id,  5, 'mid',     winner.id);

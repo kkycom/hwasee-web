@@ -134,7 +134,7 @@
   /* ── 산문 수정 버튼 */
   .prose-edit-btn { opacity: 0; background: none; border: 1px solid var(--border); border-radius: 4px; font-size: 10px; cursor: pointer; padding: 2px 5px; color: var(--muted); transition: opacity .15s; flex-shrink: 0; display: flex; align-items: center; }
   .prose-line:hover .prose-edit-btn { opacity: 1; }
-  .prose-line-meta { position: absolute; left: 0; right: 0; top: 100%; height: 25px; padding-top: 4px; box-sizing: border-box; display: flex; align-items: flex-start; justify-content: space-between; pointer-events: none; }
+  .prose-line-meta { position: absolute; left: 0; right: 0; top: 100%; height: 25px; padding-top: 4px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
   .prose-line-meta > * { pointer-events: auto; }
   .prose-inline-editor { margin: 6px 0 12px; }
 
@@ -1386,7 +1386,7 @@ function doneCardHtml(s) {
       <div class="story-card-title">${esc(s.opening)}</div>
       <div class="story-card-footer">
         <span class="step-pill">${step}단계 완성 · 참여자 ${count}명</span>
-        ${likes > 0 ? `<span style="font-size:12px;color:var(--accent);margin-left:8px;display:inline-flex;align-items:center;gap:3px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>${likes}</span>` : ''}
+        ${likes > 0 ? `<span style="font-size:12px;color:var(--accent);margin-left:auto;display:inline-flex;align-items:center;gap:3px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>${likes}</span>` : ''}
       </div>
     </div>
     </div>`;

@@ -1629,22 +1629,6 @@ async function fbBackfillLikeCounts(admin_id) {
   return { ok: true, updated: Object.keys(countMap).length };
 }
 
-async function fbBackfillAdoptionCounts(admin_id) {
-  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const sSnap = await db.collection('submissions').where('is_adopted', '==', true).get();
-  const countMap = {};
-  sSnap.docs.forEach(d => {
-    const uid = d.data().author_id;
-    if (uid && uid !== FB_ADMIN_ID && uid !== FB_AI_ID) countMap[uid] = (countMap[uid] || 0) + 1;
-  });
-  const batch = db.batch();
-  Object.entries(countMap).forEach(([uid, cnt]) => {
-    batch.update(db.collection('users').doc(uid), { adoption_count: cnt });
-  });
-  await batch.commit();
-  return { ok: true, updated: Object.keys(countMap).length };
-}
-
 // ─── MVP ────────────────────────────────────────────────
 
 async function fbVoteMvp(story_id, episode_id, voter_id) {
@@ -2420,7 +2404,6 @@ async function firebaseApi(action, params = {}) {
     case 'markAiReviewed':     return fbMarkAiReviewed(need().user_id, params.sub_ids);
 
     case 'getLeaderboard':          return fbGetLeaderboard();
-    case 'backfillAdoptionCounts':  return fbBackfillAdoptionCounts(need().user_id);
     case 'backfillLikeCounts':      return fbBackfillLikeCounts(need().user_id);
     case 'getProfile':           return fbGetProfile(need().user_id);
     case 'getPublicProfile':     need(); return fbGetPublicProfile(params.user_id);

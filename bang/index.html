@@ -1339,9 +1339,9 @@ function cardStickersHtml(s, alwaysBm) {
 function stepPillsHtml(s, participantCount, fallbackLabel) {
   const eps = (s.open_eps || []).length ? s.open_eps : null;
   const pillsInner = eps
-    ? eps.map(e => `<span class="step-pill"><span class="step-dot"></span>${calcDisplayStep(s, e.step)}단계 · 제출 ${e.sub_count}개</span>`).join('')
-    : `<span class="step-pill"><span class="step-dot"></span>${fallbackLabel}</span>`;
-  return `<div style="display:flex;flex-direction:column;gap:4px">${pillsInner}</div><span style="font-size:11px;color:var(--muted)">참여자 ${participantCount}명</span>`;
+    ? eps.map(e => `<span class="step-pill"><span class="step-dot"></span>${calcDisplayStep(s, e.step)}단계 · 제출 ${e.sub_count}개 · 참여자 ${participantCount}명</span>`).join('')
+    : `<span class="step-pill"><span class="step-dot"></span>${fallbackLabel} · 참여자 ${participantCount}명</span>`;
+  return `<div style="display:flex;flex-direction:column;gap:4px">${pillsInner}</div>`;
 }
 
 function boostCardHtml(s) {

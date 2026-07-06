@@ -5,3 +5,4 @@ User-agent: Yeti
 Allow: /
 
 Sitemap: https://hwasee.me/sitemap.xml
+Sitemap: https://hwasee.me/bang/sitemap.xml

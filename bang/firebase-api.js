@@ -509,16 +509,16 @@ async function fbGetStory(story_id, user_id) {
       .filter(d => d.data().episode_id === openEp.episode_id)
       .reduce((m, d) => Math.max(m, Number(d.data().vote_count) || 0), 0);
     if (stuckMaxV >= FB_VOTE_THRESHOLD) {
-      _fbCloseEpisode(openEp.episode_id, { ...openEp }).catch(() => {});
+      functionsRegion.httpsCallable('closeEpisode')({ episode_id: openEp.episode_id }).catch(() => {});
     }
   }
 
-  // 마감은 됐는데 다음 단계 생성이 중간에 끊긴 경우 복구 — _fbCloseEpisode가
-  // fire-and-forget이라 투표한 사람이 마감 처리 도중(당첨작 채택 이후, 다음
-  // 에피소드 생성 이전) 앱을 나가면 이 상태로 영구히 멈출 수 있음.
-  // 단, 동률(분기)·완결(is_closing) 케이스는 로직이 복잡하고 조상 체인
-  // 추적 등 fragile한 부분과 얽혀있어 여기서 자동 복구하지 않고 단순
-  // "단독 승자 → 다음 단계 진행" 케이스만 처리함.
+  // 마감은 됐는데 다음 단계 생성이 중간에 끊긴 경우 복구 — 2026-07-06부터
+  // 마감 처리 자체는 closeEpisode Cloud Function(서버)이 전담하지만, 그 이전에
+  // 만들어진 레거시 데이터(클라이언트 fire-and-forget이 중간에 끊겨서 멈춘 것)를
+  // 위한 안전망으로 유지함. 단, 동률(분기)·완결(is_closing) 케이스는 로직이
+  // 복잡하고 조상 체인 추적 등 fragile한 부분과 얽혀있어 여기서 자동 복구하지
+  // 않고 단순 "단독 승자 → 다음 단계 진행" 케이스만 처리함.
   if (story.status !== 'completed' && story.status !== 'inactive') {
     episodes.filter(e => e.status === 'closed').forEach(ce => {
       const epSubs = subsSnap.docs.filter(d => d.data().episode_id === ce.episode_id).map(d => d.data());
@@ -889,9 +889,12 @@ async function fbGetEpisode(episode_id) {
 }
 
 // 마감(에피소드 status→closed, 채택 표시, 포인트 지급)까지는 끝났는데 다음
-// 에피소드 생성 전에 중단된 "단독 승자" 케이스만 복구. _fbCloseEpisode의
-// alreadyClosed 가드 때문에 그 함수 자체는 재호출해도 아무 일도 안 하므로,
-// 여기서 마지막 단계(스토리 current_step 갱신 + 다음 에피소드 생성)만 재현함.
+// 에피소드 생성 전에 중단된 "단독 승자" 케이스만 복구하는 레거시 안전망
+// (2026-07-06부터 마감 자체는 closeEpisode Cloud Function이 전담하므로 새로
+// 발생하진 않지만, 그 이전에 멈춘 데이터가 남아있을 수 있어 유지함).
+// _serverCloseEpisode(서버)의 alreadyClosed 가드 때문에 그 함수를 재호출해도
+// 아무 일도 안 하므로, 여기서 마지막 단계(스토리 current_step 갱신 + 다음
+// 에피소드 생성)만 재현함.
 async function _fbFinishStuckAdvance(story_id, ep, winner) {
   const key = 'finish_' + ep.episode_id;
   if (_closingEpisodes.has(key)) return;
@@ -915,161 +918,6 @@ async function _fbFinishStuckAdvance(story_id, ep, winner) {
     });
   } finally {
     _closingEpisodes.delete(key);
-  }
-}
-
-async function _fbCloseEpisode(episode_id, ep) {
-  if (_closingEpisodes.has(episode_id)) return;
-  _closingEpisodes.add(episode_id);
-  try {
-  const epRef = db.collection('episodes').doc(episode_id);
-  const alreadyClosed = await db.runTransaction(async tx => {
-    const snap = await tx.get(epRef);
-    const st = snap.data().status;
-    if (!snap.exists || (st !== 'open' && st !== 'pending')) return true;
-    tx.update(epRef, { status: 'closed', closed_at: fbNow() });
-    return false;
-  });
-  if (alreadyClosed) return;
-
-  if (!ep) {
-    const snap = await epRef.get();
-    if (!snap.exists) return;
-    ep = snap.data();
-  }
-
-  const subsSnap = await db.collection('submissions').where('episode_id', '==', episode_id).get();
-  if (subsSnap.empty) return;
-
-  const allSubs  = subsSnap.docs.map(d => ({ ...d.data(), _ref: d.ref }));
-  const maxVotes = Math.max(...allSubs.map(s => Number(s.vote_count) || 0));
-
-  let winners;
-  if (maxVotes === 0) {
-    // 투표 없이 마감되면 가장 먼저 제출된 글 채택
-    const sorted = [...allSubs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-    winners = [sorted[0]];
-  } else {
-    winners = allSubs.filter(s => (Number(s.vote_count) || 0) === maxVotes);
-  }
-  for (const w of winners) {
-    await w._ref.update({ is_adopted: true });
-  }
-  // 포인트 지급/입양수 증가는 클라이언트가 남의 계정에 직접 쓰지 않도록 서버(Cloud Function)로 이전됨
-  await functionsRegion.httpsCallable('distributeEpisodeRewards')({ episode_id }).catch(() => {});
-
-  const storySnap = await db.collection('stories').doc(ep.story_id).get();
-  if (!storySnap.exists) return;
-
-  const st       = storySnap.data();
-  const nextStep = (Number(st.current_step) || 0) + 1;
-  const anyClose = winners.some(w => w.is_closing === true);
-
-  if (anyClose) {
-    await storySnap.ref.update({ current_step: nextStep, status: 'completed' });
-
-    // 남은 open 에피소드(다른 갈래)를 독립 active 스토리로 분리
-    const orphanSnap = await db.collection('episodes')
-      .where('story_id', '==', ep.story_id).where('status', '==', 'open').get();
-    if (!orphanSnap.empty) {
-      // 갈림길 역추적용: 원본 스토리의 모든 에피소드/제출물 미리 조회
-      // (orphan의 parent_sub_id를 거슬러 올라가 실제로 동률이 갈라진 지점을 찾기 위함 —
-      //  branch_from_step 숫자 역산은 신뢰할 수 없어 직접 조상 체인을 추적함)
-      const [allEpsSnap, allSubsSnap] = await Promise.all([
-        db.collection('episodes').where('story_id', '==', ep.story_id).get(),
-        db.collection('submissions').where('story_id', '==', ep.story_id).get(),
-      ]);
-      const epById = new Map(allEpsSnap.docs.map(d => [d.id, { episode_id: d.id, ...d.data() }]));
-      const subsByEp = new Map();
-      allSubsSnap.docs.forEach(d => {
-        const s = { sub_id: d.id, ...d.data() };
-        if (!subsByEp.has(s.episode_id)) subsByEp.set(s.episode_id, []);
-        subsByEp.get(s.episode_id).push(s);
-      });
-      const subById = new Map(allSubsSnap.docs.map(d => [d.id, { sub_id: d.id, ...d.data() }]));
-
-      for (const orphanDoc of orphanSnap.docs) {
-        const orphan = orphanDoc.data();
-        const newStoryId = fbGenId();
-        const spinBatch = db.batch();
-        // 분리 전에 기존 제출자 수 확인 → participant_count 초기화에 사용
-        const subSnap = await db.collection('submissions')
-          .where('episode_id', '==', orphan.episode_id).get();
-        const uniqueAuthors = new Set(subSnap.docs.filter(d => !d.data().is_ai).map(d => d.data().author_id).filter(Boolean));
-
-        // orphan의 조상 체인을 거슬러 올라가며 두 지점을 구분해서 기록:
-        // - branch_episode_id/sub_id: 가장 위쪽 동률(진짜 갈라진 지점) — 상속 경로 재구성용(_buildForkPath)
-        // - branch_leaf_episode_id/sub_id: 원본 스토리 안에서 이 갈래가 끊기는 마지막 지점(orphan 바로 위)
-        //   — "분기 이야기로 이동" 카드/탭을 표시할 정확한 위치용
-        let branch_episode_id = null, branch_sub_id = null;
-        let branch_leaf_episode_id = null, branch_leaf_sub_id = null;
-        let curSubId = orphan.parent_sub_id || null;
-        let isFirst = true;
-        while (curSubId) {
-          const curSub = subById.get(curSubId);
-          if (!curSub) break;
-          const curEp = epById.get(curSub.episode_id);
-          if (!curEp) break;
-          if (isFirst) {
-            branch_leaf_episode_id = curEp.episode_id;
-            branch_leaf_sub_id = curSubId;
-            isFirst = false;
-          }
-          const adoptedCount = (subsByEp.get(curEp.episode_id) || [])
-            .filter(s => s.is_adopted === true || s.is_adopted === 'TRUE').length;
-          if (adoptedCount > 1) { branch_episode_id = curEp.episode_id; branch_sub_id = curSubId; }
-          curSubId = curEp.parent_sub_id || null;
-        }
-
-        // 카드/산문뷰 단계 표시용: 원본 스토리 기준 진짜 이어지는 단계 번호를 정확히 계산
-        let branch_display_offset = null;
-        if (branch_leaf_episode_id) {
-          const leafEp = epById.get(branch_leaf_episode_id);
-          const leafDisplayStep = _calcDisplayStepBackend(st, Number(leafEp.step));
-          branch_display_offset = leafDisplayStep - Number(orphan.step) + 1;
-        }
-
-        spinBatch.set(db.collection('stories').doc(newStoryId), {
-          story_id: newStoryId, parent_story_id: ep.story_id,
-          branch_from_step: Number(orphan.step) + 1,
-          branch_episode_id, branch_sub_id,
-          branch_leaf_episode_id, branch_leaf_sub_id,
-          branch_display_offset,
-          opening: st.opening, max_steps: st.max_steps || 10,
-          current_step: Number(orphan.step) - 1, status: 'active',
-          creator_id: st.creator_id,
-          creator_nickname: st.creator_nickname || '익명',
-          creator_badge: st.creator_badge || '',
-          participant_count: uniqueAuthors.size, like_count: 0, adoption_count: 0,
-          has_branch: false, created_at: fbNow(), batch: '',
-        });
-        spinBatch.update(orphanDoc.ref, { story_id: newStoryId });
-        await spinBatch.commit();
-        if (!subSnap.empty) {
-          const subBatch = db.batch();
-          subSnap.docs.forEach(d => subBatch.update(d.ref, { story_id: newStoryId }));
-          await subBatch.commit();
-        }
-      }
-    }
-  } else {
-    const storyUpdate = { current_step: nextStep };
-    if (winners.length > 1) storyUpdate.has_branch = true;
-    await storySnap.ref.update(storyUpdate);
-    const epBatch = db.batch();
-    for (const w of winners) {
-      const newEpId = fbGenId();
-      epBatch.set(db.collection('episodes').doc(newEpId), {
-        episode_id: newEpId, story_id: ep.story_id, step: nextStep + 1,
-        parent_sub_id: w.sub_id, status: 'open', vote_total: 0,
-        created_at: fbNow(), closed_at: '', pending_at: ''
-      });
-    }
-    await epBatch.commit();
-  }
-  // 알림은 onEpisodeClosed Cloud Function이 서버사이드에서 생성
-  } finally {
-    _closingEpisodes.delete(episode_id);
   }
 }
 
@@ -1213,11 +1061,11 @@ async function fbVote(episode_id, sub_ids, voter_id) {
   ]);
 
   if (maxSubVotes >= FB_VOTE_THRESHOLD) {
-    // await하지 않음 — 마감 처리(당선작 결정/분기 분리/포인트 지급)는 무겁고
-    // 투표 자체의 결과와 무관하므로 백그라운드로 흘려보냄. 투표 집계는 이미
-    // 위 batch.commit()으로 커밋 완료된 상태라 응답을 늦출 이유가 없음.
-    // fbGetStory의 stuck-episode 복구 경로와 동일한 fire-and-forget 패턴.
-    _fbCloseEpisode(episode_id, ep).catch(() => {});
+    // 마감 처리(당선작 결정/분기 분리/포인트 지급)는 서버(Cloud Function,
+    // _serverCloseEpisode 재사용)에서 수행 — 투표 응답은 기다리지 않고 바로
+    // 반환하되, 처리 자체는 브라우저 탭이 닫히거나 백그라운드로 넘어가도
+    // 서버에서 끝까지 안정적으로 완료됨.
+    functionsRegion.httpsCallable('closeEpisode')({ episode_id }).catch(() => {});
   }
 
   return { ok: true, total_voters: newTotal, max_votes: maxSubVotes };
@@ -2178,9 +2026,8 @@ async function fbAdminForceAdopt(sub_id, admin_id) {
   if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
   if (epSnap.data().status !== 'open') return { ok: false, error: '이미 마감된 에피소드입니다.' };
   await subSnap.ref.update({ vote_count: 9999 });
-  // 투표 마감과 동일하게 fire-and-forget — 채택 자체는 이미 커밋됐고, 뒤따르는
-  // 무거운 마감 처리(다음 단계 생성/분기 분리 등)를 기다릴 이유가 없음
-  _fbCloseEpisode(sub.episode_id, { episode_id: sub.episode_id, ...epSnap.data() }).catch(() => {});
+  // 투표 마감과 동일하게 서버(Cloud Function)에서 마감 처리 — 응답은 기다리지 않음
+  functionsRegion.httpsCallable('closeEpisode')({ episode_id: sub.episode_id }).catch(() => {});
   return { ok: true };
 }
 

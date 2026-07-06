@@ -507,11 +507,11 @@ async function _serverCloseEpisode(db, episode_id, ep) {
 
   for (const w of winners) {
     await db.collection('submissions').doc(w.id).update({ is_adopted: true });
-    // firebase-api.js의 _fbDistributePoints와 동일 — 다듬기(derived_from) 체인 반영해서 분배
-    // (누락되어 있던 부분 — 원작자 없이 채택자에게 20점을 무조건 몰아주고 있었음)
+    // 다듬기(derived_from) 체인 반영해서 분배 (누락되어 있던 부분 — 원작자
+    // 없이 채택자에게 20점을 무조건 몰아주고 있었음)
     await _serverDistributePoints(db, w, allSubs);
-    // firebase-api.js의 _fbCloseEpisode와 동일하게 채택 횟수 반영 (누락되어 있던 부분 — AI가
-    // 마감시킨 경우 실제 채택자의 adoption_count가 하나도 안 올라가고 있었음)
+    // 채택 횟수 반영 (누락되어 있던 부분 — AI가 마감시킨 경우 실제 채택자의
+    // adoption_count가 하나도 안 올라가고 있었음)
     if (w.author_id && w.author_id !== FB_ADMIN_ID && w.author_id !== FB_AI_ID) {
       const uRef = db.collection('users').doc(w.author_id);
       await db.runTransaction(async tx => {
@@ -533,7 +533,7 @@ async function _serverCloseEpisode(db, episode_id, ep) {
     await storySnap.ref.update({ current_step: nextStep, status: 'completed' });
 
     // 남은 open 에피소드(다른 갈래)를 독립 active 스토리로 분리
-    // (firebase-api.js의 _fbCloseEpisode와 동일한 로직 — 반드시 함께 수정할 것)
+    // (2026-07-06부터 이 함수가 사람/AI 마감 경로 공용 — 클라이언트엔 별도 사본 없음)
     const orphanSnap = await db.collection('episodes')
       .where('story_id', '==', ep.story_id).where('status', '==', 'open').get();
     if (!orphanSnap.empty) {
@@ -848,39 +848,20 @@ exports.setClaudeKey = functions
     return { ok: true };
   });
 
-// ── 에피소드 마감 보상 지급 (Callable — 클라이언트가 남의 계정에 직접 점수/입양수를
-//    쓰지 못하게 하기 위함. 클라이언트는 is_adopted만 표시하고 이 함수를 호출함) ──
-exports.distributeEpisodeRewards = functions
+// ── 에피소드 마감 (Callable — 사람 투표로 임계값 도달 시 클라이언트가 호출.
+//    _serverCloseEpisode는 원래 AI 자동참여 경로(aiParticipate)에서만 쓰던,
+//    이미 검증된 마감/분기/완결 로직 — 브라우저 fire-and-forget 대신 서버에서
+//    끝까지 안정적으로 완료되도록 사람 마감 경로도 동일 함수를 재사용함.
+//    탭이 백그라운드로 넘어가거나 닫혀도 서버 실행은 계속 진행됨) ──
+exports.closeEpisode = functions
   .region('asia-northeast3')
   .https.onCall(async (data) => {
     const episode_id = data.episode_id;
     if (!episode_id) throw new functions.https.HttpsError('invalid-argument', 'episode_id가 필요합니다.');
     const db = admin.firestore();
-    const epRef = db.collection('episodes').doc(episode_id);
-
-    const shouldProcess = await db.runTransaction(async tx => {
-      const snap = await tx.get(epRef);
-      if (!snap.exists || snap.data().status !== 'closed' || snap.data().rewards_distributed) return false;
-      tx.update(epRef, { rewards_distributed: true });
-      return true;
-    });
-    if (!shouldProcess) return { ok: true };
-
-    const subsSnap = await db.collection('submissions').where('episode_id', '==', episode_id).get();
-    const allSubs = subsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const winners = allSubs.filter(s => s.is_adopted === true);
-
-    for (const w of winners) {
-      if (w.author_id && w.author_id !== FB_ADMIN_ID && w.author_id !== FB_AI_ID) {
-        const uRef = db.collection('users').doc(w.author_id);
-        await db.runTransaction(async tx => {
-          const snap = await tx.get(uRef);
-          if (!snap.exists) return;
-          tx.update(uRef, { adoption_count: (snap.data().adoption_count || 0) + 1 });
-        });
-      }
-      await _serverDistributePoints(db, w, allSubs);
-    }
+    const epSnap = await db.collection('episodes').doc(episode_id).get();
+    if (!epSnap.exists) return { ok: true };
+    await _serverCloseEpisode(db, episode_id, epSnap.data());
     return { ok: true };
   });
 

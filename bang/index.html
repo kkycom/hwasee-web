@@ -69,6 +69,8 @@
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script defer src="https://t1.kakaocdn.net/kakao_js_sdk/2.8.1/kakao.min.js"></script>
+<script defer>Kakao.init('ff14936c489716ee8800abc48379201b');</script>
 <script defer src="firebase-api.js?v=3"></script>
 <style>
   :root {
@@ -3835,6 +3837,21 @@ function shareStory() {
   const lines = collectLines(tree, window._branchChoice || {});
   const opening = story ? story.opening : '';
   const url = location.href;
+
+  if (window.Kakao && Kakao.isInitialized()) {
+    const snippet = lines.length ? lines[0] : '';
+    Kakao.Share.sendDefault({
+      objectType: 'feed',
+      content: {
+        title: opening.length > 40 ? opening.slice(0, 40) + '…' : opening,
+        description: snippet.length > 80 ? snippet.slice(0, 80) + '…' : (snippet || '화씨.방에서 함께 쓴 이야기'),
+        imageUrl: 'https://hwasee.me/bang/hwaseebang_og.png',
+        link: { mobileWebUrl: url, webUrl: url },
+      },
+      buttons: [{ title: '이야기 보러가기', link: { mobileWebUrl: url, webUrl: url } }],
+    });
+    return;
+  }
 
   const text = [
     '화씨.방에서 함께 쓴 이야기',

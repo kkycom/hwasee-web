@@ -379,7 +379,8 @@ async function fbGetStories(page) {
         _chunks(openEpIds).map(ch => db.collection('submissions').where('episode_id', 'in', ch).get())
       );
       subChunkSnaps.forEach(snap => snap.docs.forEach(d => {
-        if (d.data().is_ai) return;
+        // AI(익명) 제출도 실제로 투표 카드에 표시되므로 카운트에 포함 — 빼면 카드 숫자와
+        // 실제 들어가서 보는 제출 카드 개수가 안 맞아서 혼란을 줌
         const epId = d.data().episode_id;
         subCountMap[epId] = (subCountMap[epId] || 0) + 1;
       }));
@@ -804,7 +805,7 @@ async function fbGetMyStories(user_id) {
       _chunks(openEpIds).map(ch => db.collection('submissions').where('episode_id', 'in', ch).get())
     );
     subChunkSnaps.forEach(snap => snap.docs.forEach(d => {
-      if (d.data().is_ai) return;
+      // AI(익명) 제출도 실제로 투표 카드에 표시되므로 카운트에 포함
       const epId = d.data().episode_id;
       subCountMap[epId] = (subCountMap[epId] || 0) + 1;
     }));

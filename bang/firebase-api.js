@@ -1270,12 +1270,20 @@ async function _fbCreateNotifications(user_ids, story_id, message) {
   await batch.commit();
 }
 
+// 알림 created_at은 클라이언트에서 만들 땐 문자열(fbNow()), 서버(Cloud Function)에서
+// 만들 땐 Firestore Timestamp 객체(admin.firestore.Timestamp.now()/serverTimestamp())라
+// 타입이 섞여 있음. 문자열과 Timestamp 객체를 그냥 <로 비교하면 항상 잘못된 결과가
+// 나옴(실측: 방금 만든 Timestamp도 "30일 지남"으로 잘못 판정돼 즉시 삭제되던 버그) —
+// 반드시 이 함수로 문자열로 정규화한 뒤에 비교/정렬할 것.
+function _fbNotifCreatedIso(v) {
+  return v?.toDate ? v.toDate().toISOString() : (v || '');
+}
+
 async function fbGetNotifications(user_id) {
   if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
   const snap = await db.collection('notifications')
     .where('user_id', '==', user_id).get();
-  const toIso = v => v?.toDate ? v.toDate().toISOString() : (v || '');
-  const notifications = snap.docs.map(d => ({ ...d.data(), created_at: toIso(d.data().created_at) }))
+  const notifications = snap.docs.map(d => ({ ...d.data(), created_at: _fbNotifCreatedIso(d.data().created_at) }))
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .slice(0, 30);
   const unread_count  = notifications.filter(n => n.is_read === false || n.is_read === 'false').length;
@@ -1289,7 +1297,8 @@ async function fbMarkNotificationsRead(user_id) {
   const batch  = db.batch();
   snap.docs.forEach(d => {
     const n = d.data();
-    if (n.created_at < cutoff) {
+    const createdIso = _fbNotifCreatedIso(n.created_at);
+    if (createdIso && createdIso < cutoff) {
       batch.delete(d.ref);
     } else if (n.is_read === false || n.is_read === 'false') {
       batch.update(d.ref, { is_read: true });

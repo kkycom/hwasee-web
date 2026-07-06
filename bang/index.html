@@ -3032,7 +3032,7 @@ function _renderNotifPanel(panel, notifs) {
       <div style="padding:10px 14px;font-size:12px;font-weight:700;border-bottom:1px solid var(--border)">알림</div>
       ${notifs.map(n => `
         <div class="notif-item ${n.is_read === 'false' || n.is_read === false ? 'unread' : ''}"
-          onclick="notifClick('${esc(n.story_id)}')">
+          onclick="notifClick('${esc(n.story_id || '')}', '${esc(n.link || '')}')">
           <div>${esc(n.message)}</div>
           <div class="notif-time">${timeAgo(n.created_at)}</div>
         </div>`).join('')}`;
@@ -3073,10 +3073,18 @@ async function toggleNotifPanel() {
   }
 }
 
-function notifClick(story_id) {
+function notifClick(story_id, link) {
   const panel = document.getElementById('notif-panel');
   if (panel) panel.style.display = 'none';
   _notifOpen = false;
+  // ai_edit 등 특정 이야기가 아니라 다른 페이지(예: 어드민 수정 내역)로 보내야
+  // 하는 알림은 story_id가 없고 link만 있음 — link를 우선 처리해야 함
+  // (안 그러면 story_id가 없어서 "undefined"라는 이야기를 불러오려다 실패했었음)
+  if (link) {
+    const hashPart = link.split('#')[1] || '';
+    const [route, param] = hashPart.split('/');
+    if (route) { nav(route, param); return; }
+  }
   if (story_id) nav('story', story_id);
 }
 

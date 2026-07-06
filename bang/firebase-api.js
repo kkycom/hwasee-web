@@ -184,7 +184,7 @@ async function _fbSpendPoints(user_id, pts, reason) {
 
 // ─── 인증 ────────────────────────────────────────────────
 
-async function fbRegister(nickname, password, name, display_name, referral) {
+async function fbRegister(nickname, password, name, display_name, referral, referrer_nickname) {
   if (!nickname || !password) return { ok: false, error: '아이디와 비밀번호를 입력해주세요.' };
   if (!/^[가-힣a-zA-Z0-9]{2,12}$/.test(nickname)) return { ok: false, error: '아이디는 2~12자, 한글·영문·숫자만 사용할 수 있어요.' };
   if (password.length < 8) return { ok: false, error: '비밀번호는 8자 이상입니다.' };
@@ -192,13 +192,16 @@ async function fbRegister(nickname, password, name, display_name, referral) {
   const dn = (display_name || '').trim() || nickname;
   if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(dn)) return { ok: false, error: '닉네임은 2~12자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
 
+  const refNick = (referrer_nickname || '').trim();
+
   // 신규 가입자는 가입 이전 패치 내역을 볼 필요 없으니, 현재 시점 최신 패치를
   // "이미 본 것"으로 시작해서 공지 팝업이 뜨지 않게 함 (가입 이후 새로 올라오는 것만 노출)
-  // — dup 체크와 서로 무관해서 같이 병렬 처리
-  const [dupId, dupDn, latestPatchSnap] = await Promise.all([
+  // — dup 체크/추천인 조회와 서로 무관해서 같이 병렬 처리
+  const [dupId, dupDn, latestPatchSnap, referrerSnap] = await Promise.all([
     db.collection('users').where('nickname', '==', nickname).limit(1).get(),
     db.collection('users').where('display_name', '==', dn).limit(1).get(),
     db.collection('patch_notes').orderBy('created_at', 'desc').limit(1).get(),
+    refNick ? db.collection('users').where('display_name', '==', refNick).limit(1).get() : Promise.resolve(null),
   ]);
   if (!dupId.empty) return { ok: false, error: '이미 사용 중인 아이디입니다.' };
   if (!dupDn.empty) return { ok: false, error: '이미 사용 중인 닉네임입니다.' };
@@ -207,6 +210,7 @@ async function fbRegister(nickname, password, name, display_name, referral) {
   const token     = fbGenId();
   const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
   const initialSeenPatchId = latestPatchSnap.empty ? '' : latestPatchSnap.docs[0].data().patch_id;
+  const referrerDoc = (referrerSnap && !referrerSnap.empty) ? referrerSnap.docs[0] : null;
 
   // 익명 인증 uid 조회/비밀번호 해시는 서로 무관 — 병렬 계산 후, users/user_secrets
   // 두 문서 쓰기도 서로 다른 문서라 병렬로 커밋
@@ -224,8 +228,22 @@ async function fbRegister(nickname, password, name, display_name, referral) {
     }),
   ]);
 
+  // 추천인 닉네임(display_name)이 실존 유저와 일치하면 서로 50P씩 지급 (관리자/AI 봇 계정 제외)
+  let referral_bonus = 0;
+  if (referrerDoc && referrerDoc.id !== FB_ADMIN_ID && referrerDoc.id !== FB_AI_ID) {
+    await Promise.all([
+      _fbAddPoints(user_id, 50, 'referral_bonus', ''),
+      _fbAddPoints(referrerDoc.id, 50, 'referral_bonus', ''),
+    ]);
+    referral_bonus = 50;
+  }
+
   localStorage.setItem('hwasee_uid', user_id);
-  return { ok: true, token, user_id, nickname, display_name: dn, total_points: 0, badge: 'seed', is_admin: user_id === FB_ADMIN_ID };
+  return {
+    ok: true, token, user_id, nickname, display_name: dn,
+    total_points: referral_bonus, badge: 'seed', is_admin: user_id === FB_ADMIN_ID,
+    referral_bonus, referral_not_found: !!refNick && !referrerDoc,
+  };
 }
 
 async function fbLogin(nickname, password) {
@@ -2304,7 +2322,7 @@ async function firebaseApi(action, params = {}) {
   };
 
   switch (action) {
-    case 'register':           return fbRegister(params.nickname, params.password, params.name, params.display_name, params.referral);
+    case 'register':           return fbRegister(params.nickname, params.password, params.name, params.display_name, params.referral, params.referrer_nickname);
     case 'login':              return fbLogin(params.nickname, params.password);
     case 'deleteAccount':      return fbDeleteAccount(need().user_id);
     case 'changePassword':     return fbChangePassword(need().user_id, params.current_password, params.new_password);

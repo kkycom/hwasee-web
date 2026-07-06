@@ -2239,17 +2239,6 @@ async function adminDeleteSub(sub_id) {
   story();
 }
 
-function shareStory(story_id) {
-  const url = `${location.origin}/bang/#story/${story_id}`;
-  if (navigator.share) {
-    navigator.share({ title: '화씨.방', url }).catch(() => {});
-  } else {
-    navigator.clipboard.writeText(url)
-      .then(() => toast('링크가 복사됐습니다.'))
-      .catch(() => toast('링크 복사에 실패했습니다.', true));
-  }
-}
-
 async function adminCloseStory(story_id) {
   const res = await api('adminCloseStory', { story_id });
   if (!res.ok) { toast(res.error, true); return; }
@@ -2606,6 +2595,7 @@ function auth() {
           </div>
           <input type="hidden" id="a-referral" value="">
         </div>
+        <div class="form-group"><label>추천인 닉네임 <span style="color:var(--muted);font-weight:400">(선택, 서로 +50P)</span></label><input id="a-referrer-nick" type="text" placeholder="추천해준 사람의 닉네임" maxlength="12"></div>
         <button class="btn btn-primary" style="width:100%" onclick="doRegister()">가입하기</button>
       ` : `
         <p style="font-size:13px;color:var(--muted);margin-bottom:20px">가입 시 입력한 아이디와 이름이 일치하면 비밀번호를 재설정할 수 있어요.</p>
@@ -2638,7 +2628,7 @@ async function doLogin() {
   saveUser(res);
   const dn = res.display_name || res.nickname;
   toast(`반갑습니다, ${dn}님!`);
-  if (res.daily_bonus) setTimeout(() => toast(`🌿 출석 점수 +${res.daily_bonus}p 지급됐어요!`), 600);
+  if (res.daily_bonus) setTimeout(() => toast(`🌿 출석 점수 +${res.daily_bonus}p 지급됐어요! (${res.login_streak}일째)`), 600);
   if (res.milestone_bonus) setTimeout(() => toast(`🔥 ${res.login_streak}일 연속 출석 보너스 +${res.milestone_bonus}p!`), 1000);
   nav('seed');
   if (!localStorage.getItem('hwasee_onboarding_seen')) setTimeout(showOnboarding, 400);
@@ -2684,11 +2674,14 @@ async function doRegister() {
     toast('비밀번호가 일치하지 않아요.', true); return;
   }
   const referral = (document.getElementById('a-referral')?.value || '').trim();
-  const res = await api('register', { nickname, password, name: nameVal, display_name: displayName, referral });
+  const referrerNickname = (document.getElementById('a-referrer-nick')?.value || '').trim();
+  const res = await api('register', { nickname, password, name: nameVal, display_name: displayName, referral, referrer_nickname: referrerNickname });
   if (!res.ok) { toast(res.error, true); return; }
   saveUser(res);
   if (typeof gtag === 'function') gtag('event', 'sign_up', { method: 'email', referral_source: referral || '미입력' });
   toast(`가입 완료! 환영합니다, ${res.display_name || res.nickname}님!`);
+  if (res.referral_bonus) setTimeout(() => toast(`🎉 친구 초대 보너스 +${res.referral_bonus}p 지급됐어요!`), 600);
+  else if (res.referral_not_found) setTimeout(() => toast('추천인 닉네임을 찾을 수 없어 보너스가 지급되지 않았어요.', true), 600);
   nav('seed');
   if (!localStorage.getItem('hwasee_onboarding_seen')) setTimeout(showOnboarding, 400);
 }
@@ -2770,6 +2763,7 @@ async function profile() {
         ${[
           ['매일 첫 로그인','+10p','earn'],
           ['연속 출석 5일/10일/20일/30일 보너스','+20~100p','earn'],
+          ['친구 초대 (가입 시 추천인 닉네임 입력, 서로)','+50p','earn'],
           ['글 제출','+10p','earn'],
           ['공감 참여','+5p','earn'],
           ['내 글 채택됨 (직접 제출)','+20p','earn'],
@@ -4329,6 +4323,7 @@ function reasonLabel(r) {
     direct:'채택 (직접 제출)', direct_close:'채택 (이야기 완결)', source:'다듬기 원저자 보상', mid:'중간 다듬기 보상', derived:'다듬기 채택 보상',
     source_close:'다듬기 원저자 보상 (이야기 완결)', derived_close:'다듬기 채택 보상 (이야기 완결)',
     submit:'제출 참여', vote:'공감 참여', daily_login:'출석 점수', mvp_nomination:'MVP 선정', bug_report:'버그 제보',
+    referral_bonus:'친구 초대 보너스',
     boost_story:'이야기 주목 사용', extra_submit:'추가 제출권 사용', buy_avatar:'아바타 아이콘 구매',
     delete_submission:'제출 삭제 패널티',
   }[r] || r;
@@ -4720,7 +4715,7 @@ window.onload = async () => {
       }
       const br = await api('checkDailyBonus');
       if (br.ok && br.bonus > 0) {
-        setTimeout(() => toast(`🌿 출석 점수 +${br.bonus}p 지급됐어요!`), 800);
+        setTimeout(() => toast(`🌿 출석 점수 +${br.bonus}p 지급됐어요! (${br.streak}일째)`), 800);
         if (br.milestone_bonus) setTimeout(() => toast(`🔥 ${br.streak}일 연속 출석 보너스 +${br.milestone_bonus}p!`), 1600);
       }
     }

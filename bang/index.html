@@ -2120,14 +2120,18 @@ async function toggleBookmark(story_id, btn) {
 }
 
 // 공감이 마감 임계값을 넘기면 서버의 _fbCloseEpisode가 백그라운드(fire-and-forget)로
-// 돌기 때문에, vote API 응답 시점엔 아직 다음 단계가 안 만들어져 있을 수 있음 —
-// episodes/{id}.status가 open이 아니게 될 때까지 실시간 리스너로 기다려서 화면이
-// 그 사이 낀 상태(방금 단계 산문뷰만 덩그러니)로 안 보이게 함.
-// 고정 간격 폴링 대신 onSnapshot을 쓰는 이유: 마감 처리가 (분기/orphan 분리 없는
-// 흔한 경우) 빠르게 끝나도 폴링은 다음 틱까지 그냥 기다리는데, onSnapshot은
-// 커밋되는 즉시 반응해서 흔한 경우 체감 대기가 훨씬 짧아짐 — 최악의 경우를 위한
-// 타임아웃 상한(6초)은 그대로 유지.
-function _waitForEpisodeClosed(episode_id, timeoutMs = 6000) {
+// 돌기 때문에, vote API 응답 시점엔 아직 다음 단계가 안 만들어져 있을 수 있음.
+// episodes/{id}.status가 open→closed로 바뀌는 건 _fbCloseEpisode의 "첫" 단계일
+// 뿐이라(그 뒤에 당첨작 채택/포인트 지급/다음 에피소드 생성 또는 완결+분기
+// 정리가 이어짐), 그것만 보고 "끝났다"고 판단하면 특히 완결(is_closing)·분기
+// 케이스처럼 무거운 나머지 처리가 안 끝난 상태를 그대로 보여주게 됨 — 실측
+// 사례로 완결 케이스가 에피소드 마감~스토리 완결 반영까지 79초 걸린 적도 있음.
+// 그래서 에피소드가 아니라 스토리 문서 자체를 봄: current_step이 늘었거나
+// status가 completed/inactive로 바뀌어야 "실제로 다음 화면에 반영할 게 생겼다"고
+// 판단. 타임아웃도 무거운 케이스를 감안해 15초로 넉넉히 둠(그래도 못 넘기면
+// 그냥 지금 상태로 렌더 — 다음에 이 스토리 다시 열면 fbGetStory의 자동복구/
+// 최신 데이터로 정상 표시됨).
+function _waitForStoryProgress(story_id, prevStep, timeoutMs = 15000) {
   return new Promise(resolve => {
     let done = false;
     const finish = result => {
@@ -2137,9 +2141,13 @@ function _waitForEpisodeClosed(episode_id, timeoutMs = 6000) {
       unsub();
       resolve(result);
     };
-    const unsub = firebase.firestore().collection('episodes').doc(episode_id)
+    const unsub = firebase.firestore().collection('stories').doc(story_id)
       .onSnapshot(
-        snap => { if (snap.exists && snap.data().status !== 'open') finish(true); },
+        snap => {
+          if (!snap.exists) return;
+          const d = snap.data();
+          if (d.status === 'completed' || d.status === 'inactive' || Number(d.current_step) > prevStep) finish(true);
+        },
         () => finish(false)
       );
     const timer = setTimeout(() => finish(false), timeoutMs);
@@ -2170,7 +2178,8 @@ async function submitVoteInStory(episode_id) {
   toast(wasRevote ? '공감이 변경됐어요!' : '공감 완료!');
   if (res.max_votes >= FB_VOTE_THRESHOLD) {
     if (btn) btn.textContent = '다음 단계로 넘어가는 중...';
-    await _waitForEpisodeClosed(episode_id);
+    const _story = window._storyData?.story;
+    if (_story) await _waitForStoryProgress(_story.story_id, Number(_story.current_step) || 0);
   }
   story(true); // 갈래 선택 유지
 }
@@ -2263,6 +2272,9 @@ async function episode() {
   }
   if (_renderEpoch !== epoch || currentParam !== episode_id) return;
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">에피소드를 불러오지 못했습니다.<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="episode()">다시 시도</button></div>`; return; }
+
+  // submitVote()의 마감 대기(_waitForStoryProgress)용 — 스토리 id/현재 단계 스탬프
+  window._epStoryRef = res.story ? { story_id: res.story.story_id, current_step: Number(res.story.current_step) || 0 } : null;
 
   const ep           = res.episode;
   const prevChain    = res.prevChain || [];
@@ -2384,7 +2396,7 @@ async function submitVote(episode_id) {
   toast('공감 완료!');
   if (res.max_votes >= FB_VOTE_THRESHOLD) {
     btn.textContent = '다음 단계로 넘어가는 중...';
-    await _waitForEpisodeClosed(episode_id);
+    if (window._epStoryRef) await _waitForStoryProgress(window._epStoryRef.story_id, window._epStoryRef.current_step);
   }
   episode();
 }

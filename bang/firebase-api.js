@@ -2237,7 +2237,11 @@ async function fbAdminEditSub(admin_id, sub_id, new_content, old_content, story_
 
 async function fbGetAdminEdits(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const snap = await db.collection('admin_edits').orderBy('edited_at', 'desc').limit(200).get();
+  // edited_at이 클라이언트(문자열)/서버(Timestamp 객체) 혼용이라 Firestore
+  // orderBy는 실제 시각과 무관하게 타입별로 묶어서 정렬함(String < Timestamp) —
+  // orderBy+limit을 DB에 맡기면 항목이 많아졌을 때 최신 AI 수정 내역이 조용히
+  // 잘려나갈 수 있어서, 전체를 가져온 뒤 정규화한 값으로 직접 정렬+자름
+  const snap = await db.collection('admin_edits').get();
   if (snap.empty) return { ok: true, edits: [] };
   const storyIds = [...new Set(snap.docs.map(d => d.data().story_id).filter(Boolean))];
   const storyMap = {};
@@ -2250,7 +2254,8 @@ async function fbGetAdminEdits(admin_id) {
     ok: true,
     edits: snap.docs
       .map(d => ({ edit_id: d.id, ...d.data(), edited_at: toIso(d.data().edited_at), story_opening: storyMap[d.data().story_id] || '' }))
-      .sort((a, b) => b.edited_at.localeCompare(a.edited_at)),
+      .sort((a, b) => b.edited_at.localeCompare(a.edited_at))
+      .slice(0, 200),
   };
 }
 

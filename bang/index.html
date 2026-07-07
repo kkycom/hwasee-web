@@ -979,8 +979,12 @@ async function checkPatchNoteAnnouncement() {
   try {
     const res = await api('getUnseenPatchNote', {});
     if (res.ok && res.unseen && res.patch) {
+      // 서버 기록(markPatchNoteSeen)이 네트워크 문제 등으로 조용히 실패해도
+      // 같은 기기에서는 다시 안 뜨도록 로컬에도 이중으로 기록
+      if (localStorage.getItem('hwasee_last_seen_patch') === res.patch.patch_id) return;
       showPatchNoteModal(res.patch.content);
-      api('markPatchNoteSeen', { patch_id: res.patch.patch_id });
+      localStorage.setItem('hwasee_last_seen_patch', res.patch.patch_id);
+      api('markPatchNoteSeen', { patch_id: res.patch.patch_id }).catch(() => {});
     }
   } catch(e) {}
 }

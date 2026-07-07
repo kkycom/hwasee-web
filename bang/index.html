@@ -1340,9 +1340,7 @@ function renderSeedCard() {
     </div>
     <div style="margin-top:10px">
       <button class="btn btn-primary" onclick="nav('create')" style="width:100%">✏️ 씨앗 문장 직접 만들기</button>
-    </div>
-    ${!user ? `<p style="margin-top:16px;text-align:center;font-size:13px;color:var(--muted)">
-      시작하려면 <button class="btn btn-ghost btn-sm" onclick="nav('auth','login')">로그인</button>이 필요해요</p>` : ''}`;
+    </div>`;
 }
 
 function nextSeed() {
@@ -1357,19 +1355,21 @@ function nextSeed() {
 // 그 사이 이탈이 압도적으로 많았음(0단계에서 죽는 이야기의 85%가 첫 문장 자체가
 // 아예 없었음, 2026-07-07 데이터 확인). 같은 자리에서 바로 이어 쓰게 유도하되,
 // "그냥 씨앗만 심고 갈게요"로 나갈 선택지는 그대로 열어둠(강제 아님).
+// 비회원도 여기서 먼저 써볼 수 있게 함(회원가입 문턱 완화) — 제출 시점에만
+// 가입을 요구하고, 써둔 문장은 잃지 않도록 가입 완료 후 자동으로 이어서 저장함
+// (confirmSeedStory/_resumePendingSeedStory 참고).
 function startSeedStory() {
-  if (!user) { nav('auth', 'register'); return; }
   const seed = (window._seeds || [])[window._seedIdx || 0];
   if (!seed) return;
   const area = document.getElementById('seed-compose-area');
   if (!area) return;
   area.innerHTML = `
-    <p style="font-size:13px;color:#9a6840;margin:14px 0 8px">이어서 한 문장 써볼래요? (안 써도 이야기는 시작돼요)</p>
+    <p style="font-size:13px;color:#9a6840;margin:14px 0 8px">${user ? '이어서 한 문장 써볼래요? (안 써도 이야기는 시작돼요)' : '이어서 한 문장 써볼래요? (제출하려면 가입이 필요해요)'}</p>
     <textarea id="seed-first-line" maxlength="50" placeholder="${esc(seed.hint || '')}"
       style="width:100%;min-height:56px;padding:10px 12px;border:1px solid #c8b090;border-radius:8px;font-family:var(--serif);font-size:15px;background:#fffdf8;resize:none;box-sizing:border-box"></textarea>
     <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px">
-      <button class="btn btn-primary" onclick="confirmSeedStory()">써서 시작하기</button>
-      <button class="btn btn-ghost" style="border-color:#c8b090;color:#7a5c40;background:#f5f0e6" onclick="confirmSeedStory(true)">그냥 씨앗만 심고 갈게요</button>
+      <button class="btn btn-primary" onclick="confirmSeedStory()">${user ? '써서 시작하기' : '이 문장으로 가입하고 시작하기'}</button>
+      ${user ? `<button class="btn btn-ghost" style="border-color:#c8b090;color:#7a5c40;background:#f5f0e6" onclick="confirmSeedStory(true)">그냥 씨앗만 심고 갈게요</button>` : ''}
     </div>`;
   document.getElementById('seed-first-line')?.focus();
 }
@@ -1378,6 +1378,15 @@ async function confirmSeedStory(skip) {
   const seed = (window._seeds || [])[window._seedIdx || 0];
   if (!seed) return;
   const text = skip ? '' : (document.getElementById('seed-first-line')?.value || '').trim();
+
+  if (!user) {
+    if (!text) { toast('이어질 한 문장을 먼저 써주세요.', true); return; }
+    localStorage.setItem('hwasee_pending_seed', JSON.stringify({ opening: seed.opening, text }));
+    toast('가입하고 바로 이어서 저장할게요!');
+    nav('auth', 'register');
+    return;
+  }
+
   const area = document.getElementById('seed-compose-area');
   area?.querySelectorAll('button').forEach(b => b.disabled = true);
   const res = await api('createStory', { opening: seed.opening, is_ai_seed: true });
@@ -1393,6 +1402,28 @@ async function confirmSeedStory(skip) {
   _lsc.del('pop', 'done', 'lb', 'mine');
   toast(text ? '이야기가 시작됐고, 첫 문장도 제출됐어요!' : '이야기가 시작됐습니다!');
   nav('story', res.story_id);
+}
+
+// 비회원이 씨앗 화면에서 써둔 문장을 가입/로그인 직후 그대로 이어서 저장 —
+// doRegister()/doLogin() 성공 직후에 호출됨. 성공적으로 이어졌으면 true 반환
+// (호출부에서 기본 nav('seed')를 건너뛰도록).
+async function _resumePendingSeedStory() {
+  const raw = localStorage.getItem('hwasee_pending_seed');
+  if (!raw) return false;
+  localStorage.removeItem('hwasee_pending_seed');
+  let pending;
+  try { pending = JSON.parse(raw); } catch (e) { return false; }
+  if (!pending?.opening) return false;
+  const res = await api('createStory', { opening: pending.opening, is_ai_seed: true });
+  if (!res.ok) { toast(res.error, true); return false; }
+  if (pending.text) {
+    const subRes = await api('createSubmission', { episode_id: res.episode_id, content: pending.text });
+    if (!subRes.ok) toast('이야기는 시작됐지만 첫 문장 제출엔 실패했어요: ' + subRes.error, true);
+  }
+  _lsc.del('pop', 'done', 'lb', 'mine');
+  toast(pending.text ? '이야기가 시작됐고, 첫 문장도 제출됐어요!' : '이야기가 시작됐습니다!');
+  nav('story', res.story_id);
+  return true;
 }
 
 // 관심받는 이야기 카드
@@ -2675,6 +2706,7 @@ async function doLogin() {
   if (res.daily_bonus) setTimeout(() => toast(`🌿 출석 점수 +${res.daily_bonus}p 지급됐어요! (${res.login_streak}일째)`), 600);
   if (res.comeback_bonus) setTimeout(() => toast(`🌱 오랜만이에요! 복귀 보너스 +${res.comeback_bonus}p 지급됐어요!`), 1000);
   if (res.milestone_bonus) setTimeout(() => toast(`🔥 ${res.login_streak}일 연속 출석 보너스 +${res.milestone_bonus}p!`), res.comeback_bonus ? 1400 : 1000);
+  if (await _resumePendingSeedStory()) return;
   nav('seed');
   if (!localStorage.getItem('hwasee_onboarding_seen')) setTimeout(showOnboarding, 400);
   setTimeout(checkPatchNoteAnnouncement, 1400);
@@ -2727,6 +2759,7 @@ async function doRegister() {
   toast(`가입 완료! 환영합니다, ${res.display_name || res.nickname}님!`);
   if (res.referral_bonus) setTimeout(() => toast(`🎉 친구 초대 보너스 +${res.referral_bonus}p 지급됐어요!`), 600);
   else if (res.referral_not_found) setTimeout(() => toast('추천인 닉네임을 찾을 수 없어 보너스가 지급되지 않았어요.', true), 600);
+  if (await _resumePendingSeedStory()) return;
   nav('seed');
   if (!localStorage.getItem('hwasee_onboarding_seen')) setTimeout(showOnboarding, 400);
 }

@@ -926,3 +926,49 @@ exports.grantMvpPoints = functions
     await _serverAddPoints(db, nominatedUserId, 10, 'mvp_nomination', '');
     return { ok: true };
   });
+
+// ── 연속 출석 끊김 방지 리마인더 푸시 (매일 저녁 9시, 아직 오늘 출석 안 한
+//    연속 출석 중인 유저에게만) ──
+exports.streakReminderPush = functions
+  .region('asia-northeast3')
+  .pubsub.schedule('every day 21:00')
+  .timeZone('Asia/Seoul')
+  .onRun(async () => {
+    const db = admin.firestore();
+    const today = new Date().toISOString().slice(0, 10);
+
+    const usersSnap = await db.collection('users').where('login_streak', '>', 0).get();
+    const targets = usersSnap.docs.filter(d => {
+      const u = d.data();
+      return u.last_daily_bonus_date !== today
+        && u.fcm_token
+        && d.id !== FB_ADMIN_ID
+        && d.id !== FB_AI_ID;
+    });
+
+    await Promise.all(targets.map(async d => {
+      const u = d.data();
+      try {
+        await admin.messaging().send({
+          token: u.fcm_token,
+          notification: {
+            title: '화씨.방',
+            body: `🔥 지금 ${u.login_streak}일 연속 출석 중이에요! 오늘 놓치면 처음부터 다시 시작돼요.`,
+          },
+          data: { link: 'https://hwasee.me/bang/' },
+          webpush: {
+            notification: {
+              icon:  'https://hwasee.me/bang/icon-192.png',
+              badge: 'https://hwasee.me/bang/icon-192.png',
+            },
+            fcmOptions: { link: 'https://hwasee.me/bang/' },
+          },
+        });
+      } catch (e) {
+        if (e.code === 'messaging/registration-token-not-registered') {
+          await d.ref.update({ fcm_token: admin.firestore.FieldValue.delete() });
+        }
+      }
+    }));
+    return null;
+  });

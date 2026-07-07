@@ -303,12 +303,16 @@ async function fbLogin(nickname, password) {
     total_points: u.total_points || 0, badge: u.badge || 'seed',
     is_admin: u.user_id === FB_ADMIN_ID, daily_bonus: dailyResult.bonus,
     login_streak: dailyResult.streak, milestone_bonus: dailyResult.milestone_bonus,
+    comeback_bonus: dailyResult.comeback_bonus,
     adoption_count: u.adoption_count || 0
   };
 }
 
 // 5/10/20/30일 연속 출석 마일스톤 보너스 (총점, 매일 지급되는 10p와 별도)
 const LOGIN_STREAK_MILESTONES = { 5: 20, 10: 30, 20: 50, 30: 100 };
+
+const COMEBACK_GAP_DAYS = 7;
+const COMEBACK_BONUS    = 30;
 
 async function _fbCheckDailyBonus(user_id, uRef, prefetchedUser) {
   const today     = new Date().toISOString().slice(0, 10);
@@ -317,12 +321,21 @@ async function _fbCheckDailyBonus(user_id, uRef, prefetchedUser) {
   let u = prefetchedUser;
   if (!u) {
     const uSnap = await ref.get();
-    if (!uSnap.exists) return { bonus: 0, streak: 0, milestone_bonus: 0 };
+    if (!uSnap.exists) return { bonus: 0, streak: 0, milestone_bonus: 0, comeback_bonus: 0 };
     u = uSnap.data();
   }
-  if (u.last_daily_bonus_date === today) return { bonus: 0, streak: u.login_streak || 0, milestone_bonus: 0 };
+  if (u.last_daily_bonus_date === today) return { bonus: 0, streak: u.login_streak || 0, milestone_bonus: 0, comeback_bonus: 0 };
 
   const streak = u.last_daily_bonus_date === yesterday ? (u.login_streak || 0) + 1 : 1;
+
+  // 복귀 보너스: 기존 출석 기록이 있는 유저가 COMEBACK_GAP_DAYS일 이상 공백 후 돌아온 경우
+  // (신규 가입자는 last_daily_bonus_date가 아예 없어서 대상 아님)
+  let comeback_bonus = 0;
+  if (u.last_daily_bonus_date) {
+    const gapDays = Math.round((new Date(today) - new Date(u.last_daily_bonus_date)) / 86400000);
+    if (gapDays >= COMEBACK_GAP_DAYS) comeback_bonus = COMEBACK_BONUS;
+  }
+
   // 재바인딩 실패 등으로 auth_uid가 여전히 안 맞으면 이 쓰기가 소유권 규칙에
   // 막힐 수 있음 — 출석 보너스 하나 때문에 로그인/세션 전체가 깨지면 안 되므로
   // 안전망으로 감싸고, 실패하면 이번엔 보너스 없이 넘어감(다음 로그인에서 재시도됨)
@@ -331,9 +344,10 @@ async function _fbCheckDailyBonus(user_id, uRef, prefetchedUser) {
     await _fbAddPoints(user_id, 10, 'daily_login', '');
     const milestone_bonus = LOGIN_STREAK_MILESTONES[streak] || 0;
     if (milestone_bonus > 0) await _fbAddPoints(user_id, milestone_bonus, `login_streak_${streak}`, '');
-    return { bonus: 10, streak, milestone_bonus };
+    if (comeback_bonus > 0) await _fbAddPoints(user_id, comeback_bonus, 'comeback_bonus', '');
+    return { bonus: 10, streak, milestone_bonus, comeback_bonus };
   } catch (e) {
-    return { bonus: 0, streak: u.login_streak || 0, milestone_bonus: 0 };
+    return { bonus: 0, streak: u.login_streak || 0, milestone_bonus: 0, comeback_bonus: 0 };
   }
 }
 

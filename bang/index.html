@@ -2641,7 +2641,8 @@ async function doLogin() {
   const dn = res.display_name || res.nickname;
   toast(`반갑습니다, ${dn}님!`);
   if (res.daily_bonus) setTimeout(() => toast(`🌿 출석 점수 +${res.daily_bonus}p 지급됐어요! (${res.login_streak}일째)`), 600);
-  if (res.milestone_bonus) setTimeout(() => toast(`🔥 ${res.login_streak}일 연속 출석 보너스 +${res.milestone_bonus}p!`), 1000);
+  if (res.comeback_bonus) setTimeout(() => toast(`🌱 오랜만이에요! 복귀 보너스 +${res.comeback_bonus}p 지급됐어요!`), 1000);
+  if (res.milestone_bonus) setTimeout(() => toast(`🔥 ${res.login_streak}일 연속 출석 보너스 +${res.milestone_bonus}p!`), res.comeback_bonus ? 1400 : 1000);
   nav('seed');
   if (!localStorage.getItem('hwasee_onboarding_seen')) setTimeout(showOnboarding, 400);
   setTimeout(checkPatchNoteAnnouncement, 1400);
@@ -2776,6 +2777,7 @@ async function profile() {
           ['매일 첫 로그인','+10p','earn'],
           ['연속 출석 5일/10일/20일/30일 보너스','+20~100p','earn'],
           ['친구 초대 (가입 시 추천인 닉네임 입력, 서로)','+50p','earn'],
+          ['오랜만에 복귀 (7일 이상 만에 출석)','+30p','earn'],
           ['글 제출','+10p','earn'],
           ['공감 참여','+5p','earn'],
           ['내 글 채택됨 (직접 제출)','+20p','earn'],
@@ -4350,7 +4352,7 @@ function reasonLabel(r) {
     direct:'채택 (직접 제출)', direct_close:'채택 (이야기 완결)', source:'다듬기 원저자 보상', mid:'중간 다듬기 보상', derived:'다듬기 채택 보상',
     source_close:'다듬기 원저자 보상 (이야기 완결)', derived_close:'다듬기 채택 보상 (이야기 완결)',
     submit:'제출 참여', vote:'공감 참여', daily_login:'출석 점수', mvp_nomination:'MVP 선정', bug_report:'버그 제보',
-    referral_bonus:'친구 초대 보너스',
+    referral_bonus:'친구 초대 보너스', comeback_bonus:'복귀 보너스',
     boost_story:'이야기 주목 사용', extra_submit:'추가 제출권 사용', buy_avatar:'아바타 아이콘 구매',
     delete_submission:'제출 삭제 패널티',
   }[r] || r;
@@ -4743,7 +4745,8 @@ window.onload = async () => {
       const br = await api('checkDailyBonus');
       if (br.ok && br.bonus > 0) {
         setTimeout(() => toast(`🌿 출석 점수 +${br.bonus}p 지급됐어요! (${br.streak}일째)`), 800);
-        if (br.milestone_bonus) setTimeout(() => toast(`🔥 ${br.streak}일 연속 출석 보너스 +${br.milestone_bonus}p!`), 1600);
+        if (br.comeback_bonus) setTimeout(() => toast(`🌱 오랜만이에요! 복귀 보너스 +${br.comeback_bonus}p 지급됐어요!`), 1600);
+        if (br.milestone_bonus) setTimeout(() => toast(`🔥 ${br.streak}일 연속 출석 보너스 +${br.milestone_bonus}p!`), br.comeback_bonus ? 2400 : 1600);
       }
     }
   }

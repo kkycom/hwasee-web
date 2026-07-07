@@ -46,20 +46,21 @@ exports.sendPushOnNotification = functions
     const link = notif.link
       || (notif.story_id ? `https://hwasee.me/bang/#story/${notif.story_id}` : 'https://hwasee.me/bang/');
 
+    // 의도적으로 top-level `notification`/`webpush.notification` 필드를 안 씀 —
+    // 이 필드가 있으면 브라우저(FCM SDK)가 알아서 한 번 자동 표시하고, sw.js의
+    // onBackgroundMessage가 그 위에 또 한 번 수동으로 showNotification을 호출해서
+    // 똑같은 내용의 알림이 두 개씩 뜨는 문제가 있었음(휴대폰 알림 중복 버그 리포트로
+    // 확인). data-only 메시지로 보내서 자동 표시를 끄고, 표시는 오직 sw.js의
+    // onBackgroundMessage 한 곳에서만 하도록 함.
     try {
       await admin.messaging().send({
         token: fcmToken,
-        notification: {
+        data: {
           title: '화씨.방',
           body: notif.message,
-        },
-        data: { link },
-        webpush: {
-          notification: {
-            icon:  'https://hwasee.me/bang/icon-192.png',
-            badge: 'https://hwasee.me/bang/icon-192.png',
-          },
-          fcmOptions: { link },
+          link,
+          icon:  'https://hwasee.me/bang/icon-192.png',
+          badge: 'https://hwasee.me/bang/icon-192.png',
         },
       });
     } catch (e) {

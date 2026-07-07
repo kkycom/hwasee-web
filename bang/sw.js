@@ -12,15 +12,19 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// 백그라운드 알림 수신
+// 백그라운드 알림 수신 — 서버가 data-only 메시지로 보냄(top-level notification
+// 필드 없음). 그래야 브라우저가 알아서 자동 표시하지 않고, 아래에서 딱 한 번만
+// 직접 표시함(예전엔 notification 필드도 같이 보내서 브라우저 자동표시 + 여기 수동
+// 표시가 겹쳐 똑같은 알림이 두 개씩 뜨는 버그가 있었음)
 messaging.onBackgroundMessage(payload => {
-  const title = payload.notification?.title || '화씨.방';
-  const body  = payload.notification?.body  || '';
-  const link  = payload.data?.link || '/bang/';
+  const d = payload.data || {};
+  const title = d.title || '화씨.방';
+  const body  = d.body  || '';
+  const link  = d.link  || '/bang/';
   self.registration.showNotification(title, {
     body,
-    icon: '/bang/icon-192.png',
-    badge: '/bang/icon-192.png',
+    icon: d.icon  || '/bang/icon-192.png',
+    badge: d.badge || '/bang/icon-192.png',
     data: { link },
   });
 });
@@ -43,7 +47,7 @@ self.addEventListener('notificationclick', e => {
 
 // ── 캐시 전략 ───────────────────────────────────────────────
 
-const CACHE = 'hwasee-bang-v224';
+const CACHE = 'hwasee-bang-v225';
 const PRECACHE = [
   '/bang/',
   '/bang/index.html',

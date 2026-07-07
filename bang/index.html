@@ -2564,6 +2564,12 @@ function showExtendModal(story_id) {
 
 function auth() {
   const tab = currentParam || 'login';
+  // 로그인/가입 폼 진입 시점에 익명 인증을 미리 워밍업 — 페이지 로드 시점의
+  // 무조건 즉시 실행(과거 Firestore 워밍업과 경쟁해 초기 로딩을 늦추던 문제)과는
+  // 다르게, 유저가 곧 로그인/가입 버튼을 누를 거라는 강한 신호가 있는 시점에만
+  // 트리거함 — 아이디/비번 입력하는 동안 백그라운드에서 끝나 있으면 실제
+  // 제출 시점엔 fbGetAuthUid()가 캐시된 결과를 즉시 반환함
+  if (tab === 'login' || tab === 'register') fbGetAuthUid().catch(() => {});
   document.getElementById('app').innerHTML = `
     <div style="max-width:400px;margin:40px auto">
       <h2 style="margin-bottom:24px;text-align:center;font-family:var(--serif)">화씨.방에 오신 것을 환영해요</h2>

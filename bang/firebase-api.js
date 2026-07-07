@@ -266,11 +266,17 @@ async function fbLogin(nickname, password) {
   const token     = fbGenId();
   const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  // 토큰 발급/출석 보너스 처리/익명 인증 uid 조회는 서로 독립적 — 병렬 처리.
-  // dailyBonus엔 이미 위에서 읽어둔 u를 넘겨서 내부 재조회를 생략함.
-  const [, authUid, dailyResult] = await Promise.all([
+  // fbGetAuthUid()를 먼저 끝내야 함 — _fbCheckDailyBonus 내부에서 users/point_ledger에
+  // 쓰기를 하는데, 이 두 컬렉션은 request.auth != null을 요구하는 소유권 규칙이
+  // 걸려있어서, 익명 인증이 아직 안 끝난 상태로 그 쓰기를 같이 병렬로 보내면
+  // 규칙에 막혀 실패할 수 있음(예전엔 전부 순차 실행이라 우연히 안전했음).
+  // users/point_ledger를 건드리는 작업은 반드시 authUid 확정 이후에 시작할 것.
+  const authUid = await fbGetAuthUid();
+
+  // user_secrets(소유권 규칙 없음) 토큰 발급과 출석 보너스 처리는 서로 독립적 —
+  // 병렬 처리. dailyBonus엔 이미 위에서 읽어둔 u를 넘겨서 내부 재조회를 생략함.
+  const [, dailyResult] = await Promise.all([
     db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true }),
-    fbGetAuthUid(),
     _fbCheckDailyBonus(u.user_id, doc.ref, u),
   ]);
   // auth_uid 백필/display_name 마이그레이션은 로그인 응답과 무관한 best-effort라

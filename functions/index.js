@@ -1,5 +1,6 @@
 const functions = require('firebase-functions');
 const admin     = require('firebase-admin');
+const crypto    = require('crypto');
 admin.initializeApp();
 
 const FB_ADMIN_ID = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
@@ -852,6 +853,38 @@ exports.setClaudeKey = functions
     }
     const db = admin.firestore();
     await db.collection('config').doc('secrets').set({ claude_key: key }, { merge: true });
+    return { ok: true };
+  });
+
+// ── 로그인 시 auth_uid 재바인딩 (Callable — Auth 마이그레이션 4단계).
+//    firestore.rules상 users/{uid}의 write는 "auth_uid가 비어있거나 요청자와
+//    일치할 때만" 허용되므로, 이미 다른 기기(다른 익명 인증 uid)로 바인딩된
+//    계정을 새 기기에서 로그인하면 클라이언트 SDK로는 auth_uid 갱신이 원천적으로
+//    막힘. 비밀번호를 서버(Admin SDK)에서 직접 검증한 뒤에만 규칙을 우회해
+//    재바인딩하도록 해서, "인증만 되어 있으면 아무 계정이나 재바인딩 가능"해지는
+//    구멍이 생기지 않게 함 ──
+exports.rebindAuthUid = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', '인증 정보가 없습니다.');
+    const nickname = data.nickname;
+    const password = data.password;
+    if (!nickname || !password) throw new functions.https.HttpsError('invalid-argument', '닉네임과 비밀번호가 필요합니다.');
+
+    const db = admin.firestore();
+    const snap = await db.collection('users').where('nickname', '==', nickname).limit(1).get();
+    if (snap.empty) throw new functions.https.HttpsError('permission-denied', '닉네임 또는 비밀번호가 틀렸습니다.');
+
+    const uDoc = snap.docs[0];
+    const secSnap = await db.collection('user_secrets').doc(uDoc.id).get();
+    const pwHash = crypto.createHash('sha256').update(password).digest('hex');
+    if (!secSnap.exists || secSnap.data().pw_hash !== pwHash) {
+      throw new functions.https.HttpsError('permission-denied', '닉네임 또는 비밀번호가 틀렸습니다.');
+    }
+
+    if (uDoc.data().auth_uid !== context.auth.uid) {
+      await uDoc.ref.update({ auth_uid: context.auth.uid });
+    }
     return { ok: true };
   });
 

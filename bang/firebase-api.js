@@ -275,7 +275,16 @@ async function fbLogin(nickname, password) {
   ]);
   // auth_uid 백필/display_name 마이그레이션은 로그인 응답과 무관한 best-effort라
   // 기다리지 않음(실패해도 다음 액션에서 다시 시도됨)
-  if (authUid) doc.ref.update({ auth_uid: authUid }).catch(() => {});
+  // — 이미 다른 기기(다른 익명 인증 uid)로 바인딩된 계정이면 클라이언트 SDK로는
+  // firestore.rules(소유권 검증)에 막혀 직접 갱신이 안 되므로, 비밀번호를 이미
+  // 검증한 이 시점에 서버(Admin SDK) 재바인딩 Cloud Function을 호출함
+  if (authUid && u.auth_uid !== authUid) {
+    if (u.auth_uid) {
+      functionsRegion.httpsCallable('rebindAuthUid')({ nickname, password }).catch(() => {});
+    } else {
+      doc.ref.update({ auth_uid: authUid }).catch(() => {});
+    }
+  }
   localStorage.setItem('hwasee_uid', u.user_id);
   if (!u.display_name) doc.ref.update({ display_name: u.nickname }).catch(() => {});
 

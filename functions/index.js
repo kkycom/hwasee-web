@@ -927,6 +927,20 @@ exports.grantMvpPoints = functions
     return { ok: true };
   });
 
+// ── 친구 초대 보너스 중 추천인 쪽 지급 (Callable — 신규 가입자 본인 계정은
+//    자기 auth_uid로 막 생성된 직후라 클라이언트에서 직접 써도 소유권 규칙을
+//    통과하지만, 추천인은 완전히 다른 계정이라 이미 auth_uid가 바인딩돼 있으면
+//    클라이언트가 그 계정에 못 씀 — MVP 포인트와 동일한 이유로 서버 이전) ──
+exports.grantReferralBonus = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const referrer_id = data.referrer_id;
+    if (!referrer_id) throw new functions.https.HttpsError('invalid-argument', 'referrer_id가 필요합니다.');
+    const db = admin.firestore();
+    await _serverAddPoints(db, referrer_id, 50, 'referral_bonus', '');
+    return { ok: true };
+  });
+
 // ── 연속 출석 끊김 방지 리마인더 푸시 (매일 저녁 9시, 아직 오늘 출석 안 한
 //    연속 출석 중인 유저에게만) ──
 exports.streakReminderPush = functions

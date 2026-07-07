@@ -228,13 +228,18 @@ async function fbRegister(nickname, password, name, display_name, referral, refe
     }),
   ]);
 
-  // 추천인 닉네임(display_name)이 실존 유저와 일치하면 서로 50P씩 지급 (관리자/AI 봇 계정 제외)
+  // 추천인 닉네임(display_name)이 실존 유저와 일치하면 서로 50P씩 지급 (관리자/AI 봇 계정 제외).
+  // 신규 가입자 본인 몫은 방금 auth_uid를 자기 걸로 막 세팅한 자기 계정이라 클라이언트
+  // 쓰기로 안전하지만, 추천인은 완전히 다른(이미 auth_uid가 바인딩돼 있을 가능성이 높은)
+  // 계정이라 클라이언트에서 직접 쓰면 소유권 규칙에 막힘 — MVP 포인트와 같은 이유로
+  // 서버(Cloud Function, Admin SDK)를 거치도록 분리함(2026-07-07 발견/수정: 예전엔 여기서
+  // Promise.all 안에 묶어서 직접 썼는데, 추천인 쪽이 실패하면 try/catch가 없어서
+  // 회원가입 자체가 통째로 에러로 끝났었음 — 계정은 이미 생성됐는데 응답만 실패로 오는
+  // 상태였음)
   let referral_bonus = 0;
   if (referrerDoc && referrerDoc.id !== FB_ADMIN_ID && referrerDoc.id !== FB_AI_ID) {
-    await Promise.all([
-      _fbAddPoints(user_id, 50, 'referral_bonus', ''),
-      _fbAddPoints(referrerDoc.id, 50, 'referral_bonus', ''),
-    ]);
+    await _fbAddPoints(user_id, 50, 'referral_bonus', '');
+    functionsRegion.httpsCallable('grantReferralBonus')({ referrer_id: referrerDoc.id }).catch(() => {});
     referral_bonus = 50;
   }
 

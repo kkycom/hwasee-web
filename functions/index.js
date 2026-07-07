@@ -3,6 +3,8 @@ const admin     = require('firebase-admin');
 const crypto    = require('crypto');
 admin.initializeApp();
 
+// (CI 자동배포 워크플로 동작 확인용 트리거 — 기능 변경 없음)
+
 const FB_ADMIN_ID = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
 const FB_AI_ID    = '578873e7-47b7-48d3-9cd8-894546196205'; // AI 자동참여 전용 봇 계정 (관리자 계정과 분리)
 

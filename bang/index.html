@@ -1308,6 +1308,16 @@ async function loadHomeTab(tab, epoch) {
   }
 }
 
+// getSeeds 응답 형태가 문자열 배열(구버전) → {opening,hint} 객체 배열(신버전)로
+// 바뀌었는데, localStorage 캐시(_lsc)는 SW 캐시버전과 무관하게 자체 TTL로만
+// 관리돼서, 배포 직후 한동안 구버전 형태가 캐시에 남아있을 수 있음. 어느 형태가
+// 들어오든 항상 { opening, hint } 형태로 정규화해서 렌더가 깨지지 않게 함.
+function _normalizeSeed(s) {
+  if (typeof s === 'string') return { opening: s, hint: '' };
+  if (s && typeof s === 'object' && typeof s.opening === 'string') return { opening: s.opening, hint: s.hint || '' };
+  return null;
+}
+
 // 씨앗 카드 렌더
 function renderSeedCard() {
   if (currentRoute !== 'seed') return;
@@ -1319,7 +1329,7 @@ function renderSeedCard() {
     area.id = 'seed-card-area';
     content.prepend(area);
   }
-  const seed = (window._seeds || [])[window._seedIdx || 0];
+  const seed = _normalizeSeed((window._seeds || [])[window._seedIdx || 0]);
   if (!seed) {
     area.innerHTML = `<div class="empty">씨앗 문장이 모두 소진됐어요.<br><span style="font-size:13px">새 문장 세트가 곧 추가됩니다.</span></div>`;
     return;
@@ -1359,7 +1369,7 @@ function nextSeed() {
 // 가입을 요구하고, 써둔 문장은 잃지 않도록 가입 완료 후 자동으로 이어서 저장함
 // (confirmSeedStory/_resumePendingSeedStory 참고).
 function startSeedStory() {
-  const seed = (window._seeds || [])[window._seedIdx || 0];
+  const seed = _normalizeSeed((window._seeds || [])[window._seedIdx || 0]);
   if (!seed) return;
   const area = document.getElementById('seed-compose-area');
   if (!area) return;
@@ -1375,7 +1385,7 @@ function startSeedStory() {
 }
 
 async function confirmSeedStory(skip) {
-  const seed = (window._seeds || [])[window._seedIdx || 0];
+  const seed = _normalizeSeed((window._seeds || [])[window._seedIdx || 0]);
   if (!seed) return;
   const text = skip ? '' : (document.getElementById('seed-first-line')?.value || '').trim();
 

@@ -239,7 +239,7 @@ async function fbRegister(nickname, password, name, display_name, referral, refe
   let referral_bonus = 0;
   if (referrerDoc && referrerDoc.id !== FB_ADMIN_ID && referrerDoc.id !== FB_AI_ID) {
     await _fbAddPoints(user_id, 50, 'referral_bonus', '');
-    functionsRegion.httpsCallable('grantReferralBonus')({ referrer_id: referrerDoc.id }).catch(() => {});
+    functionsRegion.httpsCallable('grantReferralBonus')({ user_id, referrer_id: referrerDoc.id }).catch(() => {});
     referral_bonus = 50;
   }
 

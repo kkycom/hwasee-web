@@ -953,12 +953,28 @@ exports.grantMvpPoints = functions
 //    자기 auth_uid로 막 생성된 직후라 클라이언트에서 직접 써도 소유권 규칙을
 //    통과하지만, 추천인은 완전히 다른 계정이라 이미 auth_uid가 바인딩돼 있으면
 //    클라이언트가 그 계정에 못 씀 — MVP 포인트와 동일한 이유로 서버 이전) ──
+// ⚠️ user_id(신규 가입자 본인 계정)별 1회 지급으로 트랜잭션 가드 — 이게 없으면
+//    인증 여부·호출 횟수 제한이 전혀 없어서 누구나 이 함수를 직접(curl 등으로)
+//    반복 호출해 임의 계정에 포인트를 무한정 꽂아넣을 수 있었음(실제 취약점,
+//    2026-07-08 리뷰 중 발견). users/{user_id}.referral_bonus_claimed 플래그로
+//    "신규 가입 1건당 최대 1회"만 지급되도록 제한.
 exports.grantReferralBonus = functions
   .region('asia-northeast3')
   .https.onCall(async (data) => {
     const referrer_id = data.referrer_id;
-    if (!referrer_id) throw new functions.https.HttpsError('invalid-argument', 'referrer_id가 필요합니다.');
+    const user_id = data.user_id;
+    if (!referrer_id || !user_id) throw new functions.https.HttpsError('invalid-argument', 'user_id와 referrer_id가 필요합니다.');
     const db = admin.firestore();
+    const userRef = db.collection('users').doc(user_id);
+
+    const shouldGrant = await db.runTransaction(async tx => {
+      const snap = await tx.get(userRef);
+      if (!snap.exists || snap.data().referral_bonus_claimed) return false;
+      tx.update(userRef, { referral_bonus_claimed: true });
+      return true;
+    });
+    if (!shouldGrant) return { ok: true };
+
     await _serverAddPoints(db, referrer_id, 50, 'referral_bonus', '');
     return { ok: true };
   });
@@ -985,19 +1001,18 @@ exports.streakReminderPush = functions
     await Promise.all(targets.map(async d => {
       const u = d.data();
       try {
+        // top-level notification/webpush.notification 필드를 쓰면 브라우저가
+        // 자동으로 한 번 표시하고 sw.js의 onBackgroundMessage가 또 한 번 수동
+        // 표시해서 알림이 두 개씩 뜸(sendPushOnNotification에서 실제로 겪은
+        // 버그, 커밋 83008d5) — 이 함수도 같은 패턴이라 data-only로 통일
         await admin.messaging().send({
           token: u.fcm_token,
-          notification: {
+          data: {
             title: '화씨.방',
             body: `🔥 지금 ${u.login_streak}일 연속 출석 중이에요! 오늘 놓치면 처음부터 다시 시작돼요.`,
-          },
-          data: { link: 'https://hwasee.me/bang/' },
-          webpush: {
-            notification: {
-              icon:  'https://hwasee.me/bang/icon-192.png',
-              badge: 'https://hwasee.me/bang/icon-192.png',
-            },
-            fcmOptions: { link: 'https://hwasee.me/bang/' },
+            link: 'https://hwasee.me/bang/',
+            icon:  'https://hwasee.me/bang/icon-192.png',
+            badge: 'https://hwasee.me/bang/icon-192.png',
           },
         });
       } catch (e) {

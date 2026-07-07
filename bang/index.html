@@ -1319,8 +1319,8 @@ function renderSeedCard() {
     area.id = 'seed-card-area';
     content.prepend(area);
   }
-  const text = (window._seeds || [])[window._seedIdx || 0];
-  if (!text) {
+  const seed = (window._seeds || [])[window._seedIdx || 0];
+  if (!seed) {
     area.innerHTML = `<div class="empty">씨앗 문장이 모두 소진됐어요.<br><span style="font-size:13px">새 문장 세트가 곧 추가됩니다.</span></div>`;
     return;
   }
@@ -1330,10 +1330,12 @@ function renderSeedCard() {
     </p>
     <div class="seed-feature">
       <div class="seed-feature-label">이런 이야기는 어때요?</div>
-      <div class="seed-feature-text">"${esc(text)}"</div>
-      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-        <button class="btn btn-primary" onclick="startSeedStory()">이 문장으로 시작하기</button>
-        <button class="btn btn-ghost" style="border-color:#c8b090;color:#7a5c40;background:#f5f0e6" onclick="nextSeed()">다른 문장 ↻</button>
+      <div class="seed-feature-text">"${esc(seed.opening)}"</div>
+      <div id="seed-compose-area">
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="startSeedStory()">이 문장으로 시작하기</button>
+          <button class="btn btn-ghost" style="border-color:#c8b090;color:#7a5c40;background:#f5f0e6" onclick="nextSeed()">다른 문장 ↻</button>
+        </div>
       </div>
     </div>
     <div style="margin-top:10px">
@@ -1350,16 +1352,46 @@ function nextSeed() {
   renderSeedCard();
 }
 
-async function startSeedStory() {
+// 씨앗 고르기와 첫 문장 쓰기를 한 화면에서 이어지게 함 — 예전엔 씨앗 선택 즉시
+// 이야기가 생성되고 다른 페이지로 이동해서, 거기서 따로 제출창을 찾아 써야 했음.
+// 그 사이 이탈이 압도적으로 많았음(0단계에서 죽는 이야기의 85%가 첫 문장 자체가
+// 아예 없었음, 2026-07-07 데이터 확인). 같은 자리에서 바로 이어 쓰게 유도하되,
+// "그냥 씨앗만 심고 갈게요"로 나갈 선택지는 그대로 열어둠(강제 아님).
+function startSeedStory() {
   if (!user) { nav('auth', 'register'); return; }
-  const text = (window._seeds || [])[window._seedIdx || 0];
-  if (!text) return;
-  const btn = document.querySelector('.seed-feature .btn-primary');
-  if (btn) { btn.disabled = true; btn.textContent = '시작 중...'; }
-  const res = await api('createStory', { opening: text, is_ai_seed: true });
-  if (!res.ok) { toast(res.error, true); if (btn) { btn.disabled = false; btn.textContent = '이 문장으로 시작하기'; } return; }
+  const seed = (window._seeds || [])[window._seedIdx || 0];
+  if (!seed) return;
+  const area = document.getElementById('seed-compose-area');
+  if (!area) return;
+  area.innerHTML = `
+    <p style="font-size:13px;color:#9a6840;margin:14px 0 8px">이어서 한 문장 써볼래요? (안 써도 이야기는 시작돼요)</p>
+    <textarea id="seed-first-line" maxlength="50" placeholder="${esc(seed.hint || '')}"
+      style="width:100%;min-height:56px;padding:10px 12px;border:1px solid #c8b090;border-radius:8px;font-family:var(--serif);font-size:15px;background:#fffdf8;resize:none;box-sizing:border-box"></textarea>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px">
+      <button class="btn btn-primary" onclick="confirmSeedStory()">써서 시작하기</button>
+      <button class="btn btn-ghost" style="border-color:#c8b090;color:#7a5c40;background:#f5f0e6" onclick="confirmSeedStory(true)">그냥 씨앗만 심고 갈게요</button>
+    </div>`;
+  document.getElementById('seed-first-line')?.focus();
+}
+
+async function confirmSeedStory(skip) {
+  const seed = (window._seeds || [])[window._seedIdx || 0];
+  if (!seed) return;
+  const text = skip ? '' : (document.getElementById('seed-first-line')?.value || '').trim();
+  const area = document.getElementById('seed-compose-area');
+  area?.querySelectorAll('button').forEach(b => b.disabled = true);
+  const res = await api('createStory', { opening: seed.opening, is_ai_seed: true });
+  if (!res.ok) {
+    toast(res.error, true);
+    area?.querySelectorAll('button').forEach(b => b.disabled = false);
+    return;
+  }
+  if (text) {
+    const subRes = await api('createSubmission', { episode_id: res.episode_id, content: text });
+    if (!subRes.ok) toast('이야기는 시작됐지만 첫 문장 제출엔 실패했어요: ' + subRes.error, true);
+  }
   _lsc.del('pop', 'done', 'lb', 'mine');
-  toast('이야기가 시작됐습니다!');
+  toast(text ? '이야기가 시작됐고, 첫 문장도 제출됐어요!' : '이야기가 시작됐습니다!');
   nav('story', res.story_id);
 }
 

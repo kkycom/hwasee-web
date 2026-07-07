@@ -273,23 +273,26 @@ async function fbLogin(nickname, password) {
   // users/point_ledger를 건드리는 작업은 반드시 authUid 확정 이후에 시작할 것.
   const authUid = await fbGetAuthUid();
 
+  // 이미 다른 기기(다른 익명 인증 uid)로 바인딩된 계정이면, 아래 _fbCheckDailyBonus의
+  // users 문서 쓰기가 소유권 규칙("auth_uid가 비었거나 요청자와 일치해야 함")에
+  // 막혀 실패함 — 실제로 발생 확인됨(출석 보너스가 밀린 계정을 새 기기에서 로그인
+  // 하면 "Missing or insufficient permissions"로 로그인 자체가 깨짐). 그래서
+  // 재바인딩을 여기서 반드시 먼저 끝내야 함(이전엔 dailyBonus와 순서 없이 병렬/이후
+  // 실행이라 이 레이스 컨디션이 남아있었음). 실패해도(네트워크 등) 로그인 자체는
+  // 계속 진행 — _fbCheckDailyBonus 쪽에서 재차 안전망으로 감싸둠.
+  if (authUid && u.auth_uid && u.auth_uid !== authUid) {
+    await functionsRegion.httpsCallable('rebindAuthUid')({ nickname, password }).catch(() => {});
+  }
+
   // user_secrets(소유권 규칙 없음) 토큰 발급과 출석 보너스 처리는 서로 독립적 —
   // 병렬 처리. dailyBonus엔 이미 위에서 읽어둔 u를 넘겨서 내부 재조회를 생략함.
   const [, dailyResult] = await Promise.all([
     db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true }),
     _fbCheckDailyBonus(u.user_id, doc.ref, u),
   ]);
-  // auth_uid 백필/display_name 마이그레이션은 로그인 응답과 무관한 best-effort라
-  // 기다리지 않음(실패해도 다음 액션에서 다시 시도됨)
-  // — 이미 다른 기기(다른 익명 인증 uid)로 바인딩된 계정이면 클라이언트 SDK로는
-  // firestore.rules(소유권 검증)에 막혀 직접 갱신이 안 되므로, 비밀번호를 이미
-  // 검증한 이 시점에 서버(Admin SDK) 재바인딩 Cloud Function을 호출함
-  if (authUid && u.auth_uid !== authUid) {
-    if (u.auth_uid) {
-      functionsRegion.httpsCallable('rebindAuthUid')({ nickname, password }).catch(() => {});
-    } else {
-      doc.ref.update({ auth_uid: authUid }).catch(() => {});
-    }
+  // 신규 바인딩(auth_uid 최초 기록)은 로그인 응답과 무관한 best-effort라 기다리지 않음
+  if (authUid && !u.auth_uid) {
+    doc.ref.update({ auth_uid: authUid }).catch(() => {});
   }
   localStorage.setItem('hwasee_uid', u.user_id);
   if (!u.display_name) doc.ref.update({ display_name: u.nickname }).catch(() => {});
@@ -320,13 +323,18 @@ async function _fbCheckDailyBonus(user_id, uRef, prefetchedUser) {
   if (u.last_daily_bonus_date === today) return { bonus: 0, streak: u.login_streak || 0, milestone_bonus: 0 };
 
   const streak = u.last_daily_bonus_date === yesterday ? (u.login_streak || 0) + 1 : 1;
-  await ref.update({ last_daily_bonus_date: today, login_streak: streak });
-  await _fbAddPoints(user_id, 10, 'daily_login', '');
-
-  const milestone_bonus = LOGIN_STREAK_MILESTONES[streak] || 0;
-  if (milestone_bonus > 0) await _fbAddPoints(user_id, milestone_bonus, `login_streak_${streak}`, '');
-
-  return { bonus: 10, streak, milestone_bonus };
+  // 재바인딩 실패 등으로 auth_uid가 여전히 안 맞으면 이 쓰기가 소유권 규칙에
+  // 막힐 수 있음 — 출석 보너스 하나 때문에 로그인/세션 전체가 깨지면 안 되므로
+  // 안전망으로 감싸고, 실패하면 이번엔 보너스 없이 넘어감(다음 로그인에서 재시도됨)
+  try {
+    await ref.update({ last_daily_bonus_date: today, login_streak: streak });
+    await _fbAddPoints(user_id, 10, 'daily_login', '');
+    const milestone_bonus = LOGIN_STREAK_MILESTONES[streak] || 0;
+    if (milestone_bonus > 0) await _fbAddPoints(user_id, milestone_bonus, `login_streak_${streak}`, '');
+    return { bonus: 10, streak, milestone_bonus };
+  } catch (e) {
+    return { bonus: 0, streak: u.login_streak || 0, milestone_bonus: 0 };
+  }
 }
 
 async function fbChangePassword(user_id, current_password, new_password) {

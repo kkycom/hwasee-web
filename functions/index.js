@@ -663,7 +663,21 @@ exports.aiParticipate = functions
 
     const storiesSnap = await db.collection('stories').where('status', '==', 'active').get();
 
-    for (const storyDoc of storiesSnap.docs) {
+    // AI 참여를 껐다 켜는 사용 패턴 대응: 꺼둔 동안 여러 이야기가 동시에 마감 임계값을
+    // 넘긴 채 쌓여있으면, 지터(위 subIntervalMsJ/voteIntervalMsJ)로는 이미 다 지나간
+    // 시간 차이를 흡수 못해서 한 번의 실행에서 전부 마감돼 알림이 우르르 몰림(실측:
+    // 11개 동시 마감 → 알림 22개). 회차(30분)당 마감 개수에 상한을 둬서 백로그를
+    // 여러 실행에 걸쳐 자연스럽게 나눠 처리함 — 처리 순서도 매번 무작위로 섞어서
+    // 캡에 걸려 밀린 이야기가 매번 같은 것들만 되지 않고 골고루 돌아가게 함.
+    const MAX_CLOSES_PER_RUN = 2;
+    let closesThisRun = 0;
+    const shuffledStories = [...storiesSnap.docs];
+    for (let i = shuffledStories.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffledStories[i], shuffledStories[j]] = [shuffledStories[j], shuffledStories[i]];
+    }
+
+    for (const storyDoc of shuffledStories) {
       try {
         const story_id = storyDoc.id;
         // 이야기별 지터(±25%) — 여러 이야기의 "다음 AI 투표/제출 시각" 타이머가
@@ -809,14 +823,21 @@ ${votable.map((s, i) => `[${i + 1}] sub_id=${s.id} | ${s.content}`).join('\n')}
                 vote_total: admin.firestore.FieldValue.increment(1),
               });
 
-              // 임계값 도달 시 에피소드 종료
+              // 메모리상 vote_count도 갱신 — 아래 마감 여부 판단이 이번에 막 던진
+              // 표까지 반영된 최신 값을 보도록 함
               const chosen = subs.find(s => s.id === chosenId);
-              const newCount = (Number(chosen?.vote_count) || 0) + 1;
-              if (newCount >= AI_VOTE_THRESHOLD) {
-                await _serverCloseEpisode(db, episode_id, currentEp);
-              }
+              if (chosen) chosen.vote_count = (Number(chosen.vote_count) || 0) + 1;
               console.log(`AI voted ${chosenId} in ${episode_id}`);
             }
+          }
+
+          // 마감 여부는 "이번 실행에서 AI가 막 투표했는가"와 무관하게 항상 확인 —
+          // 캡에 걸려 이번 실행에 마감 못 한 이야기도 다음 실행에서 여기로 다시
+          // 걸려 재시도됨(투표 자체는 이미 끝난 상태라 voteIntervalMs 재대기 없이 감).
+          const maxVoteCount = subs.reduce((m, s) => Math.max(m, Number(s.vote_count) || 0), 0);
+          if (maxVoteCount >= AI_VOTE_THRESHOLD && closesThisRun < MAX_CLOSES_PER_RUN) {
+            await _serverCloseEpisode(db, episode_id, currentEp);
+            closesThisRun++;
           }
         }
       } catch (e) {

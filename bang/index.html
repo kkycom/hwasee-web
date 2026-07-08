@@ -1512,7 +1512,12 @@ function popularCardHtml(s) {
 
 // 완결된 이야기 카드
 function doneCardHtml(s) {
-  const step  = Number(s.current_step) || 0;
+  // current_step은 "마감된 마지막 에피소드 자체의 내부 step 번호"라, 다른 곳
+  // (참여중 카드의 calcDisplayStep, 활성 이야기 step-pill, 알림 메시지)이 전부
+  // 쓰는 "오프닝을 1단계로 치는" 표시 규칙(비분기 기준 +1)과 어긋나서, 완결
+  // 직후 화면에 보이던 단계 수보다 1단계 낮게 표시되는 문제가 있었음(유저
+  // 리포트로 확인, 2026-07-08). calcDisplayStep으로 통일.
+  const step  = calcDisplayStep(s, Number(s.current_step) || 0);
   const likes = Number(s.like_count) || 0;
   const count = Number(s.activity_count || s.participant_count) || 0;
   return `

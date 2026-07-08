@@ -1691,6 +1691,8 @@ function _applyStoryData(res, story_id) {
   const _isFinishedStory = s.status === 'completed' || s.status === 'inactive';
   // 완성 이야기 + 분기 존재 시: 탭 표시 + 정경 경로 기본 pre-populate
   const _hasBranches = _isFinishedStory && branches.filter(b => !b.is_continuation).length > 0;
+  // 연장된 이야기가 있으면(분기 유무와 무관) story-branch-cta 박스에 카드로 표시
+  const _hasContinuation = _isFinishedStory && branches.some(b => b.is_continuation);
   if (_hasBranches) {
     const _canonical = _buildCanonicalPath(episodes.filter(e => e.status === 'closed'), submissions);
     Object.keys(_canonical).forEach(epId => {
@@ -1710,7 +1712,7 @@ function _applyStoryData(res, story_id) {
   // 완성 이야기: 분기 있으면 hideTabs=false(탭 표시), 없으면 true(탭 숨김)
   const _ownHideTabs = _isFinishedStory && !_hasBranches;
   const _ownTreeHtml = _isBranchActive ? (tree ? renderEpisodeTreeHtml(tree, window._branchChoice, mvp_map, branches, my_mvp_episode_id, _ownHideTabs) : '') : '';
-  const confirmedHtml = `<div id="story-prose-content">${inheritedHtml}${_ownTreeHtml}${parentStoryHtml}</div>${_hasBranches ? '<div id="story-branch-cta"></div>' : ''}`;
+  const confirmedHtml = `<div id="story-prose-content">${inheritedHtml}${_ownTreeHtml}${parentStoryHtml}</div>${(_hasBranches || _hasContinuation) ? '<div id="story-branch-cta"></div>' : ''}`;
 
   // ── 다음 단계 액션 ──
   let actionHtml = '';
@@ -1730,10 +1732,9 @@ function _applyStoryData(res, story_id) {
           onclick="doToggleStoryLike('${esc(s.story_id)}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>이야기 추천해요${like_count > 0 ? ` (${like_count})` : ''}
         </button>
-        ${s.status === 'completed' ? (continuation
-          ? `<button class="btn btn-ghost btn-sm" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px" onclick="nav('story','${esc(continuation.story_id)}')">${_infSvg}연장된 이야기 →</button>`
-          : `<button class="btn btn-ghost btn-sm" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px" onclick="showExtendModal('${esc(s.story_id)}')">${_infSvg}이야기 연장하기</button>`
-        ) : ''}` : ''}
+        ${s.status === 'completed' && !continuation
+          ? `<button class="btn btn-ghost btn-sm" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px" onclick="showExtendModal('${esc(s.story_id)}')">${_infSvg}이야기 연장하기</button>`
+          : ''}` : ''}
       </div>
       `;
   }
@@ -3471,16 +3472,36 @@ function renderExtBranchInline(extBranch) {
   return divider + renderEpisodeTreeHtml(bTree, {}, undefined, undefined, undefined, true);
 }
 
-function renderExtBranchFork(ep, originalSub, extBranch) {
+// 분기/연장 카드 한 줄(row) — 여러 개면 한 점선 테두리 박스 안에 줄만 여러 개 쌓임
+// (박스 자체 패딩은 .ext-branch-fork CSS가 담당하므로 row는 자체 패딩 없음)
+function _extForkRow(extBranch, kind = 'fork') {
   const isActive = extBranch.status === 'active';
+  const isCont = kind === 'continuation';
+  const tag   = isCont ? '〜 연장' : '⑂ 분기';
+  const title = isCont
+    ? (isActive ? '진행 중인 연장 이야기' : '완성된 연장 이야기')
+    : (isActive ? '진행 중인 분기 이야기' : '완성된 분기 이야기');
+  const desc = isActive ? '지금 참여해서 이야기를 이어가세요 →' : (isCont ? '연장된 이야기 보기 →' : '분기된 이야기 보기 →');
   return `
-    <div class="ext-branch-fork" style="display:flex;align-items:center;gap:10px;padding:10px 12px">
-      <span style="font-size:10px;color:var(--muted);letter-spacing:1px;white-space:nowrap">⑂ 분기</span>
-      <button class="ext-branch-card" onclick="nav('story','${extBranch.story_id}')" style="flex:1;margin:0;padding:10px 12px">
-        <div class="ext-branch-card-label" style="margin-bottom:2px">${isActive ? '진행 중인 분기 이야기' : '완성된 분기 이야기'}</div>
-        <div style="font-size:12px;color:var(--muted)">${isActive ? '지금 참여해서 이야기를 이어가세요 →' : '분기된 이야기 보기 →'}</div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-size:10px;color:var(--muted);letter-spacing:1px;white-space:nowrap">${tag}</span>
+      <button class="ext-branch-card" onclick="nav('story','${extBranch.story_id}')" style="flex:1;margin:0;padding:0">
+        <div class="ext-branch-card-label" style="margin-bottom:2px">${title}</div>
+        <div style="font-size:12px;color:var(--muted)">${desc}</div>
       </button>
     </div>`;
+}
+
+// 분기/연장 카드를 점선 테두리 박스 하나로 감쌈 — 여러 줄이면 구분선과 함께 쌓임
+function _extForkBox(rows) {
+  const list = (Array.isArray(rows) ? rows : [rows]).filter(Boolean);
+  if (!list.length) return '';
+  const divider = `<div style="border-top:1px dashed rgba(128,151,140,.3);margin:10px 0"></div>`;
+  return `<div class="ext-branch-fork">${list.join(divider)}</div>`;
+}
+
+function renderExtBranchFork(ep, originalSub, extBranch, kind = 'fork') {
+  return _extForkBox(_extForkRow(extBranch, kind));
 }
 
 function handleProseWrapClick(e) {
@@ -3643,11 +3664,14 @@ function _updateBranchCta() {
   const { branches = [] } = window._storyData;
   const activeBranch = _getActiveBranch();
   const forkBranches = branches.filter(b => !b.is_continuation);
-  if (activeBranch) {
-    el.innerHTML = renderExtBranchFork(null, null, activeBranch);
-  } else {
-    el.innerHTML = forkBranches.map(b => renderExtBranchFork(null, null, b)).join('');
-  }
+  const continuation = branches.find(b => b.is_continuation);
+
+  const forkRows = activeBranch
+    ? [_extForkRow(activeBranch)]
+    : forkBranches.map(b => _extForkRow(b));
+  const contRow = continuation ? _extForkRow(continuation, 'continuation') : null;
+
+  el.innerHTML = _extForkBox([...forkRows, contRow]);
 }
 
 function chooseBranch(episode_id, sub_id) {

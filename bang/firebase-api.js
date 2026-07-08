@@ -1853,7 +1853,12 @@ async function fbCreateBranch(story_id, branch_from_step, user_id) {
     branch_display_offset,
     opening: st.opening, max_steps: st.max_steps || 10,
     current_step: step - 2, status: 'active', creator_id: user_id,
-    created_at: fbNow(), participant_count: 0, batch: '',
+    created_at: fbNow(),
+    // 분기 시점의 참여자 수는 0부터 새로 세지 않고 원본 스토리의 누적
+    // participant_count를 그대로 물려받음 — branch_display_offset이 단계
+    // 번호를 부모+분기 합산 기준으로 보여주는 것과 일관되게 맞춤(2026-07-08,
+    // 표시 단계 수 대비 참여자 수가 훨씬 적게 보이던 문제 수정)
+    participant_count: Number(st.participant_count) || 0, batch: '',
   });
   batch.set(db.collection('episodes').doc(new_ep_id), {
     episode_id: new_ep_id, story_id: new_story_id, step: step - 1,

@@ -643,7 +643,6 @@ async function _serverCloseEpisode(db, episode_id, ep) {
         const newStoryId = db.collection('stories').doc().id;
         const subSnap = await db.collection('submissions')
           .where('episode_id', '==', orphan.episode_id).get();
-        const uniqueAuthors = new Set(subSnap.docs.filter(d => !d.data().is_ai).map(d => d.data().author_id).filter(Boolean));
 
         // orphan의 조상 체인을 거슬러 올라가며 두 지점을 구분해서 기록
         let branch_episode_id = null, branch_sub_id = null;
@@ -686,7 +685,14 @@ async function _serverCloseEpisode(db, episode_id, ep) {
           creator_id: st.creator_id,
           creator_nickname: st.creator_nickname || '익명',
           creator_badge: st.creator_badge || '',
-          participant_count: uniqueAuthors.size, like_count: 0, adoption_count: 0,
+          // 분기(고아 에피소드) 시점의 참여자 수는 여기서 새로 세지 않고 부모
+          // 스토리의 누적 participant_count를 그대로 물려받음 — branch_display_offset이
+          // 단계 번호를 부모+분기 합산 기준으로 보여주는 것과 일관되게, 참여자 수도
+          // "분기 이후 새로 온 사람만" 세면 실제보다 훨씬 적게 표시되는 문제가 있었음
+          // (2026-07-08 유저 리포트: 표시상 6단계인데 참여자 4명 — 실제로는 분기 전
+          // 부모 쪽에만 15명이 더 있었음). 이후 이 분기에 새 작성자가 오면 기존처럼
+          // fbCreateSubmission의 increment(1)로 계속 누적됨.
+          participant_count: Number(st.participant_count) || 0, like_count: 0, adoption_count: 0,
           has_branch: false, created_at: new Date().toISOString(), batch: '',
         });
         spinBatch.update(orphanDoc.ref, { story_id: newStoryId });

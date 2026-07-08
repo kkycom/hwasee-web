@@ -2268,12 +2268,15 @@ async function fbAdminCloseStory(story_id, admin_id) {
 
 async function fbGetAIActivities(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const [configSnap, keyStatus] = await Promise.all([
+  const [configSnap, keyStatus, notifSettingsSnap] = await Promise.all([
     db.collection('config').doc('ai_config').get(),
     functionsRegion.httpsCallable('getClaudeKeyStatus')({ admin_id }).then(r => r.data).catch(() => ({ has_key: false })),
+    db.collection('config').doc('notification_settings').get(),
   ]);
   const aiConfig = configSnap.exists ? configSnap.data() : { enabled: false, speed_pct: 100 };
   const hasKey = !!keyStatus.has_key;
+  // 기본값 true(배치 발송) — 문서 자체가 없거나 필드가 없으면 배치 모드로 간주
+  const notificationBatchEnabled = notifSettingsSnap.exists ? notifSettingsSnap.data().batch_enabled !== false : true;
   let subsSnap, votesSnap;
   try {
     [subsSnap, votesSnap] = await Promise.all([
@@ -2304,6 +2307,7 @@ async function fbGetAIActivities(admin_id) {
   }
   return {
     ok: true, ai_config: aiConfig, has_key: hasKey,
+    notification_batch_enabled: notificationBatchEnabled,
     submissions: subs.map(s => ({ ...s, story_opening: storyMap[s.story_id] || '' })),
     votes: votes.map(v => {
       const story_id = epToStoryMap[v.episode_id] || '';
@@ -2311,6 +2315,18 @@ async function fbGetAIActivities(admin_id) {
     }),
     total_subs: subsSnap.size, total_votes: votesSnap.size,
   };
+}
+
+// 알림 배치 발송 on/off — 즉시(개별) 발송으로 언제든 되돌릴 수 있게 하는 스위치.
+// 기본 true(배치): 2분마다 모아서 유저당 최대 1개 푸시로 합쳐 보냄.
+// false(즉시): 예전처럼 알림 생성 즉시 각각 푸시 — AI 마감이 안 쓰여서 알림이
+// 몰릴 일이 없어지면(예: 실사용자만으로 운영) 지연 없는 즉시발송이 나을 수 있음.
+async function fbSetNotificationBatchEnabled(admin_id, enabled) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  await db.collection('config').doc('notification_settings').set(
+    { batch_enabled: Boolean(enabled), updated_at: fbNow() }, { merge: true }
+  );
+  return { ok: true };
 }
 
 async function fbSetClaudeKey(admin_id, key) {
@@ -2560,6 +2576,7 @@ async function firebaseApi(action, params = {}) {
     case 'adminFixParticipantCount': return fbAdminFixParticipantCount(params.story_id, need().user_id);
     case 'getAIActivities':       return fbGetAIActivities(need().user_id);
     case 'setAIConfig':           return fbSetAIConfig(need().user_id, params);
+    case 'setNotificationBatchEnabled': return fbSetNotificationBatchEnabled(need().user_id, params.enabled);
     case 'setClaudeKey':          return fbSetClaudeKey(need().user_id, params.key);
 
     case 'saveFcmToken':    return fbSaveFcmToken(need().user_id, params.fcm_token);

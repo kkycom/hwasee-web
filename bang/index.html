@@ -4080,6 +4080,7 @@ function _renderAdminAI(tab, page) {
   const subEnabled  = cfg.sub_enabled  !== undefined ? cfg.sub_enabled  : !!cfg.enabled;
   const voteEnabled = cfg.vote_enabled !== undefined ? cfg.vote_enabled : !!cfg.enabled;
   const speedPct = cfg.speed_pct || 100;
+  const batchEnabled = res.notification_batch_enabled !== false;
   const subH = (3 * 100 / speedPct).toFixed(1);
   const voteH = (2 * 100 / speedPct).toFixed(1);
 
@@ -4149,6 +4150,15 @@ function _renderAdminAI(tab, page) {
         <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:2px"><span>50% (느림)</span><span>100% (기본)</span><span>200% (빠름)</span></div>
       </div>
     </div>
+    <div class="card" style="padding:16px 18px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:13px;font-weight:600">알림 배치 발송 <span style="color:${batchEnabled?'var(--success)':'var(--muted)'}">${batchEnabled?'ON':'OFF'}</span></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:1px">${batchEnabled ? '2분마다 모아서 유저당 1개로 합쳐 발송' : '알림 생성 즉시 개별 발송(지연 없음)'}</div>
+        </div>
+        <button class="btn ${batchEnabled?'btn-primary':'btn-ghost'} btn-sm" onclick="toggleNotificationBatch(${!batchEnabled})">${batchEnabled?'끄기(즉시발송으로)':'켜기(배치로)'}</button>
+      </div>
+    </div>
     <div class="card" style="padding:16px 18px;margin-bottom:16px">
       <div style="font-size:13px;font-weight:700;margin-bottom:10px">
         Claude API 키
@@ -4199,6 +4209,13 @@ async function saveAISpeed(pct) {
   const res = await api('setAIConfig', { speed_pct: pct });
   if (!res.ok) { toast(res.error, true); return; }
   toast(`속도 ${pct}%로 저장됐습니다.`);
+  adminAI();
+}
+
+async function toggleNotificationBatch(val) {
+  const res = await api('setNotificationBatchEnabled', { enabled: val });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast(val ? '알림 배치 발송이 켜졌습니다.' : '알림 즉시 발송으로 되돌렸습니다.');
   adminAI();
 }
 

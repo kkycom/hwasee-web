@@ -18,21 +18,78 @@ function _calcDisplayStepBackend(storyData, epStep) {
   return Number(epStep) + 1;
 }
 
-// ── 알림 푸시 발송 (배치, 2분마다) ───────────────────────────
-// 예전엔 알림 문서가 생성되는 즉시(Firestore onCreate 트리거) 각각 푸시를
-// 보냈는데, 여러 이야기가 비슷한 시점에 알림을 만들면(AI 마감 등) 한 유저가
-// 짧은 시간에 여러 개의 별도 푸시를 우르르 받는 문제가 있었음(회차당 마감
-// 개수 상한을 올려도 개인이 그중 여러 개에 걸쳐있으면 여전히 뭉텅이로 옴,
-// 2026-07-08). 대신 최대 2분 주기로 모아서, 같은 유저에게 쌓인 알림이
-// 여러 개면 "새로운 소식이 N개 있어요" 하나로 합쳐 보내고, 1개뿐이면
-// 기존처럼 그 알림 자체의 메시지로 보냄 — 몇 개가 한꺼번에 생기든 한
-// 유저가 받는 푸시는 항상 최대 1개로 보장됨. 대가로 알림 생성부터 푸시
-// 도착까지 최대 2분 정도 지연이 생길 수 있음.
+// ── 알림 푸시 발송: 배치(기본) ↔ 즉시, config/notification_settings.batch_enabled로
+//    언제든지 되돌릴 수 있게 함(재배포 없이 Firestore 값 하나만 바꾸면 즉시 적용) ──
+// - true(기본, 배치): 아래 sendBatchedPushNotifications가 2분마다 모아서 유저당
+//   최대 1개 푸시로 합쳐 보냄. 여러 이야기가 비슷한 시점에 닫혀도(AI 마감 등)
+//   한 유저가 여러 개의 별도 푸시를 우르르 받는 일이 없어짐 — 회차당 마감 개수
+//   상한만으로는 이걸 보장 못 함(캡을 올려도 개인이 그중 여러 개에 걸쳐있으면
+//   여전히 뭉텅이로 옴, 2026-07-08).
+// - false(즉시, 롤백): sendPushOnNotification이 알림 생성 즉시 개별 발송(예전 방식).
+//   AI 마감을 더 이상 안 써서(예: 실사용자만으로 운영) 알림이 몰릴 일이 없어지면,
+//   지연 없는 즉시발송이 나을 수 있음 — 어드민 페이지 "AI 참여 설정"에서 토글 가능.
+async function _notificationBatchEnabled(db) {
+  const snap = await db.collection('config').doc('notification_settings').get();
+  return snap.exists ? snap.data().batch_enabled !== false : true;
+}
+
+exports.sendPushOnNotification = functions
+  .region('asia-northeast3')
+  .firestore.document('notifications/{notifId}')
+  .onCreate(async snap => {
+    const db = admin.firestore();
+    if (await _notificationBatchEnabled(db)) return null; // 배치 모드면 스케줄러가 처리 — 여기선 아무것도 안 함
+
+    const notif = snap.data();
+    if (!notif.user_id) return null;
+
+    // Firebase CF는 at-least-once 실행 — 트랜잭션으로 중복 발송 방지
+    try {
+      const shouldSend = await db.runTransaction(async tx => {
+        const current = await tx.get(snap.ref);
+        if (!current.exists || current.data().push_sent) return false;
+        tx.update(snap.ref, { push_sent: true });
+        return true;
+      });
+      if (!shouldSend) return null;
+    } catch (e) {
+      return null;
+    }
+
+    const userSnap = await db.collection('users').doc(notif.user_id).get();
+    if (!userSnap.exists) return null;
+    const fcmToken = userSnap.data().fcm_token;
+    if (!fcmToken) return null;
+
+    const link = notif.link
+      || (notif.story_id ? `https://hwasee.me/bang/#story/${notif.story_id}` : 'https://hwasee.me/bang/');
+
+    try {
+      await admin.messaging().send({
+        token: fcmToken,
+        data: {
+          title: '화씨.방',
+          body: notif.message,
+          link,
+          icon:  'https://hwasee.me/bang/icon-192.png',
+          badge: 'https://hwasee.me/bang/icon-192.png',
+        },
+      });
+    } catch (e) {
+      if (e.code === 'messaging/registration-token-not-registered') {
+        await db.collection('users').doc(notif.user_id).update({ fcm_token: admin.firestore.FieldValue.delete() });
+      }
+    }
+    return null;
+  });
+
 exports.sendBatchedPushNotifications = functions
   .region('asia-northeast3')
   .pubsub.schedule('every 2 minutes')
   .onRun(async () => {
     const db = admin.firestore();
+    if (!(await _notificationBatchEnabled(db))) return null; // 즉시발송 모드면 위 트리거가 이미 다 처리함
+
     const pendingSnap = await db.collection('notifications').where('push_sent', '==', false).get();
     if (pendingSnap.empty) return null;
 

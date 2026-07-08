@@ -66,5 +66,6 @@ service cloud.firestore {
     match /patch_notes/{docId} { allow read, write: if true; }
     match /admin_edits/{docId} { allow read, write: if true; }
     match /visits/{docId} { allow read, write: if true; }
+    match /account_deletion_reasons/{docId} { allow read, write: if true; }
   }
 }

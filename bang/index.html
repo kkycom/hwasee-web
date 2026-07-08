@@ -4721,7 +4721,7 @@ function doDeleteAccount() {
   const mid = 'delete-account-modal';
   const existing = document.getElementById(mid);
   if (existing) { existing.remove(); return; }
-  const reasons = ['자주 사용하지 않게 돼서', '재미있는 이야기가 부족해서', '사용이 불편해서', '다른 서비스를 이용하려고', '개인정보 등 보안이 걱정돼서'];
+  const reasons = ['자주 사용하지 않게 돼서', '재미있는 이야기가 부족해서', '사용이 불편해서', '다른 서비스를 이용하려고'];
   const modal = document.createElement('div');
   modal.id = mid;
   modal.className = 'modal-overlay';

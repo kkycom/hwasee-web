@@ -1374,11 +1374,11 @@ function startSeedStory() {
   const area = document.getElementById('seed-compose-area');
   if (!area) return;
   area.innerHTML = `
-    <p style="font-size:13px;color:#9a6840;margin:14px 0 8px">${user ? '이어서 한 문장 써볼래요? (안 써도 이야기는 시작돼요)' : '이어서 한 문장 써볼래요? (제출하려면 가입이 필요해요)'}</p>
+    <p style="font-size:13px;color:#9a6840;margin:14px 0 8px">${user ? '이어질 이야기를 써보세요!' : '이어서 한 문장 써볼래요? (제출하려면 가입이 필요해요)'}</p>
     <textarea id="seed-first-line" maxlength="50" placeholder="${esc(seed.hint || '')}"
       style="width:100%;min-height:56px;padding:10px 12px;border:1px solid #c8b090;border-radius:8px;font-family:var(--serif);font-size:15px;background:#fffdf8;resize:none;box-sizing:border-box"></textarea>
     <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px">
-      <button class="btn btn-primary" onclick="confirmSeedStory()">${user ? '써서 시작하기' : '이 문장으로 가입하고 시작하기'}</button>
+      <button class="btn btn-primary" onclick="confirmSeedStory()">${user ? '이 문장으로 잇기' : '이 문장으로 가입하고 시작하기'}</button>
       ${user ? `<button class="btn btn-ghost" style="border-color:#c8b090;color:#7a5c40;background:#f5f0e6" onclick="confirmSeedStory(true)">그냥 씨앗만 심고 갈게요</button>` : ''}
     </div>`;
   document.getElementById('seed-first-line')?.focus();

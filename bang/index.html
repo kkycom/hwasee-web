@@ -1251,6 +1251,15 @@ async function loadHomeTab(tab, epoch) {
       } finally {
         _popFetching = false;
       }
+      // api()는 실패해도 예외를 던지지 않고 {ok:false}로 resolve되므로(15초 타임아웃
+      // 포함), 위 catch로는 안 걸러짐 — storiesRes.ok를 명시적으로 확인해야 함.
+      // 이게 없으면 실패한 응답을 "이야기 0개"로 그대로 캐시+렌더해서, 실제로는
+      // 이야기가 많은데 "아직 이야기가 없어요"로 잘못 뜨는 문제가 있었음
+      // (2026-07-08 유저 리포트로 확인).
+      if (!storiesRes?.ok) {
+        if (!_stalePop && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('popular')">다시 시도</button></div>`;
+        return;
+      }
       _lsc.set('pop', { storiesRes, myRes }, 150);
       if (myRes?.ok) _lsc.set('mine', myRes, 300); // mine 캐시도 함께 채워서 mine 탭 전환 시 getMyStories 재호출 방지
       _applyPop(storiesRes, myRes);
@@ -1279,6 +1288,13 @@ async function loadHomeTab(tab, epoch) {
         if (!_staleMine && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('mine')">다시 시도</button></div>`;
         return;
       } finally { _mineFetching = false; }
+      // api()는 실패해도 예외 없이 {ok:false}로 resolve되므로 위 catch로는 안
+      // 걸러짐 — 명시적으로 확인 안 하면 실패 응답을 "참여 중인 이야기 0개"로
+      // 잘못 캐시+렌더하게 됨
+      if (!res?.ok) {
+        if (!_staleMine && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('mine')">다시 시도</button></div>`;
+        return;
+      }
       _lsc.set('mine', res, 300);
       _applyMine(res);
     };
@@ -1301,6 +1317,13 @@ async function loadHomeTab(tab, epoch) {
         if (!_staleDone && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('done')">다시 시도</button></div>`;
         return;
       } finally { _doneFetching = false; }
+      // api()는 실패해도 예외 없이 {ok:false}로 resolve되므로 위 catch로는 안
+      // 걸러짐 — 명시적으로 확인 안 하면 실패 응답을 "완성된 이야기 0개"로
+      // 잘못 캐시+렌더하게 됨
+      if (!res?.ok) {
+        if (!_staleDone && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('done')">다시 시도</button></div>`;
+        return;
+      }
       _lsc.set('done', res, 660);
       _applyDone(res);
     };

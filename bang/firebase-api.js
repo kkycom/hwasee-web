@@ -367,7 +367,7 @@ async function fbChangePassword(user_id, current_password, new_password) {
   return { ok: true };
 }
 
-async function fbDeleteAccount(user_id) {
+async function fbDeleteAccount(user_id, reason, detail) {
   if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
   if (user_id === FB_ADMIN_ID) return { ok: false, error: '관리자 계정은 탈퇴할 수 없습니다.' };
   const batch = db.batch();
@@ -380,6 +380,13 @@ async function fbDeleteAccount(user_id) {
   bmSnap.docs.forEach(d => batch.delete(d.ref));
   nSnap.docs.forEach(d => batch.delete(d.ref));
   batch.set(db.collection('config').doc('stats'), { deleted_count: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+  // 탈퇴 사유는 익명으로 별도 컬렉션에 집계용으로만 저장 (user_id 등 개인정보 미포함 —
+  // 탈퇴 시 개인정보 즉시 삭제 원칙과 무관하게 유지)
+  batch.set(db.collection('account_deletion_reasons').doc(fbGenId()), {
+    reason: (reason || '').trim() || '미선택',
+    detail: (detail || '').trim(),
+    deleted_at: fbNow(),
+  });
   await batch.commit();
   localStorage.removeItem('hwasee_uid');
   return { ok: true };
@@ -1679,11 +1686,12 @@ async function fbGetAdminStats(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   const today     = _kstDate(0);
   const yesterday = _kstDate(-1);
-  const [uSnap, sSnap, subSnap, statsSnap] = await Promise.all([
+  const [uSnap, sSnap, subSnap, statsSnap, delReasonSnap] = await Promise.all([
     db.collection('users').get(),
     db.collection('stories').get(),
     db.collection('submissions').get(),
     db.collection('config').doc('stats').get(),
+    db.collection('account_deletion_reasons').get(),
   ]);
 
   const referralMap = {};
@@ -1692,6 +1700,15 @@ async function fbGetAdminStats(admin_id) {
     referralMap[r] = (referralMap[r] || 0) + 1;
   });
   const referral_stats = Object.entries(referralMap)
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, count]) => ({ label, count }));
+
+  const deletionReasonMap = {};
+  delReasonSnap.docs.forEach(d => {
+    const r = d.data().reason || '미선택';
+    deletionReasonMap[r] = (deletionReasonMap[r] || 0) + 1;
+  });
+  const deletion_reason_stats = Object.entries(deletionReasonMap)
     .sort((a, b) => b[1] - a[1])
     .map(([label, count]) => ({ label, count }));
 
@@ -1713,7 +1730,7 @@ async function fbGetAdminStats(admin_id) {
     ok: true,
     user_count: uSnap.size, story_count: sSnap.size, submission_count: subSnap.size,
     deleted_count: statsSnap.exists ? (statsSnap.data().deleted_count || 0) : 0,
-    visit_today, access_today, visit_yesterday, visit_total, referral_stats,
+    visit_today, access_today, visit_yesterday, visit_total, referral_stats, deletion_reason_stats,
   };
 }
 
@@ -2515,7 +2532,7 @@ async function firebaseApi(action, params = {}) {
   switch (action) {
     case 'register':           return fbRegister(params.nickname, params.password, params.name, params.display_name, params.referral, params.referrer_nickname);
     case 'login':              return fbLogin(params.nickname, params.password);
-    case 'deleteAccount':      return fbDeleteAccount(need().user_id);
+    case 'deleteAccount':      return fbDeleteAccount(need().user_id, params.reason, params.detail);
     case 'changePassword':     return fbChangePassword(need().user_id, params.current_password, params.new_password);
     case 'findAccount':        return fbFindAccount(params.name);
     case 'resetPassword':      return fbResetPassword(params.nickname, params.name, params.new_password);

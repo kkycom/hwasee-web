@@ -4079,6 +4079,17 @@ async function adminStats() {
           </div>`).join('')}
       </div>
     </div>` : '';
+  const deletionReasonHtml = (stats.ok && stats.deletion_reason_stats?.length) ? `
+    <div class="card" style="padding:14px 18px;margin-bottom:20px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;font-weight:600">탈퇴 사유</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${stats.deletion_reason_stats.map(r => `
+          <div style="display:flex;align-items:center;gap:6px;background:var(--bg);border-radius:8px;padding:6px 12px">
+            <span style="font-size:13px;font-weight:600">${esc(r.label)}</span>
+            <span style="font-size:16px;font-weight:700;color:var(--accent2)">${r.count}</span>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
   const statsHtml = stats.ok ? `
     <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
       ${[['가입자 수', stats.user_count], ['이야기 수', stats.story_count], ['제출된 글', stats.submission_count],
@@ -4092,7 +4103,8 @@ async function adminStats() {
     ${_adminNav('stats')}
     <h2 style="margin:0 0 18px">📊 이용통계</h2>
     ${statsHtml}
-    ${referralHtml}`;
+    ${referralHtml}
+    ${deletionReasonHtml}`;
 }
 
 // ─── AI 활동내역 ──────────────────────────────────────────
@@ -4706,22 +4718,52 @@ async function doChangePw() {
 }
 
 function doDeleteAccount() {
-  const icon = `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent2)"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
-  _modalCallbacks['delete-account-modal'] = async (mid) => {
-    const btn = document.getElementById(`${mid}-confirm-btn`);
-    if (btn) { btn.disabled = true; btn.textContent = '탈퇴 중...'; }
-    const res = await api('deleteAccount');
-    document.getElementById(mid)?.remove(); delete _modalCallbacks[mid];
-    if (!res.ok) { toast(res.error, true); return; }
-    logout();
-    toast('탈퇴가 완료됐습니다.');
-  };
-  showConfirmModal({
-    id: 'delete-account-modal', icon,
-    title: '정말 탈퇴할까요?',
-    desc: '작성한 글은 이야기에 남지만<br>계정 정보는 완전히 삭제돼요.<br>이 작업은 되돌릴 수 없습니다.',
-    confirmLabel: '탈퇴하기',
-  });
+  const mid = 'delete-account-modal';
+  const existing = document.getElementById(mid);
+  if (existing) { existing.remove(); return; }
+  const reasons = ['자주 사용하지 않게 돼서', '재미있는 이야기가 부족해서', '사용이 불편해서', '다른 서비스를 이용하려고', '개인정보 등 보안이 걱정돼서'];
+  const modal = document.createElement('div');
+  modal.id = mid;
+  modal.className = 'modal-overlay';
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:360px">
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px;font-family:var(--serif)">정말 탈퇴할까요?</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:16px">작성한 글은 이야기에 남지만 계정 정보는 완전히 삭제돼요. 이 작업은 되돌릴 수 없습니다.</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">탈퇴 이유를 알려주시면 서비스 개선에 큰 도움이 돼요</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px" id="del-reason-chips">
+        ${reasons.map(r => `<button type="button" class="btn btn-ghost btn-sm" style="border-radius:20px" onclick="_selectDeleteReason(this,'${r}')">${r}</button>`).join('')}
+        <button type="button" class="btn btn-ghost btn-sm" style="border-radius:20px" onclick="_selectDeleteReason(this,'기타')">기타</button>
+      </div>
+      <textarea id="del-reason-detail" rows="2" placeholder="구체적으로 알려주시면 더 도움이 돼요 (선택)" style="width:100%;display:none;resize:vertical;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--text);font-family:inherit;line-height:1.6;box-sizing:border-box;margin-bottom:16px"></textarea>
+      <input type="hidden" id="del-reason-value" value="">
+      <div style="display:flex;gap:8px;justify-content:center">
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('${mid}').remove()">취소</button>
+        <button class="btn btn-primary btn-sm" id="${mid}-confirm-btn" onclick="_doDeleteAccount('${mid}')">탈퇴하기</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+function _selectDeleteReason(btn, value) {
+  document.querySelectorAll('#del-reason-chips .btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const input = document.getElementById('del-reason-value');
+  if (input) input.value = value;
+  const detail = document.getElementById('del-reason-detail');
+  if (detail) detail.style.display = value === '기타' ? 'block' : 'none';
+}
+
+async function _doDeleteAccount(mid) {
+  const btn = document.getElementById(`${mid}-confirm-btn`);
+  if (btn) { btn.disabled = true; btn.textContent = '탈퇴 중...'; }
+  const reason = document.getElementById('del-reason-value')?.value || '';
+  const detail = document.getElementById('del-reason-detail')?.value || '';
+  const res = await api('deleteAccount', { reason, detail });
+  document.getElementById(mid)?.remove();
+  if (!res.ok) { toast(res.error, true); return; }
+  logout();
+  toast('탈퇴가 완료됐습니다.');
 }
 
 async function doToggleStoryLike(story_id) {

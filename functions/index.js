@@ -175,9 +175,16 @@ exports.onEpisodeClosed = functions
       await createNotifs([...sourceAuthorIds], `"${snippet}" 이야기에서 내 글을 손본 문장이 채택됐어요! +10P`);
       const excludeIds = new Set([...winnerAuthorIds, ...sourceAuthorIds]);
       const otherIds = allPart.filter(id => !excludeIds.has(id));
+      // nextStep(= 이 트리거 시점에 이미 갱신된 st.current_step + 1)은 새로 열린
+      // 에피소드의 step 번호와 같음 — 화면에 보이는 "N단계" 표시는 항상
+      // calcDisplayStep(=epStep+1, 분기 없는 경우) 기준이라 여기도 +1만 더해야
+      // 맞음. 예전엔 +2를 더해서 실제 페이지보다 항상 1단계 높게 표시되는
+      // 버그가 있었음(유저 리포트로 확인: 알림은 "6단계"인데 실제로 들어가보면
+      // "5단계"). 분기(다른 갈래) 상황에서도 새로 열리는 에피소드 자체의 표시
+      // 단계는 동일하게 계산되므로 두 메시지 다 +1로 통일.
       const msg = winners.length > 1
-        ? `"${snippet}" 이야기가 ${nextStep + 2}단계에서 ${winners.length}개 갈림길로 나뉘었어요!`
-        : `"${snippet}" 이야기가 ${nextStep + 2}단계로 이어졌어요!`;
+        ? `"${snippet}" 이야기가 ${nextStep + 1}단계에서 ${winners.length}개 갈림길로 나뉘었어요!`
+        : `"${snippet}" 이야기가 ${nextStep + 1}단계로 이어졌어요!`;
       await createNotifs(otherIds, msg);
     }
     return null;

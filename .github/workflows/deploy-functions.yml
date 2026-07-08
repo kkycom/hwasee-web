@@ -1,6 +1,6 @@
 name: Deploy Cloud Functions
 
-on:
+"on":
   push:
     branches: [main]
     paths:

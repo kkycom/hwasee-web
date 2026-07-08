@@ -1403,7 +1403,7 @@ function startSeedStory() {
     <textarea id="seed-first-line" maxlength="50" placeholder="${esc(seed.hint || '')}"
       style="width:100%;min-height:56px;padding:10px 12px;border:1px solid #c8b090;border-radius:8px;font-family:var(--serif);font-size:15px;background:#fffdf8;resize:none;box-sizing:border-box"></textarea>
     <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px">
-      <button class="btn btn-primary" onclick="confirmSeedStory()">${user ? '이 문장으로 잇기' : '이 문장으로 가입하고 시작하기'}</button>
+      <button class="btn btn-primary" onclick="confirmSeedStory()">${user ? '쓴 문장으로 잇기' : '이 문장으로 가입하고 시작하기'}</button>
       ${user ? `<button class="btn btn-ghost" style="border-color:#c8b090;color:#7a5c40;background:#f5f0e6" onclick="confirmSeedStory(true)">그냥 씨앗만 심고 갈게요</button>` : ''}
     </div>`;
   document.getElementById('seed-first-line')?.focus();
@@ -1464,8 +1464,14 @@ async function _resumePendingSeedStory() {
 // 관심받는 이야기 카드
 function cardStickersHtml(s, alwaysBm) {
   const hasBm = alwaysBm || _bmIds.has(s.story_id);
+  // 분기/연장은 서로 배타적이지 않음 — 완결된 원본 이야기가 분기도 있고
+  // 나중에 연장도 됐으면 둘 다 표시(is_continuation은 "이 이야기 자체가
+  // 연장본"인 경우, has_continuation은 "이 이야기가 연장됐다"인 경우라 서로 다름)
+  const branchTag = (s.has_branch || s.branch_from_step) ? `<span class="card-branch-sticker">⑂ 분기</span>` : '';
+  const contTag    = (s.is_continuation || s.has_continuation) ? `<span class="card-branch-sticker">〜 연장</span>` : '';
   const parts = [
-    s.is_continuation ? `<span class="card-branch-sticker">〜 연장</span>` : (s.has_branch || s.branch_from_step) ? `<span class="card-branch-sticker">⑂ 분기</span>` : '',
+    branchTag,
+    contTag,
     hasBm ? `<span class="card-bookmark-sticker">★</span>` : '',
   ].filter(Boolean).join('');
   return parts ? `<div class="card-stickers">${parts}</div>` : '';
@@ -3485,7 +3491,7 @@ function _extForkRow(extBranch, kind = 'fork') {
   return `
     <div style="display:flex;align-items:center;gap:10px">
       <span style="font-size:10px;color:var(--muted);letter-spacing:1px;white-space:nowrap">${tag}</span>
-      <button class="ext-branch-card" onclick="nav('story','${extBranch.story_id}')" style="flex:1;margin:0;padding:0">
+      <button class="ext-branch-card" onclick="nav('story','${extBranch.story_id}')" style="flex:1;margin:0">
         <div class="ext-branch-card-label" style="margin-bottom:2px">${title}</div>
         <div style="font-size:12px;color:var(--muted)">${desc}</div>
       </button>

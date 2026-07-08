@@ -1950,6 +1950,9 @@ async function fbExtendStory(story_id, user_id) {
     step: 1, status: 'open', vote_total: 0,
     created_at: fbNow(), closed_at: '', pending_at: '', parent_sub_id: '',
   });
+  // 원본 완결 이야기 쪽에도 "연장됨" 표시 — 카드 목록(완성된 이야기 탭 등)에서
+  // 분기와 마찬가지로 스티커로 보여주기 위함(has_branch와 같은 패턴)
+  batch.update(db.collection('stories').doc(story_id), { has_continuation: true });
   await batch.commit();
 
   // 원본 참여자 알림

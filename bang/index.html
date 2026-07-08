@@ -470,8 +470,10 @@
     15%  { transform: translateX(-25px); }
     18%  { transform: translateX(-22px); }
     /* 다음 큰 이동(중앙 방향)과 반대로 한 번 더 왼쪽으로 갔다가 넘어가야
-       ease-in-out 감속→재가속 경계에서 "끊겼다 이동" 하는 느낌이 안 남 */
-    20%  { transform: translateX(-27px); }
+       ease-in-out 감속→재가속 경계에서 "끊겼다 이동" 하는 느낌이 안 남 —
+       단, 직전 끄적임 범위(-21~-26px)보다 너무 튀어나가면 좁은 구간(18→20%)
+       안에서 빠르게 크게 움직여 삑사리처럼 보이므로 폭을 줄임(-27px → -24px) */
+    20%  { transform: translateX(-24px); }
     /* ② 스윽 → 중앙 */
     33%  { transform: translateX(0px);   }
     /* ③ 중앙에서 끄적 (동일 리듬, 33~53%) */

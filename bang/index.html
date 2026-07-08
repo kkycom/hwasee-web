@@ -3227,7 +3227,12 @@ function getChosenOpenEp(allEps, submissions, choices) {
   });
 
   let cur = allEps.find(ep => !ep.parent_sub_id || ep.parent_sub_id === '');
-  while (cur) {
+  // seen 가드 — 데이터가 손상돼 parent_sub_id 체인이 순환하는 경우(과거 분기 버그로
+  // 생긴 구형 데이터 등) cur가 같은 에피소드로 계속 되돌아와 무한루프에 빠질 수 있음.
+  // 이 함수는 스토리 렌더마다 호출되므로 그 이야기를 열 때마다 탭이 그대로 멈춤.
+  const seen = new Set();
+  while (cur && !seen.has(cur.episode_id)) {
+    seen.add(cur.episode_id);
     if (cur.status === 'open') return cur;
     const adopted = submissions.filter(s =>
       s.episode_id === cur.episode_id && (s.is_adopted === true || s.is_adopted === 'TRUE')
@@ -3509,7 +3514,11 @@ function _buildCanonicalPath(episodes, submissions) {
     const lastEps = new Set(episodes.filter(e => Number(e.step) === maxStep).map(e => e.episode_id));
     traceSub = submissions.find(s => lastEps.has(s.episode_id) && s.is_adopted);
   }
-  while (traceSub) {
+  // seen 가드 — parent_sub_id 체인이 손상돼 순환하면(과거 분기 버그로 생긴 구형
+  // 데이터 등) 무한루프에 빠져 그 이야기를 열 때마다 탭이 그대로 멈춤
+  const seenSubs = new Set();
+  while (traceSub && !seenSubs.has(traceSub.sub_id)) {
+    seenSubs.add(traceSub.sub_id);
     const ep = episodes.find(e => e.episode_id === traceSub.episode_id);
     if (!ep || !ep.parent_sub_id) break;
     const parentSub = submissions.find(s => s.sub_id === ep.parent_sub_id);

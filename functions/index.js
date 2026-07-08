@@ -679,7 +679,12 @@ exports.aiParticipate = functions
     // 11개 동시 마감 → 알림 22개). 회차(30분)당 마감 개수에 상한을 둬서 백로그를
     // 여러 실행에 걸쳐 자연스럽게 나눠 처리함 — 처리 순서도 매번 무작위로 섞어서
     // 캡에 걸려 밀린 이야기가 매번 같은 것들만 되지 않고 골고루 돌아가게 함.
-    const MAX_CLOSES_PER_RUN = 2;
+    // ⚠️ 처음엔 2로 설정했다가, 실제로 한 이야기가 임계값 도달 후 거의 20시간
+    // 동안 마감 못 하고 대기한 사례가 발생해서(2026-07-08, 유저 리포트) 5로
+    // 올림 — 캡이 너무 낮으면 "우르르 몰림"은 막아도 개별 이야기가 지나치게
+    // 오래 기다리는 부작용이 생김. 5 정도면 극단적 백로그(11개)도 3회
+    // 실행(~1.5시간)이면 다 풀리면서, 평상시 개별 대기시간도 훨씬 짧아짐.
+    const MAX_CLOSES_PER_RUN = 5;
     let closesThisRun = 0;
     const shuffledStories = [...storiesSnap.docs];
     for (let i = shuffledStories.length - 1; i > 0; i--) {

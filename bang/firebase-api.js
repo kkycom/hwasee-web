@@ -1418,7 +1418,7 @@ async function _fbRecycleAbandonedSeeds(docs) {
     nb.set(db.collection('notifications').doc(fbGenId()), {
       user_id: s.creator_id, type: 'seed_recycled', story_id: '',
       message: `시간이 경과하여 선택하신 이야기가 다시 되돌아갔습니다.\n"${snippet}"`,
-      is_read: false, created_at: fbNow(),
+      is_read: false, created_at: fbNow(), push_sent: false,
     });
     hasNotif = true;
   });
@@ -1452,7 +1452,7 @@ async function _fbCreateNotifications(user_ids, story_id, message) {
   const batch = db.batch();
   unique.forEach(uid => {
     batch.set(db.collection('notifications').doc(fbGenId()), {
-      user_id: uid, type: 'story_advance', story_id, message, is_read: false, created_at: fbNow()
+      user_id: uid, type: 'story_advance', story_id, message, is_read: false, created_at: fbNow(), push_sent: false
     });
   });
   await batch.commit();
@@ -2350,7 +2350,7 @@ async function fbResolveBugReport(report_id, user_id, comment) {
     const message = comment ? `${base}\n"${comment}"` : base;
     await db.collection('notifications').doc(fbGenId()).set({
       user_id: reporter_id, type: 'bug_resolved', story_id: '',
-      message, is_read: false, created_at: fbNow(),
+      message, is_read: false, created_at: fbNow(), push_sent: false,
     });
   }
   return { ok: true };
@@ -2364,7 +2364,7 @@ async function fbSubmitBugReport(content, user_id) {
     user_id: FB_ADMIN_ID, type: 'bug_report', story_id: '',
     message: '새 버그 제보가 접수됐어요 🐛',
     link: 'https://hwasee.me/bang/#admin-bugs',
-    is_read: false, created_at: fbNow(),
+    is_read: false, created_at: fbNow(), push_sent: false,
   });
   return { ok: true };
 }

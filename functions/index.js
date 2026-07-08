@@ -18,59 +18,78 @@ function _calcDisplayStepBackend(storyData, epStep) {
   return Number(epStep) + 1;
 }
 
-// ── 알림 생성 시 FCM 푸시 발송 ──────────────────────────────
-exports.sendPushOnNotification = functions
+// ── 알림 푸시 발송 (배치, 2분마다) ───────────────────────────
+// 예전엔 알림 문서가 생성되는 즉시(Firestore onCreate 트리거) 각각 푸시를
+// 보냈는데, 여러 이야기가 비슷한 시점에 알림을 만들면(AI 마감 등) 한 유저가
+// 짧은 시간에 여러 개의 별도 푸시를 우르르 받는 문제가 있었음(회차당 마감
+// 개수 상한을 올려도 개인이 그중 여러 개에 걸쳐있으면 여전히 뭉텅이로 옴,
+// 2026-07-08). 대신 최대 2분 주기로 모아서, 같은 유저에게 쌓인 알림이
+// 여러 개면 "새로운 소식이 N개 있어요" 하나로 합쳐 보내고, 1개뿐이면
+// 기존처럼 그 알림 자체의 메시지로 보냄 — 몇 개가 한꺼번에 생기든 한
+// 유저가 받는 푸시는 항상 최대 1개로 보장됨. 대가로 알림 생성부터 푸시
+// 도착까지 최대 2분 정도 지연이 생길 수 있음.
+exports.sendBatchedPushNotifications = functions
   .region('asia-northeast3')
-  .firestore.document('notifications/{notifId}')
-  .onCreate(async snap => {
-    const notif = snap.data();
-    if (!notif.user_id) return null;
+  .pubsub.schedule('every 2 minutes')
+  .onRun(async () => {
+    const db = admin.firestore();
+    const pendingSnap = await db.collection('notifications').where('push_sent', '==', false).get();
+    if (pendingSnap.empty) return null;
 
-    // Firebase CF는 at-least-once 실행 — 트랜잭션으로 중복 발송 방지
-    try {
-      const shouldSend = await admin.firestore().runTransaction(async tx => {
-        const current = await tx.get(snap.ref);
-        if (!current.exists || current.data().push_sent) return false;
-        tx.update(snap.ref, { push_sent: true });
-        return true;
-      });
-      if (!shouldSend) return null;
-    } catch (e) {
-      return null;
-    }
+    const byUser = {};
+    pendingSnap.docs.forEach(d => {
+      const n = d.data();
+      if (!n.user_id) return;
+      (byUser[n.user_id] = byUser[n.user_id] || []).push({ ref: d.ref, ...n });
+    });
 
-    const userSnap = await admin.firestore().collection('users').doc(notif.user_id).get();
-    if (!userSnap.exists) return null;
-
-    const fcmToken = userSnap.data().fcm_token;
-    if (!fcmToken) return null;
-
-    const link = notif.link
-      || (notif.story_id ? `https://hwasee.me/bang/#story/${notif.story_id}` : 'https://hwasee.me/bang/');
-
-    // 의도적으로 top-level `notification`/`webpush.notification` 필드를 안 씀 —
-    // 이 필드가 있으면 브라우저(FCM SDK)가 알아서 한 번 자동 표시하고, sw.js의
-    // onBackgroundMessage가 그 위에 또 한 번 수동으로 showNotification을 호출해서
-    // 똑같은 내용의 알림이 두 개씩 뜨는 문제가 있었음(휴대폰 알림 중복 버그 리포트로
-    // 확인). data-only 메시지로 보내서 자동 표시를 끄고, 표시는 오직 sw.js의
-    // onBackgroundMessage 한 곳에서만 하도록 함.
-    try {
-      await admin.messaging().send({
-        token: fcmToken,
-        data: {
-          title: '화씨.방',
-          body: notif.message,
-          link,
-          icon:  'https://hwasee.me/bang/icon-192.png',
-          badge: 'https://hwasee.me/bang/icon-192.png',
-        },
-      });
-    } catch (e) {
-      if (e.code === 'messaging/registration-token-not-registered') {
-        await admin.firestore().collection('users').doc(notif.user_id)
-          .update({ fcm_token: admin.firestore.FieldValue.delete() });
+    await Promise.all(Object.entries(byUser).map(async ([user_id, notifs]) => {
+      // 알림별로 트랜잭션 선점 — 스케줄러 실행이 겹치거나 at-least-once 재실행돼도
+      // 같은 알림이 두 번 카운트/발송되지 않도록 함
+      const claimed = [];
+      for (const n of notifs) {
+        const won = await db.runTransaction(async tx => {
+          const snap = await tx.get(n.ref);
+          if (!snap.exists || snap.data().push_sent) return false;
+          tx.update(n.ref, { push_sent: true });
+          return true;
+        });
+        if (won) claimed.push(n);
       }
-    }
+      if (!claimed.length) return;
+
+      const userSnap = await db.collection('users').doc(user_id).get();
+      if (!userSnap.exists) return;
+      const fcmToken = userSnap.data().fcm_token;
+      if (!fcmToken) return;
+
+      const single = claimed.length === 1;
+      const first  = claimed[0];
+      const link = single
+        ? (first.link || (first.story_id ? `https://hwasee.me/bang/#story/${first.story_id}` : 'https://hwasee.me/bang/'))
+        : 'https://hwasee.me/bang/';
+      const body = single ? first.message : `새로운 소식이 ${claimed.length}개 있어요. 확인해보세요!`;
+
+      // 의도적으로 top-level notification/webpush.notification 필드를 안 씀 —
+      // 브라우저 자동표시 + sw.js onBackgroundMessage 수동표시가 겹쳐 알림이
+      // 두 개씩 뜨던 버그가 있었음(커밋 83008d5). data-only로 유지.
+      try {
+        await admin.messaging().send({
+          token: fcmToken,
+          data: {
+            title: '화씨.방',
+            body,
+            link,
+            icon:  'https://hwasee.me/bang/icon-192.png',
+            badge: 'https://hwasee.me/bang/icon-192.png',
+          },
+        });
+      } catch (e) {
+        if (e.code === 'messaging/registration-token-not-registered') {
+          await db.collection('users').doc(user_id).update({ fcm_token: admin.firestore.FieldValue.delete() });
+        }
+      }
+    }));
     return null;
   });
 
@@ -155,7 +174,7 @@ exports.onEpisodeClosed = functions
       unique.forEach(uid => {
         batch.set(db.collection('notifications').doc(), {
           user_id: uid, type: 'story_advance', story_id, message,
-          is_read: false, created_at: admin.firestore.Timestamp.now(),
+          is_read: false, created_at: admin.firestore.Timestamp.now(), push_sent: false,
         });
       });
       await batch.commit();
@@ -369,6 +388,7 @@ ${JSON.stringify(sortedAdopted.map(s => ({ sub_id: s.sub_id, content: s.content 
         link:       'https://hwasee.me/bang/#admin-edits',
         created_at: admin.firestore.FieldValue.serverTimestamp(),
         is_read:    false,
+        push_sent:  false,
       });
     }
 

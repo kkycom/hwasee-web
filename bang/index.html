@@ -4808,13 +4808,17 @@ window.addEventListener('hashchange', () => {
   parseHash(); render(); renderNav();
 });
 
-// 잠금화면 복귀 시 30초 이상 숨겨졌으면 재렌더
+// 잠금화면 복귀 시 30초 이상 숨겨졌으면 재렌더 + Firestore 연결 재웜업
+// 백그라운드에 오래 있으면 모바일 브라우저가 WebChannel 연결을 끊어버리는데,
+// 이후 유저가 실제로 이야기를 누를 때 그 협상 비용을 처음부터 다시 치르면서
+// 느려지거나 무한로딩처럼 보이는 문제 방지 — 복귀 즉시 미리 채널을 열어둠.
 let _hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     _hiddenAt = Date.now();
   } else if (_hiddenAt && Date.now() - _hiddenAt > 30000) {
     _hiddenAt = 0;
+    firebase.firestore().collection('config').doc('stats').get().catch(() => {});
     render(); renderNav();
   }
 });

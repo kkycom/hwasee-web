@@ -2029,7 +2029,7 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1
         ${user && !mySubId && !isAdopted && !sub.derived_from ? `
           <button class="btn btn-ghost btn-sm" style="font-size:12px;padding:3px 10px;color:var(--accent2)"
             onclick="event.stopPropagation();polishSub('${sub.sub_id}','${esc(sub.content).replace(/'/g,"\\'")}','${esc(sub.author_nickname||'익명')}')">
-            ✏ 다듬어서 제안하기
+            ✏ 윤색하기
           </button>` : ''}
         ${user && sub.sub_id !== mySubId ? `
           <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px;color:var(--muted);margin-left:auto;opacity:0.7"
@@ -2471,7 +2471,7 @@ function polishSub(sub_id, content, author_nickname) {
   input.value = content;
   updateCount('sub-input', 'sub-cc');
   const ind = document.getElementById('polish-indicator');
-  if (ind) { ind.style.display = 'block'; ind.textContent = `✏ "${author_nickname}"의 글을 손보는 중`; }
+  if (ind) { ind.style.display = 'block'; ind.textContent = `✏ "${author_nickname}"의 글을 다듬는 중 (원문은 그대로 두고 새 글로 제출돼요)`; }
   input.focus(); input.select();
   input.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
@@ -3144,8 +3144,8 @@ async function profile() {
           ['공감 참여','+5p','earn'],
           ['내 글 채택됨 (직접 제출)','+20p','earn'],
           ['내 글로 이야기를 완결지음 (직접 제출)','+30p','earn'],
-          ['내 글 채택됨 (다듬기)','+10p','earn'],
-          ['다듬기로 이야기를 완결지음 (원저자+다듬은 사람 각자)','+15p','earn'],
+          ['내 글 채택됨 (윤색)','+10p','earn'],
+          ['윤색으로 이야기를 완결지음 (원저자+윤색한 사람 각자)','+15p','earn'],
           ['완결 이야기 MVP 선정','+10p','earn'],
           ['버그 제보','+10p','earn'],
           ['분기 파생 (이어쓰기 새 갈래)','-30p','spend'],
@@ -3573,8 +3573,8 @@ function buildStoryActionHtml(openEp) {
         <div class="char-count" id="sub-cc" style="margin-bottom:10px">0자</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${effectiveClosedCount >= 1
-            ? `<button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">이야기를 열어두고 제출</button>
-               <button class="btn btn-sm" style="background:var(--accent2);color:#fff;border:none;font-weight:700" onclick="submitSubInStory('${esc(openEp.episode_id)}', true)">이야기를 끝맺고 제출</button>`
+            ? `<button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">연재하기</button>
+               <button class="btn btn-sm" style="background:var(--accent2);color:#fff;border:none;font-weight:700" onclick="submitSubInStory('${esc(openEp.episode_id)}', true)">완결하기</button>`
             : `<button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">제출</button>`}
         </div>
       </div>` : ''}
@@ -4858,8 +4858,8 @@ function reasonLabel(r) {
   const streakM = /^login_streak_(\d+)$/.exec(r);
   if (streakM) return `${streakM[1]}일 연속 출석 보너스`;
   return {
-    direct:'채택 (직접 제출)', direct_close:'채택 (이야기 완결)', source:'다듬기 원저자 보상', mid:'중간 다듬기 보상', derived:'다듬기 채택 보상',
-    source_close:'다듬기 원저자 보상 (이야기 완결)', derived_close:'다듬기 채택 보상 (이야기 완결)',
+    direct:'채택 (직접 제출)', direct_close:'채택 (이야기 완결)', source:'윤색 원저자 보상', mid:'중간 윤색 보상', derived:'윤색 채택 보상',
+    source_close:'윤색 원저자 보상 (이야기 완결)', derived_close:'윤색 채택 보상 (이야기 완결)',
     submit:'제출 참여', vote:'공감 참여', daily_login:'출석 점수', mvp_nomination:'MVP 선정', bug_report:'버그 제보',
     referral_bonus:'친구 초대 보너스', comeback_bonus:'복귀 보너스',
     boost_story:'이야기 주목 사용', extra_submit:'추가 제출권 사용', buy_avatar:'아바타 아이콘 구매',

@@ -2685,6 +2685,7 @@ async function fbSubmitWordChallengeEntry(challenge_id, author_id, text) {
   return { ok: true, submission_id: sub_id };
 }
 
+// 하루(챌린지 1회)당 투표는 딱 1표, 한 번 던지면 변경/취소 불가
 async function fbVoteWordChallenge(challenge_id, submission_id, voter_id) {
   const chSnap = await db.collection('word_challenges').doc(challenge_id).get();
   if (!chSnap.exists) return { ok: false, error: '챌린지를 찾을 수 없습니다.' };
@@ -2696,24 +2697,20 @@ async function fbVoteWordChallenge(challenge_id, submission_id, voter_id) {
   if (subSnap.data().user_id === voter_id) return { ok: false, error: '본인 문장에는 투표할 수 없어요.' };
 
   const voteRef = db.collection('word_challenge_votes').doc(`${challenge_id}_${voter_id}`);
-  let voted = false;
-  await db.runTransaction(async tx => {
-    const voteSnap = await tx.get(voteRef);
-    if (voteSnap.exists && voteSnap.data().submission_id === submission_id) {
-      tx.delete(voteRef);
-      tx.update(subRef, { vote_count: firebase.firestore.FieldValue.increment(-1) });
-      voted = false;
-    } else {
-      if (voteSnap.exists) {
-        const oldRef = db.collection('word_challenge_submissions').doc(voteSnap.data().submission_id);
-        tx.update(oldRef, { vote_count: firebase.firestore.FieldValue.increment(-1) });
-      }
+  const preSnap = await voteRef.get();
+  if (preSnap.exists) return { ok: false, error: '오늘 투표는 이미 하셨어요.' };
+
+  try {
+    await db.runTransaction(async tx => {
+      const voteSnap = await tx.get(voteRef);
+      if (voteSnap.exists) throw new Error('오늘 투표는 이미 하셨어요.');
       tx.set(voteRef, { challenge_id, submission_id, voter_id, created_at: fbNow() });
       tx.update(subRef, { vote_count: firebase.firestore.FieldValue.increment(1) });
-      voted = true;
-    }
-  });
-  return { ok: true, voted };
+    });
+  } catch (e) {
+    return { ok: false, error: e.message || '투표에 실패했습니다.' };
+  }
+  return { ok: true };
 }
 
 async function fbGetWordChallengeHistory() {

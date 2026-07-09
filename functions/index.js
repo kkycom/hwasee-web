@@ -1134,20 +1134,54 @@ function _next9pmKST(from) {
   return new Date(targetKst.getTime() - 9 * 3600 * 1000);
 }
 
+// 관리자가 세트를 직접 등록하지 않아도 매일 새 조합이 나오도록 미리 심어둔
+// "안 어울리는 단어 3개" 세트 — index.html의 FB_AI_OPENINGS(씨앗 이야기 자동
+// 시딩)와 같은 취지. 50개를 다 쓰면 config/word_challenge_seed_state.next_index로
+// 처음부터 순환 재사용(하루짜리 가벼운 이벤트라 반복돼도 크게 문제 없음).
+const WORD_CHALLENGE_SEED_SETS = [
+  ['냉장고','우주비행사','젓가락'], ['지하철','공룡','립스틱'], ['우산','해적','계산기'],
+  ['코끼리','와이파이','도자기'], ['산타클로스','잠수함','양파'], ['형광펜','늑대','결혼식'],
+  ['로봇청소기','무지개','곰탕'], ['타자기','열대어','등산화'], ['마법사','택배','냄비'],
+  ['선인장','경찰차','트럼펫'], ['미라','자전거','초콜릿'], ['번개','도서관','문어'],
+  ['축구공','유령','젤리'], ['낙타','계단','헤드폰'], ['벚꽃','잠망경','만두'],
+  ['사이렌','고양이','여권'], ['폭포','넥타이','좀비'], ['불꽃놀이','개미','안경'],
+  ['피아노','상어','배낭'], ['눈사람','스파이','삼겹살'], ['등대','로켓','젓갈'],
+  ['유니콘','신호등','냉면'], ['회전목마','문신','감자'], ['도깨비','헬리콥터','치즈'],
+  ['파도','마이크','곰인형'], ['화산','우체통','국수'], ['시계탑','상어','붕어빵'],
+  ['캥거루','지팡이','라면'], ['오로라','소방차','만두피'], ['인어','냉동고','우비'],
+  ['벽난로','스케이트보드','참치'], ['은하수','대나무','오리'], ['미로','콘서트','젓가락'],
+  ['다이너마이트','튤립','순대'], ['미어캣','콘센트','도넛'], ['산호초','우주선','뻥튀기'],
+  ['폭탄','발레리나','냉장고'], ['거미줄','트램펄린','만두국'], ['빙하','색소폰','짜장면'],
+  ['나침반','도깨비불','붕대'], ['화석','스노클','계란빵'], ['눈보라','마술사','순두부'],
+  ['사막','잠수정','볼펜'], ['얼음낚시','롤러코스터','젤리'], ['부엉이','헬멧','딸기'],
+  ['폭죽','미로찾기','감자탕'], ['오르골','산악자전거','콩나물'], ['은하계','태권도','소시지'],
+  ['늪','우주정거장','도장'], ['화살표','곰돌이','라볶이'],
+];
+
+async function _pickWordChallengeWords(db) {
+  // 1) 관리자가 미리 등록해둔 세트가 있으면 그걸 우선 소진
+  const setsSnap = await db.collection('word_challenge_sets').orderBy('created_at', 'asc').limit(500).get();
+  const nextSet = setsSnap.docs.find(d => !d.data().used);
+  if (nextSet) { await nextSet.ref.update({ used: true }); return nextSet.data().words; }
+
+  // 2) 없으면 미리 심어둔 기본 세트를 순환 사용
+  const stateRef = db.collection('config').doc('word_challenge_seed_state');
+  const stateSnap = await stateRef.get();
+  const idx = (stateSnap.exists ? Number(stateSnap.data().next_index) || 0 : 0) % WORD_CHALLENGE_SEED_SETS.length;
+  await stateRef.set({ next_index: idx + 1 }, { merge: true });
+  return WORD_CHALLENGE_SEED_SETS[idx];
+}
+
 async function _serverStartWordChallenge(db) {
   const activeSnap = await db.collection('word_challenges').where('status', '==', 'active').limit(1).get();
   if (!activeSnap.empty) return; // 이미 진행 중인 라운드가 있으면 중복 생성 방지
 
-  const setsSnap = await db.collection('word_challenge_sets').orderBy('created_at', 'asc').limit(500).get();
-  const nextSet = setsSnap.docs.find(d => !d.data().used);
-  if (!nextSet) { console.warn('word challenge: 대기 중인 단어 세트가 없습니다.'); return; }
-
+  const words = await _pickWordChallengeWords(db);
   const now = new Date();
   const dateStr = new Date(now.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
-  await nextSet.ref.update({ used: true });
   await db.collection('word_challenges').doc().set({
     date: dateStr,
-    words: nextSet.data().words,
+    words,
     status: 'active',
     start_at: now.toISOString(),
     end_at: _next9pmKST(now).toISOString(),

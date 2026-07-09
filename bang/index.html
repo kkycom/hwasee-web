@@ -2137,21 +2137,28 @@ function renderWordChallenge() {
   const { challenge, submissions, my_submission_id, my_vote_submission_id } = window._wcData;
   const isActive = challenge.status === 'active' && Date.now() < new Date(challenge.end_at).getTime();
 
-  const wordsHtml = (challenge.words || []).map(w => `
-    <span style="display:inline-block;background:var(--accent2);color:#fff;font-weight:700;font-size:13px;padding:5px 12px;border-radius:20px;margin-right:6px">${esc(w)}</span>`).join('');
+  // 단어 3개(진행 중)와 우승 문장(마감 후)이 같은 "큰 공간" 한 자리를 그대로
+  // 교체해가며 씀 — 새 배너를 따로 만들지 않고 이 자리 안에서만 상태가 전환됨
+  const heroHtml = isActive ? `
+    <div style="text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:14px">🎲 오늘의 단어 챌린지</div>
+      <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+        ${(challenge.words || []).map(w => `<span style="display:inline-block;background:var(--accent2);color:#fff;font-weight:700;font-size:17px;padding:8px 18px;border-radius:24px">${esc(w)}</span>`).join('')}
+      </div>
+      <div style="font-size:12px;color:var(--muted)">이 세 단어를 모두 넣어 ${FB_WORD_CHALLENGE_MAX_CHARS}자 이내 문장을 지어보세요 · <span id="wc-countdown"></span> 마감</div>
+    </div>`
+    : (challenge.winner_text ? `
+    <div style="text-align:center;background:var(--bg);border-radius:14px;padding:28px 16px;margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:var(--accent2);letter-spacing:.5px;margin-bottom:16px">🏆 오늘의 장원</div>
+      <div style="font-size:18px;line-height:1.7;font-family:var(--serif);font-weight:600;margin-bottom:10px">${boldChallengeWords(challenge.winner_text, challenge.words)}</div>
+      <div style="font-size:13px;color:var(--muted)">👑 ${esc(challenge.winner_nickname)} · +100p</div>
+    </div>` : `
+    <div style="text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:8px">🏆 오늘의 장원</div>
+      <div style="font-size:13px;color:var(--muted)">참여자가 없어 우승자가 없었어요</div>
+    </div>`);
 
-  const header = isActive
-    ? `<div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px;letter-spacing:.5px">🎲 오늘의 단어 챌린지</div>
-       <div style="font-size:12px;color:var(--muted);margin-bottom:14px">이 세 단어를 모두 넣어 ${FB_WORD_CHALLENGE_MAX_CHARS}자 이내 문장을 지어보세요 · <span id="wc-countdown"></span> 마감</div>`
-    : `<div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px;letter-spacing:.5px">🏆 오늘의 장원</div>
-       <div style="font-size:12px;color:var(--muted);margin-bottom:14px">자정에 새 챌린지가 시작돼요</div>`;
-
-  const winnerHtml = (!isActive && challenge.winner_text) ? `
-    <div style="background:var(--bg);border:1px solid var(--accent2);border-radius:10px;padding:14px 16px;margin-bottom:16px">
-      <div style="font-size:12px;color:var(--accent2);font-weight:700;margin-bottom:6px">👑 ${esc(challenge.winner_nickname)} · +100p</div>
-      <div style="font-size:14px;line-height:1.6">${boldChallengeWords(challenge.winner_text, challenge.words)}</div>
-    </div>` : '';
-
+  const hasVoted = !!my_vote_submission_id;
   const formHtml = isActive && user && !my_submission_id ? `
     <div style="display:flex;gap:8px;margin-bottom:16px">
       <input id="wc-input" maxlength="${FB_WORD_CHALLENGE_MAX_CHARS}" placeholder="세 단어를 넣어 문장을 지어보세요" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text)">
@@ -2160,14 +2167,14 @@ function renderWordChallenge() {
 
   const loginHint = isActive && !user
     ? `<div style="font-size:12px;color:var(--muted);margin-bottom:16px">참여하려면 <a href="#" onclick="nav('auth','login');return false" style="color:var(--accent2)">로그인</a>이 필요해요</div>` : '';
-  const mySubHint = isActive && user && my_submission_id
-    ? `<div style="font-size:12px;color:var(--muted);margin-bottom:16px">이미 참여했어요 — 다른 문장에 투표해보세요</div>` : '';
+  const mySubHint = isActive && user && my_submission_id && !hasVoted
+    ? `<div style="font-size:12px;color:var(--muted);margin-bottom:16px">이미 참여했어요 — 다른 문장에 투표해보세요 (하루 1표)</div>` : '';
 
   const visibleSubs = submissions.slice(0, _wcVisibleCount);
   const listHtml = visibleSubs.length ? visibleSubs.map(s => {
     const voted = s.submission_id === my_vote_submission_id;
     const isMine = s.submission_id === my_submission_id;
-    const canVote = isActive && user && !isMine;
+    const canVote = isActive && user && !isMine && !hasVoted;
     return `
       <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
         <button ${canVote ? `onclick="_voteWordChallenge('${s.submission_id}')"` : 'disabled'}
@@ -2186,9 +2193,7 @@ function renderWordChallenge() {
     ? `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="_wcShowMore()">더보기 (${submissions.length - _wcVisibleCount}개 남음)</button>` : '';
 
   el.innerHTML = `
-    ${header}
-    <div style="margin-bottom:14px">${wordsHtml}</div>
-    ${winnerHtml}
+    ${heroHtml}
     ${loginHint}${mySubHint}${formHtml}
     <div>${listHtml}</div>
     ${showMoreHtml}

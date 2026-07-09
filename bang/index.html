@@ -1765,7 +1765,6 @@ function _applyStoryData(res, story_id) {
     const continuation = branches.find(b => b.is_continuation);
     const _infSvg = `<svg width="16" height="10" viewBox="0 0 24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7 C10 3,2 3,2 7 C2 11,10 11,12 7 C14 3,22 3,22 7 C22 11,14 11,12 7 Z"/></svg>`;
     actionHtml = `
-      <div class="prose-divider">완결된 이야기입니다</div>
       <div style="display:flex;gap:8px;justify-content:center;margin-bottom:8px;align-items:center">
         ${user ? `
         <button class="btn btn-ghost btn-sm" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">
@@ -3690,7 +3689,10 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
     const sub = adoptedSubs[0];
     const childHtml = children.length === 1
       ? renderEpisodeTreeHtml(children[0], choices, mvpMap, branches, myMvpEpId, hideTabs, tabEpId) : '';
-    const forkHtml = (extBranch && !hideTabs) ? renderExtBranchInline(extBranch) : '';
+    // 이 줄 자체는 아직 공통 내용이고 분기는 그 다음부터 갈리므로, 이 줄 뒤에 점선을 둠
+    const forkHtml = (extBranch && !hideTabs)
+      ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>${renderExtBranchInline(extBranch)}`
+      : '';
     const editBtnHtml = isAdmin() ? `<button class="prose-edit-btn" data-sub="${sub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : '';
     return `
       <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
@@ -3715,7 +3717,12 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
       ? (!hideTabs ? renderExtBranchInline(extBranch) : '')
       : (chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId, hideTabs, tabEpId) : '');
     if (hideTabs && ep.episode_id !== tabEpId) return _proseDiv + _nextHtml;
+    // 포크 갈래를 보고 있는 중이면(isForkChosen), 이 tied 단계 자체가 이미 그
+    // 갈래만의 내용이므로 점선을 그 직전(마지막 공통 단계 뒤)에 둠
+    const _forkDivider = (isForkChosen && !hideTabs)
+      ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>` : '';
     return `
+      ${_forkDivider}
       <div class="branch-prose-row">
         <div class="branch-side-indicator">
           ${adoptedSubs.map((sub, i) => `
@@ -3768,8 +3775,9 @@ function renderExtBranchInline(extBranch) {
   // 아직 마감된 에피소드가 없으면 인라인에 보여줄 내용이 없음 — 안내 카드는
   // 하단 story-branch-cta가 항상 표시하므로 여기선 중복 없이 빈 값 반환
   if (!bTree) return '';
-  const divider = `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>`;
-  return divider + renderEpisodeTreeHtml(bTree, {}, undefined, undefined, undefined, true);
+  // 점선 구분선은 호출부(renderEpisodeTreeHtml의 isForkChosen 분기)에서 이
+  // 갈래가 갈리는 tied 단계 직전에 이미 넣어주므로 여기선 내용만 반환
+  return renderEpisodeTreeHtml(bTree, {}, undefined, undefined, undefined, true);
 }
 
 // 분기/연장 카드 한 줄(row) — 여러 개면 한 점선 테두리 박스 안에 줄만 여러 개 쌓임

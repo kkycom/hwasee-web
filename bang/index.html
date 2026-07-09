@@ -2160,9 +2160,17 @@ function renderWordChallenge() {
 
   const hasVoted = !!my_vote_submission_id;
   const formHtml = isActive && user && !my_submission_id ? `
-    <div style="display:flex;gap:8px;margin-bottom:16px">
-      <input id="wc-input" maxlength="${FB_WORD_CHALLENGE_MAX_CHARS}" placeholder="세 단어를 넣어 문장을 지어보세요" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text)">
-      <button class="btn btn-primary btn-sm" onclick="_submitWordChallenge()">제출</button>
+    <div style="margin-bottom:16px">
+      <div id="wc-check-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+        ${(challenge.words || []).map(w => `
+          <span class="wc-check-chip" data-word="${esc(w)}" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;padding:4px 10px;border-radius:14px;border:1px solid var(--border);color:var(--muted)">
+            <span class="wc-check-mark" style="display:none">✓</span>${esc(w)}
+          </span>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px">
+        <input id="wc-input" maxlength="${FB_WORD_CHALLENGE_MAX_CHARS}" placeholder="세 단어를 넣어 문장을 지어보세요" oninput="_wcCheckInput()" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text)">
+        <button id="wc-submit-btn" class="btn btn-primary btn-sm" onclick="_submitWordChallenge()" disabled>제출</button>
+      </div>
     </div>` : '';
 
   const loginHint = isActive && !user
@@ -2219,6 +2227,23 @@ function _startWordChallengeCountdown(end_at) {
   };
   tick();
   _wcCountdownTimer = setInterval(tick, 30000);
+}
+
+function _wcCheckInput() {
+  const inp = document.getElementById('wc-input');
+  const text = inp?.value || '';
+  const chips = document.querySelectorAll('#wc-check-chips .wc-check-chip');
+  let allUsed = chips.length > 0;
+  chips.forEach(chip => {
+    const used = !!chip.dataset.word && text.includes(chip.dataset.word);
+    const mark = chip.querySelector('.wc-check-mark');
+    chip.style.borderColor = used ? 'var(--accent2)' : 'var(--border)';
+    chip.style.color = used ? 'var(--accent2)' : 'var(--muted)';
+    if (mark) mark.style.display = used ? 'inline' : 'none';
+    if (!used) allUsed = false;
+  });
+  const btn = document.getElementById('wc-submit-btn');
+  if (btn) btn.disabled = !(allUsed && text.trim().length > 0);
 }
 
 async function _submitWordChallenge() {

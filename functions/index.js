@@ -1479,11 +1479,14 @@ exports.adminDebugBranchStory = functions
     if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
     const db = admin.firestore();
     let docs;
+    let debugTotal = 0, debugSample = [];
     if (data.story_id) {
       const d = await db.collection('stories').doc(data.story_id).get();
       docs = d.exists ? [d] : [];
     } else {
       const allSnap = await db.collection('stories').get();
+      debugTotal = allSnap.size;
+      debugSample = allSnap.docs.slice(0, 5).map(d => ({ id: d.id, opening: d.data().opening || null, has_branch: d.data().has_branch || false, branch_from_step: d.data().branch_from_step || null }));
       docs = allSnap.docs.filter(d => (d.data().opening || '').includes(data.opening || ''));
     }
     const results = await Promise.all(docs.map(async d => {
@@ -1513,5 +1516,5 @@ exports.adminDebugBranchStory = functions
         episodes, submissions, childBranches,
       };
     }));
-    return { ok: true, results };
+    return { ok: true, results, debugTotal, debugSample };
   });

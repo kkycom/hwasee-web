@@ -2132,8 +2132,7 @@ function switchLbTab() {}
 let _wcCountdownTimer = null;
 const WC_PAGE_SIZE = 10;
 let _wcVisibleCount = WC_PAGE_SIZE;
-// 이모지(🎲)는 톤이 안 맞아서 다른 아이콘들과 같은 선 스타일 SVG로 대체
-const WC_DICE_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:2px"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>`;
+const WC_HISTORY_BTN_HTML = `<button onclick="openWordChallengeHistory()" style="position:absolute;top:14px;right:14px;display:flex;align-items:center;gap:4px;background:none;border:1px solid var(--border);border-radius:8px;padding:5px 9px;font-size:11px;color:var(--muted);cursor:pointer">🏆 역대 당선작 보기</button>`;
 
 async function loadWordChallenge() {
   const res = await api('getWordChallenge', {});
@@ -2142,7 +2141,7 @@ async function loadWordChallenge() {
   if (!res.ok || !res.challenge) {
     el.innerHTML = `
       <div style="text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px">
-        <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:8px;letter-spacing:.5px">${WC_DICE_SVG}오늘의 단어 챌린지</div>
+        <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:8px;letter-spacing:.5px">🎲 오늘의 단어 챌린지</div>
         <div style="font-size:12px;color:var(--muted)">다음 챌린지를 준비 중이에요.</div>
       </div>`;
     return;
@@ -2178,21 +2177,25 @@ function renderWordChallenge() {
   // 단어 3개(진행 중)와 우승 문장(마감 후)이 같은 "큰 공간" 한 자리를 그대로
   // 교체해가며 씀 — 새 배너를 따로 만들지 않고 이 자리 안에서만 상태가 전환됨
   const heroHtml = isActive ? `
-    <div style="text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;margin-bottom:20px">
-      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:14px">${WC_DICE_SVG}오늘의 단어 챌린지</div>
+    <div style="position:relative;text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;margin-bottom:20px">
+      ${WC_HISTORY_BTN_HTML}
+      <div style="font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:14px">🎲 오늘의 단어 챌린지</div>
       <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
         ${(challenge.words || []).map(w => `<span style="display:inline-block;background:var(--accent2);color:#fff;font-weight:700;font-size:17px;padding:8px 18px;border-radius:24px">${esc(w)}</span>`).join('')}
       </div>
-      <div style="font-size:12px;color:var(--muted)">이 세 단어를 모두 넣어 ${FB_WORD_CHALLENGE_MAX_CHARS}자 이내 문장을 지어보세요 · <span id="wc-countdown"></span> 마감</div>
+      <div style="font-size:12px;color:var(--muted)">이 세 단어를 모두 넣어 ${FB_WORD_CHALLENGE_MAX_CHARS}자 이내 문장을 지어보세요</div>
       <div style="font-size:11px;color:var(--muted);margin-top:4px">🏆 1등 한 명에게 100p를 지급합니다</div>
+      <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-top:10px">⏰ <span id="wc-countdown"></span> 마감</div>
     </div>`
     : (challenge.winner_text ? `
-    <div style="text-align:center;background:var(--bg);border-radius:14px;padding:28px 16px;margin-bottom:20px">
+    <div style="position:relative;text-align:center;background:var(--bg);border-radius:14px;padding:28px 16px;margin-bottom:20px">
+      ${WC_HISTORY_BTN_HTML}
       <div style="font-size:12px;font-weight:700;color:var(--accent2);letter-spacing:.5px;margin-bottom:16px">🏆 오늘의 장원</div>
       <div style="font-size:18px;line-height:1.7;font-family:var(--serif);font-weight:600;margin-bottom:10px">${boldChallengeWords(challenge.winner_text, challenge.words)}</div>
       <div style="font-size:13px;color:var(--muted)">👑 ${esc(challenge.winner_nickname)} · +100p</div>
     </div>` : `
-    <div style="text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;margin-bottom:20px">
+    <div style="position:relative;text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;margin-bottom:20px">
+      ${WC_HISTORY_BTN_HTML}
       <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:8px">🏆 오늘의 장원</div>
       <div style="font-size:13px;color:var(--muted)">참여자가 없어 우승자가 없었어요</div>
     </div>`);
@@ -2249,8 +2252,7 @@ function renderWordChallenge() {
     ${heroHtml}
     ${loginHint}${mySubHint}${formHtml}
     <div>${listHtml}</div>
-    ${showMoreHtml}
-    <button class="btn btn-ghost btn-sm" style="margin-top:14px" onclick="openWordChallengeHistory()">역대 챌린지 보기</button>`;
+    ${showMoreHtml}`;
 
   if (isActive) _startWordChallengeCountdown(challenge.end_at);
 }
@@ -2311,7 +2313,7 @@ async function openWordChallengeHistory() {
   modal.innerHTML = `
     <div class="modal-box" style="max-width:500px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-        <div style="font-size:15px;font-weight:700">🏆 역대 단어 챌린지</div>
+        <div style="font-size:15px;font-weight:700">🏆 역대 당선작 보기</div>
         <button onclick="document.getElementById('wc-history-modal').remove()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px">✕</button>
       </div>
       <div id="wc-history-body"><div class="loading"></div></div>

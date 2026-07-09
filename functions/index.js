@@ -1447,3 +1447,25 @@ exports.adminBackfillAchievements = functions
     }
     return { ok: true, processed };
   });
+
+// ── 임시 진단용(1회성) — 유저가 "테스트 라운드가 시간 좀 지나니까 사라졌다"고
+//    제보해서 실제 word_challenges 기록을 눈으로 확인하기 위해 추가. 원인
+//    파악되면 제거할 것. ──
+exports.adminDebugWordChallenges = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    const db = admin.firestore();
+    const snap = await db.collection('word_challenges').orderBy('start_at', 'desc').limit(8).get();
+    const challenges = await Promise.all(snap.docs.map(async d => {
+      const c = d.data();
+      const subsSnap = await db.collection('word_challenge_submissions').where('challenge_id', '==', d.id).get();
+      return {
+        id: d.id, date: c.date, words: c.words, status: c.status,
+        start_at: c.start_at, end_at: c.end_at, closed_at: c.closed_at,
+        winner_nickname: c.winner_nickname, winner_text: c.winner_text,
+        submission_count_field: c.submission_count, actual_submission_count: subsSnap.size,
+      };
+    }));
+    return { ok: true, now: new Date().toISOString(), challenges };
+  });

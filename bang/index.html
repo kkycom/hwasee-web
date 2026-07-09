@@ -2132,7 +2132,9 @@ function switchLbTab() {}
 let _wcCountdownTimer = null;
 const WC_PAGE_SIZE = 10;
 let _wcVisibleCount = WC_PAGE_SIZE;
-const WC_HISTORY_BTN_HTML = `<button onclick="openWordChallengeHistory()" style="position:absolute;top:7px;right:12px;background:var(--card);border:none;border-radius:8px;padding:5px 10px;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer">역대 당선작 보기</button>`;
+// top이 음수여야 hero 카드 안쪽(패딩 24px) 밖으로 빠져나가 실제 구분선에
+// 가까워짐 — 이전엔 양수값이라 hero 카드 내부 상단 근처에서만 움직였음
+const WC_HISTORY_BTN_HTML = `<button onclick="openWordChallengeHistory()" style="position:absolute;top:-14px;right:12px;background:var(--card);border:none;border-radius:8px;padding:5px 10px;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer">역대 당선작 보기</button>`;
 
 async function loadWordChallenge() {
   const el = document.getElementById('word-challenge-section');
@@ -2245,9 +2247,9 @@ function renderWordChallenge() {
     </div>` : '';
 
   const loginHint = isActive && !user
-    ? `<div style="font-size:12px;color:var(--muted);margin-bottom:16px">참여하려면 <a href="#" onclick="nav('auth','login');return false" style="color:var(--accent2)">로그인</a>이 필요해요</div>` : '';
+    ? `<div style="text-align:center;font-size:12px;color:var(--muted);margin-bottom:16px">참여하려면 <a href="#" onclick="nav('auth','login');return false" style="color:var(--accent2)">로그인</a>이 필요해요</div>` : '';
   const mySubHint = isActive && user && my_submission_id && !hasVoted
-    ? `<div style="font-size:12px;color:var(--muted);margin-bottom:16px">이미 참여했어요 — 다른 문장에 투표해보세요 (하루 1표)</div>` : '';
+    ? `<div style="text-align:center;font-size:12px;color:var(--muted);margin-bottom:16px">이미 참여했어요 — 다른 문장에 투표해보세요 (하루 1표)</div>` : '';
 
   // 마감 후(결과 발표 중)엔 1등은 위 큰 자리에서 이미 보여줬으니 목록에서는
   // 빼고, 2등부터 득표순 그대로 보여줌(득표순 정렬은 fbGetWordChallenge에서

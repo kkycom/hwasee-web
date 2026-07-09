@@ -1469,3 +1469,48 @@ exports.adminDebugWordChallenges = functions
     }));
     return { ok: true, now: new Date().toISOString(), challenges };
   });
+
+// ── 임시 진단용(1회성) — 분기 이야기 점선 위치 버그 확인용. opening 텍스트로
+//    스토리를 찾아 branch 메타데이터 + 에피소드/제출물을 그대로 덤프함.
+//    원인 파악되면 제거할 것. ──
+exports.adminDebugBranchStory = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    const db = admin.firestore();
+    let storySnap;
+    if (data.story_id) {
+      const d = await db.collection('stories').doc(data.story_id).get();
+      storySnap = { docs: d.exists ? [d] : [] };
+    } else {
+      storySnap = await db.collection('stories').where('opening', '==', data.opening).get();
+    }
+    const results = await Promise.all(storySnap.docs.map(async d => {
+      const s = { story_id: d.id, ...d.data() };
+      const epsSnap = await db.collection('episodes').where('story_id', '==', d.id).get();
+      const episodes = epsSnap.docs.map(e => ({ episode_id: e.id, step: e.data().step, status: e.data().status, parent_sub_id: e.data().parent_sub_id || null }))
+        .sort((a, b) => Number(a.step) - Number(b.step));
+      const epIds = episodes.map(e => e.episode_id);
+      let submissions = [];
+      if (epIds.length) {
+        const subsSnap = await db.collection('submissions').where('episode_id', 'in', epIds.slice(0, 30)).get();
+        submissions = subsSnap.docs.map(x => ({
+          sub_id: x.id, episode_id: x.data().episode_id, is_adopted: x.data().is_adopted,
+          content: (x.data().content || '').slice(0, 30),
+        }));
+      }
+      const childBranchesSnap = await db.collection('stories').where('parent_story_id', '==', d.id).get();
+      const childBranches = childBranchesSnap.docs.map(c => ({ story_id: c.id, ...c.data() }));
+      return {
+        story_id: s.story_id, opening: s.opening, status: s.status,
+        parent_story_id: s.parent_story_id || null,
+        branch_from_step: s.branch_from_step || null,
+        branch_episode_id: s.branch_episode_id || null,
+        branch_sub_id: s.branch_sub_id || null,
+        branch_leaf_episode_id: s.branch_leaf_episode_id || null,
+        is_continuation: !!s.is_continuation,
+        episodes, submissions, childBranches,
+      };
+    }));
+    return { ok: true, results };
+  });

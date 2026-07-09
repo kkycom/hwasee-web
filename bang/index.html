@@ -4708,7 +4708,7 @@ async function adminWordChallenge() {
 지하철,공룡,립스틱" style="width:100%;resize:vertical;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--text);font-family:inherit;line-height:1.6;box-sizing:border-box"></textarea>
       </div>
       <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="_doAddWordChallengeSets()">등록하기</button>
-      <button class="btn btn-ghost" style="width:100%" onclick="_doForceStartWordChallenge()">지금 바로 새 라운드 시작 (테스트·부트스트랩용)</button>
+      <button id="wc-force-start-btn" class="btn btn-ghost" style="width:100%" onclick="_doForceStartWordChallenge()">지금 바로 새 라운드 시작 (테스트·부트스트랩용)</button>
     </div>
     <div style="font-size:13px;font-weight:700;margin-bottom:10px">대기 중인 세트 (${res.unused.length}개) · 사용됨 ${res.used_count}개</div>
     ${res.unused.length === 0 ? `<div class="empty">대기 중인 세트가 없어요.</div>` :
@@ -4737,10 +4737,18 @@ async function _doDeleteWordChallengeSet(set_id) {
 
 async function _doForceStartWordChallenge() {
   if (!confirm('지금 바로 새 라운드를 시작할까요? (이미 진행 중인 라운드가 있으면 아무 일도 안 일어나요)')) return;
+  const btn = document.getElementById('wc-force-start-btn');
+  if (btn?.disabled) return; // 연타/중복 클릭 방지(서버도 트랜잭션으로 막지만 이중 안전장치)
+  if (btn) btn.disabled = true;
   try {
     await functionsRegion.httpsCallable('adminForceStartWordChallenge')({ admin_id: user.user_id });
     toast('새 라운드가 시작됐어요.');
-  } catch (e) { toast(e.message, true); }
+    adminWordChallenge();
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function userPatchNotes() {

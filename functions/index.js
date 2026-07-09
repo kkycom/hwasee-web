@@ -1237,40 +1237,48 @@ const WORD_CHALLENGE_SEED_SETS = [
   ['늪','우주정거장','도장'], ['화살표','곰돌이','라볶이'],
 ];
 
-async function _pickWordChallengeWords(db) {
-  // 1) 관리자가 미리 등록해둔 세트가 있으면 그걸 우선 소진
-  const setsSnap = await db.collection('word_challenge_sets').orderBy('created_at', 'asc').limit(500).get();
-  const nextSet = setsSnap.docs.find(d => !d.data().used);
-  if (nextSet) { await nextSet.ref.update({ used: true }); return nextSet.data().words; }
-
-  // 2) 없으면 미리 심어둔 기본 세트를 순환 사용
-  const stateRef = db.collection('config').doc('word_challenge_seed_state');
-  const stateSnap = await stateRef.get();
-  const idx = (stateSnap.exists ? Number(stateSnap.data().next_index) || 0 : 0) % WORD_CHALLENGE_SEED_SETS.length;
-  await stateRef.set({ next_index: idx + 1 }, { merge: true });
-  return WORD_CHALLENGE_SEED_SETS[idx];
-}
-
+// 중복 라운드 생성 방지("이미 진행 중인지 확인" → "세트 소진" → "라운드 생성")를
+// 하나의 트랜잭션으로 묶어서 원자적으로 처리 — 예전엔 각 단계가 별개 읽기/쓰기라서
+// 관리자가 "지금 바로 시작" 버튼을 빠르게 두 번 누르거나(혹은 콜러블 SDK가 네트워크
+// 문제로 자동 재시도하는 경우) 두 요청이 동시에 "진행 중인 라운드 없음"을 확인하고
+// 둘 다 통과해버려 세트를 2개 이상 소진하고 활성 라운드가 중복 생성될 수 있었음
+// (실제로 2026-07-09 관리자가 버튼을 여러 번 눌러서 겪음).
 async function _serverStartWordChallenge(db) {
-  const activeSnap = await db.collection('word_challenges').where('status', '==', 'active').limit(1).get();
-  if (!activeSnap.empty) return; // 이미 진행 중인 라운드가 있으면 중복 생성 방지
-
-  const words = await _pickWordChallengeWords(db);
   const now = new Date();
-  const dateStr = new Date(now.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
-  await db.collection('word_challenges').doc().set({
-    date: dateStr,
-    words,
-    status: 'active',
-    start_at: now.toISOString(),
-    end_at: _next9pmKST(now).toISOString(),
-    winner_user_id: null,
-    winner_submission_id: null,
-    winner_nickname: null,
-    winner_text: null,
-    winner_vote_count: null,
-    submission_count: 0,
-    closed_at: null,
+  await db.runTransaction(async tx => {
+    const activeSnap = await tx.get(db.collection('word_challenges').where('status', '==', 'active').limit(1));
+    if (!activeSnap.empty) return; // 이미 진행 중인 라운드가 있으면 중복 생성 방지
+
+    const setsSnap = await tx.get(db.collection('word_challenge_sets').orderBy('created_at', 'asc').limit(500));
+    const nextSet = setsSnap.docs.find(d => !d.data().used);
+
+    let words, seedStateRef = null, seedStateSnap = null, seedIdx = 0;
+    if (nextSet) {
+      words = nextSet.data().words;
+    } else {
+      seedStateRef = db.collection('config').doc('word_challenge_seed_state');
+      seedStateSnap = await tx.get(seedStateRef);
+      seedIdx = (seedStateSnap.exists ? Number(seedStateSnap.data().next_index) || 0 : 0) % WORD_CHALLENGE_SEED_SETS.length;
+      words = WORD_CHALLENGE_SEED_SETS[seedIdx];
+    }
+
+    if (nextSet) tx.update(nextSet.ref, { used: true });
+    else tx.set(seedStateRef, { next_index: seedIdx + 1 }, { merge: true });
+
+    tx.set(db.collection('word_challenges').doc(), {
+      date: new Date(now.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10),
+      words,
+      status: 'active',
+      start_at: now.toISOString(),
+      end_at: _next9pmKST(now).toISOString(),
+      winner_user_id: null,
+      winner_submission_id: null,
+      winner_nickname: null,
+      winner_text: null,
+      winner_vote_count: null,
+      submission_count: 0,
+      closed_at: null,
+    });
   });
 }
 

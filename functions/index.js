@@ -481,7 +481,7 @@ const FB_ACHIEVEMENTS = [
   { id: 'prolific_rookie',      category: 'submission_count',    threshold: 30,  name: '다작루키',      avatar: '✍️' },
   { id: 'prolific_king',        category: 'submission_count',    threshold: 100, name: '다작왕',        avatar: '📚' },
   { id: 'closer_rookie',        category: 'closing_count',       threshold: 5,   name: '결말지기',      avatar: '🏁' },
-  { id: 'closer_king',          category: 'closing_count',       threshold: 20,  name: '결말의 신',     avatar: '🎬' },
+  { id: 'closer_king',          category: 'closing_count',       threshold: 20,  name: '종결자',        avatar: '✂️' },
   { id: 'voter_rookie',         category: 'vote_count',          threshold: 50,  name: '심사위원 루키', avatar: '🗳️' },
   { id: 'voter_king',           category: 'vote_count',          threshold: 200, name: '심사위원장',    avatar: '⚖️' },
   { id: 'streak_rookie',        category: 'login_streak',        threshold: 7,   name: '성실루키',      avatar: '📅' },
@@ -492,7 +492,7 @@ const FB_ACHIEVEMENTS = [
   { id: 'seed_king',            category: 'seed_count',          threshold: 20,  name: '이야기 정원사', avatar: '🪴' },
   { id: 'referral_rookie',      category: 'referral_count',      threshold: 3,   name: '인싸루키',      avatar: '🤝' },
   { id: 'referral_king',        category: 'referral_count',      threshold: 10,  name: '인싸왕',        avatar: '📣' },
-  { id: 'wordchallenge_rookie', category: 'word_challenge_wins', threshold: 3,   name: '장원 후보',     avatar: '🎲' },
+  { id: 'wordchallenge_rookie', category: 'word_challenge_wins', threshold: 5,   name: '장원 후보',     avatar: '🎲' },
   { id: 'wordchallenge_king',   category: 'word_challenge_wins', threshold: 10,  name: '단어의 신',     avatar: '🏆' },
 ];
 
@@ -1336,4 +1336,106 @@ exports.adminForceCloseWordChallenge = functions
     if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
     await _serverCloseWordChallenge(admin.firestore());
     return { ok: true };
+  });
+
+// ── 업적 시스템 도입 이전 활동 소급 반영 (1회성 관리자 콜러블) ──
+// adoption_count/login_streak는 원래 있던 필드라 현재값 그대로 판정하면 되지만,
+// 나머지 7개 카운터(제출/투표/씨앗/다듬기/결말/초대/단어챌린지)는 이번에 새로
+// 만든 필드라 기존 유저 전부 0부터 시작함 — 실제 컬렉션을 스캔해서 카운터
+// 필드를 실측값으로 채워넣고, 그 값 기준으로 이미 달성한 업적을 지급함.
+// 멱등성 있음(중복 실행해도 안전 — 카운터는 더 큰 값으로만 갱신, 업적은
+// achievements 배열로 중복 지급 방지) — 실수로 두 번 눌러도 문제 없음.
+exports.adminBackfillAchievements = functions
+  .region('asia-northeast3')
+  .runWith({ timeoutSeconds: 300 })
+  .https.onCall(async (data) => {
+    if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    const db = admin.firestore();
+
+    const [usersSnap, subsSnap, votesSnap, storiesSnap, ledgerSnap, wcSnap] = await Promise.all([
+      db.collection('users').get(),
+      db.collection('submissions').get(),
+      db.collection('votes').get(),
+      db.collection('stories').get(),
+      db.collection('point_ledger').get(),
+      db.collection('word_challenges').where('status', '==', 'closed').get(),
+    ]);
+
+    const submissionCountByUser = {};
+    const closingCountByUser = {};
+    const refineCountByUser = {};
+    subsSnap.docs.forEach(d => {
+      const s = d.data();
+      if (s.is_ai || !s.author_id) return;
+      submissionCountByUser[s.author_id] = (submissionCountByUser[s.author_id] || 0) + 1;
+      if (s.is_adopted && s.is_closing === true) closingCountByUser[s.author_id] = (closingCountByUser[s.author_id] || 0) + 1;
+      if (s.is_adopted && s.derived_from) refineCountByUser[s.author_id] = (refineCountByUser[s.author_id] || 0) + 1;
+    });
+
+    // 투표는 "몇 표를 던졌나"가 아니라 "몇 개의 서로 다른 에피소드에 투표했나"로 셈
+    // (재투표는 새 투표로 안 침 — 라이브 카운터와 동일한 기준)
+    const voteEpisodesByUser = {};
+    votesSnap.docs.forEach(d => {
+      const v = d.data();
+      if (!v.voter_id || !v.episode_id) return;
+      (voteEpisodesByUser[v.voter_id] = voteEpisodesByUser[v.voter_id] || new Set()).add(v.episode_id);
+    });
+
+    const seedCountByUser = {};
+    storiesSnap.docs.forEach(d => {
+      const s = d.data();
+      if (s.is_ai_seed || !s.creator_id) return;
+      seedCountByUser[s.creator_id] = (seedCountByUser[s.creator_id] || 0) + 1;
+    });
+
+    const referralCountByUser = {};
+    // 출석 마일스톤(5/10/20/30일) 로그로 과거 최고 연속출석의 하한선을 역산
+    // (예: login_streak_10 기록이 있으면 그 유저는 최소 10일까지는 갔었다는 뜻이고,
+    // 도중에 반드시 7일도 지나쳤을 것이므로 streak_rookie(7) 판정에 안전하게 씀)
+    const streakMilestoneByUser = {};
+    ledgerSnap.docs.forEach(d => {
+      const l = d.data();
+      if (!l.user_id) return;
+      if (l.reason === 'referral_bonus') referralCountByUser[l.user_id] = (referralCountByUser[l.user_id] || 0) + 1;
+      const m = /^login_streak_(\d+)$/.exec(l.reason || '');
+      if (m) streakMilestoneByUser[l.user_id] = Math.max(streakMilestoneByUser[l.user_id] || 0, Number(m[1]));
+    });
+
+    const wcWinCountByUser = {};
+    wcSnap.docs.forEach(d => {
+      const w = d.data();
+      if (w.winner_user_id) wcWinCountByUser[w.winner_user_id] = (wcWinCountByUser[w.winner_user_id] || 0) + 1;
+    });
+
+    let processed = 0;
+    for (const uDoc of usersSnap.docs) {
+      const uid = uDoc.id;
+      if (uid === FB_ADMIN_ID || uid === FB_AI_ID) continue;
+      const u = uDoc.data();
+
+      const counters = {
+        submission_count: submissionCountByUser[uid] || 0,
+        closing_count: closingCountByUser[uid] || 0,
+        refine_count: refineCountByUser[uid] || 0,
+        vote_count: voteEpisodesByUser[uid] ? voteEpisodesByUser[uid].size : 0,
+        seed_count: seedCountByUser[uid] || 0,
+        referral_count: referralCountByUser[uid] || 0,
+        word_challenge_wins: wcWinCountByUser[uid] || 0,
+      };
+
+      const patch = {};
+      Object.entries(counters).forEach(([k, v]) => { if (v > (u[k] || 0)) patch[k] = v; });
+      if (Object.keys(patch).length) await uDoc.ref.update(patch);
+
+      const checks = [
+        ['adoption_count', u.adoption_count || 0],
+        ['login_streak', Math.max(u.login_streak || 0, streakMilestoneByUser[uid] || 0)],
+        ...Object.entries(counters),
+      ];
+      for (const [cat, val] of checks) {
+        if (val > 0) await _serverCheckAchievements(db, uid, cat, val);
+      }
+      processed++;
+    }
+    return { ok: true, processed };
   });

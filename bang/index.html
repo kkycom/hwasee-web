@@ -1107,7 +1107,7 @@ const ACHIEVEMENT_AVATAR_ITEMS = [
   { id:'✍️', label:'다작루키',      achievement:true },
   { id:'📚', label:'다작왕',        achievement:true },
   { id:'🏁', label:'결말지기',      achievement:true },
-  { id:'🎬', label:'결말의 신',     achievement:true },
+  { id:'✂️', label:'종결자',        achievement:true },
   { id:'🗳️', label:'심사위원 루키', achievement:true },
   { id:'⚖️', label:'심사위원장',    achievement:true },
   { id:'📅', label:'성실루키',      achievement:true },
@@ -1246,7 +1246,7 @@ async function loadHomeTab(tab, epoch) {
     const wcSection = document.createElement('div');
     wcSection.id = 'word-challenge-section';
     wcSection.style.cssText = 'margin-top:32px;border-top:1px solid var(--border);padding-top:24px';
-    wcSection.innerHTML = `<div style="font-size:12px;color:var(--muted)">불러오는 중...</div>`;
+    wcSection.innerHTML = `<div style="text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;font-size:12px;color:var(--muted)">불러오는 중...</div>`;
     gc()?.appendChild(wcSection);
     loadWordChallenge();
 
@@ -2124,6 +2124,8 @@ function switchLbTab() {}
 let _wcCountdownTimer = null;
 const WC_PAGE_SIZE = 10;
 let _wcVisibleCount = WC_PAGE_SIZE;
+// 이모지(🎲)는 톤이 안 맞아서 다른 아이콘들과 같은 선 스타일 SVG로 대체
+const WC_DICE_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:2px"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>`;
 
 async function loadWordChallenge() {
   const res = await api('getWordChallenge', {});
@@ -2131,8 +2133,10 @@ async function loadWordChallenge() {
   if (!el) return; // 그 사이 탭이 바뀌었으면 무시
   if (!res.ok || !res.challenge) {
     el.innerHTML = `
-      <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:14px;letter-spacing:.5px">🎲 오늘의 단어 챌린지</div>
-      <div style="font-size:12px;color:var(--muted)">다음 챌린지를 준비 중이에요.</div>`;
+      <div style="text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px">
+        <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:8px;letter-spacing:.5px">${WC_DICE_SVG}오늘의 단어 챌린지</div>
+        <div style="font-size:12px;color:var(--muted)">다음 챌린지를 준비 중이에요.</div>
+      </div>`;
     return;
   }
   window._wcData = res;
@@ -2167,11 +2171,12 @@ function renderWordChallenge() {
   // 교체해가며 씀 — 새 배너를 따로 만들지 않고 이 자리 안에서만 상태가 전환됨
   const heroHtml = isActive ? `
     <div style="text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;margin-bottom:20px">
-      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:14px">🎲 오늘의 단어 챌린지</div>
+      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:14px">${WC_DICE_SVG}오늘의 단어 챌린지</div>
       <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
         ${(challenge.words || []).map(w => `<span style="display:inline-block;background:var(--accent2);color:#fff;font-weight:700;font-size:17px;padding:8px 18px;border-radius:24px">${esc(w)}</span>`).join('')}
       </div>
       <div style="font-size:12px;color:var(--muted)">이 세 단어를 모두 넣어 ${FB_WORD_CHALLENGE_MAX_CHARS}자 이내 문장을 지어보세요 · <span id="wc-countdown"></span> 마감</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">🏆 1등 한 명에게 100p를 지급합니다</div>
     </div>`
     : (challenge.winner_text ? `
     <div style="text-align:center;background:var(--bg);border-radius:14px;padding:28px 16px;margin-bottom:20px">
@@ -2216,7 +2221,7 @@ function renderWordChallenge() {
     return `
       <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
         <button ${canVote ? `onclick="_voteWordChallenge('${s.submission_id}')"` : 'disabled'}
-          style="display:flex;flex-direction:column;align-items:center;gap:1px;background:none;border:1px solid ${voted ? 'var(--accent2)' : 'var(--border)'};border-radius:8px;padding:4px 8px;cursor:${canVote ? 'pointer' : 'default'};color:${voted ? 'var(--accent2)' : 'var(--muted)'};flex-shrink:0">
+          style="width:46px;display:flex;flex-direction:column;align-items:center;gap:1px;background:none;border:1px solid ${voted ? 'var(--accent2)' : 'var(--border)'};border-radius:8px;padding:4px 0;cursor:${canVote ? 'pointer' : 'default'};color:${voted ? 'var(--accent2)' : 'var(--muted)'};flex-shrink:0;box-sizing:border-box">
           <span style="font-size:13px;font-weight:700">${s.vote_count || 0}</span>
           <span style="font-size:9px">${voted ? '투표함' : '추천'}</span>
         </button>
@@ -2309,12 +2314,14 @@ async function openWordChallengeHistory() {
   if (!body) return;
   if (!res.ok || !res.history.length) { body.innerHTML = `<div class="empty">아직 지난 기록이 없어요.</div>`; return; }
   body.innerHTML = res.history.map(c => `
-    <div class="card" style="padding:12px 14px;margin-bottom:8px">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${esc(c.date)}</div>
-      <div style="margin-bottom:6px">${(c.words || []).map(w => `<span style="display:inline-block;background:var(--bg);border:1px solid var(--border);font-size:11px;font-weight:600;padding:2px 8px;border-radius:12px;margin-right:4px">${esc(w)}</span>`).join('')}</div>
+    <div style="text-align:center;background:var(--bg);border-radius:12px;padding:16px 14px;margin-bottom:10px">
+      <div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:10px">${esc(c.date)}</div>
+      <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:6px;margin-bottom:12px">
+        ${(c.words || []).map(w => `<span style="display:inline-block;background:var(--card);border:1px solid var(--border);font-size:11px;font-weight:600;padding:3px 10px;border-radius:12px">${esc(w)}</span>`).join('')}
+      </div>
       ${c.winner_text
-        ? `<div style="font-size:13px;line-height:1.5">${boldChallengeWords(c.winner_text, c.words)}</div>
-           <div style="font-size:11px;color:var(--muted);margin-top:3px">👑 ${esc(c.winner_nickname)}</div>`
+        ? `<div style="font-size:14px;line-height:1.6;font-family:var(--serif)">${boldChallengeWords(c.winner_text, c.words)}</div>
+           <div style="font-size:12px;color:var(--accent2);font-weight:700;margin-top:6px">👑 ${esc(c.winner_nickname)}</div>`
         : `<div style="font-size:12px;color:var(--muted)">참여자가 없었어요</div>`}
     </div>`).join('');
 }

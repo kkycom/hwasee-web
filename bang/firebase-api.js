@@ -115,7 +115,7 @@ const FB_ACHIEVEMENTS = [
   { id: 'prolific_rookie',      category: 'submission_count',    threshold: 30,  name: '다작루키',      avatar: '✍️' },
   { id: 'prolific_king',        category: 'submission_count',    threshold: 100, name: '다작왕',        avatar: '📚' },
   { id: 'closer_rookie',        category: 'closing_count',       threshold: 5,   name: '결말지기',      avatar: '🏁' },
-  { id: 'closer_king',          category: 'closing_count',       threshold: 20,  name: '결말의 신',     avatar: '🎬' },
+  { id: 'closer_king',          category: 'closing_count',       threshold: 20,  name: '종결자',        avatar: '✂️' },
   { id: 'voter_rookie',         category: 'vote_count',          threshold: 50,  name: '심사위원 루키', avatar: '🗳️' },
   { id: 'voter_king',           category: 'vote_count',          threshold: 200, name: '심사위원장',    avatar: '⚖️' },
   { id: 'streak_rookie',        category: 'login_streak',        threshold: 7,   name: '성실루키',      avatar: '📅' },
@@ -126,7 +126,7 @@ const FB_ACHIEVEMENTS = [
   { id: 'seed_king',            category: 'seed_count',          threshold: 20,  name: '이야기 정원사', avatar: '🪴' },
   { id: 'referral_rookie',      category: 'referral_count',      threshold: 3,   name: '인싸루키',      avatar: '🤝' },
   { id: 'referral_king',        category: 'referral_count',      threshold: 10,  name: '인싸왕',        avatar: '📣' },
-  { id: 'wordchallenge_rookie', category: 'word_challenge_wins', threshold: 3,   name: '장원 후보',     avatar: '🎲' },
+  { id: 'wordchallenge_rookie', category: 'word_challenge_wins', threshold: 5,   name: '장원 후보',     avatar: '🎲' },
   { id: 'wordchallenge_king',   category: 'word_challenge_wins', threshold: 10,  name: '단어의 신',     avatar: '🏆' },
 ];
 

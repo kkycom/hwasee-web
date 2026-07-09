@@ -2132,7 +2132,7 @@ function switchLbTab() {}
 let _wcCountdownTimer = null;
 const WC_PAGE_SIZE = 10;
 let _wcVisibleCount = WC_PAGE_SIZE;
-const WC_HISTORY_BTN_HTML = `<button onclick="openWordChallengeHistory()" style="position:absolute;top:4px;right:10px;display:flex;align-items:center;gap:3px;background:none;border:none;padding:0;font-size:10px;font-weight:600;color:var(--muted);opacity:.65;cursor:pointer">🏆 역대 당선작 보기</button>`;
+const WC_HISTORY_BTN_HTML = `<button onclick="openWordChallengeHistory()" style="position:absolute;top:12px;right:12px;background:var(--card);border:none;border-radius:8px;padding:5px 10px;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer">역대 당선작 보기</button>`;
 
 async function loadWordChallenge() {
   const res = await api('getWordChallenge', {});
@@ -2162,7 +2162,9 @@ function boldChallengeWords(text, words) {
     const escWord = esc(w);
     if (!escWord) return;
     const re = new RegExp(escWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-    escaped = escaped.replace(re, `<strong>${escWord}</strong>`);
+    // font-weight만으로는 문단 자체가 이미 두꺼운 굵기일 때(당선작 발표 문장 등)
+    // 구분이 잘 안 보여서 강조색도 같이 입힘
+    escaped = escaped.replace(re, `<strong style="color:var(--accent2)">${escWord}</strong>`);
   });
   return escaped;
 }
@@ -2213,6 +2215,7 @@ function renderWordChallenge() {
         <input id="wc-input" maxlength="${FB_WORD_CHALLENGE_MAX_CHARS}" placeholder="세 단어를 넣어 문장을 지어보세요" oninput="_wcCheckInput()" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text)">
         <button id="wc-submit-btn" class="btn btn-primary btn-sm" onclick="_submitWordChallenge()" disabled>제출</button>
       </div>
+      <div style="text-align:right;font-size:11px;color:var(--muted);margin-top:4px"><span id="wc-char-count">0</span>/${FB_WORD_CHALLENGE_MAX_CHARS}</div>
     </div>` : '';
 
   const loginHint = isActive && !user
@@ -2273,6 +2276,8 @@ function _startWordChallengeCountdown(end_at) {
 function _wcCheckInput() {
   const inp = document.getElementById('wc-input');
   const text = inp?.value || '';
+  const counter = document.getElementById('wc-char-count');
+  if (counter) counter.textContent = text.length;
   const chips = document.querySelectorAll('#wc-check-chips .wc-check-chip');
   let allUsed = chips.length > 0;
   chips.forEach(chip => {

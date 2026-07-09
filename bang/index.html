@@ -2132,7 +2132,7 @@ function switchLbTab() {}
 let _wcCountdownTimer = null;
 const WC_PAGE_SIZE = 10;
 let _wcVisibleCount = WC_PAGE_SIZE;
-const WC_HISTORY_BTN_HTML = `<button onclick="openWordChallengeHistory()" style="position:absolute;top:8px;right:10px;display:flex;align-items:center;gap:3px;background:none;border:none;padding:0;font-size:10px;font-weight:600;color:var(--muted);opacity:.65;cursor:pointer">🏆 역대 당선작 보기</button>`;
+const WC_HISTORY_BTN_HTML = `<button onclick="openWordChallengeHistory()" style="position:absolute;top:4px;right:10px;display:flex;align-items:center;gap:3px;background:none;border:none;padding:0;font-size:10px;font-weight:600;color:var(--muted);opacity:.65;cursor:pointer">🏆 역대 당선작 보기</button>`;
 
 async function loadWordChallenge() {
   const res = await api('getWordChallenge', {});
@@ -2177,7 +2177,7 @@ function renderWordChallenge() {
   // 단어 3개(진행 중)와 우승 문장(마감 후)이 같은 "큰 공간" 한 자리를 그대로
   // 교체해가며 씀 — 새 배너를 따로 만들지 않고 이 자리 안에서만 상태가 전환됨
   const heroHtml = isActive ? `
-    <div style="position:relative;text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;margin-bottom:20px">
+    <div style="position:relative;text-align:center;background:var(--bg);border-radius:14px;padding:28px 16px 24px;margin-bottom:20px">
       ${WC_HISTORY_BTN_HTML}
       <div style="font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:14px">🎲 오늘의 단어 챌린지</div>
       <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">

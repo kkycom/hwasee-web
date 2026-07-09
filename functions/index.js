@@ -473,6 +473,72 @@ function _serverCalcBadge(pts) {
   return 'seed';
 }
 
+// 히든 업적 정의 — firebase-api.js의 FB_ACHIEVEMENTS와 반드시 동일하게 유지할 것
+// (한쪽에 추가하면 반드시 반대쪽도 같이 수정). category는 users/{uid}의 카운터 필드명.
+const FB_ACHIEVEMENTS = [
+  { id: 'adopt_rookie',         category: 'adoption_count',      threshold: 30,  name: '채택루키',      avatar: '🎯' },
+  { id: 'adopt_king',           category: 'adoption_count',      threshold: 100, name: '채택왕',        avatar: '🏅' },
+  { id: 'prolific_rookie',      category: 'submission_count',    threshold: 30,  name: '다작루키',      avatar: '✍️' },
+  { id: 'prolific_king',        category: 'submission_count',    threshold: 100, name: '다작왕',        avatar: '📚' },
+  { id: 'closer_rookie',        category: 'closing_count',       threshold: 5,   name: '결말지기',      avatar: '🏁' },
+  { id: 'closer_king',          category: 'closing_count',       threshold: 20,  name: '결말의 신',     avatar: '🎬' },
+  { id: 'voter_rookie',         category: 'vote_count',          threshold: 50,  name: '심사위원 루키', avatar: '🗳️' },
+  { id: 'voter_king',           category: 'vote_count',          threshold: 200, name: '심사위원장',    avatar: '⚖️' },
+  { id: 'streak_rookie',        category: 'login_streak',        threshold: 7,   name: '성실루키',      avatar: '📅' },
+  { id: 'streak_king',          category: 'login_streak',        threshold: 30,  name: '개근왕',        avatar: '💯' },
+  { id: 'refine_rookie',        category: 'refine_count',        threshold: 10,  name: '다듬이 루키',   avatar: '🪄' },
+  { id: 'refine_king',          category: 'refine_count',        threshold: 50,  name: '황금손',        avatar: '✨' },
+  { id: 'seed_rookie',          category: 'seed_count',          threshold: 5,   name: '씨앗루키',      avatar: '🌿' },
+  { id: 'seed_king',            category: 'seed_count',          threshold: 20,  name: '이야기 정원사', avatar: '🪴' },
+  { id: 'referral_rookie',      category: 'referral_count',      threshold: 3,   name: '인싸루키',      avatar: '🤝' },
+  { id: 'referral_king',        category: 'referral_count',      threshold: 10,  name: '인싸왕',        avatar: '📣' },
+  { id: 'wordchallenge_rookie', category: 'word_challenge_wins', threshold: 3,   name: '장원 후보',     avatar: '🎲' },
+  { id: 'wordchallenge_king',   category: 'word_challenge_wins', threshold: 10,  name: '단어의 신',     avatar: '🏆' },
+];
+
+async function _serverCheckAchievements(db, user_id, category, newValue) {
+  if (!user_id || user_id === FB_ADMIN_ID || user_id === FB_AI_ID) return;
+  const matches = FB_ACHIEVEMENTS.filter(a => a.category === category && newValue >= a.threshold);
+  if (!matches.length) return;
+  const uRef = db.collection('users').doc(user_id);
+  for (const ach of matches) {
+    const granted = await db.runTransaction(async tx => {
+      const snap = await tx.get(uRef);
+      if (!snap.exists) return false;
+      const have = snap.data().achievements || [];
+      if (have.includes(ach.id)) return false;
+      const owned = snap.data().owned_avatars || [];
+      tx.update(uRef, {
+        achievements: [...have, ach.id],
+        owned_avatars: owned.includes(ach.avatar) ? owned : [...owned, ach.avatar],
+      });
+      return true;
+    });
+    if (granted) {
+      await db.collection('notifications').doc().set({
+        user_id, type: 'achievement', story_id: '',
+        message: `🏆 업적 달성: "${ach.name}"! 특별 아바타 ${ach.avatar}를 획득했어요`,
+        link: '#profile/avatar', is_read: false, created_at: admin.firestore.Timestamp.now(), push_sent: false,
+      });
+    }
+  }
+}
+
+// 카운터를 1 올리고 새 값 기준으로 업적을 체크. 실패해도 호출부(포인트 지급 등)에
+// 영향 없도록 항상 try/catch로 감싸서 쓸 것.
+async function _serverBumpAchievementCounter(db, user_id, category) {
+  if (!user_id || user_id === FB_ADMIN_ID || user_id === FB_AI_ID) return;
+  const uRef = db.collection('users').doc(user_id);
+  const newValue = await db.runTransaction(async tx => {
+    const snap = await tx.get(uRef);
+    if (!snap.exists) return null;
+    const v = (snap.data()[category] || 0) + 1;
+    tx.update(uRef, { [category]: v });
+    return v;
+  });
+  if (newValue != null) await _serverCheckAchievements(db, user_id, category, newValue);
+}
+
 async function _serverAddPoints(db, user_id, amount, reason, sub_id) {
   if (!user_id || user_id === FB_ADMIN_ID || user_id === FB_AI_ID) return;
   const uRef = db.collection('users').doc(user_id);
@@ -519,6 +585,13 @@ async function _serverDistributePoints(db, winner, allSubs) {
       await _serverAddPoints(db, winner.author_id,  5, 'derived', winner.id);
     }
   }
+
+  // 업적 카운터: 결말지기(내 글로 이야기가 완결됨)/다듬이(남의 글을 다듬어 채택됨).
+  // 포인트 보너스 분기와 별개로, is_closing·derived_from 여부만으로 판단.
+  try {
+    if (winner.is_closing === true) await _serverBumpAchievementCounter(db, winner.author_id, 'closing_count');
+    if (parent) await _serverBumpAchievementCounter(db, winner.author_id, 'refine_count');
+  } catch (e) {}
 }
 
 async function _buildStoryContext(db, story_id, story) {
@@ -602,11 +675,16 @@ async function _serverCloseEpisode(db, episode_id, ep) {
     // adoption_count가 하나도 안 올라가고 있었음)
     if (w.author_id && w.author_id !== FB_ADMIN_ID && w.author_id !== FB_AI_ID) {
       const uRef = db.collection('users').doc(w.author_id);
-      await db.runTransaction(async tx => {
+      const newAdoptCount = await db.runTransaction(async tx => {
         const snap = await tx.get(uRef);
-        if (!snap.exists) return;
-        tx.update(uRef, { adoption_count: (snap.data().adoption_count || 0) + 1 });
+        if (!snap.exists) return null;
+        const v = (snap.data().adoption_count || 0) + 1;
+        tx.update(uRef, { adoption_count: v });
+        return v;
       });
+      if (newAdoptCount != null) {
+        try { await _serverCheckAchievements(db, w.author_id, 'adoption_count', newAdoptCount); } catch (e) {}
+      }
     }
   }
 
@@ -1073,6 +1151,7 @@ exports.grantReferralBonus = functions
     if (!shouldGrant) return { ok: true };
 
     await _serverAddPoints(db, referrer_id, 50, 'referral_bonus', '');
+    try { await _serverBumpAchievementCounter(db, referrer_id, 'referral_count'); } catch (e) {}
     return { ok: true };
   });
 
@@ -1218,7 +1297,10 @@ async function _serverCloseWordChallenge(db) {
       patch.winner_nickname = uSnap.exists ? (uSnap.data().display_name || uSnap.data().nickname) : '익명';
     }
     await doc.ref.update(patch);
-    if (winner) await _serverAddPoints(db, winner.user_id, 100, 'word_challenge_win', winner.submission_id);
+    if (winner) {
+      await _serverAddPoints(db, winner.user_id, 100, 'word_challenge_win', winner.submission_id);
+      try { await _serverBumpAchievementCounter(db, winner.user_id, 'word_challenge_wins'); } catch (e) {}
+    }
   }
 }
 

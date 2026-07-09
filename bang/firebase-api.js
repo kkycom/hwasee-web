@@ -104,6 +104,64 @@ const FB_AVATAR_SHOP = [
   { id:'👑', label:'왕관',    price: 15000 },
 ];
 
+// 히든 업적 — 조건은 유저에게 미리 공개하지 않고, 달성 시 전용 아바타를
+// owned_avatars에 지급함(FB_AVATAR_SHOP에는 안 넣어서 구매는 불가능하고,
+// AVATAR_SHOP_ITEMS(index.html)의 achievement:true 항목으로만 보유 시 노출됨).
+// category는 users/{uid} 문서의 카운터 필드명과 정확히 일치해야 함.
+// functions/index.js에도 동일한 배열이 있음 — 항목 추가/수정 시 양쪽 다 맞출 것.
+const FB_ACHIEVEMENTS = [
+  { id: 'adopt_rookie',         category: 'adoption_count',      threshold: 30,  name: '채택루키',      avatar: '🎯' },
+  { id: 'adopt_king',           category: 'adoption_count',      threshold: 100, name: '채택왕',        avatar: '🏅' },
+  { id: 'prolific_rookie',      category: 'submission_count',    threshold: 30,  name: '다작루키',      avatar: '✍️' },
+  { id: 'prolific_king',        category: 'submission_count',    threshold: 100, name: '다작왕',        avatar: '📚' },
+  { id: 'closer_rookie',        category: 'closing_count',       threshold: 5,   name: '결말지기',      avatar: '🏁' },
+  { id: 'closer_king',          category: 'closing_count',       threshold: 20,  name: '결말의 신',     avatar: '🎬' },
+  { id: 'voter_rookie',         category: 'vote_count',          threshold: 50,  name: '심사위원 루키', avatar: '🗳️' },
+  { id: 'voter_king',           category: 'vote_count',          threshold: 200, name: '심사위원장',    avatar: '⚖️' },
+  { id: 'streak_rookie',        category: 'login_streak',        threshold: 7,   name: '성실루키',      avatar: '📅' },
+  { id: 'streak_king',          category: 'login_streak',        threshold: 30,  name: '개근왕',        avatar: '💯' },
+  { id: 'refine_rookie',        category: 'refine_count',        threshold: 10,  name: '다듬이 루키',   avatar: '🪄' },
+  { id: 'refine_king',          category: 'refine_count',        threshold: 50,  name: '황금손',        avatar: '✨' },
+  { id: 'seed_rookie',          category: 'seed_count',          threshold: 5,   name: '씨앗루키',      avatar: '🌿' },
+  { id: 'seed_king',            category: 'seed_count',          threshold: 20,  name: '이야기 정원사', avatar: '🪴' },
+  { id: 'referral_rookie',      category: 'referral_count',      threshold: 3,   name: '인싸루키',      avatar: '🤝' },
+  { id: 'referral_king',        category: 'referral_count',      threshold: 10,  name: '인싸왕',        avatar: '📣' },
+  { id: 'wordchallenge_rookie', category: 'word_challenge_wins', threshold: 3,   name: '장원 후보',     avatar: '🎲' },
+  { id: 'wordchallenge_king',   category: 'word_challenge_wins', threshold: 10,  name: '단어의 신',     avatar: '🏆' },
+];
+
+// 카운터 값이 갱신될 때마다 호출 — 새로 넘긴 문턱값을 이미 달성한 미보유
+// 업적이 있으면 owned_avatars에 지급하고 알림을 남김(중복 지급은 achievements
+// 배열로 방지). 실패해도 호출부의 본 기능(제출/투표/출석 등)에 영향 없도록
+// 항상 호출부에서 try/catch로 감싸 쓸 것.
+async function _fbCheckAchievements(user_id, category, newValue) {
+  if (!user_id || user_id === FB_ADMIN_ID || user_id === FB_AI_ID) return;
+  const matches = FB_ACHIEVEMENTS.filter(a => a.category === category && newValue >= a.threshold);
+  if (!matches.length) return;
+  const uRef = db.collection('users').doc(user_id);
+  for (const ach of matches) {
+    const granted = await db.runTransaction(async tx => {
+      const snap = await tx.get(uRef);
+      if (!snap.exists) return false;
+      const have = snap.data().achievements || [];
+      if (have.includes(ach.id)) return false;
+      const owned = snap.data().owned_avatars || [];
+      tx.update(uRef, {
+        achievements: [...have, ach.id],
+        owned_avatars: owned.includes(ach.avatar) ? owned : [...owned, ach.avatar],
+      });
+      return true;
+    });
+    if (granted) {
+      await db.collection('notifications').doc(fbGenId()).set({
+        user_id, type: 'achievement', story_id: '',
+        message: `🏆 업적 달성: "${ach.name}"! 특별 아바타 ${ach.avatar}를 획득했어요`,
+        link: '#profile/avatar', is_read: false, created_at: fbNow(), push_sent: false,
+      });
+    }
+  }
+}
+
 function fbCalcBadge(pts) {
   if (pts >= 10000) return 'fruit';
   if (pts >= 7000) return 'flower1';
@@ -351,6 +409,7 @@ async function _fbCheckDailyBonus(user_id, uRef, prefetchedUser) {
     const milestone_bonus = LOGIN_STREAK_MILESTONES[streak] || 0;
     if (milestone_bonus > 0) await _fbAddPoints(user_id, milestone_bonus, `login_streak_${streak}`, '');
     if (comeback_bonus > 0) await _fbAddPoints(user_id, comeback_bonus, 'comeback_bonus', '');
+    try { await _fbCheckAchievements(user_id, 'login_streak', streak); } catch (e) {}
     return { bonus: 10, streak, milestone_bonus, comeback_bonus };
   } catch (e) {
     return { bonus: 0, streak: u.login_streak || 0, milestone_bonus: 0, comeback_bonus: 0 };
@@ -807,6 +866,14 @@ async function fbCreateStory(opening, creator_id, is_ai_seed) {
       { [opening.trim()]: true }, { merge: true }
     );
   }
+  if (!is_ai_seed) {
+    try {
+      const cSnap = await db.collection('users').doc(creator_id).get();
+      const newCount = (cSnap.exists ? (cSnap.data().seed_count || 0) : 0) + 1;
+      await db.collection('users').doc(creator_id).update({ seed_count: firebase.firestore.FieldValue.increment(1) });
+      await _fbCheckAchievements(creator_id, 'seed_count', newCount);
+    } catch (e) {}
+  }
   return { ok: true, story_id, episode_id };
 }
 
@@ -1048,6 +1115,11 @@ async function fbCreateSubmission(episode_id, content, author_id, derived_from, 
     is_adopted: false, created_at: fbNow(), is_closing
   });
   await _fbAddPoints(author_id, 10, 'submit', sub_id);
+  try {
+    const newCount = ((uData.submission_count || 0) + 1);
+    await db.collection('users').doc(author_id).update({ submission_count: firebase.firestore.FieldValue.increment(1) });
+    await _fbCheckAchievements(author_id, 'submission_count', newCount);
+  } catch (e) {}
 
   // participant_count 증가 (첫 제출 시) — 복합 인덱스 없이 단일 필드 쿼리 후 클라이언트 필터
   const mySubsSnap = await db.collection('submissions')
@@ -1127,6 +1199,14 @@ async function fbVote(episode_id, sub_ids, voter_id) {
     batch.commit(),
     isRevote ? Promise.resolve() : _fbAddPoints(voter_id, 5, 'vote', ''),
   ]);
+  if (!isRevote) {
+    try {
+      const vSnap = await db.collection('users').doc(voter_id).get();
+      const newCount = (vSnap.exists ? (vSnap.data().vote_count || 0) : 0) + 1;
+      await db.collection('users').doc(voter_id).update({ vote_count: firebase.firestore.FieldValue.increment(1) });
+      await _fbCheckAchievements(voter_id, 'vote_count', newCount);
+    } catch (e) {}
+  }
 
   if (maxSubVotes >= FB_VOTE_THRESHOLD) {
     // 마감 처리(당선작 결정/분기 분리/포인트 지급)는 서버(Cloud Function,

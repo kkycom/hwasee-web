@@ -1098,6 +1098,32 @@ const AVATAR_SHOP_ITEMS = [
   { id:'🌈', label:'무지개',  price: 10000 },
   { id:'👑', label:'왕관',    price: 15000 },
 ];
+// 히든 업적 전용 아바타 — achievement:true는 구매 불가, owned_avatars에 있을 때만
+// 상점 그리드에 노출됨(refreshAvatarShop 참고). firebase-api.js/functions/index.js의
+// FB_ACHIEVEMENTS와 id·이모지 반드시 동일하게 유지할 것.
+const ACHIEVEMENT_AVATAR_ITEMS = [
+  { id:'🎯', label:'채택루키',      achievement:true },
+  { id:'🏅', label:'채택왕',        achievement:true },
+  { id:'✍️', label:'다작루키',      achievement:true },
+  { id:'📚', label:'다작왕',        achievement:true },
+  { id:'🏁', label:'결말지기',      achievement:true },
+  { id:'🎬', label:'결말의 신',     achievement:true },
+  { id:'🗳️', label:'심사위원 루키', achievement:true },
+  { id:'⚖️', label:'심사위원장',    achievement:true },
+  { id:'📅', label:'성실루키',      achievement:true },
+  { id:'💯', label:'개근왕',        achievement:true },
+  { id:'🪄', label:'다듬이 루키',   achievement:true },
+  { id:'✨', label:'황금손',        achievement:true },
+  { id:'🌿', label:'씨앗루키',      achievement:true },
+  { id:'🪴', label:'이야기 정원사', achievement:true },
+  { id:'🤝', label:'인싸루키',      achievement:true },
+  { id:'📣', label:'인싸왕',        achievement:true },
+  { id:'🎲', label:'장원 후보',     achievement:true },
+  { id:'🏆', label:'단어의 신',     achievement:true },
+];
+// 상점 그리드에 실제로 쓰는 통합 목록 — 인덱스가 avatarShopClick(idx)의 기준이 되므로
+// 구매형/업적형 순서를 이 배열 하나로 고정해둠(구매 가능 목록만 따로 늘려도 안전).
+const ALL_AVATAR_ITEMS = [...AVATAR_SHOP_ITEMS, ...ACHIEVEMENT_AVATAR_ITEMS];
 function badgeEmoji(b, size=18) {
   const alias = { new:'seed', rookie:'sprout', writer:'leaf', expert:'bud', master:'fruit' };
   const key = alias[b] || b;
@@ -3240,6 +3266,8 @@ async function profile() {
 
   document.getElementById('profile-tab-content').innerHTML = tab === 'settings' ? settingsTab : tab === 'bugreport' ? bugreportTab : pointsTab;
   if (tab === 'bugreport' && isAdmin) loadBugReportList();
+  // 업적 달성 알림(link: '#profile/avatar') 클릭 시 아바타 상점을 자동으로 열어줌
+  if (currentParam === 'avatar') toggleAvatarShop();
 }
 
 function switchProfileTab(tab) {
@@ -4823,26 +4851,29 @@ function refreshAvatarShop() {
     </div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-weight:600">구매 가능 아이콘</div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
-      ${AVATAR_SHOP_ITEMS.map((item, idx) => {
+      ${ALL_AVATAR_ITEMS.map((item, idx) => ({ item, idx }))
+        .filter(({item}) => !item.achievement || (u.owned_avatars||[]).includes(item.id))
+        .map(({item, idx}) => {
         const owned = (u.owned_avatars||[]).includes(item.id);
         const selected = u.avatar === item.id;
+        const priceLabel = item.achievement ? '🏆 업적' : `-${item.price.toLocaleString()}p`;
         return `<div style="text-align:center">
           <button onclick="avatarShopClick(${idx})"
             style="width:100%;padding:10px 0;border-radius:10px;border:2px solid ${selected?'var(--accent)':'var(--border)'};background:${owned?'var(--bg)':'var(--surface)'};cursor:pointer;font-size:24px;display:block">
             ${item.id}
           </button>
-          <div style="font-size:10px;color:${selected?'var(--accent)':'var(--muted)'};margin-top:4px">${owned?(selected?'✓ 선택됨':'보유'):`-${item.price.toLocaleString()}p`}</div>
+          <div style="font-size:10px;color:${selected?'var(--accent)':'var(--muted)'};margin-top:4px">${owned?(selected?'✓ 선택됨':item.label):priceLabel}</div>
         </div>`;
       }).join('')}
     </div>`;
 }
 
 function avatarShopClick(idx) {
-  const item = AVATAR_SHOP_ITEMS[idx];
+  const item = ALL_AVATAR_ITEMS[idx];
   if (!item) return;
   const owned = (_profileUser?.owned_avatars || []).includes(item.id);
   if (owned) doSetAvatar(item.id);
-  else doBuyAvatar(item.id);
+  else if (!item.achievement) doBuyAvatar(item.id);
 }
 function toggleAvatarShop() {
   const card = document.getElementById('avatar-shop-card');

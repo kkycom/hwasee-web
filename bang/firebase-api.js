@@ -348,12 +348,11 @@ async function fbLogin(nickname, password) {
     await functionsRegion.httpsCallable('rebindAuthUid')({ nickname, password }).catch(() => {});
   }
 
-  // user_secrets(소유권 규칙 없음) 토큰 발급과 출석 보너스 처리는 서로 독립적 —
-  // 병렬 처리. dailyBonus엔 이미 위에서 읽어둔 u를 넘겨서 내부 재조회를 생략함.
-  const [, dailyResult] = await Promise.all([
-    db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true }),
-    _fbCheckDailyBonus(u.user_id, doc.ref, u),
-  ]);
+  // 출석/연속출석/복귀 보너스 계산(_fbCheckDailyBonus)은 최대 3~4개의 순차
+  // 트랜잭션이 필요한 부가 보상이라, 로그인 응답을 기다리게 하지 않고 여기서
+  // 완전히 뺌 — 클라이언트가 로그인 성공 직후 checkDailyBonus를 별도 호출해서
+  // 받아옴(기존 window.onload 흐름과 동일한 패턴). 토큰 발급만 기다리면 됨.
+  await db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true });
   // 신규 바인딩(auth_uid 최초 기록)은 로그인 응답과 무관한 best-effort라 기다리지 않음
   if (authUid && !u.auth_uid) {
     doc.ref.update({ auth_uid: authUid }).catch(() => {});
@@ -365,9 +364,7 @@ async function fbLogin(nickname, password) {
     ok: true, token, user_id: u.user_id, nickname: u.nickname,
     display_name: u.display_name || u.nickname,
     total_points: u.total_points || 0, badge: u.badge || 'seed',
-    is_admin: u.user_id === FB_ADMIN_ID, daily_bonus: dailyResult.bonus,
-    login_streak: dailyResult.streak, milestone_bonus: dailyResult.milestone_bonus,
-    comeback_bonus: dailyResult.comeback_bonus,
+    is_admin: u.user_id === FB_ADMIN_ID,
     adoption_count: u.adoption_count || 0
   };
 }
@@ -842,10 +839,10 @@ async function fbGetStory(story_id, user_id) {
 async function fbCreateStory(opening, creator_id, is_ai_seed) {
   if (!opening || !opening.trim()) return { ok: false, error: '시작 문장을 입력해주세요.' };
   const story_id = fbGenId(), episode_id = fbGenId();
-  let creator_nickname = '익명', creator_badge = '';
+  let creator_nickname = '익명', creator_badge = '', uData = {};
   if (!is_ai_seed) {
     const uDoc = await db.collection('users').doc(creator_id).get();
-    const uData = uDoc.exists ? uDoc.data() : {};
+    uData = uDoc.exists ? uDoc.data() : {};
     creator_nickname = uData.display_name || uData.nickname || '익명';
     creator_badge    = uData.badge || 'seed';
   }
@@ -867,12 +864,12 @@ async function fbCreateStory(opening, creator_id, is_ai_seed) {
     );
   }
   if (!is_ai_seed) {
-    try {
-      const cSnap = await db.collection('users').doc(creator_id).get();
-      const newCount = (cSnap.exists ? (cSnap.data().seed_count || 0) : 0) + 1;
-      await db.collection('users').doc(creator_id).update({ seed_count: firebase.firestore.FieldValue.increment(1) });
-      await _fbCheckAchievements(creator_id, 'seed_count', newCount);
-    } catch (e) {}
+    // 카운터 증가 + 업적 체크는 씨앗 생성 응답을 기다리게 하지 않고 백그라운드로
+    // 미룸(uData는 위에서 이미 읽어둔 것 재사용, 재조회 불필요)
+    const newCount = (uData.seed_count || 0) + 1;
+    db.collection('users').doc(creator_id).update({ seed_count: firebase.firestore.FieldValue.increment(1) })
+      .then(() => _fbCheckAchievements(creator_id, 'seed_count', newCount))
+      .catch(() => {});
   }
   return { ok: true, story_id, episode_id };
 }
@@ -1115,11 +1112,11 @@ async function fbCreateSubmission(episode_id, content, author_id, derived_from, 
     is_adopted: false, created_at: fbNow(), is_closing
   });
   await _fbAddPoints(author_id, 10, 'submit', sub_id);
-  try {
-    const newCount = ((uData.submission_count || 0) + 1);
-    await db.collection('users').doc(author_id).update({ submission_count: firebase.firestore.FieldValue.increment(1) });
-    await _fbCheckAchievements(author_id, 'submission_count', newCount);
-  } catch (e) {}
+  // 카운터 증가 + 업적 체크는 제출 응답을 기다리게 하지 않고 백그라운드로 미룸
+  const newSubCount = (uData.submission_count || 0) + 1;
+  db.collection('users').doc(author_id).update({ submission_count: firebase.firestore.FieldValue.increment(1) })
+    .then(() => _fbCheckAchievements(author_id, 'submission_count', newSubCount))
+    .catch(() => {});
 
   // participant_count 증가 (첫 제출 시) — 복합 인덱스 없이 단일 필드 쿼리 후 클라이언트 필터
   const mySubsSnap = await db.collection('submissions')
@@ -1200,12 +1197,15 @@ async function fbVote(episode_id, sub_ids, voter_id) {
     isRevote ? Promise.resolve() : _fbAddPoints(voter_id, 5, 'vote', ''),
   ]);
   if (!isRevote) {
-    try {
-      const vSnap = await db.collection('users').doc(voter_id).get();
-      const newCount = (vSnap.exists ? (vSnap.data().vote_count || 0) : 0) + 1;
-      await db.collection('users').doc(voter_id).update({ vote_count: firebase.firestore.FieldValue.increment(1) });
-      await _fbCheckAchievements(voter_id, 'vote_count', newCount);
-    } catch (e) {}
+    // 카운터 증가 + 업적 체크는 공감(투표) 응답을 기다리게 하지 않고 백그라운드로 미룸
+    (async () => {
+      try {
+        const vSnap = await db.collection('users').doc(voter_id).get();
+        const newCount = (vSnap.exists ? (vSnap.data().vote_count || 0) : 0) + 1;
+        await db.collection('users').doc(voter_id).update({ vote_count: firebase.firestore.FieldValue.increment(1) });
+        await _fbCheckAchievements(voter_id, 'vote_count', newCount);
+      } catch (e) {}
+    })();
   }
 
   if (maxSubVotes >= FB_VOTE_THRESHOLD) {

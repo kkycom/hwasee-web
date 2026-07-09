@@ -3000,9 +3000,14 @@ async function doLogin() {
   saveUser(res);
   const dn = res.display_name || res.nickname;
   toast(`반갑습니다, ${dn}님!`);
-  if (res.daily_bonus) setTimeout(() => toast(`🌿 출석 점수 +${res.daily_bonus}p 지급됐어요! (${res.login_streak}일째)`), 600);
-  if (res.comeback_bonus) setTimeout(() => toast(`🌱 오랜만이에요! 복귀 보너스 +${res.comeback_bonus}p 지급됐어요!`), 1000);
-  if (res.milestone_bonus) setTimeout(() => toast(`🔥 ${res.login_streak}일 연속 출석 보너스 +${res.milestone_bonus}p!`), res.comeback_bonus ? 1400 : 1000);
+  // 출석/연속출석/복귀 보너스는 로그인 응답을 느리게 하지 않도록 서버에서
+  // 분리돼 계산됨(성능) — 화면 전환과 무관하게 별도로 받아와 토스트로 보여줌
+  api('checkDailyBonus').then(br => {
+    if (!br.ok) return;
+    if (br.bonus > 0) setTimeout(() => toast(`🌿 출석 점수 +${br.bonus}p 지급됐어요! (${br.streak}일째)`), 600);
+    if (br.comeback_bonus) setTimeout(() => toast(`🌱 오랜만이에요! 복귀 보너스 +${br.comeback_bonus}p 지급됐어요!`), 1000);
+    if (br.milestone_bonus) setTimeout(() => toast(`🔥 ${br.streak}일 연속 출석 보너스 +${br.milestone_bonus}p!`), br.comeback_bonus ? 1400 : 1000);
+  }).catch(() => {});
   if (await _resumePendingSeedStory()) return;
   nav('seed');
   if (!localStorage.getItem('hwasee_onboarding_seen')) setTimeout(showOnboarding, 400);

@@ -53,6 +53,7 @@ async function _fbBackfillAuthUid(uid) {
 const FB_ADMIN_ID        = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
 const FB_AI_ID           = '578873e7-47b7-48d3-9cd8-894546196205'; // AI 자동참여 전용 봇 계정 (관리자 계정과 분리)
 var FB_VOTE_THRESHOLD  = 3;
+const FB_WORD_CHALLENGE_MAX_CHARS = 50;
 const _closingEpisodes = new Set(); // 동시 중복 마감 방지
 
 // ─── 유틸 ────────────────────────────────────────────────
@@ -2616,7 +2617,139 @@ async function firebaseApi(action, params = {}) {
     case 'getUnseenPatchNote': return fbGetUnseenPatchNote(need().user_id);
     case 'markPatchNoteSeen': return fbMarkPatchNoteSeen(need().user_id, params.patch_id);
     case 'getPatchNotesFeed': need(); return fbGetPatchNotesFeed();
+
+    case 'getWordChallenge':          return fbGetWordChallenge(session?.user_id || null);
+    case 'submitWordChallengeEntry':  return fbSubmitWordChallengeEntry(params.challenge_id, need().user_id, params.text);
+    case 'voteWordChallenge':         return fbVoteWordChallenge(params.challenge_id, params.submission_id, need().user_id);
+    case 'getWordChallengeHistory':   return fbGetWordChallengeHistory();
+    case 'adminAddWordChallengeSets':   return fbAdminAddWordChallengeSets(need().user_id, params.raw_text);
+    case 'adminGetWordChallengeQueue':  return fbAdminGetWordChallengeQueue(need().user_id);
+    case 'adminDeleteWordChallengeSet': return fbAdminDeleteWordChallengeSet(need().user_id, params.set_id);
+
     case 'pingWarm': return { ok: true };
     default:         return { ok: false, error: '알 수 없는 요청입니다.' };
   }
+}
+
+// ─── 오늘의 단어 챌린지 ──────────────────────────────────────
+// 라운드 시작/마감/우승자 선정+포인트 지급은 전부 functions/index.js의
+// 스케줄 함수(매일 00시 시작/21시 마감)에서 서버로 처리함 — 여기 클라이언트
+// 함수들은 조회/제출/투표만 담당.
+
+async function fbGetWordChallenge(viewer_id) {
+  const snap = await db.collection('word_challenges').orderBy('start_at', 'desc').limit(1).get();
+  if (snap.empty) return { ok: true, challenge: null, submissions: [] };
+  const doc = snap.docs[0];
+  const challenge = { challenge_id: doc.id, ...doc.data() };
+
+  const subsSnap = await db.collection('word_challenge_submissions')
+    .where('challenge_id', '==', challenge.challenge_id).get();
+  const authorIds = [...new Set(subsSnap.docs.map(d => d.data().user_id))];
+  const nickMap = {};
+  if (authorIds.length) {
+    const userDocs = await Promise.all(authorIds.map(id => db.collection('users').doc(id).get()));
+    userDocs.forEach(d => { if (d.exists) nickMap[d.id] = d.data().display_name || d.data().nickname; });
+  }
+  const submissions = subsSnap.docs
+    .map(d => ({ submission_id: d.id, ...d.data(), nickname: nickMap[d.data().user_id] || '익명' }))
+    .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0) || new Date(a.created_at) - new Date(b.created_at));
+
+  let my_submission_id = null, my_vote_submission_id = null;
+  if (viewer_id) {
+    const mine = submissions.find(s => s.user_id === viewer_id);
+    if (mine) my_submission_id = mine.submission_id;
+    const voteSnap = await db.collection('word_challenge_votes').doc(`${challenge.challenge_id}_${viewer_id}`).get();
+    if (voteSnap.exists) my_vote_submission_id = voteSnap.data().submission_id;
+  }
+
+  return { ok: true, challenge, submissions, my_submission_id, my_vote_submission_id };
+}
+
+async function fbSubmitWordChallengeEntry(challenge_id, author_id, text) {
+  const text2 = (text || '').trim();
+  if (!text2) return { ok: false, error: '문장을 입력해주세요.' };
+  if (text2.length > FB_WORD_CHALLENGE_MAX_CHARS) return { ok: false, error: `${FB_WORD_CHALLENGE_MAX_CHARS}자 이내로 작성해주세요.` };
+  const chSnap = await db.collection('word_challenges').doc(challenge_id).get();
+  if (!chSnap.exists) return { ok: false, error: '챌린지를 찾을 수 없습니다.' };
+  const ch = chSnap.data();
+  if (ch.status !== 'active' || Date.now() >= new Date(ch.end_at).getTime()) return { ok: false, error: '이미 마감된 챌린지예요.' };
+  const missing = (ch.words || []).filter(w => !text2.includes(w));
+  if (missing.length) return { ok: false, error: `단어 "${missing.join(', ')}"가 문장에 없어요.` };
+  const dupSnap = await db.collection('word_challenge_submissions')
+    .where('challenge_id', '==', challenge_id).where('user_id', '==', author_id).limit(1).get();
+  if (!dupSnap.empty) return { ok: false, error: '이미 이 챌린지에 참여했어요.' };
+  const sub_id = fbGenId();
+  await db.collection('word_challenge_submissions').doc(sub_id).set({
+    challenge_id, user_id: author_id, text: text2, vote_count: 0, created_at: fbNow(),
+  });
+  return { ok: true, submission_id: sub_id };
+}
+
+async function fbVoteWordChallenge(challenge_id, submission_id, voter_id) {
+  const chSnap = await db.collection('word_challenges').doc(challenge_id).get();
+  if (!chSnap.exists) return { ok: false, error: '챌린지를 찾을 수 없습니다.' };
+  const ch = chSnap.data();
+  if (ch.status !== 'active' || Date.now() >= new Date(ch.end_at).getTime()) return { ok: false, error: '이미 마감된 챌린지예요.' };
+  const subRef = db.collection('word_challenge_submissions').doc(submission_id);
+  const subSnap = await subRef.get();
+  if (!subSnap.exists || subSnap.data().challenge_id !== challenge_id) return { ok: false, error: '문장을 찾을 수 없습니다.' };
+  if (subSnap.data().user_id === voter_id) return { ok: false, error: '본인 문장에는 투표할 수 없어요.' };
+
+  const voteRef = db.collection('word_challenge_votes').doc(`${challenge_id}_${voter_id}`);
+  let voted = false;
+  await db.runTransaction(async tx => {
+    const voteSnap = await tx.get(voteRef);
+    if (voteSnap.exists && voteSnap.data().submission_id === submission_id) {
+      tx.delete(voteRef);
+      tx.update(subRef, { vote_count: firebase.firestore.FieldValue.increment(-1) });
+      voted = false;
+    } else {
+      if (voteSnap.exists) {
+        const oldRef = db.collection('word_challenge_submissions').doc(voteSnap.data().submission_id);
+        tx.update(oldRef, { vote_count: firebase.firestore.FieldValue.increment(-1) });
+      }
+      tx.set(voteRef, { challenge_id, submission_id, voter_id, created_at: fbNow() });
+      tx.update(subRef, { vote_count: firebase.firestore.FieldValue.increment(1) });
+      voted = true;
+    }
+  });
+  return { ok: true, voted };
+}
+
+async function fbGetWordChallengeHistory() {
+  const snap = await db.collection('word_challenges').orderBy('start_at', 'desc').limit(40).get();
+  const history = snap.docs
+    .map(d => ({ challenge_id: d.id, ...d.data() }))
+    .filter(c => c.status === 'closed');
+  return { ok: true, history };
+}
+
+async function fbAdminAddWordChallengeSets(admin_id, rawText) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  const lines = (rawText || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const batch = db.batch();
+  let added = 0;
+  lines.forEach(line => {
+    const words = line.split(',').map(w => w.trim()).filter(Boolean);
+    if (words.length !== 3) return;
+    const ref = db.collection('word_challenge_sets').doc(fbGenId());
+    batch.set(ref, { words, used: false, created_at: fbNow() });
+    added++;
+  });
+  if (added === 0) return { ok: false, error: '올바른 형식(단어1,단어2,단어3)의 줄이 없어요.' };
+  await batch.commit();
+  return { ok: true, added, skipped: lines.length - added };
+}
+
+async function fbAdminGetWordChallengeQueue(admin_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  const snap = await db.collection('word_challenge_sets').orderBy('created_at', 'asc').limit(500).get();
+  const all = snap.docs.map(d => ({ set_id: d.id, ...d.data() }));
+  return { ok: true, unused: all.filter(s => !s.used), used_count: all.filter(s => s.used).length };
+}
+
+async function fbAdminDeleteWordChallengeSet(admin_id, set_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  await db.collection('word_challenge_sets').doc(set_id).delete();
+  return { ok: true };
 }

@@ -1014,7 +1014,7 @@ function nav(route, param) {
 
 function render() {
   _renderEpoch++;
-  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, user: userProfile, create, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI, 'admin-patchnotes': adminPatchNotes, patchnotes: userPatchNotes };
+  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, user: userProfile, create, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI, 'admin-patchnotes': adminPatchNotes, 'admin-wordchallenge': adminWordChallenge, patchnotes: userPatchNotes };
   (routes[currentRoute] || home)();
 }
 
@@ -1040,6 +1040,7 @@ function renderNav() {
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-reports')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg> 신고 내역</button>
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-bugs')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9V6a3 3 0 0 1 6 0v3"/><path d="M5 13a7 7 0 0 0 14 0v-3H5v3z"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="5" y1="10" x2="2" y2="8"/><line x1="19" y1="10" x2="22" y2="8"/><line x1="5" y1="16" x2="2" y2="18"/><line x1="19" y1="16" x2="22" y2="18"/></svg> 버그 내역</button>
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-patchnotes')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> 패치 내역</button>
+          <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-wordchallenge')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><circle cx="16" cy="16" r="1"/><circle cx="12" cy="12" r="1"/></svg> 단어 챌린지</button>
         </div>
       </div>` : ''}
       <div class="profile-menu-wrap" id="profile-menu-wrap">
@@ -1216,13 +1217,12 @@ async function loadHomeTab(tab, epoch) {
     window._seeds   = res.seeds;
     window._seedIdx = 0;
     renderSeedCard();
-    const lbSection = document.createElement('div');
-    lbSection.style.cssText = 'margin-top:32px;border-top:1px solid var(--border);padding-top:24px';
-    lbSection.innerHTML = `
-      <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:14px;letter-spacing:.5px">✦ 명예의 전당</div>
-      <div id="seed-lb-body"><div style="font-size:12px;color:var(--muted)">불러오는 중...</div></div>`;
-    gc()?.appendChild(lbSection);
-    loadLeaderboard('seed-lb-body');
+    const wcSection = document.createElement('div');
+    wcSection.id = 'word-challenge-section';
+    wcSection.style.cssText = 'margin-top:32px;border-top:1px solid var(--border);padding-top:24px';
+    wcSection.innerHTML = `<div style="font-size:12px;color:var(--muted)">불러오는 중...</div>`;
+    gc()?.appendChild(wcSection);
+    loadWordChallenge();
 
   } else if (tab === 'popular') {
     const _applyPop = (storiesRes, myRes) => {
@@ -2093,6 +2093,156 @@ function lbBodyHtml(limit) {
 }
 
 function switchLbTab() {}
+
+// ─── 오늘의 단어 챌린지 (씨앗 탭 하단) ───────────────────────
+let _wcCountdownTimer = null;
+
+async function loadWordChallenge() {
+  const res = await api('getWordChallenge', {});
+  const el = document.getElementById('word-challenge-section');
+  if (!el) return; // 그 사이 탭이 바뀌었으면 무시
+  if (!res.ok || !res.challenge) {
+    el.innerHTML = `
+      <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:14px;letter-spacing:.5px">🎲 오늘의 단어 챌린지</div>
+      <div style="font-size:12px;color:var(--muted)">다음 챌린지를 준비 중이에요.</div>`;
+    return;
+  }
+  window._wcData = res;
+  renderWordChallenge();
+}
+
+function boldChallengeWords(text, words) {
+  let escaped = esc(text);
+  (words || []).forEach(w => {
+    const escWord = esc(w);
+    if (!escWord) return;
+    const re = new RegExp(escWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    escaped = escaped.replace(re, `<strong>${escWord}</strong>`);
+  });
+  return escaped;
+}
+
+function renderWordChallenge() {
+  const el = document.getElementById('word-challenge-section');
+  if (!el || !window._wcData) return;
+  clearInterval(_wcCountdownTimer);
+  const { challenge, submissions, my_submission_id, my_vote_submission_id } = window._wcData;
+  const isActive = challenge.status === 'active' && Date.now() < new Date(challenge.end_at).getTime();
+
+  const wordsHtml = (challenge.words || []).map(w => `
+    <span style="display:inline-block;background:var(--accent2);color:#fff;font-weight:700;font-size:13px;padding:5px 12px;border-radius:20px;margin-right:6px">${esc(w)}</span>`).join('');
+
+  const header = isActive
+    ? `<div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px;letter-spacing:.5px">🎲 오늘의 단어 챌린지</div>
+       <div style="font-size:12px;color:var(--muted);margin-bottom:14px">이 세 단어를 모두 넣어 ${FB_WORD_CHALLENGE_MAX_CHARS}자 이내 문장을 지어보세요 · <span id="wc-countdown"></span> 마감</div>`
+    : `<div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px;letter-spacing:.5px">🏆 오늘의 장원</div>
+       <div style="font-size:12px;color:var(--muted);margin-bottom:14px">자정에 새 챌린지가 시작돼요</div>`;
+
+  const winnerHtml = (!isActive && challenge.winner_text) ? `
+    <div style="background:var(--bg);border:1px solid var(--accent2);border-radius:10px;padding:14px 16px;margin-bottom:16px">
+      <div style="font-size:12px;color:var(--accent2);font-weight:700;margin-bottom:6px">👑 ${esc(challenge.winner_nickname)} · +100p</div>
+      <div style="font-size:14px;line-height:1.6">${boldChallengeWords(challenge.winner_text, challenge.words)}</div>
+    </div>` : '';
+
+  const formHtml = isActive && user && !my_submission_id ? `
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <input id="wc-input" maxlength="${FB_WORD_CHALLENGE_MAX_CHARS}" placeholder="세 단어를 넣어 문장을 지어보세요" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text)">
+      <button class="btn btn-primary btn-sm" onclick="_submitWordChallenge()">제출</button>
+    </div>` : '';
+
+  const loginHint = isActive && !user
+    ? `<div style="font-size:12px;color:var(--muted);margin-bottom:16px">참여하려면 <a href="#" onclick="nav('auth','login');return false" style="color:var(--accent2)">로그인</a>이 필요해요</div>` : '';
+  const mySubHint = isActive && user && my_submission_id
+    ? `<div style="font-size:12px;color:var(--muted);margin-bottom:16px">이미 참여했어요 — 다른 문장에 투표해보세요</div>` : '';
+
+  const listHtml = submissions.length ? submissions.map(s => {
+    const voted = s.submission_id === my_vote_submission_id;
+    const isMine = s.submission_id === my_submission_id;
+    const canVote = isActive && user && !isMine;
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+        <button ${canVote ? `onclick="_voteWordChallenge('${s.submission_id}')"` : 'disabled'}
+          style="display:flex;flex-direction:column;align-items:center;gap:1px;background:none;border:1px solid ${voted ? 'var(--accent2)' : 'var(--border)'};border-radius:8px;padding:4px 8px;cursor:${canVote ? 'pointer' : 'default'};color:${voted ? 'var(--accent2)' : 'var(--muted)'};flex-shrink:0">
+          <span style="font-size:13px;font-weight:700">${s.vote_count || 0}</span>
+          <span style="font-size:9px">${voted ? '투표함' : '추천'}</span>
+        </button>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;line-height:1.5">${boldChallengeWords(s.text, challenge.words)}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(s.nickname)}${isMine ? ' (나)' : ''}</div>
+        </div>
+      </div>`;
+  }).join('') : `<div style="font-size:12px;color:var(--muted);padding:10px 0">아직 참여자가 없어요. 첫 문장을 남겨보세요!</div>`;
+
+  el.innerHTML = `
+    ${header}
+    <div style="margin-bottom:14px">${wordsHtml}</div>
+    ${winnerHtml}
+    ${loginHint}${mySubHint}${formHtml}
+    <div>${listHtml}</div>
+    <button class="btn btn-ghost btn-sm" style="margin-top:14px" onclick="openWordChallengeHistory()">역대 챌린지 보기</button>`;
+
+  if (isActive) _startWordChallengeCountdown(challenge.end_at);
+}
+
+function _startWordChallengeCountdown(end_at) {
+  const tick = () => {
+    const el = document.getElementById('wc-countdown');
+    if (!el) { clearInterval(_wcCountdownTimer); return; }
+    const diff = new Date(end_at).getTime() - Date.now();
+    if (diff <= 0) { el.textContent = '마감'; clearInterval(_wcCountdownTimer); loadWordChallenge(); return; }
+    const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
+    el.textContent = `${h}시간 ${m}분 후`;
+  };
+  tick();
+  _wcCountdownTimer = setInterval(tick, 30000);
+}
+
+async function _submitWordChallenge() {
+  const inp = document.getElementById('wc-input');
+  const text = (inp?.value || '').trim();
+  if (!text) { toast('문장을 입력해주세요.', true); return; }
+  const res = await api('submitWordChallengeEntry', { challenge_id: window._wcData.challenge.challenge_id, text });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast('문장이 등록됐어요!');
+  await loadWordChallenge();
+}
+
+async function _voteWordChallenge(submission_id) {
+  const res = await api('voteWordChallenge', { challenge_id: window._wcData.challenge.challenge_id, submission_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  await loadWordChallenge();
+}
+
+async function openWordChallengeHistory() {
+  const existing = document.getElementById('wc-history-modal');
+  if (existing) { existing.remove(); return; }
+  const modal = document.createElement('div');
+  modal.id = 'wc-history-modal';
+  modal.className = 'modal-overlay';
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:500px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-size:15px;font-weight:700">🏆 역대 단어 챌린지</div>
+        <button onclick="document.getElementById('wc-history-modal').remove()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px">✕</button>
+      </div>
+      <div id="wc-history-body"><div class="loading"></div></div>
+    </div>`;
+  document.body.appendChild(modal);
+  const res = await api('getWordChallengeHistory', {});
+  const body = document.getElementById('wc-history-body');
+  if (!body) return;
+  if (!res.ok || !res.history.length) { body.innerHTML = `<div class="empty">아직 지난 기록이 없어요.</div>`; return; }
+  body.innerHTML = res.history.map(c => `
+    <div class="card" style="padding:12px 14px;margin-bottom:8px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${esc(c.date)}</div>
+      <div style="margin-bottom:6px">${(c.words || []).map(w => `<span style="display:inline-block;background:var(--bg);border:1px solid var(--border);font-size:11px;font-weight:600;padding:2px 8px;border-radius:12px;margin-right:4px">${esc(w)}</span>`).join('')}</div>
+      ${c.winner_text
+        ? `<div style="font-size:13px;line-height:1.5">${boldChallengeWords(c.winner_text, c.words)}</div>
+           <div style="font-size:11px;color:var(--muted);margin-top:3px">👑 ${esc(c.winner_nickname)}</div>`
+        : `<div style="font-size:12px;color:var(--muted)">참여자가 없었어요</div>`}
+    </div>`).join('');
+}
 
 function openRankingModal() {
   const existing = document.getElementById('ranking-modal');
@@ -4041,6 +4191,7 @@ function _adminNav(current) {
     reports: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>`,
     bugs: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9V6a3 3 0 0 1 6 0v3"/><path d="M5 13a7 7 0 0 0 14 0v-3H5v3z"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="5" y1="10" x2="2" y2="8"/><line x1="19" y1="10" x2="22" y2="8"/><line x1="5" y1="16" x2="2" y2="18"/><line x1="19" y1="16" x2="22" y2="18"/></svg>`,
     patchnotes: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
+    wordchallenge: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><circle cx="16" cy="16" r="1"/><circle cx="12" cy="12" r="1"/></svg>`,
   };
   const btn = (label, key, route) => `
     <button onclick="nav('${route}')" style="background:none;border:none;cursor:pointer;font-size:13px;color:${current===key?'var(--text)':'var(--muted)'};font-weight:${current===key?'700':'400'};display:inline-flex;align-items:center;gap:5px;padding:5px 2px">
@@ -4055,7 +4206,8 @@ function _adminNav(current) {
         ${btn('수정 내역','edits','admin-edits')}${sep}
         ${btn('신고 내역','reports','admin-reports')}${sep}
         ${btn('버그 내역','bugs','admin-bugs')}${sep}
-        ${btn('패치 내역','patchnotes','admin-patchnotes')}
+        ${btn('패치 내역','patchnotes','admin-patchnotes')}${sep}
+        ${btn('단어 챌린지','wordchallenge','admin-wordchallenge')}
       </div>
     </div>`;
 }
@@ -4443,6 +4595,59 @@ async function _doAddPatchNote() {
   adminPatchNotes();
 }
 
+// ─── 단어 챌린지 관리 ─────────────────────────────────────
+async function adminWordChallenge() {
+  if (!isAdmin()) { nav('seed'); return; }
+  const epoch = _renderEpoch;
+  document.getElementById('app').innerHTML = `<div class="loading"></div>`;
+  const res = await api('adminGetWordChallengeQueue', {});
+  if (_renderEpoch !== epoch || currentRoute !== 'admin-wordchallenge') return;
+  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+  document.getElementById('app').innerHTML = `
+    ${_adminNav('wordchallenge')}
+    <h2 style="margin:0 0 12px">🎲 단어 챌린지 관리</h2>
+    <div class="card" style="margin-bottom:20px">
+      <div class="form-group">
+        <label>단어 세트 추가 (한 줄에 "단어1,단어2,단어3" 형식으로 여러 줄 입력 가능)</label>
+        <textarea id="wc-sets-input" rows="4" placeholder="냉장고,우주비행사,젓가락
+지하철,공룡,립스틱" style="width:100%;resize:vertical;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--text);font-family:inherit;line-height:1.6;box-sizing:border-box"></textarea>
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-bottom:8px" onclick="_doAddWordChallengeSets()">등록하기</button>
+      <button class="btn btn-ghost" style="width:100%" onclick="_doForceStartWordChallenge()">지금 바로 새 라운드 시작 (테스트·부트스트랩용)</button>
+    </div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:10px">대기 중인 세트 (${res.unused.length}개) · 사용됨 ${res.used_count}개</div>
+    ${res.unused.length === 0 ? `<div class="empty">대기 중인 세트가 없어요.</div>` :
+      res.unused.map(s => `
+        <div class="card" style="padding:10px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:13px">${(s.words || []).map(w => esc(w)).join(' · ')}</div>
+          <button class="btn btn-ghost btn-sm" onclick="_doDeleteWordChallengeSet('${s.set_id}')">삭제</button>
+        </div>`).join('')}`;
+}
+
+async function _doAddWordChallengeSets() {
+  const el = document.getElementById('wc-sets-input');
+  const raw = (el?.value || '').trim();
+  if (!raw) { toast('세트를 입력해주세요.', true); return; }
+  const res = await api('adminAddWordChallengeSets', { raw_text: raw });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast(`${res.added}개 등록됐어요.${res.skipped ? ` (형식 오류 ${res.skipped}개 건너뜀)` : ''}`);
+  adminWordChallenge();
+}
+
+async function _doDeleteWordChallengeSet(set_id) {
+  const res = await api('adminDeleteWordChallengeSet', { set_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  adminWordChallenge();
+}
+
+async function _doForceStartWordChallenge() {
+  if (!confirm('지금 바로 새 라운드를 시작할까요? (이미 진행 중인 라운드가 있으면 아무 일도 안 일어나요)')) return;
+  try {
+    await functionsRegion.httpsCallable('adminForceStartWordChallenge')({ admin_id: user.user_id });
+    toast('새 라운드가 시작됐어요.');
+  } catch (e) { toast(e.message, true); }
+}
+
 async function userPatchNotes() {
   if (!user) { nav('auth', 'login'); return; }
   const epoch = _renderEpoch;
@@ -4535,7 +4740,7 @@ function reasonLabel(r) {
     submit:'제출 참여', vote:'공감 참여', daily_login:'출석 점수', mvp_nomination:'MVP 선정', bug_report:'버그 제보',
     referral_bonus:'친구 초대 보너스', comeback_bonus:'복귀 보너스',
     boost_story:'이야기 주목 사용', extra_submit:'추가 제출권 사용', buy_avatar:'아바타 아이콘 구매',
-    delete_submission:'제출 삭제 패널티',
+    delete_submission:'제출 삭제 패널티', word_challenge_win:'오늘의 단어 챌린지 우승',
   }[r] || r;
 }
 
@@ -4884,7 +5089,7 @@ function parseHash() {
   const h     = location.hash.slice(1) || 'seed';
   const parts = h.split('/');
   const route = parts[0];
-  currentRoute = ['home','seed','popular','mine','done','story','episode','auth','profile','user','create','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','patchnotes'].includes(route) ? route : 'seed';
+  currentRoute = ['home','seed','popular','mine','done','story','episode','auth','profile','user','create','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','admin-wordchallenge','patchnotes'].includes(route) ? route : 'seed';
   currentParam = parts.slice(1).join('/') || null;
 }
 

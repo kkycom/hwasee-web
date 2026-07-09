@@ -1120,3 +1120,104 @@ exports.streakReminderPush = functions
     }));
     return null;
   });
+
+// ── 오늘의 단어 챌린지: 안 어울리는 단어 3개를 매일 던져주고 그걸로 문장을
+//    지어 투표받는 이벤트. 씨앗 탭의 "명예의 전당" 자리를 대체함(2026-07-09).
+//    라운드는 매일 00:00(KST) 시작 ~ 21:00(KST) 마감, 우승자(최다 득표, 동점이면
+//    먼저 제출한 사람) 1명에게 100p 지급. from 인자 기준으로 "다음 21시(KST)"를
+//    계산해서 end_at을 정하므로 관리자가 임의 시각에 수동 시작해도 안전함.
+function _next9pmKST(from) {
+  const kst = new Date(from.getTime() + 9 * 3600 * 1000);
+  const y = kst.getUTCFullYear(), m = kst.getUTCMonth(), d = kst.getUTCDate(), h = kst.getUTCHours();
+  const targetDay = h >= 21 ? d + 1 : d;
+  const targetKst = new Date(Date.UTC(y, m, targetDay, 21, 0, 0));
+  return new Date(targetKst.getTime() - 9 * 3600 * 1000);
+}
+
+async function _serverStartWordChallenge(db) {
+  const activeSnap = await db.collection('word_challenges').where('status', '==', 'active').limit(1).get();
+  if (!activeSnap.empty) return; // 이미 진행 중인 라운드가 있으면 중복 생성 방지
+
+  const setsSnap = await db.collection('word_challenge_sets').orderBy('created_at', 'asc').limit(500).get();
+  const nextSet = setsSnap.docs.find(d => !d.data().used);
+  if (!nextSet) { console.warn('word challenge: 대기 중인 단어 세트가 없습니다.'); return; }
+
+  const now = new Date();
+  const dateStr = new Date(now.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  await nextSet.ref.update({ used: true });
+  await db.collection('word_challenges').doc().set({
+    date: dateStr,
+    words: nextSet.data().words,
+    status: 'active',
+    start_at: now.toISOString(),
+    end_at: _next9pmKST(now).toISOString(),
+    winner_user_id: null,
+    winner_submission_id: null,
+    winner_nickname: null,
+    winner_text: null,
+    winner_vote_count: null,
+    submission_count: 0,
+    closed_at: null,
+  });
+}
+
+async function _serverCloseWordChallenge(db) {
+  const activeSnap = await db.collection('word_challenges').where('status', '==', 'active').limit(5).get();
+  for (const doc of activeSnap.docs) {
+    const challenge_id = doc.id;
+    const subsSnap = await db.collection('word_challenge_submissions')
+      .where('challenge_id', '==', challenge_id).get();
+    let winner = null;
+    subsSnap.docs.forEach(d => {
+      const s = { submission_id: d.id, ...d.data() };
+      if (!winner) { winner = s; return; }
+      const sv = s.vote_count || 0, wv = winner.vote_count || 0;
+      if (sv > wv || (sv === wv && new Date(s.created_at) < new Date(winner.created_at))) winner = s;
+    });
+    const patch = { status: 'closed', closed_at: new Date().toISOString(), submission_count: subsSnap.size };
+    if (winner) {
+      patch.winner_user_id = winner.user_id;
+      patch.winner_submission_id = winner.submission_id;
+      patch.winner_text = winner.text;
+      patch.winner_vote_count = winner.vote_count || 0;
+      const uSnap = await db.collection('users').doc(winner.user_id).get();
+      patch.winner_nickname = uSnap.exists ? (uSnap.data().display_name || uSnap.data().nickname) : '익명';
+    }
+    await doc.ref.update(patch);
+    if (winner) await _serverAddPoints(db, winner.user_id, 100, 'word_challenge_win', winner.submission_id);
+  }
+}
+
+exports.startWordChallenge = functions
+  .region('asia-northeast3')
+  .pubsub.schedule('every day 00:00')
+  .timeZone('Asia/Seoul')
+  .onRun(async () => {
+    await _serverStartWordChallenge(admin.firestore());
+    return null;
+  });
+
+exports.closeWordChallenge = functions
+  .region('asia-northeast3')
+  .pubsub.schedule('every day 21:00')
+  .timeZone('Asia/Seoul')
+  .onRun(async () => {
+    await _serverCloseWordChallenge(admin.firestore());
+    return null;
+  });
+
+exports.adminForceStartWordChallenge = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    await _serverStartWordChallenge(admin.firestore());
+    return { ok: true };
+  });
+
+exports.adminForceCloseWordChallenge = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    await _serverCloseWordChallenge(admin.firestore());
+    return { ok: true };
+  });

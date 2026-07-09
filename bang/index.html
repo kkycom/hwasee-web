@@ -2096,6 +2096,8 @@ function switchLbTab() {}
 
 // ─── 오늘의 단어 챌린지 (씨앗 탭 하단) ───────────────────────
 let _wcCountdownTimer = null;
+const WC_PAGE_SIZE = 10;
+let _wcVisibleCount = WC_PAGE_SIZE;
 
 async function loadWordChallenge() {
   const res = await api('getWordChallenge', {});
@@ -2108,6 +2110,12 @@ async function loadWordChallenge() {
     return;
   }
   window._wcData = res;
+  _wcVisibleCount = WC_PAGE_SIZE; // 새로 불러올 때마다 초기 노출 개수로 리셋
+  renderWordChallenge();
+}
+
+function _wcShowMore() {
+  _wcVisibleCount += WC_PAGE_SIZE;
   renderWordChallenge();
 }
 
@@ -2155,7 +2163,8 @@ function renderWordChallenge() {
   const mySubHint = isActive && user && my_submission_id
     ? `<div style="font-size:12px;color:var(--muted);margin-bottom:16px">이미 참여했어요 — 다른 문장에 투표해보세요</div>` : '';
 
-  const listHtml = submissions.length ? submissions.map(s => {
+  const visibleSubs = submissions.slice(0, _wcVisibleCount);
+  const listHtml = visibleSubs.length ? visibleSubs.map(s => {
     const voted = s.submission_id === my_vote_submission_id;
     const isMine = s.submission_id === my_submission_id;
     const canVote = isActive && user && !isMine;
@@ -2173,12 +2182,16 @@ function renderWordChallenge() {
       </div>`;
   }).join('') : `<div style="font-size:12px;color:var(--muted);padding:10px 0">아직 참여자가 없어요. 첫 문장을 남겨보세요!</div>`;
 
+  const showMoreHtml = submissions.length > _wcVisibleCount
+    ? `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="_wcShowMore()">더보기 (${submissions.length - _wcVisibleCount}개 남음)</button>` : '';
+
   el.innerHTML = `
     ${header}
     <div style="margin-bottom:14px">${wordsHtml}</div>
     ${winnerHtml}
     ${loginHint}${mySubHint}${formHtml}
     <div>${listHtml}</div>
+    ${showMoreHtml}
     <button class="btn btn-ghost btn-sm" style="margin-top:14px" onclick="openWordChallengeHistory()">역대 챌린지 보기</button>`;
 
   if (isActive) _startWordChallengeCountdown(challenge.end_at);

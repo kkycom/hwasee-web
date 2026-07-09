@@ -2135,17 +2135,43 @@ let _wcVisibleCount = WC_PAGE_SIZE;
 const WC_HISTORY_BTN_HTML = `<button onclick="openWordChallengeHistory()" style="position:absolute;top:7px;right:12px;background:var(--card);border:none;border-radius:8px;padding:5px 10px;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer">역대 당선작 보기</button>`;
 
 async function loadWordChallenge() {
-  const res = await api('getWordChallenge', {});
   const el = document.getElementById('word-challenge-section');
-  if (!el) return; // 그 사이 탭이 바뀌었으면 무시
-  if (!res.ok || !res.challenge) {
-    el.innerHTML = `
+  // 캐시된 데이터가 있으면 즉시 그려서 매번 새 네트워크 왕복을 기다리지 않게 하고,
+  // 최신 데이터는 백그라운드에서 갱신 — 연결이 느릴 때 "불러오는 중..."에 오래
+  // 멈춰있거나 타임아웃으로 실패해 보이던 문제 완화
+  const staleWc = _lsc.getStale('wordChallenge');
+  if (staleWc && el) {
+    window._wcData = staleWc;
+    _wcVisibleCount = WC_PAGE_SIZE;
+    renderWordChallenge();
+  }
+  const res = await api('getWordChallenge', {});
+  const el2 = document.getElementById('word-challenge-section');
+  if (!el2) return; // 그 사이 탭이 바뀌었으면 무시
+  if (!res.ok) {
+    // 진짜 "오늘 챌린지 없음"과 네트워크/타임아웃 실패를 구분 — 캐시가 있으면
+    // 실패해도 캐시된 화면을 그대로 유지(이미 위에서 그려짐), 캐시조차 없을 때만
+    // 재시도 버튼이 있는 에러 화면 표시
+    if (!staleWc) {
+      el2.innerHTML = `
+        <div style="text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px">
+          <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:8px;letter-spacing:.5px">🎲 오늘의 단어 챌린지</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px">불러오지 못했어요.</div>
+          <button class="btn btn-ghost btn-sm" onclick="loadWordChallenge()">다시 시도</button>
+        </div>`;
+    }
+    return;
+  }
+  if (!res.challenge) {
+    _lsc.del('wordChallenge');
+    el2.innerHTML = `
       <div style="text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px">
         <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:8px;letter-spacing:.5px">🎲 오늘의 단어 챌린지</div>
         <div style="font-size:12px;color:var(--muted)">다음 챌린지를 준비 중이에요.</div>
       </div>`;
     return;
   }
+  _lsc.set('wordChallenge', res, 15);
   window._wcData = res;
   _wcVisibleCount = WC_PAGE_SIZE; // 새로 불러올 때마다 초기 노출 개수로 리셋
   renderWordChallenge();

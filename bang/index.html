@@ -1705,17 +1705,25 @@ function _applyStoryData(res, story_id) {
   if (parent_chain && parent_chain.episodes.length) {
     const basePChoices = _buildForkPath(parent_chain.episodes, parent_chain.submissions, s, episodes);
     _pChoices = { ...basePChoices, ...window._branchChoice };
-    const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
     const _branchEpId = s.branch_episode_id;
-    // DEBUG v146
-    console.log('[DEBUG] branch_from_step:', s.branch_from_step, '| branch_episode_id:', s.branch_episode_id, '| branch_sub_id:', s.branch_sub_id);
-    console.log('[DEBUG] pEps steps:', parent_chain.episodes.map(e=>e.step));
-    console.log('[DEBUG] branchSub in pSubs:', parent_chain.submissions.find(x=>x.sub_id===s.branch_sub_id));
-    console.log('[DEBUG] pChoices[branchEpId]:', _pChoices[_branchEpId], '| pSubs at fork:', parent_chain.submissions.filter(x => x.episode_id === _branchEpId).map(x => ({id:x.sub_id, adopted:x.is_adopted})));
     // B갈래(fork sub)가 활성인지 → 아니면 own tree 숨김
     _isBranchActive = !_branchEpId || !s.branch_sub_id || _pChoices[_branchEpId] === s.branch_sub_id;
-    const _divider = _isBranchActive ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>` : '';
-    inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, _pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_divider}` : '';
+    const _divider = `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>`;
+    if (_branchEpId) {
+      // 분기(동률) 이야기: 갈린 지점(tie 단계) 자체가 이미 이 갈래만의 내용이므로,
+      // 점선은 그 직전(마지막 완전 공통 단계)과 tie 단계 사이에 둠
+      const _beforeEps = parent_chain.episodes.filter(e => e.episode_id !== _branchEpId);
+      const _tieEp = parent_chain.episodes.find(e => e.episode_id === _branchEpId);
+      const beforeTree = getEpisodeTree(_beforeEps, parent_chain.submissions, basePChoices);
+      const tieTree = _tieEp ? getEpisodeTree([_tieEp], parent_chain.submissions, basePChoices) : null;
+      const beforeHtml = beforeTree ? renderEpisodeTreeHtml(beforeTree, _pChoices, undefined, undefined, undefined, true, _branchEpId) : '';
+      const tieHtml = tieTree ? renderEpisodeTreeHtml(tieTree, _pChoices, undefined, undefined, undefined, true, _branchEpId) : '';
+      inheritedHtml = `<div class="prose-inherited">${beforeHtml}${tieHtml ? _divider + tieHtml : ''}</div>`;
+    } else {
+      // 연장 이야기: 이전 전체가 공통이므로 맨 끝에 점선
+      const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
+      inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, _pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_divider}` : '';
+    }
   }
 
   // 분기 트리 HTML (closed 에피소드들의 채택 내용만)
@@ -3943,11 +3951,21 @@ function chooseBranch(episode_id, sub_id) {
     if (parent_chain && parent_chain.episodes.length) {
       const basePChoices = _buildForkPath(parent_chain.episodes, parent_chain.submissions, _s, window._storyData.episodes);
       const pChoices = { ...basePChoices, ...window._branchChoice };
-      const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
       const _branchEpId = _s.branch_episode_id;
       _isBActive = !_branchEpId || !_s.branch_sub_id || pChoices[_branchEpId] === _s.branch_sub_id;
-      const _divider = _isBActive ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>` : '';
-      inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_divider}` : '';
+      const _divider = `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>`;
+      if (_branchEpId) {
+        const _beforeEps = parent_chain.episodes.filter(e => e.episode_id !== _branchEpId);
+        const _tieEp = parent_chain.episodes.find(e => e.episode_id === _branchEpId);
+        const beforeTree = getEpisodeTree(_beforeEps, parent_chain.submissions, basePChoices);
+        const tieTree = _tieEp ? getEpisodeTree([_tieEp], parent_chain.submissions, basePChoices) : null;
+        const beforeHtml = beforeTree ? renderEpisodeTreeHtml(beforeTree, pChoices, undefined, undefined, undefined, true, _branchEpId) : '';
+        const tieHtml = tieTree ? renderEpisodeTreeHtml(tieTree, pChoices, undefined, undefined, undefined, true, _branchEpId) : '';
+        inheritedHtml = `<div class="prose-inherited">${beforeHtml}${tieHtml ? _divider + tieHtml : ''}</div>`;
+      } else {
+        const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
+        inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_divider}` : '';
+      }
     }
     const tree = getEpisodeTree(episodes.filter(e => e.status === 'closed'), submissions);
     const _isFinished = _s.status === 'completed' || _s.status === 'inactive';

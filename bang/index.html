@@ -2170,7 +2170,11 @@ function renderWordChallenge() {
   const mySubHint = isActive && user && my_submission_id && !hasVoted
     ? `<div style="font-size:12px;color:var(--muted);margin-bottom:16px">이미 참여했어요 — 다른 문장에 투표해보세요 (하루 1표)</div>` : '';
 
-  const visibleSubs = submissions.slice(0, _wcVisibleCount);
+  // 마감 후(결과 발표 중)엔 1등은 위 큰 자리에서 이미 보여줬으니 목록에서는
+  // 빼고, 2등부터 득표순 그대로 보여줌(득표순 정렬은 fbGetWordChallenge에서
+  // 이미 vote_count desc로 해뒀으니 그대로 씀)
+  const rankedSubs = isActive ? submissions : submissions.filter(s => s.submission_id !== challenge.winner_submission_id);
+  const visibleSubs = rankedSubs.slice(0, _wcVisibleCount);
   const listHtml = visibleSubs.length ? visibleSubs.map(s => {
     const voted = s.submission_id === my_vote_submission_id;
     const isMine = s.submission_id === my_submission_id;
@@ -2187,10 +2191,12 @@ function renderWordChallenge() {
           <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(s.nickname)}${isMine ? ' (나)' : ''}</div>
         </div>
       </div>`;
-  }).join('') : `<div style="font-size:12px;color:var(--muted);padding:10px 0">아직 참여자가 없어요. 첫 문장을 남겨보세요!</div>`;
+  }).join('') : (isActive
+    ? `<div style="font-size:12px;color:var(--muted);padding:10px 0">아직 참여자가 없어요. 첫 문장을 남겨보세요!</div>`
+    : `<div style="font-size:12px;color:var(--muted);padding:10px 0">다른 참여자는 없었어요.</div>`);
 
-  const showMoreHtml = submissions.length > _wcVisibleCount
-    ? `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="_wcShowMore()">더보기 (${submissions.length - _wcVisibleCount}개 남음)</button>` : '';
+  const showMoreHtml = rankedSubs.length > _wcVisibleCount
+    ? `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="_wcShowMore()">더보기 (${rankedSubs.length - _wcVisibleCount}개 남음)</button>` : '';
 
   el.innerHTML = `
     ${heroHtml}

@@ -1714,7 +1714,7 @@ function _applyStoryData(res, story_id) {
     console.log('[DEBUG] pChoices[branchEpId]:', _pChoices[_branchEpId], '| pSubs at fork:', parent_chain.submissions.filter(x => x.episode_id === _branchEpId).map(x => ({id:x.sub_id, adopted:x.is_adopted})));
     // B갈래(fork sub)가 활성인지 → 아니면 own tree 숨김
     _isBranchActive = !_branchEpId || !s.branch_sub_id || _pChoices[_branchEpId] === s.branch_sub_id;
-    const _divider = _isBranchActive ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--border)"></div></div><div style="height:29px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center">⑂ 여기부터는 이 이야기만의 새로운 내용이에요</div>` : '';
+    const _divider = _isBranchActive ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>` : '';
     inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, _pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_divider}` : '';
   }
 
@@ -2926,7 +2926,7 @@ function auth() {
         <div class="tab ${tab==='recover'?'active':''}" onclick="nav('auth','recover')">비밀번호 찾기</div>
       </div>
       ${tab === 'login' ? `
-        <div class="form-group"><label>아이디</label><input id="a-nick" type="text" placeholder="아이디"></div>
+        <div class="form-group"><label>아이디</label><input id="a-nick" type="text" placeholder="아이디" onkeydown="if(event.key==='Enter')doLogin()"></div>
         <div class="form-group"><label>비밀번호</label><input id="a-pw" type="password" placeholder="비밀번호" onkeydown="if(event.key==='Enter')doLogin()"></div>
         <button class="btn btn-primary" style="width:100%" onclick="doLogin()">로그인</button>
       ` : tab === 'register' ? `
@@ -3713,7 +3713,7 @@ function renderExtBranchInline(extBranch) {
   // 아직 마감된 에피소드가 없으면 인라인에 보여줄 내용이 없음 — 안내 카드는
   // 하단 story-branch-cta가 항상 표시하므로 여기선 중복 없이 빈 값 반환
   if (!bTree) return '';
-  const divider = `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--border)"></div></div><div style="height:29px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center">⑂ 여기부터는 이 이야기만의 새로운 내용이에요</div>`;
+  const divider = `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>`;
   return divider + renderEpisodeTreeHtml(bTree, {}, undefined, undefined, undefined, true);
 }
 
@@ -3911,9 +3911,11 @@ function _updateBranchCta() {
   const forkBranches = branches.filter(b => !b.is_continuation);
   const continuation = branches.find(b => b.is_continuation);
 
+  // 기본(정경) 화면에선 아직 안 끝난 분기까지 "이어가세요"라고 조를 필요 없음 —
+  // 실제로 그 갈래 탭을 눌러 보고 있을 때만(activeBranch) 진행 중 CTA를 보여줌
   const forkRows = activeBranch
     ? [_extForkRow(activeBranch)]
-    : forkBranches.map(b => _extForkRow(b));
+    : forkBranches.filter(b => b.status !== 'active').map(b => _extForkRow(b));
   const contRow = continuation ? _extForkRow(continuation, 'continuation') : null;
 
   el.innerHTML = _extForkBox([...forkRows, contRow]);
@@ -3937,7 +3939,7 @@ function chooseBranch(episode_id, sub_id) {
       const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
       const _branchEpId = _s.branch_episode_id;
       _isBActive = !_branchEpId || !_s.branch_sub_id || pChoices[_branchEpId] === _s.branch_sub_id;
-      const _divider = _isBActive ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--border)"></div></div><div style="height:29px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;text-align:center">⑂ 여기부터는 이 이야기만의 새로운 내용이에요</div>` : '';
+      const _divider = _isBActive ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>` : '';
       inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_divider}` : '';
     }
     const tree = getEpisodeTree(episodes.filter(e => e.status === 'closed'), submissions);

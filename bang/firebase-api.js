@@ -2310,8 +2310,6 @@ async function fbDeleteMySubmission(sub_id, user_id) {
   if (sub.author_id !== user_id) return { ok: false, error: '권한이 없습니다.' };
   if ((Number(sub.vote_count) || 0) > 0) return { ok: false, error: '공감을 받은 글은 삭제할 수 없습니다.' };
   if (sub.is_adopted === true || sub.is_adopted === 'TRUE') return { ok: false, error: '채택된 글은 삭제할 수 없습니다.' };
-  const spend = await _fbSpendPoints(user_id, 10, 'delete_submission');
-  if (!spend.ok) return spend;
   await db.collection('submissions').doc(sub_id).delete();
   const cSnap = await db.collection('comments').where('sub_id', '==', sub_id).get();
   if (!cSnap.empty) {
@@ -2319,6 +2317,8 @@ async function fbDeleteMySubmission(sub_id, user_id) {
     cSnap.docs.forEach(d => batch.delete(d.ref));
     await batch.commit();
   }
+  // 포인트 차감이 실패해도(권한 규칙 등) 삭제 자체는 이미 끝났으니 실패로 취급하지 않음
+  await _fbSpendPoints(user_id, 10, 'delete_submission').catch(() => {});
   return { ok: true };
 }
 

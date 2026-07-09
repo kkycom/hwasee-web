@@ -2132,7 +2132,7 @@ function switchLbTab() {}
 let _wcCountdownTimer = null;
 const WC_PAGE_SIZE = 10;
 let _wcVisibleCount = WC_PAGE_SIZE;
-const WC_HISTORY_BTN_HTML = `<button onclick="openWordChallengeHistory()" style="position:absolute;top:12px;right:12px;background:var(--card);border:none;border-radius:8px;padding:5px 10px;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer">역대 당선작 보기</button>`;
+const WC_HISTORY_BTN_HTML = `<button onclick="openWordChallengeHistory()" style="position:absolute;top:7px;right:12px;background:var(--card);border:none;border-radius:8px;padding:5px 10px;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer">역대 당선작 보기</button>`;
 
 async function loadWordChallenge() {
   const res = await api('getWordChallenge', {});

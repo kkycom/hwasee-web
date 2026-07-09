@@ -2083,7 +2083,9 @@ async function fbGetProfile(user_id) {
       step: ep ? Number(ep.step) : 0,
       created_at: s.created_at,
     };
-  }).sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 50);
+  }).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+  // 50개로 자르던 걸 없앰 — 프론트에서 "더 보기"로 나머지를 보여줌(이미 최대
+  // 300개까지 가져온 데이터라 추가 조회 없이 그대로 다 내려보내면 됨)
 
   return {
     ok: true,
@@ -2130,7 +2132,9 @@ async function fbGetPublicProfile(user_id) {
       step: ep ? Number(ep.step) : 0,
       created_at: s.created_at,
     };
-  }).sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 50);
+  }).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+  // 50개로 자르던 걸 없앰 — 프론트에서 "더 보기"로 나머지를 보여줌(이미 최대
+  // 300개까지 가져온 데이터라 추가 조회 없이 그대로 다 내려보내면 됨)
 
   return {
     ok: true,

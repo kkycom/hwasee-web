@@ -3140,25 +3140,7 @@ async function profile() {
         <span class="wt-arrow" style="font-size:11px;color:var(--muted);transition:transform .2s;transform:rotate(180deg)">▼</span>
       </button>
       <div style="display:block;padding:12px 16px">
-        ${res.writings && res.writings.length ? res.writings.map(a => `
-          <div style="padding:10px 14px;margin-bottom:8px;cursor:pointer;
-            border-left:3px solid ${a.is_adopted ? 'var(--success)' : 'var(--border)'};
-            border-radius:6px;background:var(--bg)"
-            onclick="nav('story','${esc(a.story_id)}')">
-            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">
-              ${a.step+1}단계 · "${esc((a.story_opening||'').slice(0,30))}${(a.story_opening||'').length>30?'…':''}"
-            </div>
-            <div style="font-size:14px;line-height:1.6;${a.is_adopted ? 'font-weight:700' : ''}">"${esc(a.content)}"</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:4px;display:flex;gap:8px;align-items:center">
-              <span>공감 ${a.vote_count}개</span>
-              ${a.is_adopted
-                ? '<span style="color:var(--success);font-weight:700">✓ 채택됨</span>'
-                : a.ep_status === 'open'
-                  ? '<span style="color:var(--accent)">진행 중</span>'
-                  : '<span>탈락</span>'}
-            </div>
-          </div>`).join('')
-        : '<div class="empty" style="padding:20px 0">아직 쓴 글이 없어요.</div>'}
+        ${writingsListHtml(res.writings, 'my')}
       </div>
     </div>
     <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
@@ -3316,27 +3298,54 @@ async function userProfile() {
         ✏ 작성한 글 <span style="font-size:12px;font-weight:400;color:var(--muted)">${res.writings.length}편</span>
       </div>
       <div style="padding:12px 16px">
-        ${res.writings.length ? res.writings.map(a => `
-          <div style="padding:10px 14px;margin-bottom:8px;cursor:pointer;
-            border-left:3px solid ${a.is_adopted ? 'var(--success)' : 'var(--border)'};
-            border-radius:6px;background:var(--bg)"
-            onclick="nav('story','${esc(a.story_id)}')">
-            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">
-              ${a.step+1}단계 · "${esc((a.story_opening||'').slice(0,30))}${(a.story_opening||'').length>30?'…':''}"
-            </div>
-            <div style="font-size:14px;line-height:1.6;${a.is_adopted ? 'font-weight:700' : ''}">"${esc(a.content)}"</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:4px;display:flex;gap:8px;align-items:center">
-              <span>공감 ${a.vote_count}개</span>
-              ${a.is_adopted
-                ? '<span style="color:var(--success);font-weight:700">✓ 채택됨</span>'
-                : a.ep_status === 'open'
-                  ? '<span style="color:var(--accent)">진행 중</span>'
-                  : '<span>탈락</span>'}
-            </div>
-          </div>`).join('')
-        : '<div class="empty" style="padding:20px 0">아직 쓴 글이 없어요.</div>'}
+        ${writingsListHtml(res.writings, 'pub')}
       </div>
     </div>`;
+}
+
+// "내가 쓴 글"/"작성한 글" 목록 — 예전엔 서버가 최근 50개로 잘라서 그 이후 글은
+// 아예 볼 방법이 없었음(2026-07-09 민원으로 확인). 서버는 이미 최대 300개까지
+// 다 내려주도록 고쳤고, 여기서 50개씩 "더 보기"로 나눠 보여줌(추가 조회 없음).
+let _writingsFull = [];
+let _writingsLimit = 50;
+function writingItemHtml(a) {
+  return `
+    <div style="padding:10px 14px;margin-bottom:8px;cursor:pointer;
+      border-left:3px solid ${a.is_adopted ? 'var(--success)' : 'var(--border)'};
+      border-radius:6px;background:var(--bg)"
+      onclick="nav('story','${esc(a.story_id)}')">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">
+        ${a.step+1}단계 · "${esc((a.story_opening||'').slice(0,30))}${(a.story_opening||'').length>30?'…':''}"
+      </div>
+      <div style="font-size:14px;line-height:1.6;${a.is_adopted ? 'font-weight:700' : ''}">"${esc(a.content)}"</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px;display:flex;gap:8px;align-items:center">
+        <span>공감 ${a.vote_count}개</span>
+        ${a.is_adopted
+          ? '<span style="color:var(--success);font-weight:700">✓ 채택됨</span>'
+          : a.ep_status === 'open'
+            ? '<span style="color:var(--accent)">진행 중</span>'
+            : '<span>탈락</span>'}
+      </div>
+    </div>`;
+}
+function writingsListHtml(writings, idPrefix) {
+  if (!writings || !writings.length) return '<div class="empty" style="padding:20px 0">아직 쓴 글이 없어요.</div>';
+  _writingsFull = writings;
+  _writingsLimit = 50;
+  const remaining = writings.length - _writingsLimit;
+  return `<div id="writings-list-${idPrefix}">${writings.slice(0, _writingsLimit).map(writingItemHtml).join('')}</div>`
+    + (remaining > 0 ? `<button id="writings-load-more-${idPrefix}" class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px;color:var(--muted)" onclick="loadMoreWritings('${idPrefix}')">더 보기 (${remaining}개)</button>` : '');
+}
+function loadMoreWritings(idPrefix) {
+  const list = document.getElementById(`writings-list-${idPrefix}`);
+  const btn  = document.getElementById(`writings-load-more-${idPrefix}`);
+  if (!list || !btn) return;
+  const newItems = _writingsFull.slice(_writingsLimit, _writingsLimit + 50);
+  _writingsLimit += 50;
+  list.insertAdjacentHTML('beforeend', newItems.map(writingItemHtml).join(''));
+  const remaining = _writingsFull.length - _writingsLimit;
+  if (remaining > 0) btn.textContent = `더 보기 (${remaining}개)`;
+  else btn.remove();
 }
 
 // ─── 알림 ──────────────────────────────────────────────

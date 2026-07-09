@@ -2734,9 +2734,14 @@ async function fbGetWordChallenge(viewer_id) {
     const userDocs = await Promise.all(authorIds.map(id => db.collection('users').doc(id).get()));
     userDocs.forEach(d => { if (d.exists) nickMap[d.id] = d.data().display_name || d.data().nickname; });
   }
+  // 진행 중일 땐 득표순으로 보여주면 먼저 앞선 문장에 표가 계속 몰리는 쏠림이
+  // 생기므로 작성 순(먼저 쓴 사람이 위). 마감 후 결과 발표 때만 득표순으로 정렬.
+  const isActive = challenge.status === 'active' && Date.now() < new Date(challenge.end_at).getTime();
   const submissions = subsSnap.docs
     .map(d => ({ submission_id: d.id, ...d.data(), nickname: nickMap[d.data().user_id] || '익명' }))
-    .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0) || new Date(a.created_at) - new Date(b.created_at));
+    .sort((a, b) => isActive
+      ? new Date(a.created_at) - new Date(b.created_at)
+      : (b.vote_count || 0) - (a.vote_count || 0) || new Date(a.created_at) - new Date(b.created_at));
 
   let my_submission_id = null, my_vote_submission_id = null;
   if (viewer_id) {

@@ -2132,7 +2132,7 @@ function switchLbTab() {}
 let _wcCountdownTimer = null;
 const WC_PAGE_SIZE = 10;
 let _wcVisibleCount = WC_PAGE_SIZE;
-const WC_HISTORY_BTN_HTML = `<button onclick="openWordChallengeHistory()" style="position:absolute;top:16px;right:16px;display:flex;align-items:center;gap:3px;background:none;border:none;padding:0;font-size:11px;font-weight:600;color:var(--muted);cursor:pointer">🏆 역대 당선작 보기</button>`;
+const WC_HISTORY_BTN_HTML = `<button onclick="openWordChallengeHistory()" style="position:absolute;top:8px;right:10px;display:flex;align-items:center;gap:3px;background:none;border:none;padding:0;font-size:10px;font-weight:600;color:var(--muted);opacity:.65;cursor:pointer">🏆 역대 당선작 보기</button>`;
 
 async function loadWordChallenge() {
   const res = await api('getWordChallenge', {});
@@ -2184,7 +2184,7 @@ function renderWordChallenge() {
         ${(challenge.words || []).map(w => `<span style="display:inline-block;background:var(--accent2);color:#fff;font-weight:700;font-size:17px;padding:8px 18px;border-radius:24px">${esc(w)}</span>`).join('')}
       </div>
       <div style="font-size:12px;color:var(--muted)">이 세 단어를 모두 넣어 ${FB_WORD_CHALLENGE_MAX_CHARS}자 이내 문장을 지어보세요</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">🏆 1등 한 명에게 100p를 지급합니다</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">1등 한 명에게 100p를 지급합니다</div>
       <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-top:10px">⏰ <span id="wc-countdown"></span> 마감</div>
     </div>`
     : (challenge.winner_text ? `

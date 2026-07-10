@@ -1135,21 +1135,27 @@ exports.register = functions
 
     // 추천인 보너스(관리자/AI 봇 제외) — 신규 가입자 본인 몫은 이 함수(Admin SDK)가
     // 이미 처리하므로, 추천인 몫도 같은 트랜잭션 성격으로 여기서 함께 지급(예전엔
-    // 별도 grantReferralBonus 콜러블이 있었으나 이 함수로 완전히 흡수돼 삭제됨)
+    // 별도 grantReferralBonus 콜러블이 있었으나 이 함수로 완전히 흡수돼 삭제됨).
+    // users/user_secrets는 이미 위에서 생성 완료된 뒤라, 이 블록이 실패해도(트랜잭션
+    // 경합 등) 가입 자체가 통째로 에러로 끝나면 안 됨 — 계정은 이미 만들어졌는데
+    // 응답만 실패로 오는 걸 막기 위해 통째로 try/catch (2026-07-07에 클라이언트에서
+    // 한 번 겪었던 것과 같은 종류의 버그를 서버 이관 중 재도입할 뻔함)
     let referral_bonus = 0;
     if (referrerDoc && referrerDoc.id !== FB_ADMIN_ID && referrerDoc.id !== FB_AI_ID) {
-      await _serverAddPoints(db, user_id, 50, 'referral_bonus', '');
-      referral_bonus = 50;
-      const shouldGrant = await db.runTransaction(async tx => {
-        const snap = await tx.get(referrerDoc.ref);
-        if (!snap.exists || snap.data().referral_bonus_claimed) return false;
-        tx.update(referrerDoc.ref, { referral_bonus_claimed: true });
-        return true;
-      });
-      if (shouldGrant) {
-        await _serverAddPoints(db, referrerDoc.id, 50, 'referral_bonus', '');
-        try { await _serverBumpAchievementCounter(db, referrerDoc.id, 'referral_count'); } catch (e) {}
-      }
+      try {
+        await _serverAddPoints(db, user_id, 50, 'referral_bonus', '');
+        referral_bonus = 50;
+        const shouldGrant = await db.runTransaction(async tx => {
+          const snap = await tx.get(referrerDoc.ref);
+          if (!snap.exists || snap.data().referral_bonus_claimed) return false;
+          tx.update(referrerDoc.ref, { referral_bonus_claimed: true });
+          return true;
+        });
+        if (shouldGrant) {
+          await _serverAddPoints(db, referrerDoc.id, 50, 'referral_bonus', '');
+          try { await _serverBumpAchievementCounter(db, referrerDoc.id, 'referral_count'); } catch (e) {}
+        }
+      } catch (e) { console.error('register referral bonus error:', e.message); }
     }
 
     return {
@@ -1182,12 +1188,16 @@ exports.login = functions
     const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
     // 서버가 이미 비밀번호를 검증했으므로, 기존 rebindAuthUid와 동일한 근거로
-    // context.auth.uid를 안전하게 (재)바인딩할 수 있음 — 기기 변경 케이스 포함
-    if (u.auth_uid !== context.auth.uid) {
-      await doc.ref.update({ auth_uid: context.auth.uid, ...(u.display_name ? {} : { display_name: u.nickname }) });
-    } else if (!u.display_name) {
-      await doc.ref.update({ display_name: u.nickname });
-    }
+    // context.auth.uid를 안전하게 (재)바인딩할 수 있음 — 기기 변경 케이스 포함.
+    // 원래 클라이언트도 이 재바인딩을 .catch(()=>{})로 감싸 best-effort로 취급했음
+    // (실패해도 로그인 자체는 계속 진행) — 같은 태도를 유지
+    try {
+      if (u.auth_uid !== context.auth.uid) {
+        await doc.ref.update({ auth_uid: context.auth.uid, ...(u.display_name ? {} : { display_name: u.nickname }) });
+      } else if (!u.display_name) {
+        await doc.ref.update({ display_name: u.nickname });
+      }
+    } catch (e) { console.error('login auth_uid rebind error:', e.message); }
     await db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true });
 
     return {

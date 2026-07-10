@@ -5403,7 +5403,11 @@ window.onload = async () => {
       if (Notification.permission === 'denied') return;
 
       // 알림 허용 바 — FCM 초기화와 분리해서 먼저 표시
-      if (Notification.permission === 'default') {
+      // ×로 닫아도 브라우저 권한 상태(default)는 그대로라 새로고침마다 계속
+      // 다시 떴음 — 닫은 시각을 저장해두고 하루 동안은 다시 안 띄움
+      const _nbDismissedAt = Number(localStorage.getItem('hwasee_notif_bar_dismissed_at')) || 0;
+      const _nbDismissedRecently = Date.now() - _nbDismissedAt < 24 * 3600 * 1000;
+      if (Notification.permission === 'default' && !_nbDismissedRecently) {
         const agreed = await new Promise(resolve => {
           const bar = document.createElement('div');
           bar.style.cssText = 'position:fixed;bottom:72px;left:50%;transform:translateX(-50%);background:#1c2320;border:1px solid #3a4a3d;border-radius:12px;padding:14px 18px;display:flex;gap:12px;align-items:center;z-index:9999;max-width:340px;width:calc(100% - 32px);box-shadow:0 4px 24px rgba(0,0,0,.5)';
@@ -5412,7 +5416,7 @@ window.onload = async () => {
             <button id="_nb_no"  style="background:none;color:#4a5a4d;border:none;font-size:20px;cursor:pointer;line-height:1">×</button>`;
           document.body.appendChild(bar);
           bar.querySelector('#_nb_yes').onclick = () => { bar.remove(); resolve(true); };
-          bar.querySelector('#_nb_no').onclick  = () => { bar.remove(); resolve(false); };
+          bar.querySelector('#_nb_no').onclick  = () => { localStorage.setItem('hwasee_notif_bar_dismissed_at', String(Date.now())); bar.remove(); resolve(false); };
         });
         if (!agreed) return;
         const perm = await Notification.requestPermission();

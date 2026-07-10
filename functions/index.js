@@ -1306,32 +1306,44 @@ async function _serverStartWordChallenge(db) {
   });
 }
 
+// 동률이면 100p를 인원수만큼 나눠 지급(예: 2명 동률 → 각 50p). 투표가 저조해서
+// 동률이 자주 나올 수 있어 도입 — 예전엔 동률이어도 먼저 제출한 사람 1명이
+// 전액을 가져갔음. 구버전(단일 winner_* 필드)으로 이미 마감된 과거 기록은
+// 그대로 두고, 이번부터 닫히는 챌린지는 winners 배열로 저장.
 async function _serverCloseWordChallenge(db) {
   const activeSnap = await db.collection('word_challenges').where('status', '==', 'active').limit(5).get();
   for (const doc of activeSnap.docs) {
     const challenge_id = doc.id;
     const subsSnap = await db.collection('word_challenge_submissions')
       .where('challenge_id', '==', challenge_id).get();
-    let winner = null;
-    subsSnap.docs.forEach(d => {
-      const s = { submission_id: d.id, ...d.data() };
-      if (!winner) { winner = s; return; }
-      const sv = s.vote_count || 0, wv = winner.vote_count || 0;
-      if (sv > wv || (sv === wv && new Date(s.created_at) < new Date(winner.created_at))) winner = s;
-    });
-    const patch = { status: 'closed', closed_at: new Date().toISOString(), submission_count: subsSnap.size };
-    if (winner) {
-      patch.winner_user_id = winner.user_id;
-      patch.winner_submission_id = winner.submission_id;
-      patch.winner_text = winner.text;
-      patch.winner_vote_count = winner.vote_count || 0;
-      const uSnap = await db.collection('users').doc(winner.user_id).get();
-      patch.winner_nickname = uSnap.exists ? (uSnap.data().display_name || uSnap.data().nickname) : '익명';
+
+    const allSubs = subsSnap.docs.map(d => ({ submission_id: d.id, ...d.data() }));
+    const maxVotes = allSubs.length ? Math.max(...allSubs.map(s => s.vote_count || 0)) : 0;
+    const tiedWinners = allSubs
+      .filter(s => (s.vote_count || 0) === maxVotes)
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    const share = tiedWinners.length ? Math.round(100 / tiedWinners.length) : 0;
+
+    const patch = { status: 'closed', closed_at: new Date().toISOString(), submission_count: subsSnap.size, winners: [] };
+    if (tiedWinners.length) {
+      const nickCache = {};
+      for (const w of tiedWinners) {
+        if (!nickCache[w.user_id]) {
+          const uSnap = await db.collection('users').doc(w.user_id).get();
+          nickCache[w.user_id] = uSnap.exists ? (uSnap.data().display_name || uSnap.data().nickname) : '익명';
+        }
+      }
+      patch.winners = tiedWinners.map(w => ({
+        user_id: w.user_id, submission_id: w.submission_id, text: w.text,
+        nickname: nickCache[w.user_id], vote_count: w.vote_count || 0, points: share,
+      }));
+      patch.winner_vote_count = maxVotes;
     }
     await doc.ref.update(patch);
-    if (winner) {
-      await _serverAddPoints(db, winner.user_id, 100, 'word_challenge_win', winner.submission_id);
-      try { await _serverBumpAchievementCounter(db, winner.user_id, 'word_challenge_wins'); } catch (e) {}
+
+    for (const w of tiedWinners) {
+      await _serverAddPoints(db, w.user_id, share, 'word_challenge_win', w.submission_id);
+      try { await _serverBumpAchievementCounter(db, w.user_id, 'word_challenge_wins'); } catch (e) {}
     }
   }
 }

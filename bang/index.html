@@ -2181,6 +2181,21 @@ function _wcShowMore() {
   renderWordChallenge();
 }
 
+// 새로 마감된 챌린지는 challenge.winners 배열(동률 분배 지원, 2026-07-09~)을
+// 쓰고, 그 이전에 이미 닫힌 과거 기록은 단일 winner_* 필드만 갖고 있으므로
+// 하나짜리 배열로 감싸서 렌더링 쪽에서 형식 구분 없이 쓸 수 있게 함.
+function _wcWinnersOf(challenge) {
+  if (Array.isArray(challenge.winners)) return challenge.winners;
+  if (challenge.winner_text) {
+    return [{
+      user_id: challenge.winner_user_id, submission_id: challenge.winner_submission_id,
+      text: challenge.winner_text, nickname: challenge.winner_nickname,
+      vote_count: challenge.winner_vote_count, points: 100,
+    }];
+  }
+  return [];
+}
+
 function boldChallengeWords(text, words) {
   let escaped = esc(text);
   (words || []).forEach(w => {
@@ -2201,6 +2216,8 @@ function renderWordChallenge() {
   const { challenge, submissions, my_submission_id, my_vote_submission_id } = window._wcData;
   const isActive = challenge.status === 'active' && Date.now() < new Date(challenge.end_at).getTime();
 
+  const winners = _wcWinnersOf(challenge);
+
   // 단어 3개(진행 중)와 우승 문장(마감 후)이 같은 "큰 공간" 한 자리를 그대로
   // 교체해가며 씀 — 새 배너를 따로 만들지 않고 이 자리 안에서만 상태가 전환됨
   const heroHtml = isActive ? `
@@ -2211,15 +2228,16 @@ function renderWordChallenge() {
         ${(challenge.words || []).map(w => `<span style="display:inline-block;background:var(--accent2);color:#fff;font-weight:700;font-size:17px;padding:8px 18px;border-radius:24px">${esc(w)}</span>`).join('')}
       </div>
       <div style="font-size:12px;color:var(--muted)">이 세 단어를 모두 넣어 ${FB_WORD_CHALLENGE_MAX_CHARS}자 이내 문장을 지어보세요</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">1등 한 명에게 100p를 지급합니다</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">1등에게 100p를 지급합니다 (동률이면 인원수만큼 나눠 가져요)</div>
       <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-top:10px">⏰ <span id="wc-countdown"></span> 마감</div>
     </div>`
-    : (challenge.winner_text ? `
+    : (winners.length ? `
     <div style="position:relative;text-align:center;background:var(--bg);border-radius:14px;padding:28px 16px;margin-bottom:20px">
       ${WC_HISTORY_BTN_HTML}
-      <div style="font-size:12px;font-weight:700;color:var(--accent2);letter-spacing:.5px;margin-bottom:16px">🏆 오늘의 장원</div>
-      <div style="font-size:18px;line-height:1.7;font-family:var(--serif);font-weight:600;margin-bottom:10px">${boldChallengeWords(challenge.winner_text, challenge.words)}</div>
-      <div style="font-size:13px;color:var(--muted)">👑 ${esc(challenge.winner_nickname)} · +100p</div>
+      <div style="font-size:12px;font-weight:700;color:var(--accent2);letter-spacing:.5px;margin-bottom:16px">🏆 오늘의 장원${winners.length > 1 ? ` · ${winners.length}명 동률` : ''}</div>
+      ${winners.map((w, i) => `
+        <div style="font-size:18px;line-height:1.7;font-family:var(--serif);font-weight:600;${i > 0 ? 'margin-top:14px' : ''}">${boldChallengeWords(w.text, challenge.words)}</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:6px">👑 ${esc(w.nickname)} · +${w.points}p</div>`).join('')}
     </div>` : `
     <div style="position:relative;text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;margin-bottom:20px">
       ${WC_HISTORY_BTN_HTML}
@@ -2248,10 +2266,11 @@ function renderWordChallenge() {
   const mySubHint = isActive && user && my_submission_id && !hasVoted
     ? `<div style="text-align:center;font-size:12px;color:var(--muted);margin-bottom:16px">이미 참여했어요 — 다른 문장에 투표해보세요 (마감 전까지 자유롭게 바꿀 수 있어요)</div>` : '';
 
-  // 마감 후(결과 발표 중)엔 1등은 위 큰 자리에서 이미 보여줬으니 목록에서는
-  // 빼고, 2등부터 득표순 그대로 보여줌(득표순 정렬은 fbGetWordChallenge에서
+  // 마감 후(결과 발표 중)엔 1등(동률 포함 전원)은 위 큰 자리에서 이미 보여줬으니
+  // 목록에서는 빼고, 그 다음부터 득표순 그대로 보여줌(정렬은 fbGetWordChallenge에서
   // 이미 vote_count desc로 해뒀으니 그대로 씀)
-  const rankedSubs = isActive ? submissions : submissions.filter(s => s.submission_id !== challenge.winner_submission_id);
+  const winnerSubIds = new Set(winners.map(w => w.submission_id));
+  const rankedSubs = isActive ? submissions : submissions.filter(s => !winnerSubIds.has(s.submission_id));
   const visibleSubs = rankedSubs.slice(0, _wcVisibleCount);
   const listHtml = visibleSubs.length ? visibleSubs.map(s => {
     const voted = s.submission_id === my_vote_submission_id;
@@ -2383,17 +2402,21 @@ function _renderWordChallengeHistory(history) {
   const body = document.getElementById('wc-history-body');
   if (!body) return;
   if (!history.length) { body.innerHTML = `<div class="empty">아직 지난 기록이 없어요.</div>`; return; }
-  body.innerHTML = history.map(c => `
+  body.innerHTML = history.map(c => {
+    const winners = _wcWinnersOf(c);
+    return `
     <div style="text-align:center;background:var(--bg);border-radius:12px;padding:16px 14px;margin-bottom:10px">
-      <div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:10px">${esc(c.date)}</div>
+      <div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:10px">${esc(c.date)}${winners.length > 1 ? ` · ${winners.length}명 동률` : ''}</div>
       <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:6px;margin-bottom:12px">
         ${(c.words || []).map(w => `<span style="display:inline-block;background:var(--card);border:1px solid var(--border);font-size:11px;font-weight:600;padding:3px 10px;border-radius:12px">${esc(w)}</span>`).join('')}
       </div>
-      ${c.winner_text
-        ? `<div style="font-size:14px;line-height:1.6;font-family:var(--serif)">${boldChallengeWords(c.winner_text, c.words)}</div>
-           <div style="font-size:12px;color:var(--accent2);font-weight:700;margin-top:6px">👑 ${esc(c.winner_nickname)}</div>`
+      ${winners.length
+        ? winners.map((w, i) => `
+            <div style="font-size:14px;line-height:1.6;font-family:var(--serif);${i > 0 ? 'margin-top:10px' : ''}">${boldChallengeWords(w.text, c.words)}</div>
+            <div style="font-size:12px;color:var(--accent2);font-weight:700;margin-top:6px">👑 ${esc(w.nickname)} · +${w.points}p</div>`).join('')
         : `<div style="font-size:12px;color:var(--muted)">참여자가 없었어요</div>`}
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function openRankingModal() {

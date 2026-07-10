@@ -2349,11 +2349,41 @@ async function openWordChallengeHistory() {
       <div id="wc-history-body"><div class="loading"></div></div>
     </div>`;
   document.body.appendChild(modal);
+  // 지난 기록은 한 번 닫힌 챌린지가 늘어나기만 하는 데이터라 오래 캐싱해도 안전 —
+  // 캐시가 있으면 즉시 표시하고, 없거나 실패했을 때만 로딩/에러 화면을 씀
+  const cachedHistory = _lsc.get('wcHistory');
+  if (cachedHistory) _renderWordChallengeHistory(cachedHistory);
   const res = await api('getWordChallengeHistory', {});
   const body = document.getElementById('wc-history-body');
   if (!body) return;
-  if (!res.ok || !res.history.length) { body.innerHTML = `<div class="empty">아직 지난 기록이 없어요.</div>`; return; }
-  body.innerHTML = res.history.map(c => `
+  if (!res.ok) {
+    // 네트워크/타임아웃 실패를 "기록 없음"으로 오인 표시하지 않음 — 캐시가 있으면
+    // 캐시된 화면 유지, 없을 때만 재시도 버튼이 있는 에러 화면 표시
+    if (!cachedHistory) {
+      body.innerHTML = `<div class="empty">불러오지 못했어요.<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="_retryWordChallengeHistory()">다시 시도</button></div>`;
+    }
+    return;
+  }
+  _lsc.set('wcHistory', res.history, 600);
+  _renderWordChallengeHistory(res.history);
+}
+
+async function _retryWordChallengeHistory() {
+  const body = document.getElementById('wc-history-body');
+  if (!body) return;
+  body.innerHTML = `<div class="loading"></div>`;
+  const res = await api('getWordChallengeHistory', {});
+  if (!document.getElementById('wc-history-body')) return;
+  if (!res.ok) { body.innerHTML = `<div class="empty">불러오지 못했어요.<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="_retryWordChallengeHistory()">다시 시도</button></div>`; return; }
+  _lsc.set('wcHistory', res.history, 600);
+  _renderWordChallengeHistory(res.history);
+}
+
+function _renderWordChallengeHistory(history) {
+  const body = document.getElementById('wc-history-body');
+  if (!body) return;
+  if (!history.length) { body.innerHTML = `<div class="empty">아직 지난 기록이 없어요.</div>`; return; }
+  body.innerHTML = history.map(c => `
     <div style="text-align:center;background:var(--bg);border-radius:12px;padding:16px 14px;margin-bottom:10px">
       <div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:10px">${esc(c.date)}</div>
       <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:6px;margin-bottom:12px">

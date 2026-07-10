@@ -1258,9 +1258,15 @@ exports.changePassword = functions
     const curHash = crypto.createHash('sha256').update(current_password).digest('hex');
     if (sec.pw_hash !== curHash) return { ok: false, error: '현재 비밀번호가 올바르지 않습니다.' };
 
+    // 비밀번호 변경의 목적 자체가 "혹시 모를 침해(토큰 유출 등) 대응"인데, pw_hash만
+    // 바꾸고 기존 token을 그대로 두면 이미 유출된 토큰을 쥔 공격자는 계속 그 세션으로
+    // 들어올 수 있어 방어 목적을 달성 못 함 — login과 동일하게 새 token을 발급해서
+    // 기존 토큰을 함께 무효화하고, 이 기기가 끊기지 않도록 새 token을 응답에 포함
     const newHash = crypto.createHash('sha256').update(new_password).digest('hex');
-    await secRef.update({ pw_hash: newHash });
-    return { ok: true };
+    const newToken = _genSecretId();
+    const newTokenExp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    await secRef.update({ pw_hash: newHash, token: newToken, token_exp: newTokenExp });
+    return { ok: true, token: newToken };
   });
 
 exports.resetPassword = functions
@@ -1279,8 +1285,12 @@ exports.resetPassword = functions
     const u = doc.data();
     if (!u.name || u.name.trim() !== name) return { ok: false, error: '닉네임 또는 이름이 일치하지 않습니다.' };
 
+    // changePassword와 동일한 이유로 token도 함께 무효화 — 이 플로우는 로그인 상태가
+    // 아니라 새 token을 이 기기에 돌려줄 필요는 없음(다음 로그인에서 새로 발급됨)
     const newHash = crypto.createHash('sha256').update(new_password).digest('hex');
-    await db.collection('user_secrets').doc(doc.id).set({ pw_hash: newHash }, { merge: true });
+    await db.collection('user_secrets').doc(doc.id).set({
+      pw_hash: newHash, token: _genSecretId(), token_exp: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    }, { merge: true });
     return { ok: true };
   });
 
@@ -1682,5 +1692,31 @@ exports.adminDebugWordChallenges = functions
     }));
     return { ok: true, now: new Date().toISOString(), challenges };
   });
+
+// ── 전 유저 세션 토큰 강제 무효화 (Callable, 관리자 전용 — 사고 대응용 일회성 도구) ──
+// user_secrets가 한동안 인증 없이 완전 공개돼 있었던 사고(2026-07-10 firestore.rules
+// 차단 이전) 대응. 그 기간에 이미 유출됐을 수 있는 token은 30일 만료 전까진 계속
+// 유효하므로, firestore.rules로 읽기를 막아도 "이미 퍼진 옛날 토큰" 자체는 죽지
+// 않음 — 전 유저의 token을 한 번에 새 값으로 교체해 강제 재로그인시켜야 완전히 무력화됨.
+// user_secrets 규칙 차단(`allow read, write: if false` 배포) 이후에 실행할 것 —
+// 차단 전에 실행하면 새로 발급된 토큰도 그대로 다시 읽혀서 의미가 없음.
+exports.adminInvalidateAllSessions = functions
+  .region('asia-northeast3')
+  .runWith({ timeoutSeconds: 300 })
+  .https.onCall(async (data) => {
+    if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    const db = admin.firestore();
+    const snap = await db.collection('user_secrets').get();
+    const docs = snap.docs;
+    for (let i = 0; i < docs.length; i += 400) {
+      const batch = db.batch();
+      docs.slice(i, i + 400).forEach(d => {
+        batch.update(d.ref, { token: _genSecretId(), token_exp: new Date().toISOString() });
+      });
+      await batch.commit();
+    }
+    return { ok: true, invalidated: docs.length };
+  });
+
 // 재배포 트리거(진단 함수 삭제분 반영용)
 

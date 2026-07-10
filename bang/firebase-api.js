@@ -332,9 +332,17 @@ async function _fbCheckDailyBonus(user_id, uRef, prefetchedUser) {
 async function fbChangePassword(user_id, current_password, new_password) {
   const token = localStorage.getItem('hwasee_token');
   if (!user_id || !token) return { ok: false, error: '로그인이 필요합니다.' };
+  let res;
   try {
-    return (await functionsRegion.httpsCallable('changePassword')({ user_id, token, current_password, new_password })).data;
+    res = (await functionsRegion.httpsCallable('changePassword')({ user_id, token, current_password, new_password })).data;
   } catch (e) { return { ok: false, error: e.message || '오류가 발생했습니다.' }; }
+  // 서버가 기존 세션 토큰을 무효화하고 새로 발급함(유출된 토큰 대응 목적) —
+  // 이 기기가 끊기지 않도록 localStorage와 세션 검증 캐시를 새 토큰으로 갱신
+  if (res.ok && res.token) {
+    localStorage.setItem('hwasee_token', res.token);
+    _cacheVerifiedSession(user_id, res.token, {});
+  }
+  return res;
 }
 
 async function fbDeleteAccount(user_id, reason, detail) {

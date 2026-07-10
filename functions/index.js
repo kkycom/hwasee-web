@@ -196,7 +196,11 @@ exports.onEpisodeClosed = functions
     const storySnap = await db.collection('stories').doc(story_id).get();
     if (!storySnap.exists) return null;
     const st = storySnap.data();
-    const nextStep  = (Number(st.current_step) || 0) + 1;
+    // 이 트리거와 _serverCloseEpisode의 story.current_step 갱신 사이에 순서
+    // 보장이 없어서, st.current_step을 직접 읽으면 레이스에 따라 +2가 될 수
+    // 있음(그 +2 표시 버그가 실제로 있었음) — 방금 닫힌 이 에피소드 자체의
+    // step은 불변이고 정의상 항상 이 값과 같으므로, 그걸 우선 사용해 레이스를 제거
+    const nextStep  = Number(after.step) || ((Number(st.current_step) || 0) + 1);
     const anyClose  = winners.some(w => w.is_closing === true);
     const snippet   = (st.opening || '').slice(0, 25) + ((st.opening || '').length > 25 ? '…' : '');
 

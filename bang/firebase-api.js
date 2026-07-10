@@ -75,11 +75,6 @@ function _calcDisplayStepBackend(storyData, epStep) {
   return Number(epStep) + 1;
 }
 
-async function fbHashPw(pw) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
-}
-
 const FB_AVATAR_SHOP = [
   { id:'🍂', label:'낙엽',    price: 1000 },
   { id:'🌾', label:'벼이삭',  price: 1000 },
@@ -179,26 +174,44 @@ function fbCalcBadge(pts) {
 }
 
 // ─── 세션 ────────────────────────────────────────────────
+// user_secrets(token/pw_hash)가 완전 차단된 이후로는 클라이언트가 그 컬렉션을
+// 직접 읽을 수 없음 — 세션 검증은 서버(verifySession Cloud Function)를 거쳐야 함.
+// 매 api() 호출마다 서버 왕복하면 느려지므로, (uid, token) 쌍이 바뀌지 않는 한
+// 검증 결과를 세션당 1회만 확인하고 메모이즈해서 재사용함(로그인/가입 직후에는
+// 서버가 이미 비밀번호를 검증한 응답이므로 그 결과를 바로 캐시에 채워 재검증 생략).
 
+let _sessionVerifyPromise = null;
+let _sessionVerifiedFor   = null; // { user_id, token } — 마지막으로 검증 완료된 쌍
+
+function _resetSessionVerify() { _sessionVerifyPromise = null; _sessionVerifiedFor = null; }
+
+function _cacheVerifiedSession(user_id, token, profile) {
+  _sessionVerifiedFor = { user_id, token };
+  _sessionVerifyPromise = Promise.resolve({ ok: true, user_id, ...profile });
+}
+
+// 반환: undefined(네트워크 오류, 세션 유지) | {ok:false}(확실히 무효) | {ok:true,...}(유효)
+async function _ensureSessionVerified() {
+  const token = localStorage.getItem('hwasee_token');
+  const uid   = localStorage.getItem('hwasee_uid');
+  if (!token || !uid) { _resetSessionVerify(); return { ok: false }; }
+  if (_sessionVerifiedFor && _sessionVerifiedFor.user_id === uid && _sessionVerifiedFor.token === token && _sessionVerifyPromise) {
+    return _sessionVerifyPromise;
+  }
+  _sessionVerifiedFor = { user_id: uid, token };
+  _sessionVerifyPromise = functionsRegion.httpsCallable('verifySession')({ user_id: uid, token })
+    .then(r => r.data)
+    .catch(() => undefined);
+  return _sessionVerifyPromise;
+}
+
+// index.html 부팅 흐름에서 호출 — 기존 시그니처/반환 계약(null=확실한 무효,
+// undefined=네트워크 오류, 객체=유효) 그대로 유지해서 호출부 변경 불필요
 async function fbGetSession(token) {
-  if (!token) return null;
-  const uid = localStorage.getItem('hwasee_uid');
-  if (!uid) return null;
-  try {
-    const [snap, secSnap] = await Promise.all([
-      db.collection('users').doc(uid).get(),
-      db.collection('user_secrets').doc(uid).get(),
-    ]);
-    if (!snap.exists || !secSnap.exists) return null;
-    const u = snap.data();
-    const sec = secSnap.data();
-    if (sec.token !== token) return null;
-    if (new Date(sec.token_exp) < new Date()) {
-      const new_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-      await secSnap.ref.update({ token_exp: new_exp });
-    }
-    return { user_id: uid, nickname: u.nickname, display_name: u.display_name || u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed' };
-  } catch(e) { return undefined; } // undefined = 네트워크 오류 (null = 확실한 토큰 무효)
+  const result = await _ensureSessionVerified();
+  if (result === undefined) return undefined;
+  if (!result.ok) return null;
+  return { user_id: result.user_id, nickname: result.nickname, display_name: result.display_name, total_points: result.total_points, badge: result.badge };
 }
 
 // ─── 포인트 ──────────────────────────────────────────────
@@ -243,130 +256,33 @@ async function _fbSpendPoints(user_id, pts, reason) {
 
 // ─── 인증 ────────────────────────────────────────────────
 
+// register/login은 user_secrets(pw_hash/token)를 직접 만지므로 서버(Cloud Function,
+// Admin SDK)에서 처리 — user_secrets가 완전 차단된 이후에도 동작해야 함.
+// 콜러블은 context.auth를 요구하므로 익명 인증이 먼저 끝나 있어야 함(fbGetAuthUid).
 async function fbRegister(nickname, password, name, display_name, referral, referrer_nickname) {
-  if (!nickname || !password) return { ok: false, error: '아이디와 비밀번호를 입력해주세요.' };
-  if (!/^[가-힣a-zA-Z0-9]{2,12}$/.test(nickname)) return { ok: false, error: '아이디는 2~12자, 한글·영문·숫자만 사용할 수 있어요.' };
-  if (password.length < 8) return { ok: false, error: '비밀번호는 8자 이상입니다.' };
-
-  const dn = (display_name || '').trim() || nickname;
-  if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(dn)) return { ok: false, error: '닉네임은 2~12자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
-
-  const refNick = (referrer_nickname || '').trim();
-
-  // 신규 가입자는 가입 이전 패치 내역을 볼 필요 없으니, 현재 시점 최신 패치를
-  // "이미 본 것"으로 시작해서 공지 팝업이 뜨지 않게 함 (가입 이후 새로 올라오는 것만 노출)
-  // — dup 체크/추천인 조회와 서로 무관해서 같이 병렬 처리
-  const [dupId, dupDn, latestPatchSnap, referrerSnap] = await Promise.all([
-    db.collection('users').where('nickname', '==', nickname).limit(1).get(),
-    db.collection('users').where('display_name', '==', dn).limit(1).get(),
-    db.collection('patch_notes').orderBy('created_at', 'desc').limit(1).get(),
-    refNick ? db.collection('users').where('display_name', '==', refNick).limit(1).get() : Promise.resolve(null),
-  ]);
-  if (!dupId.empty) return { ok: false, error: '이미 사용 중인 아이디입니다.' };
-  if (!dupDn.empty) return { ok: false, error: '이미 사용 중인 닉네임입니다.' };
-
-  const user_id   = fbGenId();
-  const token     = fbGenId();
-  const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-  const initialSeenPatchId = latestPatchSnap.empty ? '' : latestPatchSnap.docs[0].data().patch_id;
-  const referrerDoc = (referrerSnap && !referrerSnap.empty) ? referrerSnap.docs[0] : null;
-
-  // 익명 인증 uid 조회/비밀번호 해시는 서로 무관 — 병렬 계산 후, users/user_secrets
-  // 두 문서 쓰기도 서로 다른 문서라 병렬로 커밋
-  const [authUid, pwHash] = await Promise.all([fbGetAuthUid(), fbHashPw(password)]);
-  await Promise.all([
-    db.collection('users').doc(user_id).set({
-      user_id, nickname, display_name: dn,
-      total_points: 0, adoption_count: 0, badge: 'seed', name: (name || '').trim(),
-      referral: (referral || '').trim(), created_at: fbNow(),
-      last_seen_patch_id: initialSeenPatchId,
-      auth_uid: authUid
-    }),
-    db.collection('user_secrets').doc(user_id).set({
-      pw_hash: pwHash, token, token_exp
-    }),
-  ]);
-
-  // 추천인 닉네임(display_name)이 실존 유저와 일치하면 서로 50P씩 지급 (관리자/AI 봇 계정 제외).
-  // 신규 가입자 본인 몫은 방금 auth_uid를 자기 걸로 막 세팅한 자기 계정이라 클라이언트
-  // 쓰기로 안전하지만, 추천인은 완전히 다른(이미 auth_uid가 바인딩돼 있을 가능성이 높은)
-  // 계정이라 클라이언트에서 직접 쓰면 소유권 규칙에 막힘 — MVP 포인트와 같은 이유로
-  // 서버(Cloud Function, Admin SDK)를 거치도록 분리함(2026-07-07 발견/수정: 예전엔 여기서
-  // Promise.all 안에 묶어서 직접 썼는데, 추천인 쪽이 실패하면 try/catch가 없어서
-  // 회원가입 자체가 통째로 에러로 끝났었음 — 계정은 이미 생성됐는데 응답만 실패로 오는
-  // 상태였음)
-  let referral_bonus = 0;
-  if (referrerDoc && referrerDoc.id !== FB_ADMIN_ID && referrerDoc.id !== FB_AI_ID) {
-    await _fbAddPoints(user_id, 50, 'referral_bonus', '');
-    functionsRegion.httpsCallable('grantReferralBonus')({ user_id, referrer_id: referrerDoc.id }).catch(() => {});
-    referral_bonus = 50;
+  await fbGetAuthUid();
+  let res;
+  try {
+    res = (await functionsRegion.httpsCallable('register')({ nickname, password, name, display_name, referral, referrer_nickname })).data;
+  } catch (e) { return { ok: false, error: e.message || '가입 중 오류가 발생했습니다.' }; }
+  if (res.ok) {
+    localStorage.setItem('hwasee_uid', res.user_id);
+    _cacheVerifiedSession(res.user_id, res.token, res);
   }
-
-  localStorage.setItem('hwasee_uid', user_id);
-  return {
-    ok: true, token, user_id, nickname, display_name: dn,
-    total_points: referral_bonus, badge: 'seed', is_admin: user_id === FB_ADMIN_ID,
-    referral_bonus, referral_not_found: !!refNick && !referrerDoc,
-  };
+  return res;
 }
 
 async function fbLogin(nickname, password) {
-  if (!nickname || !password) return { ok: false, error: '닉네임과 비밀번호를 입력해주세요.' };
-
-  const snap = await db.collection('users').where('nickname', '==', nickname).limit(1).get();
-  if (snap.empty) return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
-
-  const doc = snap.docs[0];
-  const u   = doc.data();
-
-  // user_secrets 조회와 비밀번호 해시 계산은 서로 독립적 — 병렬 처리
-  const [secSnap, pwHash] = await Promise.all([
-    db.collection('user_secrets').doc(doc.id).get(),
-    fbHashPw(password),
-  ]);
-  const sec = secSnap.exists ? secSnap.data() : {};
-  if (sec.pw_hash !== pwHash) return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
-
-  const token     = fbGenId();
-  const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
-  // fbGetAuthUid()를 먼저 끝내야 함 — _fbCheckDailyBonus 내부에서 users/point_ledger에
-  // 쓰기를 하는데, 이 두 컬렉션은 request.auth != null을 요구하는 소유권 규칙이
-  // 걸려있어서, 익명 인증이 아직 안 끝난 상태로 그 쓰기를 같이 병렬로 보내면
-  // 규칙에 막혀 실패할 수 있음(예전엔 전부 순차 실행이라 우연히 안전했음).
-  // users/point_ledger를 건드리는 작업은 반드시 authUid 확정 이후에 시작할 것.
-  const authUid = await fbGetAuthUid();
-
-  // 이미 다른 기기(다른 익명 인증 uid)로 바인딩된 계정이면, 아래 _fbCheckDailyBonus의
-  // users 문서 쓰기가 소유권 규칙("auth_uid가 비었거나 요청자와 일치해야 함")에
-  // 막혀 실패함 — 실제로 발생 확인됨(출석 보너스가 밀린 계정을 새 기기에서 로그인
-  // 하면 "Missing or insufficient permissions"로 로그인 자체가 깨짐). 그래서
-  // 재바인딩을 여기서 반드시 먼저 끝내야 함(이전엔 dailyBonus와 순서 없이 병렬/이후
-  // 실행이라 이 레이스 컨디션이 남아있었음). 실패해도(네트워크 등) 로그인 자체는
-  // 계속 진행 — _fbCheckDailyBonus 쪽에서 재차 안전망으로 감싸둠.
-  if (authUid && u.auth_uid && u.auth_uid !== authUid) {
-    await functionsRegion.httpsCallable('rebindAuthUid')({ nickname, password }).catch(() => {});
+  await fbGetAuthUid();
+  let res;
+  try {
+    res = (await functionsRegion.httpsCallable('login')({ nickname, password })).data;
+  } catch (e) { return { ok: false, error: e.message || '로그인 중 오류가 발생했습니다.' }; }
+  if (res.ok) {
+    localStorage.setItem('hwasee_uid', res.user_id);
+    _cacheVerifiedSession(res.user_id, res.token, res);
   }
-
-  // 출석/연속출석/복귀 보너스 계산(_fbCheckDailyBonus)은 최대 3~4개의 순차
-  // 트랜잭션이 필요한 부가 보상이라, 로그인 응답을 기다리게 하지 않고 여기서
-  // 완전히 뺌 — 클라이언트가 로그인 성공 직후 checkDailyBonus를 별도 호출해서
-  // 받아옴(기존 window.onload 흐름과 동일한 패턴). 토큰 발급만 기다리면 됨.
-  await db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true });
-  // 신규 바인딩(auth_uid 최초 기록)은 로그인 응답과 무관한 best-effort라 기다리지 않음
-  if (authUid && !u.auth_uid) {
-    doc.ref.update({ auth_uid: authUid }).catch(() => {});
-  }
-  localStorage.setItem('hwasee_uid', u.user_id);
-  if (!u.display_name) doc.ref.update({ display_name: u.nickname }).catch(() => {});
-
-  return {
-    ok: true, token, user_id: u.user_id, nickname: u.nickname,
-    display_name: u.display_name || u.nickname,
-    total_points: u.total_points || 0, badge: u.badge || 'seed',
-    is_admin: u.user_id === FB_ADMIN_ID,
-    adoption_count: u.adoption_count || 0
-  };
+  return res;
 }
 
 // 5/10/20/30일 연속 출석 마일스톤 보너스 (총점, 매일 지급되는 10p와 별도)
@@ -414,39 +330,22 @@ async function _fbCheckDailyBonus(user_id, uRef, prefetchedUser) {
 }
 
 async function fbChangePassword(user_id, current_password, new_password) {
-  if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
-  const secRef  = db.collection('user_secrets').doc(user_id);
-  const secSnap = await secRef.get();
-  if (!secSnap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
-  const sec = secSnap.data();
-  if (sec.pw_hash !== await fbHashPw(current_password)) return { ok: false, error: '현재 비밀번호가 올바르지 않습니다.' };
-  await secRef.update({ pw_hash: await fbHashPw(new_password) });
-  return { ok: true };
+  const token = localStorage.getItem('hwasee_token');
+  if (!user_id || !token) return { ok: false, error: '로그인이 필요합니다.' };
+  try {
+    return (await functionsRegion.httpsCallable('changePassword')({ user_id, token, current_password, new_password })).data;
+  } catch (e) { return { ok: false, error: e.message || '오류가 발생했습니다.' }; }
 }
 
 async function fbDeleteAccount(user_id, reason, detail) {
-  if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
-  if (user_id === FB_ADMIN_ID) return { ok: false, error: '관리자 계정은 탈퇴할 수 없습니다.' };
-  const batch = db.batch();
-  batch.delete(db.collection('users').doc(user_id));
-  batch.delete(db.collection('user_secrets').doc(user_id));
-  const [bmSnap, nSnap] = await Promise.all([
-    db.collection('bookmarks').where('user_id', '==', user_id).get(),
-    db.collection('notifications').where('user_id', '==', user_id).get(),
-  ]);
-  bmSnap.docs.forEach(d => batch.delete(d.ref));
-  nSnap.docs.forEach(d => batch.delete(d.ref));
-  batch.set(db.collection('config').doc('stats'), { deleted_count: firebase.firestore.FieldValue.increment(1) }, { merge: true });
-  // 탈퇴 사유는 익명으로 별도 컬렉션에 집계용으로만 저장 (user_id 등 개인정보 미포함 —
-  // 탈퇴 시 개인정보 즉시 삭제 원칙과 무관하게 유지)
-  batch.set(db.collection('account_deletion_reasons').doc(fbGenId()), {
-    reason: (reason || '').trim() || '미선택',
-    detail: (detail || '').trim(),
-    deleted_at: fbNow(),
-  });
-  await batch.commit();
-  localStorage.removeItem('hwasee_uid');
-  return { ok: true };
+  const token = localStorage.getItem('hwasee_token');
+  if (!user_id || !token) return { ok: false, error: '로그인이 필요합니다.' };
+  let res;
+  try {
+    res = (await functionsRegion.httpsCallable('deleteAccount')({ user_id, token, reason, detail })).data;
+  } catch (e) { return { ok: false, error: e.message || '오류가 발생했습니다.' }; }
+  if (res.ok) { localStorage.removeItem('hwasee_uid'); _resetSessionVerify(); }
+  return res;
 }
 
 async function fbFindAccount(name) {
@@ -462,15 +361,9 @@ async function fbFindAccount(name) {
 }
 
 async function fbResetPassword(nickname, name, new_password) {
-  if (!nickname || !name || !new_password) return { ok: false, error: '모든 항목을 입력해주세요.' };
-  if (new_password.length < 8) return { ok: false, error: '비밀번호는 8자 이상이어야 합니다.' };
-  const snap = await db.collection('users').where('nickname', '==', nickname).limit(1).get();
-  if (snap.empty) return { ok: false, error: '닉네임 또는 이름이 일치하지 않습니다.' };
-  const doc = snap.docs[0];
-  const u   = doc.data();
-  if (!u.name || u.name.trim() !== name.trim()) return { ok: false, error: '닉네임 또는 이름이 일치하지 않습니다.' };
-  await db.collection('user_secrets').doc(doc.id).set({ pw_hash: await fbHashPw(new_password) }, { merge: true });
-  return { ok: true };
+  try {
+    return (await functionsRegion.httpsCallable('resetPassword')({ nickname, name, new_password })).data;
+  } catch (e) { return { ok: false, error: e.message || '오류가 발생했습니다.' }; }
 }
 
 // ─── 이야기 ──────────────────────────────────────────────
@@ -2606,19 +2499,17 @@ async function fbSetAIConfig(admin_id, updates) {
 // ─── 메인 디스패처 ───────────────────────────────────────
 
 async function firebaseApi(action, params = {}) {
-  const token = localStorage.getItem('hwasee_token');
-  const uid   = localStorage.getItem('hwasee_uid');
-  // localStorage 값은 누구나 브라우저 콘솔에서 조작 가능 — 매 호출마다 Firestore의
-  // 실제 token과 대조해서 검증해야 타인 user_id를 임의로 넣어 행세하는 걸 막을 수 있음
+  const uid = localStorage.getItem('hwasee_uid');
+  // user_secrets(token)가 완전 차단돼 클라이언트가 직접 대조할 수 없으므로,
+  // 세션 검증은 _ensureSessionVerified()가 (uid, token) 쌍당 1회만 서버(verifySession)에
+  // 확인하고 메모이즈한 결과를 재사용함 — 매 호출마다 서버 왕복하지 않음
   let session = null;
-  let sessionCheckFailed = false; // Firestore 조회 자체가 실패한 경우(네트워크 등) — 진짜 세션 만료와 구분해야 함
-  if (token && uid) {
-    try {
-      const snap = await db.collection('user_secrets').doc(uid).get();
-      if (snap.exists && snap.data().token === token) session = { user_id: uid };
-    } catch (e) { sessionCheckFailed = true; }
+  let sessionCheckFailed = false; // 검증 자체가 실패한 경우(네트워크 등) — 진짜 세션 만료와 구분해야 함
+  if (uid) {
+    const result = await _ensureSessionVerified();
+    if (result === undefined) sessionCheckFailed = true;
+    else if (result.ok) { session = { user_id: uid }; _fbBackfillAuthUid(uid); }
   }
-  if (session) _fbBackfillAuthUid(uid); // 기존 세션 유지 중인 유저도 점진적으로 auth_uid 바인딩 (fire-and-forget)
   // sessionCheckFailed일 땐 '로그인이 필요합니다.'를 던지지 않음 — 그 문자열은 클라이언트
   // api()에서 "진짜 세션 만료"로 해석해 강제 로그아웃+홈 이동을 트리거하는데, 단순 조회
   // 실패(네트워크 hiccup 등)까지 그렇게 처리하면 토큰이 멀쩡한데도 로그아웃당하고

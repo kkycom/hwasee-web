@@ -3684,14 +3684,19 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
   const extBranch = (branches || []).find(b => b.branch_leaf_episode_id === ep.episode_id);
   // 갈림길에서 spin-off된 갈래: 자식 에피소드가 없는 채택 sub → fork story로 이동
   const forkSub = extBranch ? adoptedSubs.find(sub => !children.some(c => c.ep.parent_sub_id === sub.sub_id)) : null;
+  // 동률 채택 시점(tie) 자체가 갈래의 시작점인 경우 — 실제 분기 스토리로 끊어지는
+  // 지점(branch_leaf_episode_id)은 tie보다 한 단계 이상 뒤일 수 있어서, tie
+  // 지점의 갈림은 branch_episode_id로 별도 확인해야 함
+  const tieBranch = (branches || []).find(b => b.branch_episode_id === ep.episode_id);
 
   if (adoptedSubs.length === 1) {
     const sub = adoptedSubs[0];
     const childHtml = children.length === 1
       ? renderEpisodeTreeHtml(children[0], choices, mvpMap, branches, myMvpEpId, hideTabs, tabEpId) : '';
-    // 이 줄 자체는 아직 공통 내용이고 분기는 그 다음부터 갈리므로, 이 줄 뒤에 점선을 둠
+    // 이 갈래가 동률(tie)에서 시작된 거면 점선은 이미 그 tie 지점에서 표시됐으므로
+    // 여기선 생략 — tie 없이(생성형 분기) 이 줄까지 순수 공통이던 경우에만 여기서 표시
     const forkHtml = (extBranch && !hideTabs)
-      ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>${renderExtBranchInline(extBranch)}`
+      ? `${extBranch.branch_episode_id ? '' : `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>`}${renderExtBranchInline(extBranch)}`
       : '';
     const editBtnHtml = isAdmin() ? `<button class="prose-edit-btn" data-sub="${sub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : '';
     return `
@@ -3717,9 +3722,12 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
       ? (!hideTabs ? renderExtBranchInline(extBranch) : '')
       : (chosenChild ? renderEpisodeTreeHtml(chosenChild, choices, mvpMap, branches, myMvpEpId, hideTabs, tabEpId) : '');
     if (hideTabs && ep.episode_id !== tabEpId) return _proseDiv + _nextHtml;
-    // 포크 갈래를 보고 있는 중이면(isForkChosen), 이 tied 단계 자체가 이미 그
-    // 갈래만의 내용이므로 점선을 그 직전(마지막 공통 단계 뒤)에 둠
-    const _forkDivider = (isForkChosen && !hideTabs)
+    // 지금 선택된 갈래가 이 tie 지점에서 이미 비-정경(분기) 쪽이면, 이 tied
+    // 단계 자체가 이미 그 갈래만의 내용이므로 점선을 그 직전(마지막 완전
+    // 공통 단계 뒤)에 둠 — extBranch/forkSub는 leaf가 tie보다 나중일 때
+    // 감지가 안 되므로 branch_episode_id 기준의 tieBranch로 판정
+    const isTieDiverge = tieBranch && chosenSub && chosenSub.sub_id === tieBranch.branch_sub_id;
+    const _forkDivider = (isTieDiverge && !hideTabs)
       ? `<div style="height:29px;display:flex;align-items:center"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>` : '';
     return `
       ${_forkDivider}

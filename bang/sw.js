@@ -47,7 +47,7 @@ self.addEventListener('notificationclick', e => {
 
 // ── 캐시 전략 ───────────────────────────────────────────────
 
-const CACHE = 'hwasee-bang-v284';
+const CACHE = 'hwasee-bang-v285';
 const PRECACHE = [
   '/bang/',
   '/bang/index.html',
@@ -73,8 +73,13 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
+  // 'firebase' 문자열로 걸렀던 예전 조건은 우리 자신의 firebase-api.js(같은 오리진,
+  // PRECACHE 대상)까지 이름만으로 걸러버려서 캐시를 전혀 못 타고 매번 네트워크로
+  // 나가고 있었음(156KB, 재방문 시에도 캐시 혜택 0) — 실제 외부 Firebase SDK 스크립트는
+  // 전부 gstatic.com에서 로드되므로 그 도메인으로 조건을 좁혀서 우리 파일은 캐시를
+  // 타게 하고 원래 의도(Firebase 서버 요청 제외)는 그대로 유지함
   if (e.request.url.includes('firestore.googleapis.com') ||
-      e.request.url.includes('firebase') ||
+      e.request.url.includes('gstatic.com') ||
       e.request.url.includes('googleapis.com') ||
       e.request.url.includes('pagead2') ||
       e.request.method !== 'GET') return;

@@ -1077,35 +1077,233 @@ exports.setClaudeKey = functions
     return { ok: true };
   });
 
-// ── 로그인 시 auth_uid 재바인딩 (Callable — Auth 마이그레이션 4단계).
-//    firestore.rules상 users/{uid}의 write는 "auth_uid가 비어있거나 요청자와
-//    일치할 때만" 허용되므로, 이미 다른 기기(다른 익명 인증 uid)로 바인딩된
-//    계정을 새 기기에서 로그인하면 클라이언트 SDK로는 auth_uid 갱신이 원천적으로
-//    막힘. 비밀번호를 서버(Admin SDK)에서 직접 검증한 뒤에만 규칙을 우회해
-//    재바인딩하도록 해서, "인증만 되어 있으면 아무 계정이나 재바인딩 가능"해지는
-//    구멍이 생기지 않게 함 ──
-exports.rebindAuthUid = functions
+// ── 자격증명(user_secrets: token/pw_hash) 서버 이전 (Auth 마이그레이션 5단계) ──
+// user_secrets 컬렉션이 인증 없이 완전 공개 상태였음(curl로 임의 유저의 세션 토큰/
+// 비밀번호 해시를 그대로 읽을 수 있었고, 토큰을 훔쳐 localStorage에 심으면 비밀번호
+// 없이 계정을 완전히 탈취할 수 있었음). 아래 6개 함수가 pw_hash/token을 만지는
+// 모든 경로를 흡수하고, user_secrets는 이후 firestore.rules에서 완전 차단됨.
+// pw_hash는 기존 클라이언트와 동일하게 무솔트 SHA-256(crypto.createHash)로 계산 —
+// 기존 유저 데이터와 호환 유지, 별도 마이그레이션 불필요.
+
+function _genSecretId() { return crypto.randomUUID(); }
+
+exports.register = functions
   .region('asia-northeast3')
   .https.onCall(async (data, context) => {
     if (!context.auth) throw new functions.https.HttpsError('unauthenticated', '인증 정보가 없습니다.');
-    const nickname = data.nickname;
-    const password = data.password;
-    if (!nickname || !password) throw new functions.https.HttpsError('invalid-argument', '닉네임과 비밀번호가 필요합니다.');
+    const nickname = (data.nickname || '').trim();
+    const password = data.password || '';
+    const name = data.name || '';
+    const display_name = data.display_name || '';
+    const referral = data.referral || '';
+    const referrer_nickname = data.referrer_nickname || '';
+
+    if (!nickname || !password) throw new functions.https.HttpsError('invalid-argument', '아이디와 비밀번호를 입력해주세요.');
+    if (!/^[가-힣a-zA-Z0-9]{2,12}$/.test(nickname)) return { ok: false, error: '아이디는 2~12자, 한글·영문·숫자만 사용할 수 있어요.' };
+    if (password.length < 8) return { ok: false, error: '비밀번호는 8자 이상입니다.' };
+    const dn = (display_name || '').trim() || nickname;
+    if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(dn)) return { ok: false, error: '닉네임은 2~12자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
+
+    const db = admin.firestore();
+    const refNick = referrer_nickname.trim();
+    const [dupId, dupDn, latestPatchSnap, referrerSnap] = await Promise.all([
+      db.collection('users').where('nickname', '==', nickname).limit(1).get(),
+      db.collection('users').where('display_name', '==', dn).limit(1).get(),
+      db.collection('patch_notes').orderBy('created_at', 'desc').limit(1).get(),
+      refNick ? db.collection('users').where('display_name', '==', refNick).limit(1).get() : Promise.resolve(null),
+    ]);
+    if (!dupId.empty) return { ok: false, error: '이미 사용 중인 아이디입니다.' };
+    if (!dupDn.empty) return { ok: false, error: '이미 사용 중인 닉네임입니다.' };
+
+    const user_id = _genSecretId();
+    const token = _genSecretId();
+    const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const initialSeenPatchId = latestPatchSnap.empty ? '' : latestPatchSnap.docs[0].data().patch_id;
+    const referrerDoc = (referrerSnap && !referrerSnap.empty) ? referrerSnap.docs[0] : null;
+    const pwHash = crypto.createHash('sha256').update(password).digest('hex');
+
+    await Promise.all([
+      db.collection('users').doc(user_id).set({
+        user_id, nickname, display_name: dn,
+        total_points: 0, adoption_count: 0, badge: 'seed', name: name.trim(),
+        referral: referral.trim(), created_at: new Date().toISOString(),
+        last_seen_patch_id: initialSeenPatchId,
+        auth_uid: context.auth.uid,
+      }),
+      db.collection('user_secrets').doc(user_id).set({ pw_hash: pwHash, token, token_exp }),
+    ]);
+
+    // 추천인 보너스(관리자/AI 봇 제외) — 신규 가입자 본인 몫은 이 함수(Admin SDK)가
+    // 이미 처리하므로, 추천인 몫도 같은 트랜잭션 성격으로 여기서 함께 지급(예전엔
+    // 별도 grantReferralBonus 콜러블이 있었으나 이 함수로 완전히 흡수돼 삭제됨)
+    let referral_bonus = 0;
+    if (referrerDoc && referrerDoc.id !== FB_ADMIN_ID && referrerDoc.id !== FB_AI_ID) {
+      await _serverAddPoints(db, user_id, 50, 'referral_bonus', '');
+      referral_bonus = 50;
+      const shouldGrant = await db.runTransaction(async tx => {
+        const snap = await tx.get(referrerDoc.ref);
+        if (!snap.exists || snap.data().referral_bonus_claimed) return false;
+        tx.update(referrerDoc.ref, { referral_bonus_claimed: true });
+        return true;
+      });
+      if (shouldGrant) {
+        await _serverAddPoints(db, referrerDoc.id, 50, 'referral_bonus', '');
+        try { await _serverBumpAchievementCounter(db, referrerDoc.id, 'referral_count'); } catch (e) {}
+      }
+    }
+
+    return {
+      ok: true, token, user_id, nickname, display_name: dn,
+      total_points: referral_bonus, badge: 'seed', is_admin: user_id === FB_ADMIN_ID,
+      referral_bonus, referral_not_found: !!refNick && !referrerDoc,
+    };
+  });
+
+exports.login = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', '인증 정보가 없습니다.');
+    const nickname = (data.nickname || '').trim();
+    const password = data.password || '';
+    if (!nickname || !password) throw new functions.https.HttpsError('invalid-argument', '닉네임과 비밀번호를 입력해주세요.');
 
     const db = admin.firestore();
     const snap = await db.collection('users').where('nickname', '==', nickname).limit(1).get();
-    if (snap.empty) throw new functions.https.HttpsError('permission-denied', '닉네임 또는 비밀번호가 틀렸습니다.');
+    if (snap.empty) return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
 
-    const uDoc = snap.docs[0];
-    const secSnap = await db.collection('user_secrets').doc(uDoc.id).get();
+    const doc = snap.docs[0];
+    const u = doc.data();
+    const secSnap = await db.collection('user_secrets').doc(doc.id).get();
+    const sec = secSnap.exists ? secSnap.data() : {};
     const pwHash = crypto.createHash('sha256').update(password).digest('hex');
-    if (!secSnap.exists || secSnap.data().pw_hash !== pwHash) {
-      throw new functions.https.HttpsError('permission-denied', '닉네임 또는 비밀번호가 틀렸습니다.');
-    }
+    if (sec.pw_hash !== pwHash) return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
 
-    if (uDoc.data().auth_uid !== context.auth.uid) {
-      await uDoc.ref.update({ auth_uid: context.auth.uid });
+    const token = _genSecretId();
+    const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // 서버가 이미 비밀번호를 검증했으므로, 기존 rebindAuthUid와 동일한 근거로
+    // context.auth.uid를 안전하게 (재)바인딩할 수 있음 — 기기 변경 케이스 포함
+    if (u.auth_uid !== context.auth.uid) {
+      await doc.ref.update({ auth_uid: context.auth.uid, ...(u.display_name ? {} : { display_name: u.nickname }) });
+    } else if (!u.display_name) {
+      await doc.ref.update({ display_name: u.nickname });
     }
+    await db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true });
+
+    return {
+      ok: true, token, user_id: u.user_id, nickname: u.nickname,
+      display_name: u.display_name || u.nickname,
+      total_points: u.total_points || 0, badge: u.badge || 'seed',
+      is_admin: u.user_id === FB_ADMIN_ID,
+      adoption_count: u.adoption_count || 0,
+    };
+  });
+
+exports.verifySession = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data, context) => {
+    const user_id = data.user_id;
+    const token = data.token;
+    if (!user_id || !token) return { ok: false };
+    const db = admin.firestore();
+    const [snap, secSnap] = await Promise.all([
+      db.collection('users').doc(user_id).get(),
+      db.collection('user_secrets').doc(user_id).get(),
+    ]);
+    if (!snap.exists || !secSnap.exists) return { ok: false };
+    const u = snap.data();
+    const sec = secSnap.data();
+    if (sec.token !== token) return { ok: false };
+    if (new Date(sec.token_exp) < new Date()) {
+      const new_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      await secSnap.ref.update({ token_exp: new_exp });
+    }
+    // 세션이 확인된 시점에만 auth_uid를 부트 시 1회 백필(기존 클라이언트 백필과 동일 취지)
+    if (context.auth && u.auth_uid !== context.auth.uid) {
+      db.collection('users').doc(user_id).update({ auth_uid: context.auth.uid }).catch(() => {});
+    }
+    return {
+      ok: true, user_id, nickname: u.nickname,
+      display_name: u.display_name || u.nickname,
+      total_points: u.total_points || 0, badge: u.badge || 'seed',
+      adoption_count: u.adoption_count || 0,
+    };
+  });
+
+exports.changePassword = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const user_id = data.user_id;
+    const token = data.token;
+    const current_password = data.current_password || '';
+    const new_password = data.new_password || '';
+    if (!user_id || !token) throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+    if (new_password.length < 8) return { ok: false, error: '비밀번호는 8자 이상이어야 합니다.' };
+
+    const db = admin.firestore();
+    const secRef = db.collection('user_secrets').doc(user_id);
+    const secSnap = await secRef.get();
+    if (!secSnap.exists || secSnap.data().token !== token) throw new functions.https.HttpsError('permission-denied', '로그인이 필요합니다.');
+    const sec = secSnap.data();
+    const curHash = crypto.createHash('sha256').update(current_password).digest('hex');
+    if (sec.pw_hash !== curHash) return { ok: false, error: '현재 비밀번호가 올바르지 않습니다.' };
+
+    const newHash = crypto.createHash('sha256').update(new_password).digest('hex');
+    await secRef.update({ pw_hash: newHash });
+    return { ok: true };
+  });
+
+exports.resetPassword = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const nickname = (data.nickname || '').trim();
+    const name = (data.name || '').trim();
+    const new_password = data.new_password || '';
+    if (!nickname || !name || !new_password) return { ok: false, error: '모든 항목을 입력해주세요.' };
+    if (new_password.length < 8) return { ok: false, error: '비밀번호는 8자 이상이어야 합니다.' };
+
+    const db = admin.firestore();
+    const snap = await db.collection('users').where('nickname', '==', nickname).limit(1).get();
+    if (snap.empty) return { ok: false, error: '닉네임 또는 이름이 일치하지 않습니다.' };
+    const doc = snap.docs[0];
+    const u = doc.data();
+    if (!u.name || u.name.trim() !== name) return { ok: false, error: '닉네임 또는 이름이 일치하지 않습니다.' };
+
+    const newHash = crypto.createHash('sha256').update(new_password).digest('hex');
+    await db.collection('user_secrets').doc(doc.id).set({ pw_hash: newHash }, { merge: true });
+    return { ok: true };
+  });
+
+exports.deleteAccount = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const user_id = data.user_id;
+    const token = data.token;
+    const reason = data.reason || '';
+    const detail = data.detail || '';
+    if (!user_id || !token) throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+    if (user_id === FB_ADMIN_ID) return { ok: false, error: '관리자 계정은 탈퇴할 수 없습니다.' };
+
+    const db = admin.firestore();
+    const secSnap = await db.collection('user_secrets').doc(user_id).get();
+    if (!secSnap.exists || secSnap.data().token !== token) throw new functions.https.HttpsError('permission-denied', '로그인이 필요합니다.');
+
+    const batch = db.batch();
+    batch.delete(db.collection('users').doc(user_id));
+    batch.delete(db.collection('user_secrets').doc(user_id));
+    const [bmSnap, nSnap] = await Promise.all([
+      db.collection('bookmarks').where('user_id', '==', user_id).get(),
+      db.collection('notifications').where('user_id', '==', user_id).get(),
+    ]);
+    bmSnap.docs.forEach(d => batch.delete(d.ref));
+    nSnap.docs.forEach(d => batch.delete(d.ref));
+    batch.set(db.collection('config').doc('stats'), { deleted_count: admin.firestore.FieldValue.increment(1) }, { merge: true });
+    batch.set(db.collection('account_deletion_reasons').doc(_genSecretId()), {
+      reason: reason.trim() || '미선택',
+      detail: detail.trim(),
+      deleted_at: new Date().toISOString(),
+    });
+    await batch.commit();
     return { ok: true };
   });
 
@@ -1145,37 +1343,6 @@ exports.grantMvpPoints = functions
     if (!nominatedUserId) return { ok: true };
 
     await _serverAddPoints(db, nominatedUserId, 10, 'mvp_nomination', '');
-    return { ok: true };
-  });
-
-// ── 친구 초대 보너스 중 추천인 쪽 지급 (Callable — 신규 가입자 본인 계정은
-//    자기 auth_uid로 막 생성된 직후라 클라이언트에서 직접 써도 소유권 규칙을
-//    통과하지만, 추천인은 완전히 다른 계정이라 이미 auth_uid가 바인딩돼 있으면
-//    클라이언트가 그 계정에 못 씀 — MVP 포인트와 동일한 이유로 서버 이전) ──
-// ⚠️ user_id(신규 가입자 본인 계정)별 1회 지급으로 트랜잭션 가드 — 이게 없으면
-//    인증 여부·호출 횟수 제한이 전혀 없어서 누구나 이 함수를 직접(curl 등으로)
-//    반복 호출해 임의 계정에 포인트를 무한정 꽂아넣을 수 있었음(실제 취약점,
-//    2026-07-08 리뷰 중 발견). users/{user_id}.referral_bonus_claimed 플래그로
-//    "신규 가입 1건당 최대 1회"만 지급되도록 제한.
-exports.grantReferralBonus = functions
-  .region('asia-northeast3')
-  .https.onCall(async (data) => {
-    const referrer_id = data.referrer_id;
-    const user_id = data.user_id;
-    if (!referrer_id || !user_id) throw new functions.https.HttpsError('invalid-argument', 'user_id와 referrer_id가 필요합니다.');
-    const db = admin.firestore();
-    const userRef = db.collection('users').doc(user_id);
-
-    const shouldGrant = await db.runTransaction(async tx => {
-      const snap = await tx.get(userRef);
-      if (!snap.exists || snap.data().referral_bonus_claimed) return false;
-      tx.update(userRef, { referral_bonus_claimed: true });
-      return true;
-    });
-    if (!shouldGrant) return { ok: true };
-
-    await _serverAddPoints(db, referrer_id, 50, 'referral_bonus', '');
-    try { await _serverBumpAchievementCounter(db, referrer_id, 'referral_count'); } catch (e) {}
     return { ok: true };
   });
 

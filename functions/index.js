@@ -702,6 +702,26 @@ async function _serverCloseEpisode(db, episode_id, ep) {
   if (anyClose) {
     await storySnap.ref.update({ current_step: nextStep, status: 'completed' });
 
+    // 동률 중 일부만 완결을 선택한 경우 — 완결 아닌 갈래는 그대로 묻히면 안
+    // 되므로, else 분기와 동일하게 새 열린 에피소드를 만들어줌. 그래야 바로
+    // 아래 "남은 open 에피소드 분리" 로직이 이걸 orphan으로 잡아서 독립
+    // active 스토리로 즉시 분리해줌(기존엔 이 생성이 없어서 계속 쓰겠다고
+    // 한 쪽 글이 채택은 되는데 이어갈 에피소드가 영영 안 생기던 버그였음).
+    const nonClosingWinners = winners.filter(w => w.is_closing !== true);
+    if (nonClosingWinners.length) {
+      const openBatch = db.batch();
+      nonClosingWinners.forEach(w => {
+        const newEpId = db.collection('episodes').doc().id;
+        openBatch.set(db.collection('episodes').doc(newEpId), {
+          episode_id: newEpId, story_id: ep.story_id,
+          step: nextStep + 1, parent_sub_id: w.id,
+          status: 'open', vote_total: 0,
+          created_at: new Date().toISOString(), closed_at: '', pending_at: '',
+        });
+      });
+      await openBatch.commit();
+    }
+
     // 남은 open 에피소드(다른 갈래)를 독립 active 스토리로 분리
     // (2026-07-06부터 이 함수가 사람/AI 마감 경로 공용 — 클라이언트엔 별도 사본 없음)
     const orphanSnap = await db.collection('episodes')

@@ -1469,4 +1469,5 @@ exports.adminDebugWordChallenges = functions
     }));
     return { ok: true, now: new Date().toISOString(), challenges };
   });
+// 재배포 트리거(진단 함수 삭제분 반영용)
 

@@ -2246,7 +2246,7 @@ function renderWordChallenge() {
   const loginHint = isActive && !user
     ? `<div style="text-align:center;font-size:12px;color:var(--muted);margin-bottom:16px">참여하려면 <a href="#" onclick="nav('auth','login');return false" style="color:var(--accent2)">로그인</a>이 필요해요</div>` : '';
   const mySubHint = isActive && user && my_submission_id && !hasVoted
-    ? `<div style="text-align:center;font-size:12px;color:var(--muted);margin-bottom:16px">이미 참여했어요 — 다른 문장에 투표해보세요 (하루 1표)</div>` : '';
+    ? `<div style="text-align:center;font-size:12px;color:var(--muted);margin-bottom:16px">이미 참여했어요 — 다른 문장에 투표해보세요 (마감 전까지 자유롭게 바꿀 수 있어요)</div>` : '';
 
   // 마감 후(결과 발표 중)엔 1등은 위 큰 자리에서 이미 보여줬으니 목록에서는
   // 빼고, 2등부터 득표순 그대로 보여줌(득표순 정렬은 fbGetWordChallenge에서
@@ -2256,7 +2256,7 @@ function renderWordChallenge() {
   const listHtml = visibleSubs.length ? visibleSubs.map(s => {
     const voted = s.submission_id === my_vote_submission_id;
     const isMine = s.submission_id === my_submission_id;
-    const canVote = isActive && user && !isMine && !hasVoted;
+    const canVote = isActive && user && !isMine;
     return `
       <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
         <button ${canVote ? `onclick="_voteWordChallenge('${s.submission_id}')"` : 'disabled'}

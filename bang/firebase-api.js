@@ -2792,6 +2792,9 @@ async function fbSubmitWordChallengeEntry(challenge_id, author_id, text) {
 }
 
 // 하루(챌린지 1회)당 투표는 딱 1표, 한 번 던지면 변경/취소 불가
+// 마감 전까지는 투표를 자유롭게 바꿀 수 있게 함(고정형으로 했다가, 나중에 더
+// 좋은 글이 올라와도 못 바꾸는 문제가 있어서 되돌림) — 같은 문장을 다시 누르면
+// 투표 취소, 다른 문장을 누르면 그쪽으로 즉시 전환.
 async function fbVoteWordChallenge(challenge_id, submission_id, voter_id) {
   const chSnap = await db.collection('word_challenges').doc(challenge_id).get();
   if (!chSnap.exists) return { ok: false, error: '챌린지를 찾을 수 없습니다.' };
@@ -2803,20 +2806,29 @@ async function fbVoteWordChallenge(challenge_id, submission_id, voter_id) {
   if (subSnap.data().user_id === voter_id) return { ok: false, error: '본인 문장에는 투표할 수 없어요.' };
 
   const voteRef = db.collection('word_challenge_votes').doc(`${challenge_id}_${voter_id}`);
-  const preSnap = await voteRef.get();
-  if (preSnap.exists) return { ok: false, error: '오늘 투표는 이미 하셨어요.' };
-
+  let voted = false;
   try {
     await db.runTransaction(async tx => {
       const voteSnap = await tx.get(voteRef);
-      if (voteSnap.exists) throw new Error('오늘 투표는 이미 하셨어요.');
-      tx.set(voteRef, { challenge_id, submission_id, voter_id, created_at: fbNow() });
-      tx.update(subRef, { vote_count: firebase.firestore.FieldValue.increment(1) });
+      if (voteSnap.exists && voteSnap.data().submission_id === submission_id) {
+        // 같은 문장 재클릭 — 투표 취소
+        tx.delete(voteRef);
+        tx.update(subRef, { vote_count: firebase.firestore.FieldValue.increment(-1) });
+        voted = false;
+      } else {
+        if (voteSnap.exists) {
+          const oldRef = db.collection('word_challenge_submissions').doc(voteSnap.data().submission_id);
+          tx.update(oldRef, { vote_count: firebase.firestore.FieldValue.increment(-1) });
+        }
+        tx.set(voteRef, { challenge_id, submission_id, voter_id, created_at: fbNow() });
+        tx.update(subRef, { vote_count: firebase.firestore.FieldValue.increment(1) });
+        voted = true;
+      }
     });
   } catch (e) {
     return { ok: false, error: e.message || '투표에 실패했습니다.' };
   }
-  return { ok: true };
+  return { ok: true, voted };
 }
 
 async function fbGetWordChallengeHistory() {

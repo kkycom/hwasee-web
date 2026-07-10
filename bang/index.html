@@ -2361,9 +2361,9 @@ async function openWordChallengeHistory() {
   modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
   modal.innerHTML = `
     <div class="modal-box" style="max-width:500px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-        <div style="font-size:15px;font-weight:700">🏆 역대 당선작 보기</div>
-        <button onclick="document.getElementById('wc-history-modal').remove()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px">✕</button>
+      <div style="position:relative;margin-bottom:14px">
+        <div style="text-align:center;font-size:15px;font-weight:700">🏆 역대 당선작 보기</div>
+        <button onclick="document.getElementById('wc-history-modal').remove()" style="position:absolute;top:0;right:0;background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px">✕</button>
       </div>
       <div id="wc-history-body"><div class="loading"></div></div>
     </div>`;

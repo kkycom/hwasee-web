@@ -833,7 +833,16 @@ async function fbGetStory(story_id, user_id) {
     .map(d => ({ comment_id: d.id, ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }))
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
-  return { ok: true, story: storyWithCreator, episodes, submissions, is_bookmarked, is_liked, like_count, my_voted_sub_ids, branches, parent_chain, mvp_map, my_mvp_episode_id, story_comments };
+  // 추가 제출권 구매 후에도 "이미 제출하셨습니다"에 막혀 두 번째 문장을 못 넣던
+  // 문제 — 현재 열린 에피소드에 내 추가 제출권이 있는지 클라이언트가 알아야 함
+  let has_extra_submit = false;
+  if (user_id && openEp) {
+    const exSnap = await db.collection('extra_submits')
+      .where('episode_id', '==', openEp.episode_id).where('user_id', '==', user_id).limit(1).get();
+    has_extra_submit = !exSnap.empty;
+  }
+
+  return { ok: true, story: storyWithCreator, episodes, submissions, is_bookmarked, is_liked, like_count, my_voted_sub_ids, branches, parent_chain, mvp_map, my_mvp_episode_id, story_comments, has_extra_submit };
 }
 
 async function fbCreateStory(opening, creator_id, is_ai_seed) {
@@ -1158,8 +1167,10 @@ async function fbVote(episode_id, sub_ids, voter_id) {
 
   const isRevote = !prevVoteSnap.empty;
   const prevVotedSubIds = prevVoteSnap.docs.map(d => d.data().sub_id);
-  const mySub = subsSnap.docs.find(d => d.data().author_id === voter_id && !d.data().is_ai);
-  if (mySub && sub_ids.includes(mySub.id)) return { ok: false, error: '본인 제출에는 공감할 수 없습니다.' };
+  // 추가 제출권으로 한 에피소드에 내 글이 2개 있을 수 있어 find()로 첫 번째만
+  // 잡으면 두 번째 내 글에 자기 자신 투표가 가능했음 — 전부 확인해야 함
+  const mySubIds = subsSnap.docs.filter(d => d.data().author_id === voter_id && !d.data().is_ai).map(d => d.id);
+  if (sub_ids.some(sid => mySubIds.includes(sid))) return { ok: false, error: '본인 제출에는 공감할 수 없습니다.' };
 
   const batch = db.batch();
 
@@ -2764,13 +2775,19 @@ async function fbSubmitWordChallengeEntry(challenge_id, author_id, text) {
   if (ch.status !== 'active' || Date.now() >= new Date(ch.end_at).getTime()) return { ok: false, error: '이미 마감된 챌린지예요.' };
   const missing = (ch.words || []).filter(w => !text2.includes(w));
   if (missing.length) return { ok: false, error: `단어 "${missing.join(', ')}"가 문장에 없어요.` };
-  const dupSnap = await db.collection('word_challenge_submissions')
-    .where('challenge_id', '==', challenge_id).where('user_id', '==', author_id).limit(1).get();
-  if (!dupSnap.empty) return { ok: false, error: '이미 이 챌린지에 참여했어요.' };
-  const sub_id = fbGenId();
-  await db.collection('word_challenge_submissions').doc(sub_id).set({
-    challenge_id, user_id: author_id, text: text2, vote_count: 0, created_at: fbNow(),
-  });
+  // 결정적 문서 ID(챌린지+유저) + 트랜잭션으로 중복 제출 방지 — 기존엔 조회 후
+  // 별도 set이라 빠르게 두 번 누르면(더블탭/재시도) 둘 다 통과할 수 있었음
+  const sub_id = `${challenge_id}_${author_id}`;
+  const subRef = db.collection('word_challenge_submissions').doc(sub_id);
+  try {
+    await db.runTransaction(async tx => {
+      const snap = await tx.get(subRef);
+      if (snap.exists) throw new Error('이미 이 챌린지에 참여했어요.');
+      tx.set(subRef, { challenge_id, user_id: author_id, text: text2, vote_count: 0, created_at: fbNow() });
+    });
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
   return { ok: true, submission_id: sub_id };
 }
 

@@ -1678,7 +1678,7 @@ function _applyStoryData(res, story_id) {
 
   // 분기 트리 산문 (전역 저장 → chooseBranch 재렌더용)
   const { branches = [], parent_chain = null, mvp_map = {}, my_mvp_episode_id = null } = res;
-  window._storyData = { episodes, submissions, story: s, branches, parent_chain, mvp_map, my_mvp_episode_id, my_voted_sub_ids };
+  window._storyData = { episodes, submissions, story: s, branches, parent_chain, mvp_map, my_mvp_episode_id, my_voted_sub_ids, has_extra_submit: !!res.has_extra_submit };
   document.removeEventListener('click', _proseSelOutsideClick, { capture: true });
   window._proseSelMode = null; // 'mvp' | 'branch'
   window._proseSelEpId = null;
@@ -1964,7 +1964,7 @@ async function submitStoryComment(story_id) {
   loadStoryComments(story_id);
 }
 
-function renderSubsWithReplies(subs, mySubId, maxVotes, myVotedSet = new Set(), step = 1) {
+function renderSubsWithReplies(subs, mySubIds, maxVotes, myVotedSet = new Set(), step = 1) {
   const subIds = new Set(subs.map(s => s.sub_id));
   const roots  = subs.filter(s => !s.derived_from || !subIds.has(s.derived_from));
   const childMap = {};
@@ -1976,25 +1976,26 @@ function renderSubsWithReplies(subs, mySubId, maxVotes, myVotedSet = new Set(), 
   });
   return roots.map(root => {
     const children = childMap[root.sub_id] || [];
-    return renderVoteCard(root, mySubId, maxVotes, myVotedSet, step, false) +
+    return renderVoteCard(root, mySubIds, maxVotes, myVotedSet, step, false) +
       children.map(child => `
         <div style="display:flex;gap:8px;margin-top:6px;margin-bottom:10px;padding-left:12px">
           <div style="display:flex;flex-direction:column;align-items:center;padding-top:8px;flex-shrink:0">
             <span style="font-size:13px;color:var(--muted);line-height:1">↳</span>
           </div>
-          <div style="flex:1">${renderVoteCard(child, mySubId, maxVotes, myVotedSet, step, true)}</div>
+          <div style="flex:1">${renderVoteCard(child, mySubIds, maxVotes, myVotedSet, step, true)}</div>
         </div>`).join('');
   }).join('');
 }
 
-function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1, isChild = false) {
+function renderVoteCard(sub, mySubIds, maxVotes, myVotedSet = new Set(), step = 1, isChild = false) {
+  mySubIds = mySubIds instanceof Set ? mySubIds : new Set(mySubIds ? [mySubIds] : []);
   const isAdopted   = sub.is_adopted === true || sub.is_adopted === 'TRUE';
   const iVoted      = myVotedSet.has(sub.sub_id);
   const voteCount   = Number(sub.vote_count) || 0;
   const barPct      = Math.min(Math.round(voteCount / FB_VOTE_THRESHOLD * 100), 100);
-  const isClickable = user && sub.sub_id !== mySubId && !isAdopted;
+  const isClickable = user && !mySubIds.has(sub.sub_id) && !isAdopted;
   const showLabel   = Number(step) >= 2;
-  const isMyCard    = sub.sub_id === mySubId;
+  const isMyCard    = mySubIds.has(sub.sub_id);
   const bStyle      = 'border-top:none;font-size:9px;font-weight:700;padding:2px 7px;letter-spacing:.04em;pointer-events:none';
   const cornerBadge = isMyCard && isChild
     ? `<div style="position:absolute;top:-4px;right:12px;display:flex">
@@ -2025,19 +2026,19 @@ function renderVoteCard(sub, mySubId, maxVotes, myVotedSet = new Set(), step = 1
           onclick="event.stopPropagation();toggleComments('${sub.sub_id}')">
           댓글${sub.comment_count > 0 ? ` <span style="color:var(--accent);font-weight:700">+${sub.comment_count}</span>` : ''}
         </button>
-        ${user && !mySubId && !isAdopted && !sub.derived_from ? `
+        ${user && mySubIds.size === 0 && !isAdopted && !sub.derived_from ? `
           <button class="btn btn-ghost btn-sm" style="font-size:12px;padding:3px 10px;color:var(--accent2)"
             onclick="event.stopPropagation();polishSub('${sub.sub_id}','${esc(sub.content).replace(/'/g,"\\'")}','${esc(sub.author_nickname||'익명')}')">
             ✏ 윤색하기
           </button>` : ''}
-        ${user && sub.sub_id !== mySubId ? `
+        ${user && !mySubIds.has(sub.sub_id) ? `
           <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px;color:var(--muted);margin-left:auto;opacity:0.7"
             onclick="event.stopPropagation();toggleReport('${sub.sub_id}')">⚑ 신고</button>` : ''}
-        ${sub.sub_id === mySubId && voteCount === 0 && !isAdopted ? `
+        ${mySubIds.has(sub.sub_id) && voteCount === 0 && !isAdopted ? `
           <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px;color:var(--muted);margin-left:auto;opacity:0.6"
             onclick="event.stopPropagation();deleteMySubmission('${sub.sub_id}')">✕ 삭제</button>` : ''}
       </div>
-      ${user && sub.sub_id !== mySubId ? `
+      ${user && !mySubIds.has(sub.sub_id) ? `
         <div id="report-${sub.sub_id}" style="display:none;margin-top:6px">
           <div style="font-size:11px;color:var(--muted);margin-bottom:4px">신고 사유를 선택해주세요</div>
           <div style="display:flex;gap:4px;flex-wrap:wrap">
@@ -2672,7 +2673,8 @@ async function episode() {
   const storyOpening = res.story ? res.story.opening : '';
   const subs         = ep.submissions || [];
   const isClosed     = ep.status !== 'open';
-  const mySubId      = user ? (subs.find(s => s.author_id === user.user_id && !s.is_ai) || {}).sub_id : null;
+  const mySubIds     = new Set(user ? subs.filter(s => s.author_id === user.user_id && !s.is_ai).map(s => s.sub_id) : []);
+  const mySubId      = mySubIds.size ? [...mySubIds][0] : null;
   const maxVotes     = subs.length ? Math.max(...subs.map(s => Number(s.vote_count)||0)) : 0;
 
   // 이전 이야기 흐름
@@ -2717,7 +2719,7 @@ async function episode() {
     </div>
     <div id="sub-list">
       ${subs.length === 0 ? `<div class="empty" style="padding:32px 0">아직 제출된 문장이 없습니다.</div>` :
-        subs.map(s => renderSubCard(s, isClosed, mySubId, maxVotes, ep.step)).join('')}
+        subs.map(s => renderSubCard(s, isClosed, mySubIds, maxVotes, ep.step)).join('')}
     </div>
     ${!isClosed && user && mySubId ? `
     <div style="margin-top:16px;text-align:center">
@@ -2737,7 +2739,7 @@ async function episode() {
         const freshMax  = freshSubs.length ? Math.max(...freshSubs.map(s => Number(s.vote_count)||0)) : 0;
         list.innerHTML = freshSubs.length === 0
           ? `<div class="empty" style="padding:32px 0">아직 제출된 문장이 없습니다.</div>`
-          : freshSubs.map(s => renderSubCard(s, false, mySubId, freshMax, ep.step)).join('');
+          : freshSubs.map(s => renderSubCard(s, false, mySubIds, freshMax, ep.step)).join('');
         // 투표 버튼 카운트 동기화
         const hdr = list.previousElementSibling;
         if (hdr) hdr.querySelector?.('.sub-count-label') && (hdr.querySelector('.sub-count-label').textContent = `제출된 문장 ${freshSubs.length}개`);
@@ -2745,11 +2747,12 @@ async function episode() {
   }
 }
 
-function renderSubCard(s, isClosed, mySubId, maxVotes, step = 1) {
+function renderSubCard(s, isClosed, mySubIds, maxVotes, step = 1) {
+  mySubIds = mySubIds instanceof Set ? mySubIds : new Set(mySubIds ? [mySubIds] : []);
   const isAdopted  = s.is_adopted === true || s.is_adopted === 'TRUE';
   const sVoteCount = Number(s.vote_count) || 0;
   const barPct     = Math.min(Math.round(sVoteCount / FB_VOTE_THRESHOLD * 100), 100);
-  const isClickable = !isClosed && s.sub_id !== mySubId;
+  const isClickable = !isClosed && !mySubIds.has(s.sub_id);
   const showLabel   = Number(step) >= 2;
   return `
     <div class="vote-card ${isAdopted?'adopted':''}" id="sc-${s.sub_id}"
@@ -2759,7 +2762,7 @@ function renderSubCard(s, isClosed, mySubId, maxVotes, step = 1) {
       <div class="vote-content">${esc(s.content)}</div>
       <div class="vote-meta">
         <span class="vote-count">공감 ${sVoteCount}/${FB_VOTE_THRESHOLD}개</span>
-        ${s.sub_id === mySubId ? '<span class="tag">내 제출</span>' : ''}
+        ${mySubIds.has(s.sub_id) ? '<span class="tag">내 제출</span>' : ''}
         <span style="margin-left:auto;font-size:11px;color:var(--muted)"><span style="font-size:10px;margin-right:3px">글쓴이</span>${esc(s.author_id.slice(0,6))}...</span>
       </div>
       <div class="vote-bar"><div class="vote-fill" style="width:${barPct}%"></div></div>
@@ -3589,20 +3592,25 @@ function _applyVoteSelections() {
 function buildStoryActionHtml(openEp) {
   const sd = window._storyData;
   if (!sd || !openEp) return '';
-  const { episodes, submissions, story, my_voted_sub_ids = [] } = sd;
+  const { episodes, submissions, story, my_voted_sub_ids = [], has_extra_submit } = sd;
   const myVotedSet  = new Set(my_voted_sub_ids);
   const closedCount = episodes.filter(e => e.status === 'closed').length;
   const parentSteps = story && story.branch_from_step ? Number(story.branch_from_step) - 1 : 0;
   const effectiveClosedCount = closedCount + parentSteps;
   const absStep     = parentSteps + Number(openEp.step);
   const openSubs    = submissions.filter(sub => sub.episode_id === openEp.episode_id);
-  const mySubId     = user ? (openSubs.find(sub => sub.author_id === user.user_id && !sub.is_ai) || {}).sub_id || null : null;
+  // 추가 제출권으로 한 에피소드에 내 글이 2개까지 있을 수 있어 Set으로 전부 추적
+  const mySubIds    = new Set(user ? openSubs.filter(sub => sub.author_id === user.user_id && !sub.is_ai).map(s => s.sub_id) : []);
+  const mySubCount  = mySubIds.size;
+  const hasExtraSubmit = !!has_extra_submit;
+  const canSubmitMore  = mySubCount === 0 || (mySubCount === 1 && hasExtraSubmit);
+  const canBuyExtra    = mySubCount === 1 && !hasExtraSubmit;
   const maxVotes    = openSubs.length ? Math.max(...openSubs.map(sub => Number(sub.vote_count)||0)) : 0;
   const epSubIds    = new Set(openSubs.map(s => s.sub_id));
   const votedHere   = my_voted_sub_ids.filter(id => epSubIds.has(id)).length;
   return `
     <div class="prose-divider">이 이야기의 다음 문장을 결정합니다</div>
-    ${user && !mySubId ? `
+    ${user && canSubmitMore ? `
       <div class="card" style="margin-bottom:20px">
         <div style="font-size:13px;font-weight:700;margin-bottom:10px">✏️ 이어 쓰기</div>
         <div id="polish-indicator" style="display:none;font-size:12px;color:var(--accent2);margin-bottom:8px;padding:6px 10px;background:var(--surface);border-radius:6px;border-left:2px solid var(--accent2)"></div>
@@ -3615,11 +3623,11 @@ function buildStoryActionHtml(openEp) {
             : `<button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">제출</button>`}
         </div>
       </div>` : ''}
-    ${user && mySubId ? `
+    ${user && !canSubmitMore ? `
       <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
         <span>✓ 이미 제출하셨습니다. 다른 글에 공감할 수 있습니다.</span>
-        <button class="btn btn-ghost btn-sm" style="font-size:12px;white-space:nowrap"
-          onclick="doBuyExtraSubmit('${esc(openEp.episode_id)}')">추가 제출 (20P)</button>
+        ${canBuyExtra ? `<button class="btn btn-ghost btn-sm" style="font-size:12px;white-space:nowrap"
+          onclick="doBuyExtraSubmit('${esc(openEp.episode_id)}')">추가 제출 (20P)</button>` : ''}
       </div>` : ''}
     ${!user ? `
       <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px">
@@ -3627,7 +3635,7 @@ function buildStoryActionHtml(openEp) {
       </div>` : ''}
     ${openSubs.length === 0
       ? `<div class="empty" style="padding:20px 0">아직 제출된 문장이 없습니다.</div>`
-      : renderSubsWithReplies(openSubs, mySubId, maxVotes, myVotedSet, absStep)}
+      : renderSubsWithReplies(openSubs, mySubIds, maxVotes, myVotedSet, absStep)}
     ${user && openSubs.length > 0 ? `
       <div class="vote-sticky">
         <button class="btn btn-primary" id="vote-btn" onclick="submitVoteInStory('${esc(openEp.episode_id)}')">

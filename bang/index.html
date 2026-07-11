@@ -774,10 +774,11 @@ async function _loadBmIds() {
   if (res.ok) _bmIds = new Set(res.ids);
 }
 
-// 분기로 열려있는 에피소드가 여러 개면 각 회차 제출 개수를 합산(open_eps 없는
-// 옛날 캐시 데이터는 0으로 취급)
-function _totalSubCount(s) {
-  return (s.open_eps || []).reduce((sum, e) => sum + (Number(e.sub_count) || 0), 0);
+// 카드에 표시되는 "제출 N개"와 같은 기준 — 여러 회차(분기)가 열려있어도
+// 합산하지 않고 현재 단계(가장 진행된 회차) 하나의 제출 개수만 씀
+function _currentSubCount(s) {
+  const eps = s.open_eps || [];
+  return eps.length ? Math.max(...eps.map(e => Number(e.sub_count) || 0)) : 0;
 }
 
 function _sortStories(stories, key) {
@@ -785,7 +786,7 @@ function _sortStories(stories, key) {
   if (key === 'activity')    return arr.sort((a, b) => (Number(b.activity_count)||0) - (Number(a.activity_count)||0));
   if (key === 'step')        return arr.sort((a, b) => (Number(b.current_step)||0)   - (Number(a.current_step)||0));
   if (key === 'likes')       return arr.sort((a, b) => (Number(b.like_count)||0)     - (Number(a.like_count)||0));
-  if (key === 'submissions') return arr.sort((a, b) => _totalSubCount(b) - _totalSubCount(a));
+  if (key === 'submissions') return arr.sort((a, b) => _currentSubCount(b) - _currentSubCount(a));
   return arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 

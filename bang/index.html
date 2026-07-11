@@ -4445,6 +4445,16 @@ function toggleAdminMenu() {
   const drop = document.getElementById('admin-menu-dropdown');
   if (!drop) return;
   drop.classList.toggle('open');
+  // 어드민 메뉴는 자주 안 쓰다 보니 그 사이 Firestore 연결이 식어있는 경우가
+  // 많아 첫 진입이 자주 느리거나 타임아웃남 — 드롭다운 여는 시점에 미리
+  // 워밍업 핑을 쏴서, 실제 메뉴를 클릭할 때는 연결이 이미 열려있게 함.
+  // api()가 모든 액션 전에 무조건 기다리는 verifySession(Cloud Function, 콜드스타트
+  // 가능)도 여기서 미리 트리거해서 결과를 메모이즈해둠(_ensureSessionVerified 자체가
+  // 안전하게 여러 번 불러도 되는 구조)
+  if (drop.classList.contains('open')) {
+    firebase.firestore().collection('config').doc('stats').get().catch(() => {});
+    if (typeof _ensureSessionVerified === 'function') _ensureSessionVerified().catch(() => {});
+  }
 }
 function closeAdminMenu() {
   const drop = document.getElementById('admin-menu-dropdown');
@@ -4488,7 +4498,7 @@ async function adminStats() {
           <div style="font-size:11px;color:var(--muted)">${label}</div>
           <div style="font-size:20px;font-weight:700">${val ?? '-'}</div>
         </div>`).join('')}
-    </div>` : `<div class="empty">불러오지 못했습니다.</div>`;
+    </div>` : `<div class="empty">불러오지 못했습니다.<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="adminStats()">다시 시도</button></div>`;
   document.getElementById('app').innerHTML = `
     ${_adminNav('stats')}
     <h2 style="margin:0 0 18px">📊 이용통계</h2>
@@ -4519,7 +4529,7 @@ function _renderAdminAI(tab, page) {
   const res = _aiCache;
   const nav_ = _adminNav('ai');
   if (!res.ok) {
-    document.getElementById('app').innerHTML = nav_ + `<div class="empty">${esc(res.error)}</div>`;
+    document.getElementById('app').innerHTML = nav_ + `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="adminAI()">다시 시도</button></div>`;
     return;
   }
 
@@ -4673,7 +4683,7 @@ async function adminEdits() {
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   const res = await api('getAdminEdits', {});
   if (_renderEpoch !== epoch || currentRoute !== 'admin-edits') return;
-  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+  if (!res.ok) { document.getElementById('app').innerHTML = _adminNav('edits') + `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="adminEdits()">다시 시도</button></div>`; return; }
   const edits = res.edits;
   const editTypeLabel = t => t === 'ai' ? '🤖 AI' : '✏️ 수동';
   document.getElementById('app').innerHTML = `
@@ -4700,7 +4710,7 @@ async function adminReports() {
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   const res = await api('getReports', {});
   if (_renderEpoch !== epoch || currentRoute !== 'admin-reports') return;
-  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+  if (!res.ok) { document.getElementById('app').innerHTML = _adminNav('reports') + `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="adminReports()">다시 시도</button></div>`; return; }
   const reports = res.reports;
   document.getElementById('app').innerHTML = `
     ${_adminNav('reports')}
@@ -4734,7 +4744,7 @@ async function adminBugs() {
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   const res = await api('getBugReports', {});
   if (_renderEpoch !== epoch || currentRoute !== 'admin-bugs') return;
-  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+  if (!res.ok) { document.getElementById('app').innerHTML = _adminNav('bugs') + `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="adminBugs()">다시 시도</button></div>`; return; }
   const bugs = res.reports || [];
   document.getElementById('app').innerHTML = `
     ${_adminNav('bugs')}
@@ -4794,7 +4804,7 @@ async function adminPatchNotes() {
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   const res = await api('getPatchNotes', {});
   if (_renderEpoch !== epoch || currentRoute !== 'admin-patchnotes') return;
-  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+  if (!res.ok) { document.getElementById('app').innerHTML = _adminNav('patchnotes') + `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="adminPatchNotes()">다시 시도</button></div>`; return; }
   const notes = res.notes || [];
   document.getElementById('app').innerHTML = `
     ${_adminNav('patchnotes')}
@@ -4831,7 +4841,7 @@ async function adminWordChallenge() {
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
   const res = await api('adminGetWordChallengeQueue', {});
   if (_renderEpoch !== epoch || currentRoute !== 'admin-wordchallenge') return;
-  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+  if (!res.ok) { document.getElementById('app').innerHTML = _adminNav('wordchallenge') + `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="adminWordChallenge()">다시 시도</button></div>`; return; }
   document.getElementById('app').innerHTML = `
     ${_adminNav('wordchallenge')}
     <h2 style="margin:0 0 12px">🎲 단어 챌린지 관리</h2>

@@ -462,6 +462,20 @@ async function fbGetStories(page) {
   }
 }
 
+// 유저 문서 여러 개를 개별 .doc(id).get() N번 대신 documentId() 'in' 쿼리로
+// 묶어서 조회('in'은 최대 30개) — 오래됐거나 참여자·분기가 많은 이야기일수록
+// 개별 조회 수가 그만큼 늘어나 이야기 진입이 느려지던 원인 중 하나였음
+async function _fbGetUsersByIds(ids) {
+  const uniqueIds = [...new Set(ids)].filter(Boolean);
+  if (!uniqueIds.length) return [];
+  const chunks = [];
+  for (let i = 0; i < uniqueIds.length; i += 30) chunks.push(uniqueIds.slice(i, i + 30));
+  const snaps = await Promise.all(
+    chunks.map(chunk => db.collection('users').where(firebase.firestore.FieldPath.documentId(), 'in', chunk).get())
+  );
+  return snaps.flatMap(s => s.docs);
+}
+
 async function fbGetStory(story_id, user_id) {
   const [storySnap, episodesSnap, primarySubsSnap, commSnap, mvpSnap] = await Promise.all([
     db.collection('stories').doc(story_id).get(),
@@ -514,9 +528,7 @@ async function fbGetStory(story_id, user_id) {
   // Round 2: 나머지 모든 조회를 한 번에 병렬 처리
   const storySubIdArr = [...storySubIds];
   const [userDocs, bmSnap, likeSnap, voteSnap, branchSnap, pEpsSnap, pSubsSnap, bSubSnap] = await Promise.all([
-    authorIds.length > 0
-      ? Promise.all(authorIds.map(id => db.collection('users').doc(id).get()))
-      : Promise.resolve([]),
+    _fbGetUsersByIds(authorIds),
     user_id
       ? db.collection('bookmarks').where('user_id','==',user_id).where('story_id','==',story_id).limit(1).get()
       : Promise.resolve(null),
@@ -620,7 +632,7 @@ async function fbGetStory(story_id, user_id) {
     // 부모 에피소드 작가 중 현재 nickMap에 없는 ID 추가 조회
     const missingPIds = [...new Set(pSubsSnap.docs.map(d => d.data().author_id).filter(id => id && !nickMap[id]))];
     if (missingPIds.length) {
-      const extraDocs = await Promise.all(missingPIds.map(id => db.collection('users').doc(id).get()));
+      const extraDocs = await _fbGetUsersByIds(missingPIds);
       extraDocs.forEach(d => { if (d.exists) { nickMap[d.id] = d.data().display_name || d.data().nickname; badgeMap[d.id] = d.data().badge; } });
     }
     const pEps = pEpsSnap.docs
@@ -724,7 +736,7 @@ async function fbGetStory(story_id, user_id) {
       const bEps = bEpsSnap.docs.map(d => ({ episode_id: d.id, ...d.data() }));
       const bAuthorIds = [...new Set(bSubsSnap.docs.map(d => d.data().author_id).filter(id => id && !nickMap[id]))];
       if (bAuthorIds.length) {
-        const extraDocs = await Promise.all(bAuthorIds.map(id => db.collection('users').doc(id).get()));
+        const extraDocs = await _fbGetUsersByIds(bAuthorIds);
         extraDocs.forEach(d => { if (d.exists) { nickMap[d.id] = d.data().display_name || d.data().nickname; badgeMap[d.id] = d.data().badge; } });
       }
       const bSubs = bSubsSnap.docs.map(d => {

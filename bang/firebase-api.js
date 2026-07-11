@@ -2304,32 +2304,29 @@ async function fbAdminCloseStory(story_id, admin_id) {
 
 async function fbGetAIActivities(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const [configSnap, keyStatus, notifSettingsSnap] = await Promise.all([
+  // getClaudeKeyStatus는 이 어드민 AI 메뉴에서만 호출되는 유일한 진입점이라 이
+  // 앱에서 가장 콜드스타트가 잦은 Cloud Function임 — 이게 느려도 제출/투표
+  // 내역까지 같이 못 뜨면 안 되니 5초 자체 타임아웃을 걸고 나머지와 분리함
+  const keyStatusPromise = Promise.race([
+    functionsRegion.httpsCallable('getClaudeKeyStatus')({ admin_id }).then(r => r.data),
+    new Promise(resolve => setTimeout(() => resolve({ has_key: false }), 5000)),
+  ]).catch(() => ({ has_key: false }));
+  const [configSnap, notifSettingsSnap] = await Promise.all([
     db.collection('config').doc('ai_config').get(),
-    functionsRegion.httpsCallable('getClaudeKeyStatus')({ admin_id }).then(r => r.data).catch(() => ({ has_key: false })),
     db.collection('config').doc('notification_settings').get(),
   ]);
   const aiConfig = configSnap.exists ? configSnap.data() : { enabled: false, speed_pct: 100 };
-  const hasKey = !!keyStatus.has_key;
   // 기본값 true(배치 발송) — 문서 자체가 없거나 필드가 없으면 배치 모드로 간주
   const notificationBatchEnabled = notifSettingsSnap.exists ? notifSettingsSnap.data().batch_enabled !== false : true;
-  let subsSnap, votesSnap, subsCountSnap, votesCountSnap;
+  let subsSnap, votesSnap;
   try {
-    const subsQuery  = db.collection('submissions').where('author_id', '==', FB_AI_ID).where('is_ai', '==', true);
-    const votesQuery = db.collection('votes').where('voter_id', '==', FB_AI_ID).where('is_ai', '==', true);
-    [subsSnap, votesSnap, subsCountSnap, votesCountSnap] = await Promise.all([
-      subsQuery.orderBy('created_at', 'desc').limit(300).get(),
-      votesQuery.orderBy('created_at', 'desc').limit(300).get(),
-      // 탭 라벨의 "총 개수"는 화면에 보여주는 300개 제한 조회 결과의 크기(subsSnap.size)를
-      // 그대로 썼었는데, 그게 곧 실제 누적 개수의 상한이 아니라 "최대 300개까지만 가져온
-      // 조회 결과 크기"일 뿐이라 300개를 넘으면 영원히 "300"으로 고정 표시되던 버그였음
-      // (유저 제보로 발견) — count() 집계 쿼리로 진짜 총 개수를 따로 구함(문서 본문을
-      // 안 가져오는 가벼운 쿼리라 300개 제한 조회와 별개로 추가해도 비용 부담 적음).
-      subsQuery.count().get(),
-      votesQuery.count().get(),
+    [subsSnap, votesSnap] = await Promise.all([
+      db.collection('submissions').where('author_id', '==', FB_AI_ID).where('is_ai', '==', true).orderBy('created_at', 'desc').limit(300).get(),
+      db.collection('votes').where('voter_id', '==', FB_AI_ID).where('is_ai', '==', true).orderBy('created_at', 'desc').limit(300).get(),
     ]);
   } catch(e) {
-    return { ok: true, ai_config: aiConfig, has_key: hasKey, submissions: [], votes: [], total_subs: 0, total_votes: 0 };
+    const keyStatus = await keyStatusPromise;
+    return { ok: true, ai_config: aiConfig, has_key: !!keyStatus.has_key, submissions: [], votes: [], total_subs: 0, total_votes: 0 };
   }
   const subs = subsSnap.docs.map(d => d.data())
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).slice(0, 200);
@@ -2350,15 +2347,20 @@ async function fbGetAIActivities(admin_id) {
   if (voteStoryIds.length) {
     await Promise.all(voteStoryIds.map(id => db.collection('stories').doc(id).get().then(d => { if (d.exists) storyMap[d.id] = d.data().opening || ''; })));
   }
+  const keyStatus = await keyStatusPromise;
   return {
-    ok: true, ai_config: aiConfig, has_key: hasKey,
+    ok: true, ai_config: aiConfig, has_key: !!keyStatus.has_key,
     notification_batch_enabled: notificationBatchEnabled,
     submissions: subs.map(s => ({ ...s, story_opening: storyMap[s.story_id] || '' })),
     votes: votes.map(v => {
       const story_id = epToStoryMap[v.episode_id] || '';
       return { ...v, story_id, story_opening: storyMap[story_id] || '', sub_content: voteSubMap[v.sub_id] || '' };
     }),
-    total_subs: subsCountSnap.data().count, total_votes: votesCountSnap.data().count,
+    // compat SDK는 count() 집계 쿼리를 지원하지 않아(2026-07-04 검증됨, [[project_hwasee_bang_state]])
+    // 정확한 총 개수를 가볍게 구할 방법이 없음 — 300개 제한 조회 결과 크기를 쓰되, 상한에
+    // 걸렸을 때는 "정확히 300"이 아니라 "300개 이상"이라는 걸 구분할 수 있게 표시함
+    total_subs: subsSnap.size === 300 ? '300+' : subsSnap.size,
+    total_votes: votesSnap.size === 300 ? '300+' : votesSnap.size,
   };
 }
 

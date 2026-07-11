@@ -2522,117 +2522,122 @@ async function fbSetAIConfig(admin_id, updates) {
 
 async function firebaseApi(action, params = {}) {
   const uid = localStorage.getItem('hwasee_uid');
-  // user_secrets(token)가 완전 차단돼 클라이언트가 직접 대조할 수 없으므로,
-  // 세션 검증은 _ensureSessionVerified()가 (uid, token) 쌍당 1회만 서버(verifySession)에
-  // 확인하고 메모이즈한 결과를 재사용함 — 매 호출마다 서버 왕복하지 않음
-  let session = null;
-  let sessionCheckFailed = false; // 검증 자체가 실패한 경우(네트워크 등) — 진짜 세션 만료와 구분해야 함
-  if (uid) {
+  // 지연(lazy) 검증: requireUid()를 실제로 호출하는(로그인이 꼭 필요한) 액션만
+  // verifySession(Cloud Function, 콜드스타트 가능) 왕복을 기다림. 스토리 열람처럼
+  // 로그인 여부와 무관한 액션은 이 왕복 자체를 안 타므로, 콜드스타트가 그런
+  // 액션까지 막던 문제(실제 제보 — 공감하기/활성 스토리 열람 장애)가 사라짐.
+  let _resolved = null;
+  const resolveSession = async () => {
+    if (_resolved) return _resolved;
+    if (!uid) return (_resolved = { session: null, failed: false });
     const result = await _ensureSessionVerified();
-    if (result === undefined) sessionCheckFailed = true;
-    else if (result.ok) { session = { user_id: uid }; _fbBackfillAuthUid(uid); }
-  }
+    if (result === undefined) _resolved = { session: null, failed: true };
+    else if (result.ok) { _fbBackfillAuthUid(uid); _resolved = { session: { user_id: uid }, failed: false }; }
+    else _resolved = { session: null, failed: false };
+    return _resolved;
+  };
   // sessionCheckFailed일 땐 '로그인이 필요합니다.'를 던지지 않음 — 그 문자열은 클라이언트
   // api()에서 "진짜 세션 만료"로 해석해 강제 로그아웃+홈 이동을 트리거하는데, 단순 조회
   // 실패(네트워크 hiccup 등)까지 그렇게 처리하면 토큰이 멀쩡한데도 로그아웃당하고
   // 관리자 페이지 등에서 "로딩하다가 튕겨나가는" 간헐적 증상으로 이어짐.
-  const need = () => {
-    if (session) return session;
-    throw new Error(sessionCheckFailed ? '일시적인 오류입니다. 다시 시도해주세요.' : '로그인이 필요합니다.');
+  const requireUid = async () => {
+    const { session, failed } = await resolveSession();
+    if (session) return session.user_id;
+    throw new Error(failed ? '일시적인 오류입니다. 다시 시도해주세요.' : '로그인이 필요합니다.');
   };
 
   switch (action) {
     case 'register':           return fbRegister(params.nickname, params.password, params.name, params.display_name, params.referral, params.referrer_nickname);
     case 'login':              return fbLogin(params.nickname, params.password);
-    case 'deleteAccount':      return fbDeleteAccount(need().user_id, params.reason, params.detail);
-    case 'changePassword':     return fbChangePassword(need().user_id, params.current_password, params.new_password);
+    case 'deleteAccount':      return fbDeleteAccount(await requireUid(), params.reason, params.detail);
+    case 'changePassword':     return fbChangePassword(await requireUid(), params.current_password, params.new_password);
     case 'findAccount':        return fbFindAccount(params.name);
     case 'resetPassword':      return fbResetPassword(params.nickname, params.name, params.new_password);
 
     case 'getStories':         return fbGetStories(params.page);
-    case 'getStory':           return fbGetStory(params.story_id, session?.user_id || null);
-    case 'createStory':        return fbCreateStory(params.opening, need().user_id, params.is_ai_seed);
-    case 'getMyStories':       return fbGetMyStories(need().user_id);
+    case 'getStory':           return fbGetStory(params.story_id, uid || null);
+    case 'createStory':        return fbCreateStory(params.opening, await requireUid(), params.is_ai_seed);
+    case 'getMyStories':       return fbGetMyStories(await requireUid());
 
     case 'getEpisode':         return fbGetEpisode(params.episode_id);
-    case 'createSubmission':   return fbCreateSubmission(params.episode_id, params.content, need().user_id, params.derived_from, params.closing);
-    case 'vote':               return fbVote(params.episode_id, params.sub_ids, need().user_id);
+    case 'createSubmission':   return fbCreateSubmission(params.episode_id, params.content, await requireUid(), params.derived_from, params.closing);
+    case 'vote':               return fbVote(params.episode_id, params.sub_ids, await requireUid());
 
     case 'getSeeds':           return fbGetSeeds();
     case 'getAISuggestion':    return fbGetAISuggestion();
     case 'seedInitialStories': return { ok: true };
 
-    case 'getNotifications':      return fbGetNotifications(need().user_id);
-    case 'markNotificationsRead': return fbMarkNotificationsRead(need().user_id);
+    case 'getNotifications':      return fbGetNotifications(await requireUid());
+    case 'markNotificationsRead': return fbMarkNotificationsRead(await requireUid());
 
-    case 'addBookmark':        return fbAddBookmark(params.story_id, need().user_id);
-    case 'removeBookmark':     return fbRemoveBookmark(params.story_id, need().user_id);
-    case 'getBookmarkIds':     return fbGetBookmarkIds(need().user_id);
-    case 'getBookmarks':       return fbGetBookmarks(need().user_id);
+    case 'addBookmark':        return fbAddBookmark(params.story_id, await requireUid());
+    case 'removeBookmark':     return fbRemoveBookmark(params.story_id, await requireUid());
+    case 'getBookmarkIds':     return fbGetBookmarkIds(await requireUid());
+    case 'getBookmarks':       return fbGetBookmarks(await requireUid());
 
-    case 'addComment':         return fbAddComment(params.sub_id, params.content, need().user_id);
-    case 'deleteComment':      return fbDeleteComment(params.comment_id, need().user_id);
+    case 'addComment':         return fbAddComment(params.sub_id, params.content, await requireUid());
+    case 'deleteComment':      return fbDeleteComment(params.comment_id, await requireUid());
     case 'getComments':        return fbGetComments(params.sub_id);
-    case 'addStoryComment':    return fbAddStoryComment(params.story_id, params.content, need().user_id);
+    case 'addStoryComment':    return fbAddStoryComment(params.story_id, params.content, await requireUid());
     case 'getStoryComments':   return fbGetStoryComments(params.story_id);
 
-    case 'addReport':          return fbAddReport(params.sub_id, params.reason, need().user_id);
-    case 'getReports':         return fbGetReports(need().user_id);
-    case 'dismissReport':      return fbDismissReport(params.report_id, need().user_id);
-    case 'getAdminStats':      return fbGetAdminStats(need().user_id);
-    case 'adminEditSub':       return fbAdminEditSub(need().user_id, params.sub_id, params.new_content, params.old_content, params.story_id, params.edit_type);
-    case 'getAdminEdits':      return fbGetAdminEdits(need().user_id);
-    case 'markAiReviewed':     return fbMarkAiReviewed(need().user_id, params.sub_ids);
+    case 'addReport':          return fbAddReport(params.sub_id, params.reason, await requireUid());
+    case 'getReports':         return fbGetReports(await requireUid());
+    case 'dismissReport':      return fbDismissReport(params.report_id, await requireUid());
+    case 'getAdminStats':      return fbGetAdminStats(await requireUid());
+    case 'adminEditSub':       return fbAdminEditSub(await requireUid(), params.sub_id, params.new_content, params.old_content, params.story_id, params.edit_type);
+    case 'getAdminEdits':      return fbGetAdminEdits(await requireUid());
+    case 'markAiReviewed':     return fbMarkAiReviewed(await requireUid(), params.sub_ids);
 
     case 'getLeaderboard':          return fbGetLeaderboard();
-    case 'backfillLikeCounts':      return fbBackfillLikeCounts(need().user_id);
-    case 'getProfile':           return fbGetProfile(need().user_id);
-    case 'getPublicProfile':     need(); return fbGetPublicProfile(params.user_id);
-    case 'buyAvatar':            return fbBuyAvatar(params.emoji_id, need().user_id);
-    case 'setAvatar':            return fbSetAvatar(params.emoji_id, need().user_id);
+    case 'backfillLikeCounts':      return fbBackfillLikeCounts(await requireUid());
+    case 'getProfile':           return fbGetProfile(await requireUid());
+    case 'getPublicProfile':     await requireUid(); return fbGetPublicProfile(params.user_id);
+    case 'buyAvatar':            return fbBuyAvatar(params.emoji_id, await requireUid());
+    case 'setAvatar':            return fbSetAvatar(params.emoji_id, await requireUid());
     case 'checkDisplayName':     return fbCheckDisplayName(params.display_name);
-    case 'changeDisplayName':    return fbChangeDisplayName(need().user_id, params.display_name);
+    case 'changeDisplayName':    return fbChangeDisplayName(await requireUid(), params.display_name);
 
-    case 'voteMvp':            return fbVoteMvp(params.story_id, params.episode_id, need().user_id);
-    case 'getMvpVotes':        return fbGetMvpVotes(params.story_id, session?.user_id || null);
-    case 'createBranch':       return fbCreateBranch(params.story_id, params.branch_from_step, need().user_id);
-    case 'extendStory':        return fbExtendStory(params.story_id, need().user_id);
+    case 'voteMvp':            return fbVoteMvp(params.story_id, params.episode_id, await requireUid());
+    case 'getMvpVotes':        return fbGetMvpVotes(params.story_id, uid || null);
+    case 'createBranch':       return fbCreateBranch(params.story_id, params.branch_from_step, await requireUid());
+    case 'extendStory':        return fbExtendStory(params.story_id, await requireUid());
 
-    case 'deleteMySubmission': return fbDeleteMySubmission(params.sub_id, need().user_id);
+    case 'deleteMySubmission': return fbDeleteMySubmission(params.sub_id, await requireUid());
 
-    case 'boostStory':         return fbBoostStory(params.story_id, need().user_id);
-    case 'buyExtraSubmit':     return fbBuyExtraSubmit(params.episode_id, need().user_id);
-    case 'toggleStoryLike':    return fbToggleStoryLike(params.story_id, need().user_id);
+    case 'boostStory':         return fbBoostStory(params.story_id, await requireUid());
+    case 'buyExtraSubmit':     return fbBuyExtraSubmit(params.episode_id, await requireUid());
+    case 'toggleStoryLike':    return fbToggleStoryLike(params.story_id, await requireUid());
 
-    case 'adminForceAdopt':       return fbAdminForceAdopt(params.sub_id, need().user_id);
-    case 'adminDeleteSubmission': return fbAdminDeleteSubmission(params.sub_id, need().user_id);
-    case 'adminCloseStory':       return fbAdminCloseStory(params.story_id, need().user_id);
-    case 'adminFixParticipantCount': return fbAdminFixParticipantCount(params.story_id, need().user_id);
-    case 'getAIActivities':       return fbGetAIActivities(need().user_id);
-    case 'setAIConfig':           return fbSetAIConfig(need().user_id, params);
-    case 'setNotificationBatchEnabled': return fbSetNotificationBatchEnabled(need().user_id, params.enabled);
-    case 'setClaudeKey':          return fbSetClaudeKey(need().user_id, params.key);
+    case 'adminForceAdopt':       return fbAdminForceAdopt(params.sub_id, await requireUid());
+    case 'adminDeleteSubmission': return fbAdminDeleteSubmission(params.sub_id, await requireUid());
+    case 'adminCloseStory':       return fbAdminCloseStory(params.story_id, await requireUid());
+    case 'adminFixParticipantCount': return fbAdminFixParticipantCount(params.story_id, await requireUid());
+    case 'getAIActivities':       return fbGetAIActivities(await requireUid());
+    case 'setAIConfig':           return fbSetAIConfig(await requireUid(), params);
+    case 'setNotificationBatchEnabled': return fbSetNotificationBatchEnabled(await requireUid(), params.enabled);
+    case 'setClaudeKey':          return fbSetClaudeKey(await requireUid(), params.key);
 
-    case 'saveFcmToken':    return fbSaveFcmToken(need().user_id, params.fcm_token);
+    case 'saveFcmToken':    return fbSaveFcmToken(await requireUid(), params.fcm_token);
     case 'trackVisit':      return fbTrackVisit(params.is_unique);
-    case 'checkDailyBonus': return { ok: true, ...(await _fbCheckDailyBonus(need().user_id)) };
-    case 'submitBugReport':   return fbSubmitBugReport(params.content, need().user_id);
-    case 'getBugReports':     return fbGetBugReports(need().user_id);
-    case 'resolveBugReport':  return fbResolveBugReport(params.report_id || params.bug_id, need().user_id, params.comment || '');
+    case 'checkDailyBonus': return { ok: true, ...(await _fbCheckDailyBonus(await requireUid())) };
+    case 'submitBugReport':   return fbSubmitBugReport(params.content, await requireUid());
+    case 'getBugReports':     return fbGetBugReports(await requireUid());
+    case 'resolveBugReport':  return fbResolveBugReport(params.report_id || params.bug_id, await requireUid(), params.comment || '');
 
-    case 'addPatchNote':      return fbAddPatchNote(need().user_id, params.content);
-    case 'getPatchNotes':     return fbGetPatchNotes(need().user_id);
-    case 'getUnseenPatchNote': return fbGetUnseenPatchNote(need().user_id);
-    case 'markPatchNoteSeen': return fbMarkPatchNoteSeen(need().user_id, params.patch_id);
-    case 'getPatchNotesFeed': need(); return fbGetPatchNotesFeed();
+    case 'addPatchNote':      return fbAddPatchNote(await requireUid(), params.content);
+    case 'getPatchNotes':     return fbGetPatchNotes(await requireUid());
+    case 'getUnseenPatchNote': return fbGetUnseenPatchNote(await requireUid());
+    case 'markPatchNoteSeen': return fbMarkPatchNoteSeen(await requireUid(), params.patch_id);
+    case 'getPatchNotesFeed': await requireUid(); return fbGetPatchNotesFeed();
 
-    case 'getWordChallenge':          return fbGetWordChallenge(session?.user_id || null);
-    case 'submitWordChallengeEntry':  return fbSubmitWordChallengeEntry(params.challenge_id, need().user_id, params.text);
-    case 'voteWordChallenge':         return fbVoteWordChallenge(params.challenge_id, params.submission_id, need().user_id);
+    case 'getWordChallenge':          return fbGetWordChallenge(uid || null);
+    case 'submitWordChallengeEntry':  return fbSubmitWordChallengeEntry(params.challenge_id, await requireUid(), params.text);
+    case 'voteWordChallenge':         return fbVoteWordChallenge(params.challenge_id, params.submission_id, await requireUid());
     case 'getWordChallengeHistory':   return fbGetWordChallengeHistory();
-    case 'adminAddWordChallengeSets':   return fbAdminAddWordChallengeSets(need().user_id, params.raw_text);
-    case 'adminGetWordChallengeQueue':  return fbAdminGetWordChallengeQueue(need().user_id);
-    case 'adminDeleteWordChallengeSet': return fbAdminDeleteWordChallengeSet(need().user_id, params.set_id);
+    case 'adminAddWordChallengeSets':   return fbAdminAddWordChallengeSets(await requireUid(), params.raw_text);
+    case 'adminGetWordChallengeQueue':  return fbAdminGetWordChallengeQueue(await requireUid());
+    case 'adminDeleteWordChallengeSet': return fbAdminDeleteWordChallengeSet(await requireUid(), params.set_id);
 
     case 'pingWarm': return { ok: true };
     default:         return { ok: false, error: '알 수 없는 요청입니다.' };

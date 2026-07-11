@@ -199,9 +199,23 @@ async function _ensureSessionVerified() {
     return _sessionVerifyPromise;
   }
   _sessionVerifiedFor = { user_id: uid, token };
-  _sessionVerifyPromise = functionsRegion.httpsCallable('verifySession')({ user_id: uid, token })
-    .then(r => r.data)
-    .catch(() => undefined);
+  // verifySession(Cloud Function)이 콜드스타트로 느려지면, 모든 액션이 이
+  // 호출 하나를 기다리다 api()의 전체 타임아웃(15초)을 통째로 써버려서
+  // 정작 실제 작업(투표/스토리 조회 등)은 시도도 못 해보고 실패했음(실제
+  // 제보 — 공감하기·활성 스토리 열람이 이 이유로 즉시 실패). 자체적으로
+  // 6초 제한을 두고, 그 안에 안 끝나면(대개 콜드스타트로 이미 깨어났을)
+  // 한 번 더 시도해서 총 대기시간이 외부 타임아웃 안에 들어오게 함.
+  const callVerify = () => functionsRegion.httpsCallable('verifySession')({ user_id: uid, token })
+    .then(r => r.data).catch(() => undefined);
+  const withTimeout = p => Promise.race([
+    p,
+    new Promise(resolve => setTimeout(() => resolve(undefined), 6000)),
+  ]);
+  _sessionVerifyPromise = (async () => {
+    let result = await withTimeout(callVerify());
+    if (result === undefined) result = await withTimeout(callVerify());
+    return result;
+  })();
   return _sessionVerifyPromise;
 }
 

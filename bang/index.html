@@ -781,10 +781,18 @@ function _currentSubCount(s) {
   return eps.length ? Math.max(...eps.map(e => Number(e.sub_count) || 0)) : 0;
 }
 
+// 카드 표시(doneCardHtml 등)와 동일한 보정 규칙 — has_branch 스토리는 current_step
+// 자체가 이미 정답(동률 처리 특성상), 연장/분기 스토리는 calcDisplayStep으로 보정.
+// "진행도 순" 정렬이 이 보정 없이 raw current_step만 쓰면 화면에 보이는 단계
+// 숫자와 정렬 위치가 어긋남(실제 제보로 확인됨).
+function _sortDisplayStep(s) {
+  return s.has_branch ? (Number(s.current_step) || 0) : calcDisplayStep(s, Number(s.current_step) || 0);
+}
+
 function _sortStories(stories, key) {
   const arr = [...stories];
   if (key === 'activity')    return arr.sort((a, b) => (Number(b.activity_count)||0) - (Number(a.activity_count)||0));
-  if (key === 'step')        return arr.sort((a, b) => (Number(b.current_step)||0)   - (Number(a.current_step)||0));
+  if (key === 'step')        return arr.sort((a, b) => _sortDisplayStep(b) - _sortDisplayStep(a));
   if (key === 'likes')       return arr.sort((a, b) => (Number(b.like_count)||0)     - (Number(a.like_count)||0));
   if (key === 'submissions') return arr.sort((a, b) => _currentSubCount(b) - _currentSubCount(a));
   return arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));

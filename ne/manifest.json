@@ -1,0 +1,25 @@
+{
+  "name": "화씨.네 — 김기역 Kim Kiyuck",
+  "short_name": "화씨.네",
+  "description": "영상 작가·감독 김기역(Kim Kiyuck)의 포트폴리오.",
+  "start_url": "/ne/",
+  "scope": "/ne/",
+  "display": "standalone",
+  "background_color": "#0d0d0d",
+  "theme_color": "#0d0d0d",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/bang/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/bang/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

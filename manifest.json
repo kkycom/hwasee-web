@@ -1,0 +1,25 @@
+{
+  "name": "화씨 (hwasee)",
+  "short_name": "화씨",
+  "description": "화씨는 이야기와 영상을 만드는 크리에이티브 브랜드입니다.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0d0d0d",
+  "theme_color": "#0d0d0d",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/bang/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/bang/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

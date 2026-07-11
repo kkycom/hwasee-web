@@ -774,11 +774,18 @@ async function _loadBmIds() {
   if (res.ok) _bmIds = new Set(res.ids);
 }
 
+// 분기로 열려있는 에피소드가 여러 개면 각 회차 제출 개수를 합산(open_eps 없는
+// 옛날 캐시 데이터는 0으로 취급)
+function _totalSubCount(s) {
+  return (s.open_eps || []).reduce((sum, e) => sum + (Number(e.sub_count) || 0), 0);
+}
+
 function _sortStories(stories, key) {
   const arr = [...stories];
-  if (key === 'activity') return arr.sort((a, b) => (Number(b.activity_count)||0) - (Number(a.activity_count)||0));
-  if (key === 'step')     return arr.sort((a, b) => (Number(b.current_step)||0)   - (Number(a.current_step)||0));
-  if (key === 'likes')    return arr.sort((a, b) => (Number(b.like_count)||0)     - (Number(a.like_count)||0));
+  if (key === 'activity')    return arr.sort((a, b) => (Number(b.activity_count)||0) - (Number(a.activity_count)||0));
+  if (key === 'step')        return arr.sort((a, b) => (Number(b.current_step)||0)   - (Number(a.current_step)||0));
+  if (key === 'likes')       return arr.sort((a, b) => (Number(b.like_count)||0)     - (Number(a.like_count)||0));
+  if (key === 'submissions') return arr.sort((a, b) => _totalSubCount(b) - _totalSubCount(a));
   return arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
@@ -792,7 +799,7 @@ function _sortBtns(prefix, keys, current) {
 
 function setMineSort(key) {
   _mineSort = key; _mineLimit = 20;
-  ['activity','step','latest'].forEach(k => {
+  ['activity','step','submissions','latest'].forEach(k => {
     const el = document.getElementById('ms-' + k);
     if (el) el.classList.toggle('active', k === key);
   });
@@ -816,7 +823,7 @@ function renderMineCards() {
     ? `<button id="mine-load-more" class="btn btn-ghost" style="width:100%;margin-top:8px;color:var(--muted)" onclick="loadMoreMine()">더 보기 (${remaining}개)</button>`
     : '';
   content.innerHTML = boostHtml
-    + _sortBtns('ms', [['activity','참여도 순'],['step','진행도 순'],['latest','최신 순']], _mineSort)
+    + _sortBtns('ms', [['activity','참여도 순'],['step','진행도 순'],['submissions','제출 순'],['latest','최신 순']], _mineSort)
     + (regular.length
       ? visible.map(s => myStoryCardHtml(s)).join('') + loadMoreHtml
       : `<div class="empty" style="padding-top:30px">참여 중인 이야기가 없어요.<br>씨앗 탭에서 이야기를 시작해 보세요!</div>`);
@@ -837,7 +844,7 @@ function loadMoreMine() {
 
 function setPopSort(key) {
   _popSort = key; _popLimit = 20;
-  ['activity','step','latest'].forEach(k => {
+  ['activity','step','submissions','latest'].forEach(k => {
     const el = document.getElementById('ps-' + k);
     if (el) el.classList.toggle('active', k === key);
   });
@@ -860,7 +867,7 @@ function renderPopCards() {
     ? `<button id="pop-load-more" class="btn btn-ghost" style="width:100%;margin-top:8px;color:var(--muted)" onclick="loadMorePop()">더 보기 (${remaining}개)</button>`
     : '';
   content.innerHTML = boostHtml
-    + _sortBtns('ps', [['activity','참여도 순'],['step','진행도 순'],['latest','최신 순']], _popSort)
+    + _sortBtns('ps', [['activity','참여도 순'],['step','진행도 순'],['submissions','제출 순'],['latest','최신 순']], _popSort)
     + (regular.length
       ? visible.map(s => popularCardHtml(s)).join('') + loadMoreHtml
       : `<div class="empty" style="padding-top:40px">아직 이야기가 없어요.<br>씨앗 탭에서 첫 이야기를 시작해 보세요!</div>`);

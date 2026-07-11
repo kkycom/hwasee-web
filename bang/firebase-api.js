@@ -2313,11 +2313,20 @@ async function fbGetAIActivities(admin_id) {
   const hasKey = !!keyStatus.has_key;
   // 기본값 true(배치 발송) — 문서 자체가 없거나 필드가 없으면 배치 모드로 간주
   const notificationBatchEnabled = notifSettingsSnap.exists ? notifSettingsSnap.data().batch_enabled !== false : true;
-  let subsSnap, votesSnap;
+  let subsSnap, votesSnap, subsCountSnap, votesCountSnap;
   try {
-    [subsSnap, votesSnap] = await Promise.all([
-      db.collection('submissions').where('author_id', '==', FB_AI_ID).where('is_ai', '==', true).orderBy('created_at', 'desc').limit(300).get(),
-      db.collection('votes').where('voter_id', '==', FB_AI_ID).where('is_ai', '==', true).orderBy('created_at', 'desc').limit(300).get(),
+    const subsQuery  = db.collection('submissions').where('author_id', '==', FB_AI_ID).where('is_ai', '==', true);
+    const votesQuery = db.collection('votes').where('voter_id', '==', FB_AI_ID).where('is_ai', '==', true);
+    [subsSnap, votesSnap, subsCountSnap, votesCountSnap] = await Promise.all([
+      subsQuery.orderBy('created_at', 'desc').limit(300).get(),
+      votesQuery.orderBy('created_at', 'desc').limit(300).get(),
+      // 탭 라벨의 "총 개수"는 화면에 보여주는 300개 제한 조회 결과의 크기(subsSnap.size)를
+      // 그대로 썼었는데, 그게 곧 실제 누적 개수의 상한이 아니라 "최대 300개까지만 가져온
+      // 조회 결과 크기"일 뿐이라 300개를 넘으면 영원히 "300"으로 고정 표시되던 버그였음
+      // (유저 제보로 발견) — count() 집계 쿼리로 진짜 총 개수를 따로 구함(문서 본문을
+      // 안 가져오는 가벼운 쿼리라 300개 제한 조회와 별개로 추가해도 비용 부담 적음).
+      subsQuery.count().get(),
+      votesQuery.count().get(),
     ]);
   } catch(e) {
     return { ok: true, ai_config: aiConfig, has_key: hasKey, submissions: [], votes: [], total_subs: 0, total_votes: 0 };
@@ -2349,7 +2358,7 @@ async function fbGetAIActivities(admin_id) {
       const story_id = epToStoryMap[v.episode_id] || '';
       return { ...v, story_id, story_opening: storyMap[story_id] || '', sub_content: voteSubMap[v.sub_id] || '' };
     }),
-    total_subs: subsSnap.size, total_votes: votesSnap.size,
+    total_subs: subsCountSnap.data().count, total_votes: votesCountSnap.data().count,
   };
 }
 

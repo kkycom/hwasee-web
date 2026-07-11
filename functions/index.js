@@ -862,22 +862,22 @@ exports.aiParticipate = functions
     // 넘긴 채 쌓여있으면, 지터(위 subIntervalMsJ/voteIntervalMsJ)로는 이미 다 지나간
     // 시간 차이를 흡수 못해서 한 번의 실행에서 전부 마감돼 알림이 우르르 몰림(실측:
     // 11개 동시 마감 → 알림 22개). 회차(30분)당 마감 개수에 상한을 둬서 백로그를
-    // 여러 실행에 걸쳐 자연스럽게 나눠 처리함 — 처리 순서도 매번 무작위로 섞어서
-    // 캡에 걸려 밀린 이야기가 매번 같은 것들만 되지 않고 골고루 돌아가게 함.
+    // 여러 실행에 걸쳐 자연스럽게 나눠 처리함.
     // ⚠️ 처음엔 2로 설정했다가, 실제로 한 이야기가 임계값 도달 후 거의 20시간
     // 동안 마감 못 하고 대기한 사례가 발생해서(2026-07-08, 유저 리포트) 5로
     // 올림 — 캡이 너무 낮으면 "우르르 몰림"은 막아도 개별 이야기가 지나치게
     // 오래 기다리는 부작용이 생김. 5 정도면 극단적 백로그(11개)도 3회
     // 실행(~1.5시간)이면 다 풀리면서, 평상시 개별 대기시간도 훨씬 짧아짐.
+    // 캡에 걸려 이번 실행에 못 닫는 이야기가 생길 때 "누가 뽑히는지"는 예전엔
+    // 매 실행마다 무작위로 섞어서 정했음(통계적으로는 공평하지만, 특정 이야기가
+    // 운 나쁘게 계속 안 뽑힐 가능성 자체는 이론상 남아있었음) — 이제 마감 대상을
+    // 먼저 전부 모아놓고 에피소드가 가장 오래 열려있던(FIFO) 순서로 캡만큼만
+    // 실제로 닫아서, 개별 이야기의 최대 대기시간이 항상 정확히 계산 가능하게 함
+    // (밀린 개수 ÷ MAX_CLOSES_PER_RUN × 30분).
     const MAX_CLOSES_PER_RUN = 5;
-    let closesThisRun = 0;
-    const shuffledStories = [...storiesSnap.docs];
-    for (let i = shuffledStories.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffledStories[i], shuffledStories[j]] = [shuffledStories[j], shuffledStories[i]];
-    }
+    const closeCandidates = []; // { episode_id, currentEp }
 
-    for (const storyDoc of shuffledStories) {
+    for (const storyDoc of storiesSnap.docs) {
       try {
         const story_id = storyDoc.id;
         // 이야기별 지터(±25%) — 여러 이야기의 "다음 AI 투표/제출 시각" 타이머가
@@ -1034,14 +1034,27 @@ ${votable.map((s, i) => `[${i + 1}] sub_id=${s.id} | ${s.content}`).join('\n')}
           // 마감 여부는 "이번 실행에서 AI가 막 투표했는가"와 무관하게 항상 확인 —
           // 캡에 걸려 이번 실행에 마감 못 한 이야기도 다음 실행에서 여기로 다시
           // 걸려 재시도됨(투표 자체는 이미 끝난 상태라 voteIntervalMs 재대기 없이 감).
+          // 실제로 지금 닫진 않고 후보로만 모아둠 — 아래에서 전체 후보 중 가장
+          // 오래 열려있던(FIFO) 순서로 캡만큼만 실제로 닫음.
           const maxVoteCount = subs.reduce((m, s) => Math.max(m, Number(s.vote_count) || 0), 0);
-          if (maxVoteCount >= AI_VOTE_THRESHOLD && closesThisRun < MAX_CLOSES_PER_RUN) {
-            await _serverCloseEpisode(db, episode_id, currentEp);
-            closesThisRun++;
+          if (maxVoteCount >= AI_VOTE_THRESHOLD) {
+            closeCandidates.push({ episode_id, currentEp });
           }
         }
       } catch (e) {
         console.error(`aiParticipate error for story ${storyDoc.id}:`, e.message);
+      }
+    }
+
+    // 마감 대상 중 에피소드가 가장 먼저 열린(=가장 오래 기다린) 순서로 정렬해
+    // 캡만큼만 실제로 마감 — 특정 이야기가 계속 안 뽑히는 일 없이 최대 대기시간이
+    // 항상 (밀린 개수 ÷ MAX_CLOSES_PER_RUN × 30분)으로 보장됨.
+    closeCandidates.sort((a, b) => new Date(a.currentEp.created_at) - new Date(b.currentEp.created_at));
+    for (const { episode_id, currentEp } of closeCandidates.slice(0, MAX_CLOSES_PER_RUN)) {
+      try {
+        await _serverCloseEpisode(db, episode_id, currentEp);
+      } catch (e) {
+        console.error(`aiParticipate close error for episode ${episode_id}:`, e.message);
       }
     }
 

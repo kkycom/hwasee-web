@@ -2004,6 +2004,8 @@ function renderVoteCard(sub, mySubIds, maxVotes, myVotedSet = new Set(), step = 
             onclick="event.stopPropagation();toggleReport('${sub.sub_id}')">⚑ 신고</button>` : ''}
         ${mySubIds.has(sub.sub_id) && voteCount === 0 && !isAdopted ? `
           <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px;color:var(--muted);margin-left:auto;opacity:0.6"
+            onclick="event.stopPropagation();editMySubmission('${sub.sub_id}','${esc(sub.content).replace(/'/g,"\\'")}')">✎ 수정</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px;color:var(--muted);opacity:0.6"
             onclick="event.stopPropagation();deleteMySubmission('${sub.sub_id}')">✕ 삭제</button>` : ''}
       </div>
       ${user && !mySubIds.has(sub.sub_id) ? `
@@ -2256,12 +2258,18 @@ function renderWordChallenge() {
         </button>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;line-height:1.5">${boldChallengeWords(s.text, challenge.words)}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(s.nickname)}${isMine ? ' (나)' : ''}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:6px">
+            <span>${esc(s.nickname)}${isMine ? ' (나)' : ''}</span>
+            ${isMine && isActive && !(s.vote_count > 0) ? `
+              <span style="opacity:.5">·</span>
+              <span style="cursor:pointer;text-decoration:underline" onclick="editWordChallengeEntry('${challenge.challenge_id}','${esc(s.text).replace(/'/g,"\\'")}')">✎ 수정</span>
+              <span style="cursor:pointer;text-decoration:underline" onclick="deleteWordChallengeEntry('${challenge.challenge_id}')">✕ 삭제</span>` : ''}
+          </div>
         </div>
       </div>`;
   }).join('') : (isActive
-    ? `<div style="font-size:12px;color:var(--muted);padding:10px 0">아직 참여자가 없어요. 첫 문장을 남겨보세요!</div>`
-    : `<div style="font-size:12px;color:var(--muted);padding:10px 0">다른 참여자는 없었어요.</div>`);
+    ? `<div style="font-size:12px;color:var(--muted);padding:10px 0;text-align:center">아직 참여자가 없어요. 첫 문장을 남겨보세요!</div>`
+    : `<div style="font-size:12px;color:var(--muted);padding:10px 0;text-align:center">다른 참여자는 없었어요.</div>`);
 
   const showMoreHtml = rankedSubs.length > _wcVisibleCount
     ? `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="_wcShowMore()">더보기 (${rankedSubs.length - _wcVisibleCount}개 남음)</button>` : '';
@@ -2502,7 +2510,13 @@ function renderSentenceRoundInner(slot) {
         </button>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;line-height:1.5">${esc(s.text)}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(s.nickname)}${isMine ? ' (나)' : ''}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:6px">
+            <span>${esc(s.nickname)}${isMine ? ' (나)' : ''}</span>
+            ${isMine && !(s.vote_count > 0) ? `
+              <span style="opacity:.5">·</span>
+              <span style="cursor:pointer;text-decoration:underline" onclick="editSentenceProposal('${round.round_id}','${esc(s.text).replace(/'/g,"\\'")}')">✎ 수정</span>
+              <span style="cursor:pointer;text-decoration:underline" onclick="deleteSentenceProposal('${round.round_id}')">✕ 삭제</span>` : ''}
+          </div>
         </div>
       </div>`;
   }).join('') : `<div style="font-size:12px;color:var(--muted);padding:10px 0">아직 제안이 없어요. 첫 문장을 남겨보세요!</div>`;
@@ -5414,6 +5428,112 @@ function deleteMySubmission(sub_id) {
     id: 'delsub-modal', icon,
     title: '제출 삭제',
     desc: '제출한 문장을 삭제해요.<br><strong style="color:var(--accent2)">10P</strong>가 차감됩니다.',
+    confirmLabel: '삭제하기',
+  });
+}
+
+// 문장 수정 공용 모달 — showConfirmModal과 같은 modal-overlay/_modalCallbacks 틀을
+// 재사용하되, 확인 버튼 대신 텍스트 입력을 받음. onSave(mid)는 직접 input을 읽고
+// api 호출 + 모달 정리 + 화면 갱신까지 책임짐(컨텍스트마다 갱신 방식이 달라서).
+function showEditTextModal(id, title, currentText, maxLen, onSave) {
+  const mid = id;
+  const existing = document.getElementById(mid);
+  if (existing) { existing.remove(); delete _modalCallbacks[mid]; }
+  const modal = document.createElement('div');
+  modal.id = mid;
+  modal.className = 'modal-overlay';
+  modal.onclick = e => { if (e.target === modal) { modal.remove(); delete _modalCallbacks[mid]; } };
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:360px">
+      <div style="font-size:16px;font-weight:700;margin-bottom:12px;font-family:var(--serif);text-align:center">${title}</div>
+      <textarea id="${mid}-input" maxlength="${maxLen}" oninput="document.getElementById('${mid}-count').textContent=this.value.length" style="width:100%;min-height:70px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:14px;color:var(--text);resize:vertical;box-sizing:border-box">${esc(currentText)}</textarea>
+      <div style="text-align:right;font-size:11px;color:var(--muted);margin:4px 0 16px"><span id="${mid}-count">${currentText.length}</span>/${maxLen}</div>
+      <div style="display:flex;gap:8px;justify-content:center">
+        <button class="btn btn-ghost btn-sm" onclick="(()=>{document.getElementById('${mid}').remove();delete _modalCallbacks['${mid}']})()">취소</button>
+        <button class="btn btn-primary btn-sm" id="${mid}-confirm-btn" onclick="_runModalCallback('${mid}')">저장</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  _modalCallbacks[mid] = onSave;
+  document.getElementById(`${mid}-input`)?.focus();
+}
+
+function editMySubmission(sub_id, currentContent) {
+  showEditTextModal('editsub-modal', '문장 수정', currentContent, 50, async (mid) => {
+    const val = document.getElementById(`${mid}-input`).value.trim();
+    if (!val) { toast('문장을 입력해주세요.', true); return; }
+    const btn = document.getElementById(`${mid}-confirm-btn`);
+    if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
+    const res = await api('editMySubmission', { sub_id, content: val });
+    document.getElementById(mid)?.remove(); delete _modalCallbacks[mid];
+    if (!res.ok) { toast(res.error, true); return; }
+    toast('수정됐습니다.');
+    story();
+  });
+}
+
+function editWordChallengeEntry(challenge_id, currentText) {
+  showEditTextModal('editwc-modal', '문장 수정', currentText, FB_WORD_CHALLENGE_MAX_CHARS, async (mid) => {
+    const val = document.getElementById(`${mid}-input`).value.trim();
+    if (!val) { toast('문장을 입력해주세요.', true); return; }
+    const btn = document.getElementById(`${mid}-confirm-btn`);
+    if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
+    const res = await api('editWordChallengeEntry', { challenge_id, text: val });
+    document.getElementById(mid)?.remove(); delete _modalCallbacks[mid];
+    if (!res.ok) { toast(res.error, true); return; }
+    toast('수정됐습니다.');
+    await loadWordChallenge();
+  });
+}
+
+function deleteWordChallengeEntry(challenge_id) {
+  const icon = `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent2)"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
+  _modalCallbacks['delwc-modal'] = async (mid) => {
+    const btn = document.getElementById(`${mid}-confirm-btn`);
+    if (btn) { btn.disabled = true; btn.textContent = '삭제 중...'; }
+    const res = await api('deleteWordChallengeEntry', { challenge_id });
+    document.getElementById(mid)?.remove(); delete _modalCallbacks[mid];
+    if (!res.ok) { toast(res.error, true); return; }
+    toast('삭제됐습니다.');
+    await loadWordChallenge();
+  };
+  showConfirmModal({
+    id: 'delwc-modal', icon,
+    title: '제출 삭제',
+    desc: '제출한 문장을 삭제해요.',
+    confirmLabel: '삭제하기',
+  });
+}
+
+function editSentenceProposal(round_id, currentText) {
+  showEditTextModal('editsr-modal', '문장 수정', currentText, FB_WORD_CHALLENGE_MAX_CHARS, async (mid) => {
+    const val = document.getElementById(`${mid}-input`).value.trim();
+    if (!val) { toast('문장을 입력해주세요.', true); return; }
+    const btn = document.getElementById(`${mid}-confirm-btn`);
+    if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
+    const res = await api('editSentenceProposal', { round_id, text: val });
+    document.getElementById(mid)?.remove(); delete _modalCallbacks[mid];
+    if (!res.ok) { toast(res.error, true); return; }
+    toast('수정됐습니다.');
+    await loadSpotlightSlot();
+  });
+}
+
+function deleteSentenceProposal(round_id) {
+  const icon = `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent2)"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
+  _modalCallbacks['delsr-modal'] = async (mid) => {
+    const btn = document.getElementById(`${mid}-confirm-btn`);
+    if (btn) { btn.disabled = true; btn.textContent = '삭제 중...'; }
+    const res = await api('deleteSentenceProposal', { round_id });
+    document.getElementById(mid)?.remove(); delete _modalCallbacks[mid];
+    if (!res.ok) { toast(res.error, true); return; }
+    toast('삭제됐습니다.');
+    await loadSpotlightSlot();
+  };
+  showConfirmModal({
+    id: 'delsr-modal', icon,
+    title: '제안 삭제',
+    desc: '제안한 문장을 삭제해요.',
     confirmLabel: '삭제하기',
   });
 }

@@ -2262,6 +2262,24 @@ async function fbDeleteMySubmission(sub_id, user_id) {
   return { ok: true };
 }
 
+// 삭제와 동일한 기준(공감 0개·미채택)으로만 허용 — 표절/어뷰징 우려로 처음엔
+// 아예 막아뒀는데, 실제로 그런 사례가 거의 없어서(2026-07) 이 기준 안에서는
+// 열어주기로 함. 공감을 이미 받았거나 채택된 글은 사후 내용 변경으로 투표한
+// 사람들을 기만할 수 있어 delete와 동일하게 계속 막음.
+async function fbEditMySubmission(sub_id, user_id, content) {
+  const text = (content || '').trim();
+  if (!text) return { ok: false, error: '문장을 입력해주세요.' };
+  if (text.length > 50) return { ok: false, error: '50자 이내로 작성해주세요.' };
+  const subSnap = await db.collection('submissions').doc(sub_id).get();
+  if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
+  const sub = subSnap.data();
+  if (sub.author_id !== user_id) return { ok: false, error: '권한이 없습니다.' };
+  if ((Number(sub.vote_count) || 0) > 0) return { ok: false, error: '공감을 받은 글은 수정할 수 없습니다.' };
+  if (sub.is_adopted === true || sub.is_adopted === 'TRUE') return { ok: false, error: '채택된 글은 수정할 수 없습니다.' };
+  await db.collection('submissions').doc(sub_id).update({ content: text });
+  return { ok: true };
+}
+
 // ─── 어드민 ──────────────────────────────────────────────
 
 async function fbAdminForceAdopt(sub_id, admin_id) {
@@ -2629,6 +2647,7 @@ async function firebaseApi(action, params = {}) {
     case 'extendStory':        return fbExtendStory(params.story_id, await requireUid());
 
     case 'deleteMySubmission': return fbDeleteMySubmission(params.sub_id, await requireUid());
+    case 'editMySubmission':   return fbEditMySubmission(params.sub_id, await requireUid(), params.content);
 
     case 'boostStory':         return fbBoostStory(params.story_id, await requireUid());
     case 'buyExtraSubmit':     return fbBuyExtraSubmit(params.episode_id, await requireUid());
@@ -2658,6 +2677,8 @@ async function firebaseApi(action, params = {}) {
 
     case 'getWordChallenge':          return fbGetWordChallenge(uid || null);
     case 'submitWordChallengeEntry':  return fbSubmitWordChallengeEntry(params.challenge_id, await requireUid(), params.text);
+    case 'editWordChallengeEntry':    return fbEditWordChallengeEntry(params.challenge_id, await requireUid(), params.text);
+    case 'deleteWordChallengeEntry':  return fbDeleteWordChallengeEntry(params.challenge_id, await requireUid());
     case 'voteWordChallenge':         return fbVoteWordChallenge(params.challenge_id, params.submission_id, await requireUid());
     case 'getWordChallengeHistory':   return fbGetWordChallengeHistory();
     case 'adminAddWordChallengeSets':   return fbAdminAddWordChallengeSets(await requireUid(), params.raw_text);
@@ -2666,6 +2687,8 @@ async function firebaseApi(action, params = {}) {
 
     case 'getSpotlight':           return fbGetSpotlight(uid || null);
     case 'submitSentenceProposal': return fbSubmitSentenceProposal(params.round_id, await requireUid(), params.text);
+    case 'editSentenceProposal':   return fbEditSentenceProposal(params.round_id, await requireUid(), params.text);
+    case 'deleteSentenceProposal': return fbDeleteSentenceProposal(params.round_id, await requireUid());
     case 'voteSentenceRound':      return fbVoteSentenceRound(params.round_id, params.submission_id, await requireUid());
 
     case 'pingWarm': return { ok: true };
@@ -2736,6 +2759,39 @@ async function fbSubmitWordChallengeEntry(challenge_id, author_id, text) {
     return { ok: false, error: e.message };
   }
   return { ok: true, submission_id: sub_id };
+}
+
+// sub_id가 challenge_id+author_id 결정적 조합이라 소유권은 sub_id 자체가 이미
+// 보장함 — fbDeleteMySubmission과 같은 기준(득표 0개)으로만 수정/삭제 허용
+async function fbEditWordChallengeEntry(challenge_id, author_id, text) {
+  const text2 = (text || '').trim();
+  if (!text2) return { ok: false, error: '문장을 입력해주세요.' };
+  if (text2.length > FB_WORD_CHALLENGE_MAX_CHARS) return { ok: false, error: `${FB_WORD_CHALLENGE_MAX_CHARS}자 이내로 작성해주세요.` };
+  const chSnap = await db.collection('word_challenges').doc(challenge_id).get();
+  if (!chSnap.exists) return { ok: false, error: '챌린지를 찾을 수 없습니다.' };
+  const ch = chSnap.data();
+  if (ch.status !== 'active' || Date.now() >= new Date(ch.end_at).getTime()) return { ok: false, error: '이미 마감된 챌린지예요.' };
+  const missing = (ch.words || []).filter(w => !text2.includes(w));
+  if (missing.length) return { ok: false, error: `단어 "${missing.join(', ')}"가 문장에 없어요.` };
+  const sub_id = `${challenge_id}_${author_id}`;
+  const subSnap = await db.collection('word_challenge_submissions').doc(sub_id).get();
+  if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
+  if ((Number(subSnap.data().vote_count) || 0) > 0) return { ok: false, error: '득표한 문장은 수정할 수 없습니다.' };
+  await subSnap.ref.update({ text: text2 });
+  return { ok: true };
+}
+
+async function fbDeleteWordChallengeEntry(challenge_id, author_id) {
+  const chSnap = await db.collection('word_challenges').doc(challenge_id).get();
+  if (!chSnap.exists) return { ok: false, error: '챌린지를 찾을 수 없습니다.' };
+  const ch = chSnap.data();
+  if (ch.status !== 'active' || Date.now() >= new Date(ch.end_at).getTime()) return { ok: false, error: '이미 마감된 챌린지예요.' };
+  const sub_id = `${challenge_id}_${author_id}`;
+  const subSnap = await db.collection('word_challenge_submissions').doc(sub_id).get();
+  if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
+  if ((Number(subSnap.data().vote_count) || 0) > 0) return { ok: false, error: '득표한 문장은 삭제할 수 없습니다.' };
+  await subSnap.ref.delete();
+  return { ok: true };
 }
 
 // 하루(챌린지 1회)당 투표는 딱 1표, 한 번 던지면 변경/취소 불가
@@ -2900,6 +2956,36 @@ async function fbSubmitSentenceProposal(round_id, author_id, text) {
     return { ok: false, error: e.message };
   }
   return { ok: true, submission_id: sub_id };
+}
+
+// word_challenge 편집/삭제와 동일한 기준(득표 0개·라운드 진행 중)
+async function fbEditSentenceProposal(round_id, author_id, text) {
+  const text2 = (text || '').trim();
+  if (!text2) return { ok: false, error: '문장을 입력해주세요.' };
+  if (text2.length > FB_WORD_CHALLENGE_MAX_CHARS) return { ok: false, error: `${FB_WORD_CHALLENGE_MAX_CHARS}자 이내로 작성해주세요.` };
+  const roundSnap = await db.collection('sentence_rounds').doc(round_id).get();
+  if (!roundSnap.exists) return { ok: false, error: '라운드를 찾을 수 없습니다.' };
+  const round = roundSnap.data();
+  if (round.status !== 'active' || Date.now() >= new Date(round.end_at).getTime()) return { ok: false, error: '이미 마감된 라운드예요.' };
+  const sub_id = `${round_id}_${author_id}`;
+  const subSnap = await db.collection('sentence_round_submissions').doc(sub_id).get();
+  if (!subSnap.exists) return { ok: false, error: '제안을 찾을 수 없습니다.' };
+  if ((Number(subSnap.data().vote_count) || 0) > 0) return { ok: false, error: '득표한 제안은 수정할 수 없습니다.' };
+  await subSnap.ref.update({ text: text2 });
+  return { ok: true };
+}
+
+async function fbDeleteSentenceProposal(round_id, author_id) {
+  const roundSnap = await db.collection('sentence_rounds').doc(round_id).get();
+  if (!roundSnap.exists) return { ok: false, error: '라운드를 찾을 수 없습니다.' };
+  const round = roundSnap.data();
+  if (round.status !== 'active' || Date.now() >= new Date(round.end_at).getTime()) return { ok: false, error: '이미 마감된 라운드예요.' };
+  const sub_id = `${round_id}_${author_id}`;
+  const subSnap = await db.collection('sentence_round_submissions').doc(sub_id).get();
+  if (!subSnap.exists) return { ok: false, error: '제안을 찾을 수 없습니다.' };
+  if ((Number(subSnap.data().vote_count) || 0) > 0) return { ok: false, error: '득표한 제안은 삭제할 수 없습니다.' };
+  await subSnap.ref.delete();
+  return { ok: true };
 }
 
 // word_challenge와 동일하게 마감 전까지는 투표를 자유롭게 바꿀 수 있음(1회 고정 아님) —

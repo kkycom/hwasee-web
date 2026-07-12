@@ -1806,6 +1806,16 @@ function _applyStoryData(res, story_id) {
   // 분기 CTA 초기 렌더
   _updateBranchCta();
 
+  // 아직 안 끝난 이야기인데 갈림길이 안 풀려서(openEp===null) 액션 섹션이
+  // 비어있는 경우 — 참여하기로 곧장 들어온 사람이 본문을 한참 스크롤해야
+  // 갈림길 선택 카드를 찾을 수 있던 문제. A/B를 순서 편향 없이 내용으로
+  // 고르게 하려는 취지이므로, 그 카드가 바로 보이게 자동 스크롤함.
+  if (!_isFinishedStory && !openEp) {
+    requestAnimationFrame(() => {
+      document.querySelector('.branch-chooser')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
+
 }
 
 async function story(preserveBranch = false) {

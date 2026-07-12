@@ -2406,7 +2406,7 @@ function renderSpotlight() {
     let bodyHtml;
     if (slot.state === 'story') {
       bodyHtml = `
-        <div class="story-prose" style="padding:28px 18px 20px 20px;margin:12px 0">
+        <div class="story-prose" style="padding:28px 18px 28px 20px;margin:12px 0">
           <div class="prose-opening">${esc(slot.opening)}</div>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
@@ -2470,13 +2470,13 @@ function renderSentenceRoundInner(slot) {
   const formHtml = user && !my_submission_id ? `
     <div style="margin:12px 0">
       <div style="display:flex;gap:8px">
-        <input id="sr-input" maxlength="${FB_WORD_CHALLENGE_MAX_CHARS}" placeholder="이 이야기를 시작할 첫 문장을 제안해보세요" oninput="_srCheckInput()" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text)">
+        <input id="sr-input" maxlength="${FB_WORD_CHALLENGE_MAX_CHARS}" placeholder="이야기를 시작할 첫 문장을 제안해보세요" oninput="_srCheckInput()" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text)">
         <button id="sr-submit-btn" class="btn btn-primary btn-sm" onclick="_submitSentenceProposal()">제안</button>
       </div>
       <div style="text-align:right;font-size:11px;color:var(--muted);margin-top:4px"><span id="sr-char-count">0</span>/${FB_WORD_CHALLENGE_MAX_CHARS}</div>
     </div>` : '';
   const mySubHint = user && my_submission_id
-    ? `<div style="text-align:center;font-size:12px;color:var(--muted);margin:12px 0">이미 제안했어요 — 다른 제안에 투표해보세요 (마감 전까지 자유롭게 바꿀 수 있어요)</div>` : '';
+    ? `<div style="text-align:center;font-size:12px;color:var(--muted);margin:12px 0">제출완료</div>` : '';
 
   const visibleSubs = submissions.slice(0, _srVisibleCount);
   const listHtml = visibleSubs.length ? visibleSubs.map(s => {
@@ -2506,7 +2506,7 @@ function renderSentenceRoundInner(slot) {
       <div style="font-size:12px;color:var(--muted);margin-top:4px">⏰ <span id="sr-countdown"></span> 마감</div>
     </div>
     ${loginHint}${mySubHint}${formHtml}
-    <button class="btn btn-ghost btn-sm" style="width:100%" onclick="document.getElementById('sr-submissions-list').style.display=document.getElementById('sr-submissions-list').style.display==='none'?'block':'none'">${submissions.length}개 제안 보기 ▾</button>
+    <button class="btn btn-ghost btn-sm" style="width:100%" onclick="const l=document.getElementById('sr-submissions-list'),a=this.querySelector('.sr-arrow'),open=l.style.display==='none';l.style.display=open?'block':'none';a.textContent=open?'▴':'▾'">${submissions.length}개 제안 보기 <span class="sr-arrow">▾</span></button>
     <div id="sr-submissions-list" style="display:none;margin-top:8px">${listHtml}${showMoreHtml}</div>`;
 }
 

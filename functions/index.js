@@ -496,8 +496,10 @@ const FB_ACHIEVEMENTS = [
   { id: 'seed_king',            category: 'seed_count',          threshold: 20,  name: '이야기 정원사', avatar: '🪴' },
   { id: 'referral_rookie',      category: 'referral_count',      threshold: 3,   name: '인싸루키',      avatar: '🤝' },
   { id: 'referral_king',        category: 'referral_count',      threshold: 10,  name: '인싸왕',        avatar: '📣' },
-  { id: 'wordchallenge_rookie', category: 'word_challenge_wins', threshold: 5,   name: '장원 후보',     avatar: '🎲' },
-  { id: 'wordchallenge_king',   category: 'word_challenge_wins', threshold: 10,  name: '단어의 신',     avatar: '🏆' },
+  { id: 'wordchallenge_rookie', category: 'word_challenge_wins',     threshold: 5,   name: '장원 후보',     avatar: '🎲' },
+  { id: 'wordchallenge_king',   category: 'word_challenge_wins',     threshold: 10,  name: '단어의 신',     avatar: '🏆' },
+  { id: 'firstline_rookie',     category: 'spotlight_sentence_picks', threshold: 5,   name: '첫줄 유망주',   avatar: '💡' },
+  { id: 'firstline_king',       category: 'spotlight_sentence_picks', threshold: 10,  name: '첫줄의 신',     avatar: '🌟' },
 ];
 
 async function _serverCheckAchievements(db, user_id, category, newValue) {
@@ -1913,6 +1915,7 @@ exports.closeSentenceRounds = functions
           // 같은 코드 경로에 붙어 있어 일관되고, 선정됐는데 나중에 안 쓰인다고
           // 보상을 못 받는 경우가 없음.
           await _serverAddPoints(db, w.user_id, 50, 'spotlight_sentence_pick', w.submission_id);
+          try { await _serverBumpAchievementCounter(db, w.user_id, 'spotlight_sentence_picks'); } catch (e) {}
         }
       }
 

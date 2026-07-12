@@ -1777,18 +1777,23 @@ function _applyStoryData(res, story_id) {
   } else if (s.status === 'completed' || s.status === 'inactive') {
     const continuation = branches.find(b => b.is_continuation);
     const _infSvg = `<svg width="16" height="10" viewBox="0 0 24 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7 C10 3,2 3,2 7 C2 11,10 11,12 7 C14 3,22 3,22 7 C22 11,14 11,12 7 Z"/></svg>`;
+    // flex:1 균등분배였는데 "으뜸 글 뽑기"(6음절)보다 "이야기 추천해요 (n)"(9~11음절)/
+    // "이야기 연장하기"(7음절)가 훨씬 길어서, 좁은 화면에서 뒤 두 버튼 텍스트가 자간
+    // 중간에서 줄바꿈(CJK 기본 줄바꿈 특성)되며 2줄+여백 뒤틀림 발생. 텍스트 길이에
+    // 비례하게 flex-grow를 나눠주고 nowrap+ellipsis로 항상 한 줄 유지되게 함
+    const _actBtnStyle = (grow) => `flex:${grow} 1 0;min-width:0;display:inline-flex;align-items:center;justify-content:center;gap:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;padding:5px 8px`;
     actionHtml = `
-      <div style="display:flex;gap:8px;justify-content:center;margin-bottom:8px;align-items:center">
+      <div style="display:flex;gap:6px;justify-content:center;margin-bottom:8px;align-items:center">
         ${user ? `
-        <button class="btn btn-ghost btn-sm" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">
+        <button class="btn btn-ghost btn-sm" style="${_actBtnStyle(0.85)}" onclick="enterProseSelMode('mvp','${esc(s.story_id)}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>으뜸 글 뽑기
         </button>
-        <button id="like-btn" class="btn ${is_liked ? 'btn-primary' : 'btn-ghost'} btn-sm" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px"
+        <button id="like-btn" class="btn ${is_liked ? 'btn-primary' : 'btn-ghost'} btn-sm" style="${_actBtnStyle(1.3)}"
           onclick="doToggleStoryLike('${esc(s.story_id)}')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>이야기 추천해요${like_count > 0 ? ` (${like_count})` : ''}
         </button>
         ${s.status === 'completed' && !continuation
-          ? `<button class="btn btn-ghost btn-sm" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px" onclick="showExtendModal('${esc(s.story_id)}')">${_infSvg}이야기 연장하기</button>`
+          ? `<button class="btn btn-ghost btn-sm" style="${_actBtnStyle(1.05)}" onclick="showExtendModal('${esc(s.story_id)}')">${_infSvg}이야기 연장하기</button>`
           : ''}` : ''}
       </div>
       `;

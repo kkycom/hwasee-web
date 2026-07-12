@@ -2054,10 +2054,15 @@ async function fbGetProfile(user_id) {
 
   const _toChunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
 
-  const [histSnap, writingsSnap] = await Promise.all([
+  const [histSnap, writingsSnap, wcSubsSnap, srSubsSnap] = await Promise.all([
     db.collection('point_ledger').where('user_id','==',user_id).orderBy('created_at','desc').limit(20).get(),
     // limit 낮으면 AI가 관리자 계정으로 쓴 글이 최근순 상위를 채워서 실제 글이 밀려날 수 있음(is_ai 필터는 아래에서 적용)
     db.collection('submissions').where('author_id','==',user_id).orderBy('created_at','desc').limit(300).get(),
+    // 단어챌린지/오늘의 이야기 제안은 별도 컬렉션이라 "내가 쓴 글"에 안 잡히던 것 —
+    // 여기 합쳐서 같이 보여줌. word_challenge/sentence_round와 동일하게 단일필드
+    // 쿼리(orderBy 없음, 복합 인덱스 회피)로 가져와서 아래서 클라이언트 정렬
+    db.collection('word_challenge_submissions').where('user_id','==',user_id).get(),
+    db.collection('sentence_round_submissions').where('user_id','==',user_id).get(),
   ]);
 
   // 제출글에서 실제 참조하는 ID만 배치 조회
@@ -2089,10 +2094,11 @@ async function fbGetProfile(user_id) {
   }
   history.forEach(h => { if (h.sub_id && subStoryMap[h.sub_id]) h.story_id = subStoryMap[h.sub_id]; });
 
-  const writings = writingsSnap.docs.filter(d => !d.data().is_ai).map(d => {
+  const episodeWritings = writingsSnap.docs.filter(d => !d.data().is_ai).map(d => {
     const s = d.data();
     const ep = epMap[s.episode_id];
     return {
+      type: 'episode',
       sub_id: s.sub_id || d.id,
       content: s.content,
       vote_count: s.vote_count || 0,
@@ -2103,7 +2109,57 @@ async function fbGetProfile(user_id) {
       step: ep ? Number(ep.step) : 0,
       created_at: s.created_at,
     };
-  }).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+  });
+
+  // 단어챌린지/오늘의 이야기 제안 — 당선/채택 여부는 부모 문서(word_challenges/
+  // sentence_rounds)의 winners[] 배열에 내 제출 ID가 있는지로 판정. 구버전(동률
+  // 처리 이전) 단어챌린지 기록은 winners[] 없이 winner_submission_id 단일 필드만
+  // 있을 수 있어 그것도 같이 확인.
+  const wcChallengeIds = [...new Set(wcSubsSnap.docs.map(d => d.data().challenge_id).filter(Boolean))];
+  const srRoundIds     = [...new Set(srSubsSnap.docs.map(d => d.data().round_id).filter(Boolean))];
+  const wcChallengeMap = {}, srRoundMap = {};
+  await Promise.all([
+    ..._toChunks(wcChallengeIds).map(ch =>
+      db.collection('word_challenges').where(firebase.firestore.FieldPath.documentId(), 'in', ch).get()
+        .then(s => s.docs.forEach(d => { wcChallengeMap[d.id] = d.data(); }))
+    ),
+    ..._toChunks(srRoundIds).map(ch =>
+      db.collection('sentence_rounds').where(firebase.firestore.FieldPath.documentId(), 'in', ch).get()
+        .then(s => s.docs.forEach(d => { srRoundMap[d.id] = d.data(); }))
+    ),
+  ]);
+  const _isWinner = (parent, sub_id) =>
+    (parent?.winners || []).some(w => w.submission_id === sub_id) || parent?.winner_submission_id === sub_id;
+
+  const wcWritings = wcSubsSnap.docs.map(d => {
+    const s = d.data();
+    const ch = wcChallengeMap[s.challenge_id];
+    return {
+      type: 'word_challenge',
+      sub_id: d.id,
+      content: s.text,
+      vote_count: s.vote_count || 0,
+      is_adopted: _isWinner(ch, d.id),
+      is_closed: ch?.status !== 'active',
+      created_at: s.created_at,
+    };
+  });
+  const srWritings = srSubsSnap.docs.map(d => {
+    const s = d.data();
+    const round = srRoundMap[s.round_id];
+    return {
+      type: 'sentence_proposal',
+      sub_id: d.id,
+      content: s.text,
+      vote_count: s.vote_count || 0,
+      is_adopted: _isWinner(round, d.id),
+      is_closed: round?.status !== 'active',
+      created_at: s.created_at,
+    };
+  });
+
+  const writings = [...episodeWritings, ...wcWritings, ...srWritings]
+    .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
   // 50개로 자르던 걸 없앰 — 프론트에서 "더 보기"로 나머지를 보여줌(이미 최대
   // 300개까지 가져온 데이터라 추가 조회 없이 그대로 다 내려보내면 됨)
 

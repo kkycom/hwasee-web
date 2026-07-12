@@ -2825,36 +2825,44 @@ async function fbGetSpotlight(viewer_id) {
   if (!ptrSnap.exists) return { ok: true, initialized: false, slots: {} };
   const ptr = ptrSnap.data();
 
-  const slots = {};
-  for (const key of ['word', 'sentence', 'ai']) {
+  // 슬롯 3개를 순차로 하나씩 기다리지 않고 병렬로 조회 — 홈 첫 화면이라
+  // 진입 빈도가 가장 높은 만큼 왕복 1번(가장 느린 슬롯 기준)으로 줄임
+  const keys = ['word', 'sentence', 'ai'];
+  const slotResults = await Promise.all(keys.map(async key => {
     const s = ptr[key] || {};
     if (s.story_id) {
       const storySnap = await db.collection('stories').doc(s.story_id).get();
-      slots[key] = storySnap.exists
+      return storySnap.exists
         ? { state: 'story', story_id: s.story_id, opening: storySnap.data().opening, current_step: storySnap.data().current_step || 0 }
         : { state: 'empty' };
     } else if (key === 'sentence' && s.state === 'proposing' && s.round_id) {
       const roundData = await _fbGetSentenceRoundData(s.round_id, viewer_id);
-      slots.sentence = { state: 'proposing', ...roundData };
+      return { state: 'proposing', ...roundData };
     } else {
-      slots[key] = { state: 'empty' };
+      return { state: 'empty' };
     }
-  }
+  }));
+  const slots = {};
+  keys.forEach((key, i) => { slots[key] = slotResults[i]; });
   return { ok: true, initialized: true, slots };
 }
 
 async function _fbGetSentenceRoundData(round_id, viewer_id) {
-  const roundSnap = await db.collection('sentence_rounds').doc(round_id).get();
+  // round_id/viewer_id만 있으면 되는 세 조회를 병렬로(예전엔 순차라 왕복 3~4번) —
+  // round 미존재 시 subsSnap/voteSnap 조회가 낭비되긴 하지만 흔한 경우가 아님
+  const [roundSnap, subsSnap, voteSnap] = await Promise.all([
+    db.collection('sentence_rounds').doc(round_id).get(),
+    db.collection('sentence_round_submissions').where('round_id', '==', round_id).get(),
+    viewer_id ? db.collection('sentence_round_votes').doc(`${round_id}_${viewer_id}`).get() : Promise.resolve(null),
+  ]);
   if (!roundSnap.exists) return { round: null, submissions: [], my_submission_id: null, my_vote_submission_id: null };
   const round = { round_id: roundSnap.id, ...roundSnap.data() };
 
-  const subsSnap = await db.collection('sentence_round_submissions').where('round_id', '==', round_id).get();
   const authorIds = [...new Set(subsSnap.docs.map(d => d.data().user_id))];
   const nickMap = {};
-  if (authorIds.length) {
-    const userDocs = await Promise.all(authorIds.map(id => db.collection('users').doc(id).get()));
-    userDocs.forEach(d => { if (d.exists) nickMap[d.id] = d.data().display_name || d.data().nickname; });
-  }
+  const userDocs = await _fbGetUsersByIds(authorIds);
+  userDocs.forEach(d => { if (d.exists) nickMap[d.id] = d.data().display_name || d.data().nickname; });
+
   const isActive = round.status === 'active' && Date.now() < new Date(round.end_at).getTime();
   const submissions = subsSnap.docs
     .map(d => ({ submission_id: d.id, ...d.data(), nickname: nickMap[d.data().user_id] || '익명' }))
@@ -2866,8 +2874,7 @@ async function _fbGetSentenceRoundData(round_id, viewer_id) {
   if (viewer_id) {
     const mine = submissions.find(s => s.user_id === viewer_id);
     if (mine) my_submission_id = mine.submission_id;
-    const voteSnap = await db.collection('sentence_round_votes').doc(`${round_id}_${viewer_id}`).get();
-    if (voteSnap.exists) my_vote_submission_id = voteSnap.data().submission_id;
+    if (voteSnap && voteSnap.exists) my_vote_submission_id = voteSnap.data().submission_id;
   }
   return { round, submissions, my_submission_id, my_vote_submission_id };
 }

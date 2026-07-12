@@ -427,11 +427,15 @@ async function fbGetStories(page) {
       }));
     }
 
-    // 1시간 경과 + 참여자 0 + AI 씨앗 → inactive 처리 + 생성자에게 알림 + 오프닝 복구
+    // 1시간 경과 + 참여자 0 + AI 씨앗 → inactive 처리 + 생성자에게 알림 + 오프닝 복구.
+    // 단, 스포트라이트 슬롯 이야기(vote_threshold 있음)는 제외 — 첫 화면에 대표로
+    // 걸려있는 이야기라 아직 첫 참여자가 없다는 이유로 이 청소 로직에 같이 걸려
+    // inactive(=완결 취급) 처리되면 그 슬롯의 "참여하기"가 통째로 막혀버림
+    // (실제로 2026-07-12 AI 슬롯 이야기가 이렇게 막혔던 걸 발견해서 수정함).
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const abandoned = storiesSnap.docs.filter(d => {
       const s = d.data();
-      return s.is_ai_seed === true && (s.participant_count || 0) === 0 && (s.created_at || '') < oneHourAgo;
+      return s.is_ai_seed === true && !s.vote_threshold && (s.participant_count || 0) === 0 && (s.created_at || '') < oneHourAgo;
     });
     if (abandoned.length) await _fbRecycleAbandonedSeeds(abandoned);
     const recycledSet = new Set(abandoned.map(d => d.id));

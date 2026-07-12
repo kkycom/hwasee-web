@@ -2400,7 +2400,7 @@ function renderSpotlight() {
     let bodyHtml;
     if (slot.state === 'story') {
       bodyHtml = `
-        <div class="story-prose" style="padding:20px 18px 20px 20px;margin:12px 0">
+        <div class="story-prose" style="padding:20px 18px 20px 20px;margin:12px 0;background-position:0 20px">
           <div class="prose-opening">${esc(slot.opening)}</div>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
@@ -3375,6 +3375,8 @@ async function profile() {
           ['내 글 채택됨 (윤색)','+10p','earn'],
           ['윤색으로 이야기를 완결지음 (원저자+윤색한 사람 각자)','+15p','earn'],
           ['완결 이야기 MVP 선정','+10p','earn'],
+          ['오늘의 단어 챌린지 우승','+100p','earn'],
+          ['오늘의 이야기 — 시작 문장 채택(1~3등)','+50p','earn'],
           ['버그 제보','+10p','earn'],
           ['분기 파생 (이어쓰기 새 갈래)','-30p','spend'],
           ['이야기 연장 (완결 후 이어쓰기)','-30p','spend'],
@@ -5415,7 +5417,7 @@ function doBoostStory(story_id) {
   showConfirmModal({
     id: 'boost-modal', icon,
     title: '이야기 주목하기',
-    desc: '24시간 동안 관심받는 이야기 탭 상단에 노출돼요.<br><strong style="color:var(--accent2)">30P</strong>가 차감됩니다.',
+    desc: '24시간 동안 자유 이야기 탭 상단에 노출돼요.<br><strong style="color:var(--accent2)">30P</strong>가 차감됩니다.',
     confirmLabel: '주목하기',
   });
 }

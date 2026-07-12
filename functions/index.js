@@ -1959,6 +1959,54 @@ exports.adminInitSpotlight = functions
     return { ok: true, word_story_id: wordStoryId, sentence_story_id: sentenceStoryId, ai_story_id: aiStoryId };
   });
 
+// 스포트라이트 도입 시점(adminInitSpotlight)에 슬롯1·2가 실제 단어챌린지 우승작/
+// 제안투표 채택작이 아니라 그냥 랜덤 AI 문장으로 부트스트랩됐던 문제를 바로잡는
+// 1회성 관리자 콜러블. 슬롯1은 스포트라이트 도입 전부터 이미 쌓여있던 단어챌린지
+// 과거 우승 기록을 소급해서 풀에 채워넣고(라운드당 대표 1개, _serverCloseWordChallenge와
+// 동일한 규칙 — winners[0]이 이미 created_at 오름차순으로 정렬돼 저장돼 있어서 그대로
+// 씀), 슬롯2는 아직 제안투표 라운드가 한 번도 없었으니 풀을 채울 과거 데이터가 없어서
+// 그냥 지금 바로 첫 24시간 라운드를 열도록 함. 이후엔 두 슬롯 다 정상 소스로 계속 이어짐.
+exports.adminFixSpotlightBootstrap = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    const db = admin.firestore();
+    const ptrRef0 = db.collection('config').doc('spotlight_slots');
+    const ptrSnap0 = await ptrRef0.get();
+    // 재실행 방지 — 슬롯이 이미 정상 소스로 채워진 뒤에 실수로 다시 부르면
+    // story_id를 null로 되돌려서 진행 중인 이야기를 끊어버리게 되므로 가드 필요
+    if (ptrSnap0.exists && ptrSnap0.data().bootstrap_fixed) return { ok: true, already: true };
+
+    const existingPoolSnap = await db.collection('spotlight_word_pool').get();
+    const alreadyBackfilled = new Set(existingPoolSnap.docs.map(d => d.data().source_challenge_id).filter(Boolean));
+
+    const closedSnap = await db.collection('word_challenges').where('status', '==', 'closed').get();
+    const rounds = closedSnap.docs
+      .map(d => ({ challenge_id: d.id, ...d.data() }))
+      .filter(r => !alreadyBackfilled.has(r.challenge_id))
+      .map(r => {
+        const text = (r.winners && r.winners.length) ? r.winners[0].text : r.winner_text;
+        return text ? { challenge_id: r.challenge_id, text, closed_at: r.closed_at } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => new Date(a.closed_at) - new Date(b.closed_at));
+
+    const batch = db.batch();
+    for (const r of rounds) {
+      batch.set(db.collection('spotlight_word_pool').doc(), {
+        text: r.text, source_challenge_id: r.challenge_id, used: false, created_at: r.closed_at,
+      });
+    }
+    if (rounds.length) await batch.commit();
+
+    await ptrRef0.update({ 'word.story_id': null, 'sentence.story_id': null, bootstrap_fixed: true });
+
+    await _serverRefillSlotFromPoolIfEmpty(db, 'word');
+    await _serverRefillSlotFromPoolIfEmpty(db, 'sentence');
+
+    return { ok: true, backfilled_rounds: rounds.length };
+  });
+
 // ── 업적 시스템 도입 이전 활동 소급 반영 (1회성 관리자 콜러블) ──
 // adoption_count/login_streak는 원래 있던 필드라 현재값 그대로 판정하면 되지만,
 // 나머지 7개 카운터(제출/투표/씨앗/다듬기/결말/초대/단어챌린지)는 이번에 새로

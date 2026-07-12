@@ -2197,7 +2197,7 @@ function renderWordChallenge() {
       ${WC_HISTORY_BTN_HTML}
       <div style="font-size:12px;font-weight:700;color:var(--accent2);letter-spacing:.5px;margin-bottom:16px">🏆 오늘의 장원${winners.length > 1 ? ` · ${winners.length}명 동률` : ''}</div>
       ${winners.map((w, i) => `
-        <div style="font-size:18px;line-height:1.7;font-family:var(--serif);font-weight:600;${i > 0 ? 'margin-top:14px' : ''}">${boldChallengeWords(w.text, challenge.words)}</div>
+        <div style="font-size:18px;line-height:1.7;font-family:var(--serif);font-weight:600;text-wrap:balance;${i > 0 ? 'margin-top:14px' : ''}">${boldChallengeWords(w.text, challenge.words)}</div>
         <div style="font-size:13px;color:var(--muted);margin-top:6px">👑 ${esc(w.nickname)} · +${w.points}p</div>`).join('')}
     </div>` : `
     <div style="position:relative;text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;margin-bottom:20px">
@@ -2406,7 +2406,7 @@ function renderSpotlight() {
     let bodyHtml;
     if (slot.state === 'story') {
       bodyHtml = `
-        <div class="story-prose" style="padding:20px 18px 20px 20px;margin:12px 0;background-position:0 25px">
+        <div class="story-prose" style="padding:28px 18px 20px 20px;margin:12px 0">
           <div class="prose-opening">${esc(slot.opening)}</div>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">

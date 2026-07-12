@@ -46,10 +46,17 @@ service cloud.firestore {
       allow update, delete: if false; // 포인트 이력은 감사 추적용 — 수정/삭제 불가
     }
 
+    // user_secrets(pw_hash/token): 2026-07-10 Auth 마이그레이션 5단계 — 완전 차단.
+    // 예전엔 클라이언트가 로그인 시 직접 읽고 써야 해서 열어뒀었는데, 그 결과
+    // 인증 없이 누구나 curl로 세션 토큰/비밀번호 해시를 읽을 수 있는 상태였음
+    // (실제 노출 확인됨). pw_hash/token을 다루는 모든 경로(register/login/
+    // verifySession/changePassword/resetPassword/deleteAccount)를 Cloud
+    // Function(Admin SDK)으로 옮긴 뒤 여기를 잠금 — config/secrets와 동일 패턴.
+    match /user_secrets/{docId} { allow read, write: if false; }
+
     // 그 외 컬렉션: 앱이 Firebase Auth를 쓰지 않고 자체 발급 user_id(localStorage)로
     // 신원을 관리하는 구조라 request.auth 기반 소유권 검증이 불가능함.
     // (실제 소유권/역할 검증을 하려면 Firebase Auth 도입이 선행되어야 함 — 별도 논의 필요)
-    match /user_secrets/{docId} { allow read, write: if true; }
     match /stories/{docId} { allow read, write: if true; }
     match /episodes/{docId} { allow read, write: if true; }
     match /submissions/{docId} { allow read, write: if true; }

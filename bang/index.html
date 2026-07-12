@@ -2423,14 +2423,38 @@ function renderSpotlight() {
     const slot = slots[key] || { state: 'empty' };
     let bodyHtml;
     if (slot.state === 'story') {
+      // 참여 이력이 있을 때만 참여하기 버튼을 알약 2등분(참여/펼치기)으로 —
+      // 없는 사람에겐 지금처럼 버튼 하나만 보이게 해서 괜히 지저분해지지 않게 함
+      const hasHistory = (slot.my_submissions || []).length > 0;
+      const ctaHtml = hasHistory ? `
+        <div style="display:flex;border-radius:20px;overflow:hidden">
+          <button class="btn btn-primary btn-sm" style="border-radius:20px 0 0 20px;border-right:1px solid rgba(58,85,72,.3)" onclick="nav('story','${esc(slot.story_id)}')">참여하기</button>
+          <button class="btn btn-primary btn-sm" style="border-radius:0 20px 20px 0;padding:7px 10px" onclick="toggleSpotlightHistory('${key}')" aria-label="내 참여 내역 보기"><span id="sp-hist-arrow-${key}">▾</span></button>
+        </div>` : `<button class="btn btn-primary btn-sm" onclick="nav('story','${esc(slot.story_id)}')">참여하기</button>`;
+      const histHtml = hasHistory ? slot.my_submissions.map(sub => `
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
+          <span style="font-size:10px;color:var(--accent2);font-weight:700;white-space:nowrap;flex-shrink:0">${calcDisplayStep(slot, sub.step)}단계</span>
+          <div>
+            <div style="font-size:13px;line-height:1.6;margin-bottom:4px">${esc(sub.content)}</div>
+            <div style="font-size:12px;color:var(--muted)">
+              공감 ${sub.vote_count}개 ·
+              ${sub.is_adopted
+                ? '<span style="color:#7090b0;font-weight:600">채택됨</span>'
+                : sub.ep_status === 'open'
+                  ? '<span style="color:var(--accent);font-weight:600">진행 중</span>'
+                  : '<span style="color:#b07070;font-weight:600">탈락</span>'}
+            </div>
+          </div>
+        </div>`).join('') : '';
       bodyHtml = `
         <div class="story-prose" style="padding:28px 18px 28px 20px;margin:12px 0">
           <div class="prose-opening">${esc(slot.opening)}</div>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <span class="step-pill"><span class="step-dot"></span>${(Number(slot.current_step) || 0) + 1}단계 진행 중</span>
-          <button class="btn btn-primary btn-sm" onclick="nav('story','${esc(slot.story_id)}')">참여하기</button>
-        </div>`;
+          ${ctaHtml}
+        </div>
+        ${hasHistory ? `<div id="sp-hist-${key}" style="display:none;margin-top:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">${histHtml}</div>` : ''}`;
     } else if (key === 'sentence' && slot.state === 'proposing') {
       bodyHtml = renderSentenceRoundInner(slot);
     } else {
@@ -2455,6 +2479,15 @@ function renderSpotlight() {
   if (slots.sentence?.state === 'proposing' && slots.sentence.round) {
     _startSentenceRoundCountdown(slots.sentence.round.end_at);
   }
+}
+
+function toggleSpotlightHistory(key) {
+  const panel = document.getElementById(`sp-hist-${key}`);
+  const arrow = document.getElementById(`sp-hist-arrow-${key}`);
+  if (!panel) return;
+  const open = panel.style.display === 'none';
+  panel.style.display = open ? 'block' : 'none';
+  if (arrow) arrow.textContent = open ? '▴' : '▾';
 }
 
 function openSlotInfo(key) {

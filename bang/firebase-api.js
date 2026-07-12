@@ -2881,6 +2881,14 @@ async function fbGetSpotlight(viewer_id) {
   if (!ptrSnap.exists) return { ok: true, initialized: false, slots: {} };
   const ptr = ptrSnap.data();
 
+  // 참여 내역(단계별 내가 쓴 문장) 표시용 — 슬롯마다 따로 조회하지 않고
+  // fbGetMyStories와 동일한 단일필드 쿼리로 로그인 유저의 전체 제출을 한 번만
+  // 가져온 뒤 슬롯별 story_id로 클라이언트에서 필터
+  const mySubsAll = viewer_id
+    ? (await db.collection('submissions').where('author_id', '==', viewer_id).limit(300).get())
+        .docs.map(d => ({ sub_id: d.id, ...d.data() }))
+    : [];
+
   // 슬롯 3개를 순차로 하나씩 기다리지 않고 병렬로 조회 — 홈 첫 화면이라
   // 진입 빈도가 가장 높은 만큼 왕복 1번(가장 느린 슬롯 기준)으로 줄임
   const keys = ['word', 'sentence', 'ai'];
@@ -2888,9 +2896,33 @@ async function fbGetSpotlight(viewer_id) {
     const s = ptr[key] || {};
     if (s.story_id) {
       const storySnap = await db.collection('stories').doc(s.story_id).get();
-      return storySnap.exists
-        ? { state: 'story', story_id: s.story_id, opening: storySnap.data().opening, current_step: storySnap.data().current_step || 0 }
-        : { state: 'empty' };
+      if (!storySnap.exists) return { state: 'empty' };
+      const story = storySnap.data();
+
+      const mySubsForStory = mySubsAll.filter(sub => sub.story_id === s.story_id);
+      let my_submissions = [];
+      if (mySubsForStory.length) {
+        const epIds = [...new Set(mySubsForStory.map(sub => sub.episode_id))];
+        const epSnaps = await Promise.all(epIds.map(id => db.collection('episodes').doc(id).get()));
+        const epMap = {};
+        epSnaps.forEach(d => { if (d.exists) epMap[d.id] = d.data(); });
+        my_submissions = mySubsForStory
+          .map(sub => ({
+            content: sub.content,
+            step: epMap[sub.episode_id] ? Number(epMap[sub.episode_id].step) : 0,
+            vote_count: Number(sub.vote_count) || 0,
+            is_adopted: sub.is_adopted === true || sub.is_adopted === 'TRUE',
+            ep_status: epMap[sub.episode_id]?.status || 'closed',
+          }))
+          .sort((a, b) => a.step - b.step);
+      }
+
+      return {
+        state: 'story', story_id: s.story_id, opening: story.opening, current_step: story.current_step || 0,
+        has_branch: !!story.has_branch, branch_from_step: story.branch_from_step || null,
+        branch_display_offset: story.branch_display_offset ?? null,
+        my_submissions,
+      };
     } else if (key === 'sentence' && s.state === 'proposing' && s.round_id) {
       const roundData = await _fbGetSentenceRoundData(s.round_id, viewer_id);
       return { state: 'proposing', ...roundData };

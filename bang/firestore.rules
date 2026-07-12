@@ -71,5 +71,10 @@ service cloud.firestore {
     match /word_challenges/{docId} { allow read, write: if true; }
     match /word_challenge_submissions/{docId} { allow read, write: if true; }
     match /word_challenge_votes/{docId} { allow read, write: if true; }
+    match /spotlight_word_pool/{docId} { allow read, write: if false; }
+    match /spotlight_sentence_pool/{docId} { allow read, write: if false; }
+    match /sentence_rounds/{docId} { allow read, write: if true; }
+    match /sentence_round_submissions/{docId} { allow read, write: if true; }
+    match /sentence_round_votes/{docId} { allow read, write: if true; }
   }
 }

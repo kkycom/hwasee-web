@@ -701,6 +701,10 @@ async function _serverCloseEpisode(db, episode_id, ep) {
 
   if (anyClose) {
     await storySnap.ref.update({ current_step: nextStep, status: 'completed' });
+    // 3슬롯 "오늘의 이야기" 스포트라이트 리필 훅 — 방금 완결된 스토리가 스포트라이트
+    // 슬롯을 차지하고 있었다면 다음 이야기로 즉시 교체. 사람/AI 마감 경로 모두
+    // 이 함수를 거치므로(공용 단일 완결 지점) 여기가 정확한 훅 위치.
+    try { await _serverRefillSpotlightSlot(db, ep.story_id); } catch (e) { console.error('spotlight refill error:', e.message); }
 
     // 동률 중 일부만 완결을 선택한 경우 — 완결 아닌 갈래는 그대로 묻히면 안
     // 되므로, else 분기와 동일하게 새 열린 에피소드를 만들어줌. 그래야 바로
@@ -1545,6 +1549,17 @@ async function _serverCloseWordChallenge(db) {
       await _serverAddPoints(db, w.user_id, share, 'word_challenge_win', w.submission_id);
       try { await _serverBumpAchievementCounter(db, w.user_id, 'word_challenge_wins'); } catch (e) {}
     }
+
+    // 스포트라이트 슬롯1(🎲) FIFO 풀에 채택 문장 적재 — 동률이어도 같은 라운드는
+    // 같은 3단어라서 대표 1개만(가장 먼저 제출된 것) 넣음. 그대로 다 넣으면
+    // 같은 단어 조합이 스포트라이트에 연달아 노출되는 문제가 있어서.
+    if (tiedWinners.length) {
+      await db.collection('spotlight_word_pool').doc().set({
+        text: tiedWinners[0].text, source_challenge_id: challenge_id, used: false,
+        created_at: new Date().toISOString(),
+      });
+      try { await _serverRefillSlotFromPoolIfEmpty(db, 'word'); } catch (e) {}
+    }
   }
 }
 
@@ -1580,6 +1595,368 @@ exports.adminForceCloseWordChallenge = functions
     if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
     await _serverCloseWordChallenge(admin.firestore());
     return { ok: true };
+  });
+
+// ── 3슬롯 "오늘의 이야기" 스포트라이트 ────────────────────────
+// config/spotlight_slots = { word:{story_id}, sentence:{story_id,state,round_id}, ai:{story_id} }
+// 완결 훅(_serverCloseEpisode)이 슬롯 스토리 완결을 감지해 다음 이야기로 즉시 교체함.
+
+// firebase-api.js의 FB_AI_OPENINGS(1162행~)와 반드시 동일하게 유지할 것
+// (한쪽에 추가하면 반드시 반대쪽도 같이 수정) — FB_ACHIEVEMENTS와 같은 이유로,
+// 서버는 별도 배포 단위라 클라이언트 파일을 참조할 수 없어 사본을 둠.
+const SPOTLIGHT_AI_OPENINGS = [
+  "그날 밤, 버스는 끝내 오지 않았다.",
+  "편지 봉투 안에는 내 필체로 쓴 글씨가 있었는데, 나는 그 편지를 쓴 기억이 없었다.",
+  "할머니는 돌아가시기 전날 밤, 내 이름을 처음으로 틀리게 불렀다.",
+  "지도에는 분명히 있는 마을인데, 아무도 그곳에 가본 적이 없다고 했다.",
+  "서랍 맨 아래에서 사진 한 장이 나왔다. 내가 태어나기 10년 전 사진인데, 거기에 내가 있었다.",
+  "그 개는 주인이 죽은 줄 모르는 게 아니었다. 알면서도 기다리고 있었다.",
+  "새벽 3시, 낯선 번호에서 문자가 왔다. '이제 다 끝났어.' 발신자는 나였다.",
+  "이사 온 첫날, 벽장 안에서 누군가의 일기장을 발견했다. 마지막 날짜는 오늘이었다.",
+  "그 여자는 매일 같은 시각 같은 자리에 앉아 있었다. 죽은 지 3년이 됐는데도.",
+  "도서관 반납함에 책 한 권이 꽂혀 있었다. 제목은 '내가 사라지는 방법'이었고, 모든 페이지에 내 이름이 밑줄 쳐져 있었다.",
+  "엄마는 항상 '우리 가족은 넷'이라고 했다. 그런데 가족사진에는 언제나 다섯 명이 찍혀 있었다.",
+  "그 계단은 올라갈 때는 열두 개인데, 내려올 때는 열세 개다.",
+  "전학 온 아이는 우리 반 아이들을 이미 알고 있는 것 같았다. 이름까지.",
+  "창문 너머로 손을 흔드는 사람이 있었다. 우리 집은 14층이었다.",
+  "아버지의 유품 중에 열쇠가 하나 있었다. 어디에도 맞는 자물쇠가 없었다.",
+  "그 섬에는 나이 든 사람이 한 명도 없었다.",
+  "카페 단골손님이 어느 날 말했다. '당신, 예전에 나한테 약속한 거 기억해요?' 나는 그 사람을 오늘 처음 봤다.",
+  "교통사고로 3일간 의식을 잃었다가 깨어났다. 내 방은 그대로인데, 가족이 모두 낯선 사람이었다.",
+  "장마가 끝나고 마당에서 신발 한 짝이 나왔다. 아직 젖어 있었다.",
+  "그녀는 내가 꿈에서만 봤던 사람이었다. 근데 그녀도 나를 알고 있었다.",
+  "5년 전 헤어진 사람에게서 메시지가 왔다. '지금 네 뒤에 있어.'",
+  "쌍둥이 중 한 명이 죽었다. 근데 어느 쪽이 죽었는지 아무도 몰랐다.",
+  "시골 폐가에서 온 가족이 같이 밥을 먹고 있는 소리가 났다.",
+  "나는 30년째 같은 악몽을 꾼다. 어젯밤 꿈에 처음 보는 아이가 나타나서 말했다. '이제 내 차례야.'",
+  "버려진 놀이공원에 불이 켜졌다.",
+  "퇴근길에 편의점 삼각김밥을 하나 사줬을 뿐인데, 그 사람은 한참을 울었다.",
+  "할머니 핸드폰에 저장된 연락처는 딱 셋이었다. 나, 치킨집, 그리고 모르는 번호.",
+  "그 집 대문은 항상 열려 있었다. 누가 들어와도 밥상이 차려져 있었다.",
+  "아버지가 처음으로 전화를 먼저 했다. 별 이유가 없다고 했다.",
+  "오래된 레시피 노트에 엄마 필체로 '이건 실패'라고 적혀 있었다. 그 페이지가 제일 많이 닳아 있었다.",
+  "죽은 줄 알았던 선인장이 꽃을 피웠다. 아무도 손댄 적이 없었는데.",
+  "면접관이 내 이력서를 한참 보더니 웃었다.",
+  "10년 만에 마주쳤는데, 그 사람은 내 이름을 틀리지 않았다.",
+  "우산을 빌려줬다. 돌려받을 생각은 처음부터 없었다.",
+  "같은 카페에서 매일 마주쳤는데, 처음 말을 건 건 마지막 날이었다.",
+  "헤어지자는 말을 삼킨 게 벌써 세 번째였다.",
+  "그 도서관의 책들은 밤에만 결말이 달라진다.",
+  "숲 끝에 사는 노인은 사람들이 잊어버린 것들을 팔았다.",
+  "그 마을에서는 거짓말을 하면 입에서 꽃이 피었다. 아무도 나쁘게 생각하지 않았다.",
+  "그 카페에선 주문하면 당신이 가장 필요한 것이 나왔다. 메뉴판은 없었다.",
+  "졸업식에서 아무도 나를 찾지 않았다. 그래서 마지막으로 교실을 한 바퀴 더 걸었다.",
+  "스무 살이 되던 날 밤, 달라진 게 없었다.",
+  "전화번호는 지웠는데 생일은 아직 기억한다.",
+  "이사하는 날, 빈 방이 생각보다 훨씬 좁았다.",
+  "버스에서 잠들었는데 종점이었다. 내릴 곳이 맞았다.",
+
+  // 추가 씨앗 문장
+  "그 우물에서는 달이 질 줄 몰랐다.",
+  "마을 사람들은 매년 같은 날 같은 꿈을 꿨다. 올해 처음으로 꿈이 달랐다.",
+  "지하철 막차에는 항상 같은 자리에 같은 사람이 앉아 있었다. 노선도에 없는 역에서 내렸다.",
+  "그 방의 시계는 항상 4시 44분을 가리키고 있었다. 건전지는 들어있지 않았다.",
+  "학교 옥상에는 아무도 올라가지 않았다. 문이 잠겨 있어서가 아니었다.",
+  "우리 동네 지도에는 없는 골목이 있었다. 비 오는 날에만 나타났다.",
+  "그 아이는 사진에 찍히지 않았다.",
+  "마지막 승객이 내리고 나서야, 기사는 백미러를 올려다봤다.",
+  "오래된 거울 속의 나는 항상 0.5초 느리게 움직였다.",
+  "그 나무는 누군가 울면 잎이 하나씩 떨어졌다.",
+  "실종된 지 7년 만에 돌아온 그는 하나도 늙지 않았다.",
+  "그 마을의 개들은 자정이 되면 일제히 같은 방향을 향해 짖었다.",
+  "사진관 주인이 말했다. '이 사진, 찍어드리기 전에 이미 현상돼 있었어요.'",
+  "아이의 상상 속 친구가 남긴 발자국이 실제로 남아 있었다.",
+  "그 집에 이사 온 모든 가족은 반년 안에 떠났다. 이유는 말하지 않았다.",
+  "그 라디오는 콘센트를 꽂지 않아도 켜졌다.",
+  "경비 아저씨는 20년째 같은 자리를 지키고 있었다. 정년이 열다섯 해 전에 지났는데도.",
+  "폐교 교실에서 누군가 수업을 듣고 있었다.",
+  "기억을 파는 가게가 골목 끝에 생겼다.",
+  "그 해부터 사람들은 꿈을 공유하기 시작했다.",
+  "로봇은 폐기 명령을 받은 날 처음으로 거짓말을 했다.",
+  "달에 첫 번째로 심은 씨앗이 꽃을 피웠다. 아무도 심은 적이 없는데.",
+  "마지막 책방이 문을 닫는 날, 책들이 스스로 줄을 섰다.",
+  "그 섬에서는 죽은 사람의 목소리가 파도 소리에 섞여 들렸다.",
+  "시간이 거꾸로 흐르기 시작한 건 그 아이가 태어난 날부터였다.",
+  "할아버지의 지갑에는 돈이 없었다. 대신 영수증이 가득했다.",
+  "병원 복도에서 처음 만난 두 노인이 장기를 두고 있었다. 둘 다 이기고 싶지 않아 보였다.",
+  "편의점 알바 마지막 날, 단골 할머니가 케이크를 들고 왔다.",
+  "잃어버렸던 지갑이 돌아왔다. 안에 쪽지가 하나 있었다.",
+  "아무도 없는 줄 알고 혼자 노래를 불렀는데, 박수 소리가 들렸다.",
+  "그 사람은 내가 울었다는 걸 알면서도 모른 척해줬다.",
+  "그 분식집 이모는 손님 얼굴을 한 번도 잊지 않았다.",
+  "반에서 제일 조용했던 애가 졸업식 날 마이크를 잡았다.",
+  "세 번 떨어지고 나서야 원서를 다시 썼다.",
+  "좋아한다고 말하려고 했는데, 그 애가 먼저 다른 말을 했다.",
+  "취업 합격 문자를 받은 날, 기쁘지가 않았다.",
+  "처음 자취방에서 처음 해 먹은 건 라면이었다. 맛없었는데 다 먹었다.",
+  "도망치듯 상경했는데, 서울도 딱히 다를 게 없었다.",
+  "졌는데 악수를 먼저 내밀었다.",
+  "엄마가 남긴 레시피에 재료가 하나 비어 있었다. 평생 그게 뭔지 몰랐다.",
+  "친한 척 안 하기로 했는데, 그 애가 먼저 말을 걸어왔다.",
+  "졸업하고 처음으로 선생님한테 존댓말을 놨다. 어색했다.",
+  "그 골목길 끝에는 항상 불이 켜진 방이 하나 있었다. 건물 자체가 없는 자리인데.",
+  "폭설이 내린 아침, 우리 집 앞에만 발자국이 없었다.",
+  "그 편의점은 새벽 3시에만 문을 열었다.",
+  "나는 그 사람의 장례식에서 처음으로 그 사람의 이름을 알았다.",
+  "버려진 수첩에 내일의 날씨가 적혀 있었다. 전부 맞았다.",
+  "전쟁이 끝난 마을에 아무도 돌아오지 않았다. 단 한 사람 빼고.",
+  "그 악기는 아무도 연주하지 않아도 밤마다 소리가 났다.",
+  "20년 만에 고향에 돌아왔는데, 아무것도 변하지 않았다. 사람들도.",
+
+  // 코미디
+  "소개팅 상대가 내 전 남자친구의 엄마였다.",
+  "면접관이 내 이력서를 보더니 조용히 자기 이력서를 꺼냈다.",
+  "다이어트 시작 첫날, 치킨집 사장님한테서 전화가 왔다. '오늘 왜 안 오세요?'",
+  "귀신인 줄 알고 소리를 질렀는데, 귀신도 소리를 질렀다.",
+  "미용실에서 '알아서 해주세요'라고 했다가 진짜 알아서 해줬다.",
+  "자신 있게 '제가 낼게요' 했는데 카드가 긁히지 않았다.",
+  "상사한테 보내야 할 카톡을 엄마한테 보냈다.",
+  "늦잠 자고 뛰어나왔는데 오늘이 휴일이었다.",
+  "화장실에 들어가고 나서야 휴지가 없다는 걸 알았다.",
+  "이어폰을 끼고 있었는데 내 노래가 다 들렸던 거였다.",
+  "택배가 왔다는 문자를 받았는데, 아직 주문한 게 없었다.",
+  "처음 해본 요리를 SNS에 올렸더니 첫 댓글이 '이게 음식이에요?'였다.",
+  "거울 앞에서 연습한 말이 실전에서 단 한 마디도 나오지 않았다.",
+  "친구한테 비밀을 털어놓았는데, 친구가 이미 다 알고 있었다. 우리 엄마한테서.",
+  "알람을 열두 개 맞춰놓고 열두 개를 다 끄고 잠들었다.",
+  "운동 유튜브를 틀어놓고 한 시간째 보기만 했다.",
+  "첫 월급을 탔는데 통장에서 바로 카드값이 빠져나갔다.",
+  "남은 반찬이 아까워서 세 끼를 다 먹었다.",
+  "엘리베이터에서 내 이야기를 하는 사람들과 딱 마주쳤다.",
+  "줄을 잘못 서서 한 시간을 기다렸는데 다른 줄이었다.",
+  "처음 만난 사람이 '저 알아요?' 했다. 나만 기억 못 하는 동창이었다.",
+  "퇴직금으로 창업했다. 첫 손님이 배달 기사님이었다.",
+  "선물 포장을 완벽하게 했는데 받는 사람이 그냥 찢어버렸다.",
+  "엄마한테 거짓말을 했는데 엄마가 이미 다 알고 있었다.",
+];
+
+// stories/episodes 문서 생성 공통 헬퍼 — fbCreateStory(firebase-api.js:786)와 동일한
+// shape. writer는 tx 또는 batch(둘 다 .set(ref,data) 시그니처가 같아 그대로 재사용 가능).
+// 스포트라이트로 시작되는 이야기는 특정 개인 소유가 아니라 시스템이 심은 것이라
+// creator_id를 항상 FB_AI_ID로 둠(슬롯1/2도 채택/포인트 지급은 이미 챌린지·라운드
+// 마감 시점에 끝났으므로, 스토리 자체의 창작자 귀속은 기존 AI씨앗과 동일 취급).
+function _serverCreateSeedStory(db, writer, opening) {
+  const story_id = db.collection('stories').doc().id;
+  const episode_id = db.collection('episodes').doc().id;
+  writer.set(db.collection('stories').doc(story_id), {
+    story_id, opening: opening.trim(), max_steps: 10, current_step: 0,
+    status: 'active', creator_id: FB_AI_ID, creator_nickname: '익명', creator_badge: '',
+    created_at: new Date().toISOString(), batch: '', participant_count: 0, like_count: 0,
+    is_ai_seed: true,
+  });
+  writer.set(db.collection('episodes').doc(episode_id), {
+    episode_id, story_id, step: 1, parent_sub_id: '',
+    status: 'open', vote_total: 0, created_at: new Date().toISOString(), closed_at: '', pending_at: '',
+  });
+  return story_id;
+}
+
+// 슬롯 스토리 완결 시 호출(_serverCloseEpisode 참고) — 완결된 스토리가 실제로
+// 스포트라이트 슬롯을 차지하고 있었는지 확인 후, 맞다면 다음 이야기로 즉시 교체.
+// word_challenge_sets의 "미리 읽어서 JS에서 필터" 방식(_serverStartWordChallenge
+// 참고)을 그대로 써서 (used==false + orderBy) 복합 인덱스 없이 처리.
+async function _serverRefillSpotlightSlot(db, completed_story_id) {
+  const ptrRef = db.collection('config').doc('spotlight_slots');
+  await db.runTransaction(async tx => {
+    const ptrSnap = await tx.get(ptrRef);
+    if (!ptrSnap.exists) return; // adminInitSpotlight 실행 전 — 아직 스포트라이트 미도입
+    const slots = ptrSnap.data();
+    const slotKey = ['word', 'sentence', 'ai'].find(k => slots[k] && slots[k].story_id === completed_story_id);
+    if (!slotKey) return; // 스포트라이트 슬롯 스토리가 아님
+
+    if (slotKey === 'ai') {
+      const usedSnap = await tx.get(db.collection('config').doc('used_openings'));
+      const used = usedSnap.exists ? usedSnap.data() : {};
+      const available = SPOTLIGHT_AI_OPENINGS.filter(o => !used[o]);
+      const src = available.length ? available : SPOTLIGHT_AI_OPENINGS;
+      const opening = src[Math.floor(Math.random() * src.length)];
+      const newStoryId = _serverCreateSeedStory(db, tx, opening);
+      tx.set(db.collection('config').doc('used_openings'), { [opening]: true }, { merge: true });
+      tx.update(ptrRef, { 'ai.story_id': newStoryId });
+      return;
+    }
+
+    const poolName = slotKey === 'word' ? 'spotlight_word_pool' : 'spotlight_sentence_pool';
+    const poolSnap = await tx.get(db.collection(poolName).orderBy('created_at', 'asc').limit(50));
+    const nextEntry = poolSnap.docs.find(d => !d.data().used);
+
+    if (!nextEntry) {
+      if (slotKey === 'word') {
+        tx.update(ptrRef, { 'word.story_id': null });
+      } else {
+        // 채택 풀이 비어있으면(아직 이만큼 라운드가 안 쌓였음) 24시간 제안+투표
+        // 라운드를 새로 염 — round_id는 이 시점엔 항상 비어있는 상태에서 옴
+        // (스토리 진행 중엔 round_id를 null로 유지하는 불변식이라 별도 상태
+        // 확인 없이 바로 새 라운드를 열어도 안전).
+        const roundRef = db.collection('sentence_rounds').doc();
+        const now = new Date();
+        tx.set(roundRef, {
+          round_id: roundRef.id, status: 'active',
+          start_at: now.toISOString(), end_at: new Date(now.getTime() + 24 * 3600 * 1000).toISOString(),
+          submission_count: 0, winners: [], closed_at: null,
+        });
+        tx.update(ptrRef, { 'sentence.story_id': null, 'sentence.state': 'proposing', 'sentence.round_id': roundRef.id });
+      }
+      return;
+    }
+
+    tx.update(nextEntry.ref, { used: true });
+    const newStoryId = _serverCreateSeedStory(db, tx, nextEntry.data().text);
+    if (slotKey === 'word') {
+      tx.update(ptrRef, { 'word.story_id': newStoryId });
+    } else {
+      tx.update(ptrRef, { 'sentence.story_id': newStoryId, 'sentence.state': 'story', 'sentence.round_id': null });
+    }
+  });
+}
+
+// slotKey('word'|'sentence')의 풀에 새 항목이 막 쌓였을 때, 그 슬롯이 마침 비어있는
+// 상태(story_id==null)였다면 바로 채워줌 — _serverCloseWordChallenge(슬롯1 풀 적재
+// 직후)와 closeSentenceRounds(슬롯2 라운드 마감 직후)에서 호출. 이 두 호출 시점엔
+// 슬롯이 이미 story_id==null 상태로 놓여 있었을 때만 의미가 있어(그 외엔 손대지
+// 않고 조용히 반환), _serverRefillSpotlightSlot과 트랜잭션이 겹칠 일이 없음.
+async function _serverRefillSlotFromPoolIfEmpty(db, slotKey) {
+  const ptrRef = db.collection('config').doc('spotlight_slots');
+  await db.runTransaction(async tx => {
+    const ptrSnap = await tx.get(ptrRef);
+    if (!ptrSnap.exists) return;
+    const slot = ptrSnap.data()[slotKey];
+    if (!slot || slot.story_id) return; // 이미 진행 중인 스토리가 있으면 손대지 않음
+
+    const poolName = slotKey === 'word' ? 'spotlight_word_pool' : 'spotlight_sentence_pool';
+    const poolSnap = await tx.get(db.collection(poolName).orderBy('created_at', 'asc').limit(50));
+    const nextEntry = poolSnap.docs.find(d => !d.data().used);
+
+    if (!nextEntry) {
+      // 슬롯2는 라운드가 방금 닫혔는데(호출 시점상 항상 그러함) 제출이 하나도
+      // 없어서 채택 풀도 비었을 수 있음 — 그대로 방치하면 영영 안 채워지므로
+      // 새 24시간 라운드를 다시 염.
+      if (slotKey === 'sentence') {
+        const roundRef = db.collection('sentence_rounds').doc();
+        const now = new Date();
+        tx.set(roundRef, {
+          round_id: roundRef.id, status: 'active',
+          start_at: now.toISOString(), end_at: new Date(now.getTime() + 24 * 3600 * 1000).toISOString(),
+          submission_count: 0, winners: [], closed_at: null,
+        });
+        tx.update(ptrRef, { 'sentence.state': 'proposing', 'sentence.round_id': roundRef.id });
+      }
+      return;
+    }
+
+    tx.update(nextEntry.ref, { used: true });
+    const newStoryId = _serverCreateSeedStory(db, tx, nextEntry.data().text);
+    if (slotKey === 'word') {
+      tx.update(ptrRef, { 'word.story_id': newStoryId });
+    } else {
+      tx.update(ptrRef, { 'sentence.story_id': newStoryId, 'sentence.state': 'story', 'sentence.round_id': null });
+    }
+  });
+}
+
+// 슬롯2(✍️) 24시간 제안+투표 라운드 마감 — word_challenge는 "매일 00시 시작→21시
+// 마감" 고정 cron이지만, 이 라운드는 "슬롯 스토리가 완결되는 시점"이 이벤트
+// 트리거라 고정 시각 cron을 못 씀. 대신 aiParticipate(828행~)처럼 주기적으로
+// end_at 지난 라운드를 찾아 정산 + sendBatchedPushNotifications(107행~)의
+// 트랜잭션 claim 관용구로 중복 마감 방지.
+exports.closeSentenceRounds = functions
+  .region('asia-northeast3')
+  .pubsub.schedule('every 30 minutes')
+  .timeZone('Asia/Seoul')
+  .onRun(async () => {
+    const db = admin.firestore();
+    const MAX_ROUND_CLOSES_PER_RUN = 5;
+    const activeSnap = await db.collection('sentence_rounds').where('status', '==', 'active').limit(MAX_ROUND_CLOSES_PER_RUN).get();
+    const now = Date.now();
+
+    for (const doc of activeSnap.docs) {
+      const round = doc.data();
+      if (new Date(round.end_at).getTime() > now) continue;
+
+      const claimed = await db.runTransaction(async tx => {
+        const snap = await tx.get(doc.ref);
+        if (!snap.exists || snap.data().status !== 'active') return false;
+        tx.update(doc.ref, { status: 'closed', closed_at: new Date().toISOString() });
+        return true;
+      });
+      if (!claimed) continue;
+
+      const subsSnap = await db.collection('sentence_round_submissions').where('round_id', '==', doc.id).get();
+      const allSubs = subsSnap.docs.map(d => ({ submission_id: d.id, ...d.data() }));
+      // 1등뿐 아니라 1~3등까지 채택 — 슬롯이 빌 때 마침 새 라운드가 끝나있으리란
+      // 보장이 없어 여유분을 확보하는 목적
+      const top = allSubs
+        .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0) || new Date(a.created_at) - new Date(b.created_at))
+        .slice(0, 3);
+
+      if (top.length) {
+        const nickCache = {};
+        for (const w of top) {
+          if (!nickCache[w.user_id]) {
+            const uSnap = await db.collection('users').doc(w.user_id).get();
+            nickCache[w.user_id] = uSnap.exists ? (uSnap.data().display_name || uSnap.data().nickname) : '익명';
+          }
+        }
+        const winners = top.map(w => ({
+          user_id: w.user_id, submission_id: w.submission_id, text: w.text,
+          nickname: nickCache[w.user_id], vote_count: w.vote_count || 0,
+        }));
+        await doc.ref.update({ winners });
+
+        for (const w of top) {
+          await db.collection('spotlight_sentence_pool').doc().set({
+            text: w.text, proposer_id: w.user_id, round_id: doc.id, used: false,
+            created_at: new Date().toISOString(),
+          });
+          // 채택 포인트는 실제로 문장이 풀에서 소진돼 쓰일 때가 아니라 라운드
+          // 마감 시 즉시 지급(유저 확정, 2026-07-12) — word_challenge 마감과
+          // 같은 코드 경로에 붙어 있어 일관되고, 선정됐는데 나중에 안 쓰인다고
+          // 보상을 못 받는 경우가 없음.
+          await _serverAddPoints(db, w.user_id, 50, 'spotlight_sentence_pick', w.submission_id);
+        }
+      }
+
+      try { await _serverRefillSlotFromPoolIfEmpty(db, 'sentence'); } catch (e) {}
+    }
+    return null;
+  });
+
+// 스포트라이트 최초 도입 시 1회 실행 — 포인터 doc이 없으면 3슬롯이 전부 비어
+// 보이므로, 관리자가 배포 후 한 번 호출해 3슬롯을 AI 씨앗으로 부트스트랩함.
+// 이후로는 각 슬롯의 지정된 소스(단어챌린지 풀/제안투표 풀/AI 랜덤픽)가 이어받음.
+exports.adminInitSpotlight = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    const db = admin.firestore();
+    const ptrRef = db.collection('config').doc('spotlight_slots');
+    const ptrSnap = await ptrRef.get();
+    if (ptrSnap.exists && ptrSnap.data().initialized) return { ok: true, already: true };
+
+    const usedSnap = await db.collection('config').doc('used_openings').get();
+    const used = usedSnap.exists ? usedSnap.data() : {};
+    const available = SPOTLIGHT_AI_OPENINGS.filter(o => !used[o]);
+    const src = available.length >= 3 ? available.slice() : SPOTLIGHT_AI_OPENINGS.slice();
+    const picked = [];
+    while (picked.length < 3) {
+      const idx = Math.floor(Math.random() * src.length);
+      picked.push(src.splice(idx, 1)[0]);
+    }
+    const [op1, op2, op3] = picked;
+
+    const batch = db.batch();
+    const wordStoryId = _serverCreateSeedStory(db, batch, op1);
+    const sentenceStoryId = _serverCreateSeedStory(db, batch, op2);
+    const aiStoryId = _serverCreateSeedStory(db, batch, op3);
+    batch.set(db.collection('config').doc('used_openings'), { [op1]: true, [op2]: true, [op3]: true }, { merge: true });
+    batch.set(ptrRef, {
+      word: { story_id: wordStoryId },
+      sentence: { story_id: sentenceStoryId, state: 'story', round_id: null },
+      ai: { story_id: aiStoryId },
+      initialized: true,
+    });
+    await batch.commit();
+    return { ok: true, word_story_id: wordStoryId, sentence_story_id: sentenceStoryId, ai_story_id: aiStoryId };
   });
 
 // ── 업적 시스템 도입 이전 활동 소급 반영 (1회성 관리자 콜러블) ──

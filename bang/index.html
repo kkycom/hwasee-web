@@ -1960,7 +1960,8 @@ function renderVoteCard(sub, mySubIds, maxVotes, myVotedSet = new Set(), step = 
   const isAdopted   = sub.is_adopted === true || sub.is_adopted === 'TRUE';
   const iVoted      = myVotedSet.has(sub.sub_id);
   const voteCount   = Number(sub.vote_count) || 0;
-  const barPct      = Math.min(Math.round(voteCount / FB_VOTE_THRESHOLD * 100), 100);
+  const voteThreshold = window._storyData?.story?.vote_threshold || FB_VOTE_THRESHOLD;
+  const barPct      = Math.min(Math.round(voteCount / voteThreshold * 100), 100);
   const isClickable = user && !mySubIds.has(sub.sub_id) && !isAdopted;
   const showLabel   = Number(step) >= 2;
   const isMyCard    = mySubIds.has(sub.sub_id);
@@ -1984,7 +1985,7 @@ function renderVoteCard(sub, mySubIds, maxVotes, myVotedSet = new Set(), step = 
       ${showLabel ? (sub.is_closing ? `<div style="font-size:10px;font-weight:700;color:var(--accent2);margin-bottom:6px;letter-spacing:.04em">■ 닫는 이야기</div>` : `<div style="font-size:10px;font-weight:700;color:#5a8a72;margin-bottom:6px;letter-spacing:.04em">▶ 열린 이야기</div>`) : ''}
       <div class="vote-content">${esc(sub.content)}</div>
       <div class="vote-meta">
-        <span class="vote-count">공감 ${voteCount}/${FB_VOTE_THRESHOLD}개</span>
+        <span class="vote-count">공감 ${voteCount}/${voteThreshold}개</span>
         ${isAdopted ? '<span style="color:var(--success)">✓ 채택됨</span>' : ''}
         <span style="margin-left:auto;font-size:11px;color:var(--muted)${sub.is_ai ? '' : ';cursor:pointer'}"${sub.is_ai ? '' : ` onclick="event.stopPropagation();goToUserProfile('${sub.author_id}')"`}>${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 5px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
       </div>
@@ -2830,7 +2831,7 @@ async function submitVoteInStory(episode_id) {
   _lsc.expire('pop', 'done', 'mine');
   _lsc.del('story_' + currentParam);
   toast(wasRevote ? '공감이 변경됐어요!' : '공감 완료!');
-  if (res.max_votes >= FB_VOTE_THRESHOLD) {
+  if (res.max_votes >= (res.vote_threshold || FB_VOTE_THRESHOLD)) {
     if (btn) btn.textContent = '다음 단계로 넘어가는 중...';
     const _story = window._storyData?.story;
     if (_story) await _waitForStoryProgress(_story.story_id, Number(_story.current_step) || 0);
@@ -2916,8 +2917,8 @@ async function episode() {
   if (_renderEpoch !== epoch || currentParam !== episode_id) return;
   if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">에피소드를 불러오지 못했습니다.<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="episode()">다시 시도</button></div>`; return; }
 
-  // submitVote()의 마감 대기(_waitForStoryProgress)용 — 스토리 id/현재 단계 스탬프
-  window._epStoryRef = res.story ? { story_id: res.story.story_id, current_step: Number(res.story.current_step) || 0 } : null;
+  // submitVote()의 마감 대기(_waitForStoryProgress)용 — 스토리 id/현재 단계/공감 문턱 스탬프
+  window._epStoryRef = res.story ? { story_id: res.story.story_id, current_step: Number(res.story.current_step) || 0, vote_threshold: res.story.vote_threshold || FB_VOTE_THRESHOLD } : null;
 
   const ep           = res.episode;
   const prevChain    = res.prevChain || [];
@@ -3002,7 +3003,8 @@ function renderSubCard(s, isClosed, mySubIds, maxVotes, step = 1) {
   mySubIds = mySubIds instanceof Set ? mySubIds : new Set(mySubIds ? [mySubIds] : []);
   const isAdopted  = s.is_adopted === true || s.is_adopted === 'TRUE';
   const sVoteCount = Number(s.vote_count) || 0;
-  const barPct     = Math.min(Math.round(sVoteCount / FB_VOTE_THRESHOLD * 100), 100);
+  const voteThreshold = window._epStoryRef?.vote_threshold || FB_VOTE_THRESHOLD;
+  const barPct     = Math.min(Math.round(sVoteCount / voteThreshold * 100), 100);
   const isClickable = !isClosed && !mySubIds.has(s.sub_id);
   const showLabel   = Number(step) >= 2;
   return `
@@ -3012,7 +3014,7 @@ function renderSubCard(s, isClosed, mySubIds, maxVotes, step = 1) {
       ${showLabel ? (s.is_closing ? `<div style="font-size:10px;font-weight:700;color:var(--accent2);margin-bottom:6px;letter-spacing:.04em">■ 닫는 이야기</div>` : `<div style="font-size:10px;font-weight:700;color:#5a8a72;margin-bottom:6px;letter-spacing:.04em">▶ 열린 이야기</div>`) : ''}
       <div class="vote-content">${esc(s.content)}</div>
       <div class="vote-meta">
-        <span class="vote-count">공감 ${sVoteCount}/${FB_VOTE_THRESHOLD}개</span>
+        <span class="vote-count">공감 ${sVoteCount}/${voteThreshold}개</span>
         ${mySubIds.has(s.sub_id) ? '<span class="tag">내 제출</span>' : ''}
         <span style="margin-left:auto;font-size:11px;color:var(--muted)"><span style="font-size:10px;margin-right:3px">글쓴이</span>${esc(s.author_id.slice(0,6))}...</span>
       </div>
@@ -3039,7 +3041,7 @@ async function submitVote(episode_id) {
   if (!res.ok) { toast(res.error, true); btn.disabled = false; return; }
   _lsc.expire('pop', 'done', 'mine');
   toast('공감 완료!');
-  if (res.max_votes >= FB_VOTE_THRESHOLD) {
+  if (res.max_votes >= (res.vote_threshold || FB_VOTE_THRESHOLD)) {
     btn.textContent = '다음 단계로 넘어가는 중...';
     if (window._epStoryRef) await _waitForStoryProgress(window._epStoryRef.story_id, window._epStoryRef.current_step);
   }

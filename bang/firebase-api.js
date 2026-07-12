@@ -561,7 +561,7 @@ async function fbGetStory(story_id, user_id) {
     const stuckMaxV = subsSnap.docs
       .filter(d => d.data().episode_id === openEp.episode_id)
       .reduce((m, d) => Math.max(m, Number(d.data().vote_count) || 0), 0);
-    if (stuckMaxV >= FB_VOTE_THRESHOLD) {
+    if (stuckMaxV >= (story.vote_threshold || FB_VOTE_THRESHOLD)) {
       functionsRegion.httpsCallable('closeEpisode')({ episode_id: openEp.episode_id }).catch(() => {});
     }
   }
@@ -1094,6 +1094,10 @@ async function fbVote(episode_id, sub_ids, voter_id) {
   const ep = epSnap.data();
   if (ep.status !== 'open') return { ok: false, error: '공감이 마감됐습니다.' };
 
+  // 스포트라이트 슬롯 이야기는 vote_threshold(5)가 지정돼있음 — 없으면 기본 3표
+  const storySnap = await db.collection('stories').doc(ep.story_id).get();
+  const voteThreshold = (storySnap.exists && storySnap.data().vote_threshold) || FB_VOTE_THRESHOLD;
+
   const isRevote = !prevVoteSnap.empty;
   const prevVotedSubIds = prevVoteSnap.docs.map(d => d.data().sub_id);
   // 추가 제출권으로 한 에피소드에 내 글이 2개 있을 수 있어 find()로 첫 번째만
@@ -1148,7 +1152,7 @@ async function fbVote(episode_id, sub_ids, voter_id) {
     })();
   }
 
-  if (maxSubVotes >= FB_VOTE_THRESHOLD) {
+  if (maxSubVotes >= voteThreshold) {
     // 마감 처리(당선작 결정/분기 분리/포인트 지급)는 서버(Cloud Function,
     // _serverCloseEpisode 재사용)에서 수행 — 투표 응답은 기다리지 않고 바로
     // 반환하되, 처리 자체는 브라우저 탭이 닫히거나 백그라운드로 넘어가도
@@ -1156,7 +1160,7 @@ async function fbVote(episode_id, sub_ids, voter_id) {
     functionsRegion.httpsCallable('closeEpisode')({ episode_id }).catch(() => {});
   }
 
-  return { ok: true, total_voters: newTotal, max_votes: maxSubVotes };
+  return { ok: true, total_voters: newTotal, max_votes: maxSubVotes, vote_threshold: voteThreshold };
 }
 
 // ─── 씨앗 문장 ───────────────────────────────────────────

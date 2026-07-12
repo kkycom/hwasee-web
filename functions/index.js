@@ -1042,8 +1042,12 @@ ${votable.map((s, i) => `[${i + 1}] sub_id=${s.id} | ${s.content}`).join('\n')}
           // 걸려 재시도됨(투표 자체는 이미 끝난 상태라 voteIntervalMs 재대기 없이 감).
           // 실제로 지금 닫진 않고 후보로만 모아둠 — 아래에서 전체 후보 중 가장
           // 오래 열려있던(FIFO) 순서로 캡만큼만 실제로 닫음.
+          // 스포트라이트 슬롯 이야기(vote_threshold:5, _serverCreateSeedStory에서 지정)는
+          // 관심이 몰려 너무 빨리 넘어가는 걸 막기 위해 일반 이야기(기본 3표)보다
+          // 높은 문턱을 씀 — 필드 없으면 기존 AI_VOTE_THRESHOLD로 그대로 동작
+          const voteThreshold = storyDoc.data().vote_threshold || AI_VOTE_THRESHOLD;
           const maxVoteCount = subs.reduce((m, s) => Math.max(m, Number(s.vote_count) || 0), 0);
-          if (maxVoteCount >= AI_VOTE_THRESHOLD) {
+          if (maxVoteCount >= voteThreshold) {
             closeCandidates.push({ episode_id, currentEp });
           }
         }
@@ -1737,6 +1741,11 @@ const SPOTLIGHT_AI_OPENINGS = [
 // 스포트라이트로 시작되는 이야기는 특정 개인 소유가 아니라 시스템이 심은 것이라
 // creator_id를 항상 FB_AI_ID로 둠(슬롯1/2도 채택/포인트 지급은 이미 챌린지·라운드
 // 마감 시점에 끝났으므로, 스토리 자체의 창작자 귀속은 기존 AI씨앗과 동일 취급).
+// 이 함수는 스포트라이트 슬롯(오늘의 이야기) 전용 씨앗 생성에만 쓰임(호출부
+// 전부 _serverRefillSpotlightSlot/_serverRefillSlotFromPoolIfEmpty/
+// adminInitSpotlight) — 그래서 vote_threshold:5를 고정으로 넣어도 안전함.
+// 관심이 몰려 표가 너무 빨리 차서 한 단계가 순식간에 지나가버리는 걸 막기
+// 위해 일반 이야기(기본 3표, FB_VOTE_THRESHOLD/AI_VOTE_THRESHOLD)보다 높게 잡음.
 function _serverCreateSeedStory(db, writer, opening) {
   const story_id = db.collection('stories').doc().id;
   const episode_id = db.collection('episodes').doc().id;
@@ -1744,7 +1753,7 @@ function _serverCreateSeedStory(db, writer, opening) {
     story_id, opening: opening.trim(), max_steps: 10, current_step: 0,
     status: 'active', creator_id: FB_AI_ID, creator_nickname: '익명', creator_badge: '',
     created_at: new Date().toISOString(), batch: '', participant_count: 0, like_count: 0,
-    is_ai_seed: true,
+    is_ai_seed: true, vote_threshold: 5,
   });
   writer.set(db.collection('episodes').doc(episode_id), {
     episode_id, story_id, step: 1, parent_sub_id: '',

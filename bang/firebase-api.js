@@ -2662,6 +2662,10 @@ async function firebaseApi(action, params = {}) {
     case 'adminGetWordChallengeQueue':  return fbAdminGetWordChallengeQueue(await requireUid());
     case 'adminDeleteWordChallengeSet': return fbAdminDeleteWordChallengeSet(await requireUid(), params.set_id);
 
+    case 'getSpotlight':           return fbGetSpotlight(uid || null);
+    case 'submitSentenceProposal': return fbSubmitSentenceProposal(params.round_id, await requireUid(), params.text);
+    case 'voteSentenceRound':      return fbVoteSentenceRound(params.round_id, params.submission_id, await requireUid());
+
     case 'pingWarm': return { ok: true };
     default:         return { ok: false, error: '알 수 없는 요청입니다.' };
   }
@@ -2808,4 +2812,120 @@ async function fbAdminDeleteWordChallengeSet(admin_id, set_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   await db.collection('word_challenge_sets').doc(set_id).delete();
   return { ok: true };
+}
+
+// ─── 3슬롯 "오늘의 이야기" 스포트라이트 ──────────────────────
+// 슬롯 리필(완결 감지→다음 이야기 시작)은 전부 functions/index.js에서 서버로
+// 처리함(_serverRefillSpotlightSlot 등) — 여기 클라이언트 함수들은 조회/제안/투표만 담당.
+
+async function fbGetSpotlight(viewer_id) {
+  const ptrSnap = await db.collection('config').doc('spotlight_slots').get();
+  if (!ptrSnap.exists) return { ok: true, initialized: false, slots: {} };
+  const ptr = ptrSnap.data();
+
+  const slots = {};
+  for (const key of ['word', 'sentence', 'ai']) {
+    const s = ptr[key] || {};
+    if (s.story_id) {
+      const storySnap = await db.collection('stories').doc(s.story_id).get();
+      slots[key] = storySnap.exists
+        ? { state: 'story', story_id: s.story_id, opening: storySnap.data().opening, current_step: storySnap.data().current_step || 0 }
+        : { state: 'empty' };
+    } else if (key === 'sentence' && s.state === 'proposing' && s.round_id) {
+      const roundData = await _fbGetSentenceRoundData(s.round_id, viewer_id);
+      slots.sentence = { state: 'proposing', ...roundData };
+    } else {
+      slots[key] = { state: 'empty' };
+    }
+  }
+  return { ok: true, initialized: true, slots };
+}
+
+async function _fbGetSentenceRoundData(round_id, viewer_id) {
+  const roundSnap = await db.collection('sentence_rounds').doc(round_id).get();
+  if (!roundSnap.exists) return { round: null, submissions: [], my_submission_id: null, my_vote_submission_id: null };
+  const round = { round_id: roundSnap.id, ...roundSnap.data() };
+
+  const subsSnap = await db.collection('sentence_round_submissions').where('round_id', '==', round_id).get();
+  const authorIds = [...new Set(subsSnap.docs.map(d => d.data().user_id))];
+  const nickMap = {};
+  if (authorIds.length) {
+    const userDocs = await Promise.all(authorIds.map(id => db.collection('users').doc(id).get()));
+    userDocs.forEach(d => { if (d.exists) nickMap[d.id] = d.data().display_name || d.data().nickname; });
+  }
+  const isActive = round.status === 'active' && Date.now() < new Date(round.end_at).getTime();
+  const submissions = subsSnap.docs
+    .map(d => ({ submission_id: d.id, ...d.data(), nickname: nickMap[d.data().user_id] || '익명' }))
+    .sort((a, b) => isActive
+      ? new Date(a.created_at) - new Date(b.created_at)
+      : (b.vote_count || 0) - (a.vote_count || 0) || new Date(a.created_at) - new Date(b.created_at));
+
+  let my_submission_id = null, my_vote_submission_id = null;
+  if (viewer_id) {
+    const mine = submissions.find(s => s.user_id === viewer_id);
+    if (mine) my_submission_id = mine.submission_id;
+    const voteSnap = await db.collection('sentence_round_votes').doc(`${round_id}_${viewer_id}`).get();
+    if (voteSnap.exists) my_vote_submission_id = voteSnap.data().submission_id;
+  }
+  return { round, submissions, my_submission_id, my_vote_submission_id };
+}
+
+async function fbSubmitSentenceProposal(round_id, author_id, text) {
+  const text2 = (text || '').trim();
+  if (!text2) return { ok: false, error: '문장을 입력해주세요.' };
+  if (text2.length > FB_WORD_CHALLENGE_MAX_CHARS) return { ok: false, error: `${FB_WORD_CHALLENGE_MAX_CHARS}자 이내로 작성해주세요.` };
+  const roundSnap = await db.collection('sentence_rounds').doc(round_id).get();
+  if (!roundSnap.exists) return { ok: false, error: '라운드를 찾을 수 없습니다.' };
+  const round = roundSnap.data();
+  if (round.status !== 'active' || Date.now() >= new Date(round.end_at).getTime()) return { ok: false, error: '이미 마감된 라운드예요.' };
+  // 결정적 문서 ID(라운드+유저) + 트랜잭션으로 중복 제안 방지(word_challenge와 동일 패턴)
+  const sub_id = `${round_id}_${author_id}`;
+  const subRef = db.collection('sentence_round_submissions').doc(sub_id);
+  try {
+    await db.runTransaction(async tx => {
+      const snap = await tx.get(subRef);
+      if (snap.exists) throw new Error('이미 이 라운드에 제안했어요.');
+      tx.set(subRef, { round_id, user_id: author_id, text: text2, vote_count: 0, created_at: fbNow() });
+    });
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+  return { ok: true, submission_id: sub_id };
+}
+
+// word_challenge와 동일하게 마감 전까지는 투표를 자유롭게 바꿀 수 있음(1회 고정 아님) —
+// 같은 문장을 다시 누르면 투표 취소, 다른 문장을 누르면 그쪽으로 즉시 전환.
+async function fbVoteSentenceRound(round_id, submission_id, voter_id) {
+  const roundSnap = await db.collection('sentence_rounds').doc(round_id).get();
+  if (!roundSnap.exists) return { ok: false, error: '라운드를 찾을 수 없습니다.' };
+  const round = roundSnap.data();
+  if (round.status !== 'active' || Date.now() >= new Date(round.end_at).getTime()) return { ok: false, error: '이미 마감된 라운드예요.' };
+  const subRef = db.collection('sentence_round_submissions').doc(submission_id);
+  const subSnap = await subRef.get();
+  if (!subSnap.exists || subSnap.data().round_id !== round_id) return { ok: false, error: '문장을 찾을 수 없습니다.' };
+  if (subSnap.data().user_id === voter_id) return { ok: false, error: '본인 문장에는 투표할 수 없어요.' };
+
+  const voteRef = db.collection('sentence_round_votes').doc(`${round_id}_${voter_id}`);
+  let voted = false;
+  try {
+    await db.runTransaction(async tx => {
+      const voteSnap = await tx.get(voteRef);
+      if (voteSnap.exists && voteSnap.data().submission_id === submission_id) {
+        tx.delete(voteRef);
+        tx.update(subRef, { vote_count: firebase.firestore.FieldValue.increment(-1) });
+        voted = false;
+      } else {
+        if (voteSnap.exists) {
+          const oldRef = db.collection('sentence_round_submissions').doc(voteSnap.data().submission_id);
+          tx.update(oldRef, { vote_count: firebase.firestore.FieldValue.increment(-1) });
+        }
+        tx.set(voteRef, { round_id, submission_id, voter_id, created_at: fbNow() });
+        tx.update(subRef, { vote_count: firebase.firestore.FieldValue.increment(1) });
+        voted = true;
+      }
+    });
+  } catch (e) {
+    return { ok: false, error: e.message || '투표에 실패했습니다.' };
+  }
+  return { ok: true, voted };
 }

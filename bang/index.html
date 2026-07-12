@@ -755,17 +755,15 @@ const _lsc = {
 let _renderEpoch = 0;
 
 // ─── 탭 정렬 상태 ──────────────────────────────────────────
-let _mineSort  = 'activity';
-let _mineCache = null; // { active, snapshot }
-let _mineLimit = 20;
-let _popSort   = 'activity';
-let _popCache  = null; // { stories }
-let _popLimit  = 20;
+// 관심받는+참여중 탭이 "자유 이야기" 하나로 통합됨(3슬롯 스포트라이트 개편) —
+// 참여중 카드는 별도 탭이 아니라 mine 그룹으로 볼드+정렬 우선순위만 유지.
+let _freeSort  = 'activity';
+let _freeCache = null; // { mine, others }
+let _freeLimit = 20;
 let _doneSort  = 'activity';
 let _doneCache = null; // { stories }
 let _doneLimit = 20;
-let _popFetching  = false;
-let _mineFetching = false;
+let _freeFetching = false;
 let _doneFetching = false;
 let _bmIds     = new Set();
 async function _loadBmIds() {
@@ -801,95 +799,56 @@ function _sortStories(stories, key) {
 function _sortBtns(prefix, keys, current) {
   return `<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
     ${keys.map(([k,l]) =>
-      `<button id="${prefix}-${k}" class="sort-btn ${current===k?'active':''}" onclick="${prefix==='ms'?'setMineSort':prefix==='ps'?'setPopSort':'setDoneSort'}('${k}')">${l}</button>`
+      `<button id="${prefix}-${k}" class="sort-btn ${current===k?'active':''}" onclick="${prefix==='fs'?'setFreeSort':'setDoneSort'}('${k}')">${l}</button>`
     ).join('')}
   </div>`;
 }
 
-function setMineSort(key) {
-  _mineSort = key; _mineLimit = 20;
+function setFreeSort(key) {
+  _freeSort = key; _freeLimit = 20;
   ['activity','step','submissions','latest'].forEach(k => {
-    const el = document.getElementById('ms-' + k);
+    const el = document.getElementById('fs-' + k);
     if (el) el.classList.toggle('active', k === key);
   });
-  renderMineCards();
+  renderFreeCards();
 }
 
-function renderMineCards() {
+// 참여중(mine) 카드는 항상 볼드+맨 위 그룹으로 고정 노출(페이징 없음 — 보통
+// 개수가 적음), 그 아래로 나머지(others) 카드가 정렬+더보기 페이징됨. 부스트는
+// mine/others 어느 쪽에서 나왔든 한 스크롤에 합쳐서 보여줌.
+function renderFreeCards() {
   const content = document.getElementById('home-content');
-  if (!content || !_mineCache) return;
-  const { active } = _mineCache;
-  const boosted = active.filter(s => s.is_boosted);
-  const regular = _sortStories(active.filter(s => !s.is_boosted), _mineSort);
-  const visible = regular.slice(0, _mineLimit);
-  const remaining = regular.length - _mineLimit;
+  if (!content || !_freeCache) return;
+  const { mine, others } = _freeCache;
+  const boosted = [...mine, ...others].filter(s => s.is_boosted);
+  const mineSorted = _sortStories(mine.filter(s => !s.is_boosted), _freeSort);
+  const othersSorted = _sortStories(others.filter(s => !s.is_boosted), _freeSort);
+  const visibleOthers = othersSorted.slice(0, _freeLimit);
+  const remaining = othersSorted.length - _freeLimit;
   const boostHtml = boosted.length ? `
     <div class="boost-section">
       <div class="boost-section-label">✦ 이런 이야기도 있어요</div>
       <div class="boost-scroll">${boosted.map(s => boostCardHtml(s)).join('')}</div>
     </div>` : '';
   const loadMoreHtml = remaining > 0
-    ? `<button id="mine-load-more" class="btn btn-ghost" style="width:100%;margin-top:8px;color:var(--muted)" onclick="loadMoreMine()">더 보기 (${remaining}개)</button>`
+    ? `<button id="free-load-more" class="btn btn-ghost" style="width:100%;margin-top:8px;color:var(--muted)" onclick="loadMoreFree()">더 보기 (${remaining}개)</button>`
     : '';
+  const cardsHtml = mineSorted.map(s => myStoryCardHtml(s)).join('') + visibleOthers.map(s => popularCardHtml(s)).join('');
   content.innerHTML = boostHtml
-    + _sortBtns('ms', [['activity','참여도 순'],['step','진행도 순'],['submissions','제출 순'],['latest','최신 순']], _mineSort)
-    + (regular.length
-      ? visible.map(s => myStoryCardHtml(s)).join('') + loadMoreHtml
-      : `<div class="empty" style="padding-top:30px">참여 중인 이야기가 없어요.<br>씨앗 탭에서 이야기를 시작해 보세요!</div>`);
+    + _sortBtns('fs', [['activity','참여도 순'],['step','진행도 순'],['submissions','제출 순'],['latest','최신 순']], _freeSort)
+    + ((mineSorted.length || othersSorted.length)
+      ? cardsHtml + loadMoreHtml
+      : `<div class="empty" style="padding-top:40px">아직 이야기가 없어요.<br>오늘의 이야기에서 참여해 보세요!</div>`);
 }
 
-function loadMoreMine() {
-  if (!_mineCache) return;
-  const regular = _sortStories(_mineCache.active.filter(s => !s.is_boosted), _mineSort);
-  const newItems = regular.slice(_mineLimit, _mineLimit + 20);
-  _mineLimit += 20;
-  const btn = document.getElementById('mine-load-more');
+function loadMoreFree() {
+  if (!_freeCache) return;
+  const othersSorted = _sortStories(_freeCache.others.filter(s => !s.is_boosted), _freeSort);
+  const newItems = othersSorted.slice(_freeLimit, _freeLimit + 20);
+  _freeLimit += 20;
+  const btn = document.getElementById('free-load-more');
   if (!btn) return;
-  const remaining = regular.length - _mineLimit;
-  btn.before(document.createRange().createContextualFragment(newItems.map(s => myStoryCardHtml(s)).join('')));
-  if (remaining > 0) btn.textContent = `더 보기 (${remaining}개)`;
-  else btn.remove();
-}
-
-function setPopSort(key) {
-  _popSort = key; _popLimit = 20;
-  ['activity','step','submissions','latest'].forEach(k => {
-    const el = document.getElementById('ps-' + k);
-    if (el) el.classList.toggle('active', k === key);
-  });
-  renderPopCards();
-}
-
-function renderPopCards() {
-  const content = document.getElementById('home-content');
-  if (!content || !_popCache) return;
-  const boosted = _popCache.stories.filter(s => s.is_boosted);
-  const regular = _sortStories(_popCache.stories.filter(s => !s.is_boosted), _popSort);
-  const visible = regular.slice(0, _popLimit);
-  const remaining = regular.length - _popLimit;
-  const boostHtml = boosted.length ? `
-    <div class="boost-section">
-      <div class="boost-section-label">✦ 이런 이야기도 있어요</div>
-      <div class="boost-scroll">${boosted.map(s => boostCardHtml(s)).join('')}</div>
-    </div>` : '';
-  const loadMoreHtml = remaining > 0
-    ? `<button id="pop-load-more" class="btn btn-ghost" style="width:100%;margin-top:8px;color:var(--muted)" onclick="loadMorePop()">더 보기 (${remaining}개)</button>`
-    : '';
-  content.innerHTML = boostHtml
-    + _sortBtns('ps', [['activity','참여도 순'],['step','진행도 순'],['submissions','제출 순'],['latest','최신 순']], _popSort)
-    + (regular.length
-      ? visible.map(s => popularCardHtml(s)).join('') + loadMoreHtml
-      : `<div class="empty" style="padding-top:40px">아직 이야기가 없어요.<br>씨앗 탭에서 첫 이야기를 시작해 보세요!</div>`);
-}
-
-function loadMorePop() {
-  if (!_popCache) return;
-  const regular = _sortStories(_popCache.stories.filter(s => !s.is_boosted), _popSort);
-  const newItems = regular.slice(_popLimit, _popLimit + 20);
-  _popLimit += 20;
-  const btn = document.getElementById('pop-load-more');
-  if (!btn) return;
-  const remaining = regular.length - _popLimit;
+  const remaining = othersSorted.length - _freeLimit;
   btn.before(document.createRange().createContextualFragment(newItems.map(s => popularCardHtml(s)).join('')));
   if (remaining > 0) btn.textContent = `더 보기 (${remaining}개)`;
   else btn.remove();
@@ -1194,18 +1153,30 @@ function calcDisplayStep(story, epStep) {
     ? (Number(story.branch_from_step) - 1) + Number(epStep)
     : Number(epStep) + 1;
 }
-// ─── 홈 (4탭) ────────────────────────────────────────────
+// ─── 홈 (3탭 + 오늘의 이야기 스포트라이트) ──────────────────
+// 씨앗/관심받는/참여중 4탭 구조를 "오늘의 이야기"(3슬롯 스포트라이트) + "자유
+// 이야기"(옛 관심받는+참여중 통합) + "완성된 이야기"로 개편(2026-07-12).
+// 새 이야기 시작은 탭이 아니라 우측 상단 버튼으로 옮김(기존 create() 재사용).
 
 const HOME_TABS = [
-  { key: 'seed',    label: '씨앗이 될 이야기' },
-  { key: 'popular', label: '관심받는 이야기'  },
-  { key: 'mine',    label: '참여 중인 이야기' },
-  { key: 'done',    label: '완성된 이야기'     },
+  { key: 'spotlight', label: '오늘의 이야기'   },
+  { key: 'free',      label: '자유 이야기'     },
+  { key: 'done',      label: '완성된 이야기'   },
 ];
+
+// nav('seed') 등 "홈으로" 용도로 쓰이던 기존 호출부가 로고 클릭·로그아웃·관리자
+// 가드·각종 에러 폴백 등 여러 곳에 남아있어(전부 찾아 바꾸는 대신) 여기서 새
+// 탭으로 매핑 — render()의 routes 맵도 이 값들을 전부 home으로 보내고 있음
+const HOME_LEGACY_TAB_MAP = { seed: 'spotlight', popular: 'free', mine: 'free', hot: 'spotlight', archive: 'done' };
 
 async function home() {
   const epoch = _renderEpoch;
-  const tab = ['seed','popular','mine','done'].includes(currentRoute) ? currentRoute : 'seed';
+  const validTabs = HOME_TABS.map(t => t.key);
+  const tab = validTabs.includes(currentRoute) ? currentRoute : (HOME_LEGACY_TAB_MAP[currentRoute] || 'spotlight');
+  // loadHomeTab의 ok()가 currentRoute===tab으로 비교하므로, 레거시 라우트 문자열
+  // (seed/popular/mine 등)로 진입했을 때도 전역 상태를 새 탭 키로 맞춰둬야
+  // 함(안 그러면 이 경로로 들어온 스포트라이트 탭이 영영 로딩중에 멈춰있게 됨).
+  currentRoute = tab;
 
   const tabHtml = HOME_TABS.map(t => `
     <button class="home-tab ${t.key === tab ? 'active' : ''}"
@@ -1213,7 +1184,7 @@ async function home() {
             id="htab-${t.key}">${t.label}</button>`).join('');
 
   document.getElementById('app').innerHTML = `
-    <div class="home-tabs">${tabHtml}</div>
+    <div class="home-tabs">${tabHtml}<button class="btn btn-primary btn-sm" style="flex:none;margin:6px 6px 6px 10px" onclick="nav('create')">+ 새 이야기</button></div>
     <div id="home-content"><div class="loading"></div></div>`;
 
   await loadHomeTab(tab, epoch);
@@ -1230,8 +1201,7 @@ async function switchHomeTab(tab) {
     if (el) el.classList.toggle('active', t.key === tab);
   });
   const content = document.getElementById('home-content');
-  const cacheKey = tab === 'popular' ? 'pop' : tab === 'seed' ? 'seeds' : tab;
-  const hasAnyData = !!_lsc.getStale(cacheKey);
+  const hasAnyData = !!_lsc.getStale(tab);
   if (content) content.innerHTML = hasAnyData ? '' : `<div class="loading"></div>`;
   await loadHomeTab(tab, epoch);
 }
@@ -1242,23 +1212,23 @@ async function loadHomeTab(tab, epoch) {
   const ok = () => _renderEpoch === epoch && currentRoute === tab && !!gc();
   if (!gc()) return;
 
-  if (tab === 'seed') {
-    const _cachedSeeds = _lsc.get('seeds');
-    const _staleSeeds  = _cachedSeeds || _lsc.getStale('seeds');
-    const res = _staleSeeds ? { ok: true, seeds: _staleSeeds } : await api('getSeeds');
+  if (tab === 'spotlight') {
+    const _cachedSp = _lsc.get('spotlight');
+    const _staleSp  = _cachedSp || _lsc.getStale('spotlight');
+    const res = _staleSp ? { ok: true, ..._staleSp } : await api('getSpotlight');
     if (!ok()) return;
-    if (!res.ok) {
-      gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('seed')">다시 시도</button></div>`;
+    if (!res.ok || !res.initialized) {
+      gc().innerHTML = `<div class="empty">오늘의 이야기를 준비 중이에요.</div>`;
       return;
     }
-    if (!_cachedSeeds) {
-      _lsc.set('seeds', res.seeds, 300);
-      if (_staleSeeds) api('getSeeds').then(r => { if (r.ok) _lsc.set('seeds', r.seeds, 300); });
+    if (!_cachedSp) {
+      _lsc.set('spotlight', res, 20);
+      if (_staleSp) api('getSpotlight').then(r => { if (r.ok && r.initialized) _lsc.set('spotlight', r, 20); });
     }
-    gc().innerHTML = '';
-    window._seeds   = res.seeds;
-    window._seedIdx = 0;
-    renderSeedCard();
+    gc().innerHTML = '<div id="spotlight-area"></div>';
+    window._spotlightData = res;
+    _srVisibleCount = SR_PAGE_SIZE;
+    renderSpotlight();
     const wcSection = document.createElement('div');
     wcSection.id = 'word-challenge-section';
     wcSection.style.cssText = 'margin-top:32px;border-top:1px solid var(--border);padding-top:24px';
@@ -1266,34 +1236,33 @@ async function loadHomeTab(tab, epoch) {
     gc()?.appendChild(wcSection);
     loadWordChallenge();
 
-  } else if (tab === 'popular') {
-    const _applyPop = (storiesRes, myRes) => {
-      const myIds   = new Set((myRes?.ok ? myRes.stories : []).map(s => s.story_id));
-      const stories = (storiesRes?.ok ? storiesRes.stories : []).filter(s => !myIds.has(s.story_id));
-      _popCache = { stories };
-      if (currentRoute === 'popular') renderPopCards();
+  } else if (tab === 'free') {
+    // 관심받는(popular)+참여중(mine) 통합 — 예전 popular 탭의 병렬 조회+상호
+    // 캐시재사용 로직을 그대로 재사용하되, popular처럼 mine을 제외하지 않고
+    // 별도 그룹(mine/others)으로 나눠 둘 다 한 화면에 렌더링함(mine이 볼드+상단 고정).
+    const _applyFree = (storiesRes, myRes) => {
+      const mine   = (myRes?.ok ? myRes.stories : []).filter(s => s.status === 'active');
+      const mineIds = new Set(mine.map(s => s.story_id));
+      const others = (storiesRes?.ok ? storiesRes.stories : []).filter(s => !mineIds.has(s.story_id));
+      _freeCache = { mine, others };
+      if (currentRoute === 'free') renderFreeCards();
     };
-    const _cachedPop = _lsc.get('pop');
-    const _stalePop  = _cachedPop || _lsc.getStale('pop');
-    if (_stalePop) _applyPop(_stalePop.storiesRes, _stalePop.myRes);
-    const _fetchPop = async () => {
-      if (_popFetching) return;
-      _popFetching = true;
+    const _cachedFree = _lsc.get('free');
+    const _staleFree  = _cachedFree || _lsc.getStale('free');
+    if (_staleFree) _applyFree(_staleFree.storiesRes, _staleFree.myRes);
+    const _fetchFree = async () => {
+      if (_freeFetching) return;
+      _freeFetching = true;
       let storiesRes, myRes;
-      const _freshMine = user ? _lsc.get('mine') : null; // mine 탭에서 이미 받아온 게 있으면 재사용
       try {
-        if (_freshMine) {
-          [storiesRes, myRes] = await Promise.all([api('getStories', { page: 1 }), Promise.resolve(_freshMine)]);
-        } else {
-          const p = [api('getStories', { page: 1 })];
-          if (user) p.push(api('getMyStories'));
-          [storiesRes, myRes] = await Promise.all(p);
-        }
+        const p = [api('getStories', { page: 1 })];
+        if (user) p.push(api('getMyStories'));
+        [storiesRes, myRes] = await Promise.all(p);
       } catch(e) {
-        if (!_stalePop && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('popular')">다시 시도</button></div>`;
+        if (!_staleFree && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('free')">다시 시도</button></div>`;
         return;
       } finally {
-        _popFetching = false;
+        _freeFetching = false;
       }
       // api()는 실패해도 예외를 던지지 않고 {ok:false}로 resolve되므로(15초 타임아웃
       // 포함), 위 catch로는 안 걸러짐 — storiesRes.ok를 명시적으로 확인해야 함.
@@ -1301,48 +1270,13 @@ async function loadHomeTab(tab, epoch) {
       // 이야기가 많은데 "아직 이야기가 없어요"로 잘못 뜨는 문제가 있었음
       // (2026-07-08 유저 리포트로 확인).
       if (!storiesRes?.ok) {
-        if (!_stalePop && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('popular')">다시 시도</button></div>`;
+        if (!_staleFree && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('free')">다시 시도</button></div>`;
         return;
       }
-      _lsc.set('pop', { storiesRes, myRes }, 150);
-      if (myRes?.ok) _lsc.set('mine', myRes, 300); // mine 캐시도 함께 채워서 mine 탭 전환 시 getMyStories 재호출 방지
-      _applyPop(storiesRes, myRes);
+      _lsc.set('free', { storiesRes, myRes }, 150);
+      _applyFree(storiesRes, myRes);
     };
-    if (!_cachedPop) await _fetchPop(); else _fetchPop();
-
-  } else if (tab === 'mine') {
-    if (!user) {
-      const c = gc(); if (c) c.innerHTML = `<div class="empty" style="padding-top:60px">로그인하면 참여 중인 이야기를 볼 수 있어요.<br>
-        <button class="btn btn-primary" style="margin-top:20px" onclick="nav('auth','login')">로그인</button></div>`;
-      return;
-    }
-    const _applyMine = (res) => {
-      const active = res?.ok ? res.stories.filter(s => s.status === 'active') : [];
-      _mineCache = { active };
-      if (currentRoute === 'mine') renderMineCards();
-    };
-    const _cachedMine = _lsc.get('mine');
-    const _staleMine  = _cachedMine || _lsc.getStale('mine');
-    if (_staleMine) _applyMine(_staleMine);
-    const _fetchMine = async () => {
-      if (_mineFetching) return;
-      _mineFetching = true;
-      let res;
-      try { res = await api('getMyStories'); } catch(e) {
-        if (!_staleMine && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('mine')">다시 시도</button></div>`;
-        return;
-      } finally { _mineFetching = false; }
-      // api()는 실패해도 예외 없이 {ok:false}로 resolve되므로 위 catch로는 안
-      // 걸러짐 — 명시적으로 확인 안 하면 실패 응답을 "참여 중인 이야기 0개"로
-      // 잘못 캐시+렌더하게 됨
-      if (!res?.ok) {
-        if (!_staleMine && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('mine')">다시 시도</button></div>`;
-        return;
-      }
-      _lsc.set('mine', res, 300);
-      _applyMine(res);
-    };
-    if (!_cachedMine) await _fetchMine(); else _fetchMine();
+    if (!_cachedFree) await _fetchFree(); else _fetchFree();
 
   } else if (tab === 'done') {
     const _applyDone = (res) => {
@@ -1476,7 +1410,7 @@ async function confirmSeedStory(skip) {
     const subRes = await api('createSubmission', { episode_id: res.episode_id, content: text });
     if (!subRes.ok) toast('이야기는 시작됐지만 첫 문장 제출엔 실패했어요: ' + subRes.error, true);
   }
-  _lsc.del('pop', 'done', 'lb', 'mine');
+  _lsc.del('free', 'done', 'lb');
   toast(text ? '이야기가 시작됐고, 첫 문장도 제출됐어요!' : '이야기가 시작됐습니다!');
   nav('story', res.story_id);
 }
@@ -1497,7 +1431,7 @@ async function _resumePendingSeedStory() {
     const subRes = await api('createSubmission', { episode_id: res.episode_id, content: pending.text });
     if (!subRes.ok) toast('이야기는 시작됐지만 첫 문장 제출엔 실패했어요: ' + subRes.error, true);
   }
-  _lsc.del('pop', 'done', 'lb', 'mine');
+  _lsc.del('free', 'done', 'lb');
   toast(pending.text ? '이야기가 시작됐고, 첫 문장도 제출됐어요!' : '이야기가 시작됐습니다!');
   nav('story', res.story_id);
   return true;
@@ -1663,7 +1597,7 @@ async function submitStory() {
   btn.disabled = true; btn.textContent = '생성 중...';
   const res = await api('createStory', { opening });
   if (!res.ok) { toast(res.error, true); btn.disabled = false; btn.textContent = '이야기 시작'; return; }
-  _lsc.del('pop', 'done', 'lb', 'mine');
+  _lsc.del('free', 'done', 'lb');
   toast('이야기가 시작됐습니다!');
   nav('story', res.story_id);
 }
@@ -2438,6 +2372,189 @@ function _renderWordChallengeHistory(history) {
         : `<div style="font-size:12px;color:var(--muted)">참여자가 없었어요</div>`}
     </div>`;
   }).join('');
+}
+
+// ─── 3슬롯 "오늘의 이야기" 스포트라이트 ──────────────────────
+// 슬롯 리필(완결 감지→다음 이야기 시작)은 전부 서버(functions/index.js)에서
+// 처리함 — 여기는 조회 결과를 그리고, 슬롯2가 제안+투표 라운드 중일 때만
+// renderWordChallenge()와 동일한 패턴으로 폼/투표 UI를 보여줌.
+const SPOTLIGHT_META = {
+  word:     { icon: '🎲', title: '오늘의 단어 챌린지 우승작', info: '매일 열리는 단어 챌린지에서 사람들이 가장 좋아한 문장으로 새 이야기가 시작돼요.' },
+  sentence: { icon: '✍️', title: '사람들이 뽑은 시작 문장',   info: '사람들이 직접 제안하고 투표해서 뽑은 문장으로 다음 이야기가 시작돼요.' },
+  ai:       { icon: '🤖', title: 'AI가 고른 뜻밖의 시작',     info: 'AI가 골라준 첫 문장으로 이야기가 시작돼요.' },
+};
+
+const SR_PAGE_SIZE = 10;
+let _srVisibleCount = SR_PAGE_SIZE;
+let _srCountdownTimer = null;
+
+function renderSpotlight() {
+  const area = document.getElementById('spotlight-area');
+  if (!area || !window._spotlightData) return;
+  clearInterval(_srCountdownTimer);
+  const { slots } = window._spotlightData;
+
+  const cardHtml = (key) => {
+    const meta = SPOTLIGHT_META[key];
+    const slot = slots[key] || { state: 'empty' };
+    let bodyHtml;
+    if (slot.state === 'story') {
+      bodyHtml = `
+        <div class="story-prose" style="padding:20px 18px 20px 20px;margin:12px 0">
+          <div class="prose-opening">${esc(slot.opening)}</div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span class="step-pill"><span class="step-dot"></span>${(Number(slot.current_step) || 0) + 1}단계 진행 중</span>
+          <button class="btn btn-primary btn-sm" onclick="nav('story','${esc(slot.story_id)}')">참여하기</button>
+        </div>`;
+    } else if (key === 'sentence' && slot.state === 'proposing') {
+      bodyHtml = renderSentenceRoundInner(slot);
+    } else {
+      bodyHtml = `<div style="font-size:12px;color:var(--muted);padding:16px 0;text-align:center">다음 이야기 준비 중</div>`;
+    }
+    return `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:4px">
+          <span style="font-size:14px;font-weight:700">${meta.icon} ${esc(meta.title)}</span>
+          <button onclick="openSlotInfo('${key}')" aria-label="설명 보기" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 2px">ⓘ</button>
+        </div>
+        ${bodyHtml}
+      </div>`;
+  };
+
+  area.innerHTML = `
+    <p style="font-family:var(--serif);font-size:16px;line-height:1.9;color:#9a8070;text-align:center;margin-bottom:20px">
+      당신의 한 문장을 기다리는 이야기들이 있어요.
+    </p>
+    ${cardHtml('word')}${cardHtml('sentence')}${cardHtml('ai')}`;
+
+  if (slots.sentence?.state === 'proposing' && slots.sentence.round) {
+    _startSentenceRoundCountdown(slots.sentence.round.end_at);
+  }
+}
+
+function openSlotInfo(key) {
+  const meta = SPOTLIGHT_META[key];
+  if (!meta) return;
+  const existing = document.getElementById('slot-info-modal');
+  if (existing) { existing.remove(); return; }
+  const modal = document.createElement('div');
+  modal.id = 'slot-info-modal';
+  modal.className = 'modal-overlay';
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:320px;text-align:center">
+      <div style="font-size:28px;margin-bottom:10px">${meta.icon}</div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:10px">${esc(meta.title)}</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.6">${esc(meta.info)}</div>
+      <button class="btn btn-primary btn-sm" style="margin-top:16px" onclick="document.getElementById('slot-info-modal').remove()">확인</button>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+// 슬롯2의 24시간 제안+투표 라운드 UI — renderWordChallenge()와 동일한 관습(왼쪽
+// 득표 버튼으로 투표, 마감 전까지 자유롭게 변경 가능)을 그대로 따름. 단어챌린지와
+// 달리 필수 단어 3개가 없어서 입력 체크칩(_wcCheckInput)은 없음.
+function renderSentenceRoundInner(slot) {
+  const { round, submissions, my_submission_id, my_vote_submission_id } = slot;
+  if (!round) return `<div style="font-size:12px;color:var(--muted);padding:16px 0;text-align:center">다음 이야기 준비 중</div>`;
+
+  const loginHint = !user
+    ? `<div style="text-align:center;font-size:12px;color:var(--muted);margin:12px 0">참여하려면 <a href="#" onclick="nav('auth','login');return false" style="color:var(--accent2)">로그인</a>이 필요해요</div>` : '';
+  const formHtml = user && !my_submission_id ? `
+    <div style="margin:12px 0">
+      <div style="display:flex;gap:8px">
+        <input id="sr-input" maxlength="${FB_WORD_CHALLENGE_MAX_CHARS}" placeholder="이 이야기를 시작할 첫 문장을 제안해보세요" oninput="_srCheckInput()" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text)">
+        <button id="sr-submit-btn" class="btn btn-primary btn-sm" onclick="_submitSentenceProposal()">제안</button>
+      </div>
+      <div style="text-align:right;font-size:11px;color:var(--muted);margin-top:4px"><span id="sr-char-count">0</span>/${FB_WORD_CHALLENGE_MAX_CHARS}</div>
+    </div>` : '';
+  const mySubHint = user && my_submission_id
+    ? `<div style="text-align:center;font-size:12px;color:var(--muted);margin:12px 0">이미 제안했어요 — 다른 제안에 투표해보세요 (마감 전까지 자유롭게 바꿀 수 있어요)</div>` : '';
+
+  const visibleSubs = submissions.slice(0, _srVisibleCount);
+  const listHtml = visibleSubs.length ? visibleSubs.map(s => {
+    const voted = s.submission_id === my_vote_submission_id;
+    const isMine = s.submission_id === my_submission_id;
+    const canVote = user && !isMine;
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+        <button ${canVote ? `onclick="_voteSentenceRound('${s.submission_id}')"` : 'disabled'}
+          style="width:46px;display:flex;flex-direction:column;align-items:center;gap:1px;background:none;border:1px solid ${voted ? 'var(--accent2)' : 'var(--border)'};border-radius:8px;padding:4px 0;cursor:${canVote ? 'pointer' : 'default'};color:${voted ? 'var(--accent2)' : 'var(--muted)'};flex-shrink:0;box-sizing:border-box">
+          <span style="font-size:13px;font-weight:700">${s.vote_count || 0}</span>
+          <span style="font-size:9px">${voted ? '투표함' : '추천'}</span>
+        </button>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;line-height:1.5">${esc(s.text)}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(s.nickname)}${isMine ? ' (나)' : ''}</div>
+        </div>
+      </div>`;
+  }).join('') : `<div style="font-size:12px;color:var(--muted);padding:10px 0">아직 제안이 없어요. 첫 문장을 남겨보세요!</div>`;
+
+  const showMoreHtml = submissions.length > _srVisibleCount
+    ? `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="_srShowMore()">더보기 (${submissions.length - _srVisibleCount}개 남음)</button>` : '';
+
+  return `
+    <div style="text-align:center;padding:10px 0">
+      <div style="font-size:13px;font-weight:700;color:var(--accent2)">다음 이야기를 함께 정해요</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">⏰ <span id="sr-countdown"></span> 마감 · 1~3등에게 각 50p</div>
+    </div>
+    ${loginHint}${mySubHint}${formHtml}
+    <button class="btn btn-ghost btn-sm" style="width:100%" onclick="document.getElementById('sr-submissions-list').style.display=document.getElementById('sr-submissions-list').style.display==='none'?'block':'none'">${submissions.length}개 제안 보기 ▾</button>
+    <div id="sr-submissions-list" style="display:none;margin-top:8px">${listHtml}${showMoreHtml}</div>`;
+}
+
+function _srCheckInput() {
+  const inp = document.getElementById('sr-input');
+  const counter = document.getElementById('sr-char-count');
+  if (counter) counter.textContent = (inp?.value || '').length;
+}
+
+async function _submitSentenceProposal() {
+  const inp = document.getElementById('sr-input');
+  const text = (inp?.value || '').trim();
+  if (!text) { toast('문장을 입력해주세요.', true); return; }
+  const round_id = window._spotlightData?.slots?.sentence?.round?.round_id;
+  if (!round_id) return;
+  const res = await api('submitSentenceProposal', { round_id, text });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast('제안이 등록됐어요!');
+  await loadSpotlightSlot();
+}
+
+async function _voteSentenceRound(submission_id) {
+  const round_id = window._spotlightData?.slots?.sentence?.round?.round_id;
+  if (!round_id) return;
+  const res = await api('voteSentenceRound', { round_id, submission_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  await loadSpotlightSlot();
+}
+
+function _srShowMore() {
+  _srVisibleCount += SR_PAGE_SIZE;
+  renderSpotlight();
+}
+
+function _startSentenceRoundCountdown(end_at) {
+  const tick = () => {
+    const el = document.getElementById('sr-countdown');
+    if (!el) { clearInterval(_srCountdownTimer); return; }
+    const diff = new Date(end_at).getTime() - Date.now();
+    if (diff <= 0) { el.textContent = '마감'; clearInterval(_srCountdownTimer); loadSpotlightSlot(); return; }
+    const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
+    el.textContent = `${h}시간 ${m}분 후`;
+  };
+  tick();
+  _srCountdownTimer = setInterval(tick, 30000);
+}
+
+async function loadSpotlightSlot() {
+  const res = await api('getSpotlight');
+  if (!res.ok || !res.initialized) return;
+  _lsc.set('spotlight', res, 20);
+  window._spotlightData = res;
+  _srVisibleCount = SR_PAGE_SIZE;
+  renderSpotlight();
 }
 
 function openRankingModal() {
@@ -5292,8 +5409,8 @@ function doBoostStory(story_id) {
     const res = await api('boostStory', { story_id });
     document.getElementById(mid)?.remove(); delete _modalCallbacks[mid];
     if (!res.ok) { toast(res.error, true); return; }
-    toast('주목 설정 완료! 관심받는 이야기 상단에 노출됩니다.');
-    _lsc.del('pop');
+    toast('주목 설정 완료! 자유 이야기 상단에 노출됩니다.');
+    _lsc.del('free');
   };
   showConfirmModal({
     id: 'boost-modal', icon,
@@ -5360,7 +5477,7 @@ function parseHash() {
   const h     = location.hash.slice(1) || 'seed';
   const parts = h.split('/');
   const route = parts[0];
-  currentRoute = ['home','seed','popular','mine','done','story','episode','auth','profile','user','create','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','admin-wordchallenge','patchnotes'].includes(route) ? route : 'seed';
+  currentRoute = ['home','seed','spotlight','free','popular','mine','done','story','episode','auth','profile','user','create','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','admin-wordchallenge','patchnotes'].includes(route) ? route : 'seed';
   currentParam = parts.slice(1).join('/') || null;
 }
 
@@ -5400,15 +5517,14 @@ window.onload = async () => {
   // 그걸 막기 위해 결과가 필요 없는 최소 read를 무조건 먼저 날려 채널을 미리 열어둠.
   firebase.firestore().collection('config').doc('stats').get().catch(() => {});
 
-  // 씨앗·관심받는 탭 프리페치 (캐시 없을 때만)
+  // 오늘의 이야기·자유 탭 프리페치 (캐시 없을 때만)
   setTimeout(() => {
-    if (!_lsc.get('seeds')) api('getSeeds').then(r => { if (r.ok) _lsc.set('seeds', r.seeds, 300); });
-    if (!_lsc.get('pop') && !_popFetching) {
-      const _pp = [api('getStories', { page: 1 })];
-      if (user) _pp.push(api('getMyStories'));
-      Promise.all(_pp).then(([r, myR]) => {
-        if (r.ok) _lsc.set('pop', { storiesRes: r, myRes: myR || null }, 150);
-        if (myR?.ok) _lsc.set('mine', myR, 300); // mine 캐시도 함께 채워두기 (이중 호출 방지)
+    if (!_lsc.get('spotlight')) api('getSpotlight').then(r => { if (r.ok && r.initialized) _lsc.set('spotlight', r, 20); });
+    if (!_lsc.get('free') && !_freeFetching) {
+      const _fp = [api('getStories', { page: 1 })];
+      if (user) _fp.push(api('getMyStories'));
+      Promise.all(_fp).then(([r, myR]) => {
+        if (r.ok) _lsc.set('free', { storiesRes: r, myRes: myR || null }, 150);
       });
     }
   }, 300);

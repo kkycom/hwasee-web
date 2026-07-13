@@ -88,8 +88,12 @@
     --serif:   'Gowun Batang', Georgia, serif;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html { overflow-x: hidden; }
-  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; overflow-x: hidden; max-width: 100vw; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  /* overflow-x: hidden(2026-06-30, 모바일 110% 줌 가로스크롤 버그 수정용)이
+     html/body를 스크롤 컨테이너로 만들어버려서 그 이후로 sticky 포지셔닝이
+     전부(헤더 포함) 죽어있었음(2026-07-13 발견) — clip은 hidden과 동일하게
+     가로 넘침을 잘라내지만 스크롤 컨테이너를 만들지 않아 sticky가 정상 동작함 */
+  html { overflow-x: clip; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; overflow-x: clip; max-width: 100vw; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   button, a { touch-action: manipulation; }
   @media (max-width: 768px) { input, textarea, select { font-size: 16px !important; } }
 

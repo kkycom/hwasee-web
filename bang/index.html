@@ -2540,8 +2540,8 @@ function renderSentenceRoundInner(slot) {
       </div>
       <div style="text-align:right;font-size:11px;color:var(--muted);margin-top:4px"><span id="sr-char-count">0</span>/${FB_WORD_CHALLENGE_MAX_CHARS}</div>
     </div>` : '';
-  const mySubHint = user && my_submission_id
-    ? `<div style="text-align:center;font-size:12px;color:var(--muted);margin:12px 0">제출완료</div>` : '';
+  const mySubBadge = user && my_submission_id
+    ? `<span class="story-status status-active" style="display:inline-flex;align-items:center;gap:4px;margin-top:10px">✓ 제출완료</span>` : '';
 
   const visibleSubs = submissions.slice(0, _srVisibleCount);
   const listHtml = visibleSubs.length ? visibleSubs.map(s => {
@@ -2575,8 +2575,9 @@ function renderSentenceRoundInner(slot) {
     <div style="text-align:center;padding:10px 0">
       <div style="font-size:13px;font-weight:700;color:var(--accent2)">다음 씨앗 이야기를 제안해주세요</div>
       <div style="font-size:12px;color:var(--muted);margin-top:4px">⏰ <span id="sr-countdown"></span> 마감</div>
+      ${mySubBadge}
     </div>
-    ${loginHint}${mySubHint}${formHtml}
+    ${loginHint}${formHtml}
     <button class="btn btn-ghost btn-sm" style="width:100%" onclick="const l=document.getElementById('sr-submissions-list'),a=this.querySelector('.sr-arrow'),open=l.style.display==='none';l.style.display=open?'block':'none';a.textContent=open?'▴':'▾'">${submissions.length}개 제안 보기 <span class="sr-arrow">▾</span></button>
     <div id="sr-submissions-list" style="display:none;margin-top:8px">${listHtml}${showMoreHtml}</div>`;
 }

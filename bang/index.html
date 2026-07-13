@@ -1526,12 +1526,19 @@ function cardStickersHtml(s, alwaysBm) {
   return parts ? `<div class="card-stickers">${parts}</div>` : '';
 }
 
-// 분기로 열린 에피소드가 여러 개면 각각 자기 줄에 "N단계 · 제출 N개"로, 참여자 수는 공용으로 한 번만 표시
+// 갈래(열린 에피소드)가 하나뿐인 보통 경우엔 참여자 수까지 한 pill 안에 합쳐서
+// "N단계 · 제출 N개 · 참여자 N명"으로(스포트라이트 카드와 동일 형식) — 갈래가
+// 여러 개(동률로 갈림길 생긴 경우)일 때만 참여자 수가 특정 갈래 것처럼 보이지
+// 않게 예전처럼 별도 줄로 공용 표시
 function stepPillsHtml(s, participantCount, fallbackLabel) {
   const eps = (s.open_eps || []).length ? s.open_eps : null;
-  const pillsInner = eps
-    ? eps.map(e => `<span class="step-pill"><span class="step-dot"></span>${calcDisplayStep(s, e.step)}단계 · 제출 ${e.sub_count}개</span>`).join('')
-    : `<span class="step-pill"><span class="step-dot"></span>${fallbackLabel}</span>`;
+  if (!eps) {
+    return `<span class="step-pill"><span class="step-dot"></span>${fallbackLabel} · 참여자 ${participantCount}명</span>`;
+  }
+  if (eps.length === 1) {
+    return `<span class="step-pill"><span class="step-dot"></span>${calcDisplayStep(s, eps[0].step)}단계 · 제출 ${eps[0].sub_count}개 · 참여자 ${participantCount}명</span>`;
+  }
+  const pillsInner = eps.map(e => `<span class="step-pill"><span class="step-dot"></span>${calcDisplayStep(s, e.step)}단계 · 제출 ${e.sub_count}개</span>`).join('');
   return `<div style="display:flex;flex-direction:column;gap:4px">${pillsInner}</div><span style="font-size:11px;color:var(--muted)">참여자 ${participantCount}명</span>`;
 }
 

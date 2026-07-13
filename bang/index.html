@@ -2515,7 +2515,7 @@ function renderSpotlight() {
           <div class="prose-opening">${esc(slot.opening)}</div>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-          <div>${stepPillsHtml(slot, slot.participant_count || 0, `${(Number(slot.current_step) || 0) + 2}단계`)}</div>
+          <span class="step-pill"><span class="step-dot"></span>${(Number(slot.current_step) || 0) + 1}단계 · 참여자 ${slot.participant_count || 0}명</span>
           ${ctaHtml}
         </div>
         ${hasHistory ? `<div id="sp-hist-${key}" style="display:none;margin-top:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">${histHtml}</div>` : ''}`;

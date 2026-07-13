@@ -2444,7 +2444,7 @@ function renderSpotlight() {
         <div style="display:flex;border-radius:20px;overflow:hidden">
           <button class="btn btn-primary btn-sm" style="border-radius:20px 0 0 20px;border-right:1px solid rgba(58,85,72,.3)" onclick="nav('story','${esc(slot.story_id)}')">참여하기</button>
           <button class="btn btn-primary btn-sm" style="border-radius:0 20px 20px 0;padding:7px 10px" onclick="toggleSpotlightHistory('${key}')" aria-label="내 참여 내역 보기"><span id="sp-hist-arrow-${key}">▾</span></button>
-        </div>` : `<button class="btn btn-primary btn-sm" onclick="nav('story','${esc(slot.story_id)}')">참여하기</button>`;
+        </div>` : `<button class="btn btn-primary btn-sm" style="border-radius:20px" onclick="nav('story','${esc(slot.story_id)}')">참여하기</button>`;
       const histHtml = hasHistory ? slot.my_submissions.map(sub => `
         <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
           <span style="font-size:10px;color:var(--accent2);font-weight:700;white-space:nowrap;flex-shrink:0">${calcDisplayStep(slot, sub.step)}단계</span>

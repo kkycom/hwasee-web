@@ -1830,6 +1830,14 @@ async function _serverCloseWordChallenge(db) {
     for (const w of tiedWinners) {
       await _serverAddPoints(db, w.user_id, share, 'word_challenge_win', w.submission_id);
       try { await _serverBumpAchievementCounter(db, w.user_id, 'word_challenge_wins'); } catch (e) {}
+      // 당첨 자체에 대한 알림이 없어서 유저가 이겼는지조차 알 방법이 없었음(제보로 발견)
+      try {
+        await db.collection('notifications').doc().set({
+          user_id: w.user_id, type: 'word_challenge_win', story_id: '',
+          message: `🎲 오늘의 단어 챌린지 우승! +${share}p 획득했어요`,
+          is_read: false, created_at: new Date().toISOString(), push_sent: false,
+        });
+      } catch (e) {}
     }
 
     // 스포트라이트 슬롯1(🎲) FIFO 풀에 채택 문장 적재 — 동률이어도 같은 라운드는
@@ -2190,7 +2198,8 @@ exports.closeSentenceRounds = functions
         }));
         await doc.ref.update({ winners });
 
-        for (const w of top) {
+        for (let i = 0; i < top.length; i++) {
+          const w = top[i];
           await db.collection('spotlight_sentence_pool').doc().set({
             text: w.text, proposer_id: w.user_id, round_id: doc.id, used: false,
             created_at: new Date().toISOString(),
@@ -2201,6 +2210,16 @@ exports.closeSentenceRounds = functions
           // 보상을 못 받는 경우가 없음.
           await _serverAddPoints(db, w.user_id, 50, 'spotlight_sentence_pick', w.submission_id);
           try { await _serverBumpAchievementCounter(db, w.user_id, 'spotlight_sentence_picks'); } catch (e) {}
+          // 채택 자체를 알려줄 방법이 없었음(제보로 발견) — 실제로 풀에서 소진돼
+          // 화면에 뜨는 건 순서가 밀리면 한참 뒤일 수 있어서, 그 시점이 아니라
+          // 채택이 확정되는 지금 바로 알려줌
+          try {
+            await db.collection('notifications').doc().set({
+              user_id: w.user_id, type: 'spotlight_sentence_pick', story_id: '',
+              message: `✍️ 오늘의 이야기 시작 문장 ${i + 1}등으로 채택됐어요! +50p (순서대로 다음 슬롯에 사용돼요)`,
+              is_read: false, created_at: new Date().toISOString(), push_sent: false,
+            });
+          } catch (e) {}
         }
       }
 

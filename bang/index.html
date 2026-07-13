@@ -351,9 +351,11 @@
   .toast.show { opacity: 1; }
   .toast.err { border-color: var(--accent2); }
 
-  /* ── 홈 탭 (4개, 가로 스크롤) */
+  /* ── 홈 탭 (3개) — 헤더(56px) 바로 아래에 고정해서, 카드가 길게 쌓이는
+     자유/완성된 이야기 탭에서도 맨 위로 다시 스크롤하지 않고 탭 전환 가능 */
   .home-tabs {
     display: flex; border-bottom: 1px solid var(--border); margin-bottom: 20px;
+    position: sticky; top: 56px; z-index: 90; background: var(--bg);
   }
   .home-tab {
     flex: 1; text-align: center; padding: 12px 8px; font-size: 13px; font-weight: 600;

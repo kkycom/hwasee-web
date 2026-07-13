@@ -2403,8 +2403,11 @@ async function fbGetAIActivities(admin_id) {
   // getClaudeKeyStatus는 이 어드민 AI 메뉴에서만 호출되는 유일한 진입점이라 이
   // 앱에서 가장 콜드스타트가 잦은 Cloud Function임 — 이게 느려도 제출/투표
   // 내역까지 같이 못 뜨면 안 되니 5초 자체 타임아웃을 걸고 나머지와 분리함
+  // getClaudeKeyStatus/setClaudeKey는 admin_id 문자열이 아니라 실제 세션(user_id+token)을
+  // 서버가 검증함(2026-07-13, admin_id 하드코딩 우회 취약점 수정) — 공개 소스에 있는
+  // FB_ADMIN_ID 값만으로는 더 이상 통과 못 하고, 진짜 관리자 계정으로 로그인해 있어야 함
   const keyStatusPromise = Promise.race([
-    functionsRegion.httpsCallable('getClaudeKeyStatus')({ admin_id }).then(r => r.data),
+    functionsRegion.httpsCallable('getClaudeKeyStatus')({ user_id: admin_id, token: localStorage.getItem('hwasee_token') }).then(r => r.data),
     new Promise(resolve => setTimeout(() => resolve({ has_key: false }), 5000)),
   ]).catch(() => ({ has_key: false }));
   const [configSnap, notifSettingsSnap] = await Promise.all([
@@ -2476,7 +2479,7 @@ async function fbSetClaudeKey(admin_id, key) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   if (!key || key.length < 20) return { ok: false, error: '유효한 Claude API 키를 입력해주세요.' };
   try {
-    await functionsRegion.httpsCallable('setClaudeKey')({ admin_id, key });
+    await functionsRegion.httpsCallable('setClaudeKey')({ user_id: admin_id, token: localStorage.getItem('hwasee_token'), key });
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message || '저장에 실패했습니다.' };

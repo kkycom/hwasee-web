@@ -1076,9 +1076,7 @@ ${votable.map((s, i) => `[${i + 1}] sub_id=${s.id} | ${s.content}`).join('\n')}
 exports.getClaudeKeyStatus = functions
   .region('asia-northeast3')
   .https.onCall(async (data) => {
-    if (data.admin_id !== FB_ADMIN_ID) {
-      throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
-    }
+    await _requireAdmin(data.user_id, data.token);
     const db = admin.firestore();
     const secretsSnap = await db.collection('config').doc('secrets').get();
     const hasKey = secretsSnap.exists && !!secretsSnap.data().claude_key;
@@ -1088,9 +1086,7 @@ exports.getClaudeKeyStatus = functions
 exports.setClaudeKey = functions
   .region('asia-northeast3')
   .https.onCall(async (data) => {
-    if (data.admin_id !== FB_ADMIN_ID) {
-      throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
-    }
+    await _requireAdmin(data.user_id, data.token);
     const key = data.key;
     if (!key || key.length < 20) {
       throw new functions.https.HttpsError('invalid-argument', '유효한 Claude API 키를 입력해주세요.');
@@ -1105,10 +1101,43 @@ exports.setClaudeKey = functions
 // 비밀번호 해시를 그대로 읽을 수 있었고, 토큰을 훔쳐 localStorage에 심으면 비밀번호
 // 없이 계정을 완전히 탈취할 수 있었음). 아래 6개 함수가 pw_hash/token을 만지는
 // 모든 경로를 흡수하고, user_secrets는 이후 firestore.rules에서 완전 차단됨.
-// pw_hash는 기존 클라이언트와 동일하게 무솔트 SHA-256(crypto.createHash)로 계산 —
-// 기존 유저 데이터와 호환 유지, 별도 마이그레이션 불필요.
 
 function _genSecretId() { return crypto.randomUUID(); }
+
+// ── 비밀번호 해시: 무솔트 SHA-256 → per-user salt + scrypt로 전환 (2026-07-13) ──
+// 예전엔 무솔트 SHA-256이라, pw_hash가 유출되면(user_secrets 노출 사고처럼) 흔한
+// 비밀번호는 레인보우테이블로 사실상 바로 역산 가능했고, SHA-256 자체도 브루트포스에
+// 빠른 범용 해시라 salt가 있어도 크래킹 비용이 낮음. scrypt(느리고 메모리집약적인
+// KDF, Node 내장이라 의존성 추가 없음)+계정별 랜덤 salt로 교체.
+// 기존 유저(salt 없음)는 일괄 마이그레이션 스크립트 없이, 다음 로그인/비번변경/
+// 비번찾기 시 자동으로 새 스킴으로 전환됨(레거시 해시로 검증 성공하면 그 자리에서
+// 재해시) — 평문 비밀번호를 모르는 상태에서 기존 해시를 일괄 재해시할 방법이
+// 없으므로 이 "다음 인증 시 승급" 방식이 유일하게 가능한 마이그레이션 경로.
+function _genSalt() { return crypto.randomBytes(16).toString('hex'); }
+function _hashPwLegacy(password) { return crypto.createHash('sha256').update(password).digest('hex'); }
+function _hashPwSalted(password, salt) { return crypto.scryptSync(password, salt, 64).toString('hex'); }
+// sec: user_secrets 문서 데이터. salt 필드 유무로 신/구 스킴을 구분.
+function _verifyPw(password, sec) {
+  if (!sec) return false;
+  if (sec.salt) return _hashPwSalted(password, sec.salt) === sec.pw_hash;
+  return _hashPwLegacy(password) === sec.pw_hash;
+}
+
+// ── 관리자 인증: admin_id 문자열 비교 → 실제 세션 토큰 검증으로 강화 (2026-07-13) ──
+// 예전엔 클라이언트가 보내는 admin_id 문자열을 FB_ADMIN_ID 상수와 그대로 비교했는데,
+// 그 상수 자체가 공개 배포되는 firebase-api.js 소스에 하드코딩돼 있어 누구나
+// view-source로 알아낼 수 있었음 — 즉 인증 전혀 없이 curl로 이 값만 그대로 보내면
+// 관리자 전용 함수를 전부 통과할 수 있는 상태였음(실제로 이 세션에서
+// adminInvalidateAllSessions를 세션/토큰 없이 admin_id만으로 성공시킨 적이 있어서
+// 확인됨). changePassword/deleteAccount와 동일하게, user_id+token을 실제
+// user_secrets와 대조해서 "그 관리자 계정으로 실제 로그인해 있는지"를 검증한
+// 뒤에만 권한을 인정하도록 강화.
+async function _requireAdmin(user_id, token) {
+  if (!user_id || !token) throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+  if (user_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+  const secSnap = await admin.firestore().collection('user_secrets').doc(user_id).get();
+  if (!secSnap.exists || secSnap.data().token !== token) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+}
 
 exports.register = functions
   .region('asia-northeast3')
@@ -1143,7 +1172,8 @@ exports.register = functions
     const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     const initialSeenPatchId = latestPatchSnap.empty ? '' : latestPatchSnap.docs[0].data().patch_id;
     const referrerDoc = (referrerSnap && !referrerSnap.empty) ? referrerSnap.docs[0] : null;
-    const pwHash = crypto.createHash('sha256').update(password).digest('hex');
+    const salt = _genSalt();
+    const pwHash = _hashPwSalted(password, salt);
 
     await Promise.all([
       db.collection('users').doc(user_id).set({
@@ -1153,7 +1183,7 @@ exports.register = functions
         last_seen_patch_id: initialSeenPatchId,
         auth_uid: context.auth.uid,
       }),
-      db.collection('user_secrets').doc(user_id).set({ pw_hash: pwHash, token, token_exp }),
+      db.collection('user_secrets').doc(user_id).set({ pw_hash: pwHash, salt, token, token_exp }),
     ]);
 
     // 추천인 보너스(관리자/AI 봇 제외) — 신규 가입자 본인 몫은 이 함수(Admin SDK)가
@@ -1204,8 +1234,7 @@ exports.login = functions
     const u = doc.data();
     const secSnap = await db.collection('user_secrets').doc(doc.id).get();
     const sec = secSnap.exists ? secSnap.data() : {};
-    const pwHash = crypto.createHash('sha256').update(password).digest('hex');
-    if (sec.pw_hash !== pwHash) return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
+    if (!_verifyPw(password, sec)) return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
 
     const token = _genSecretId();
     const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -1221,7 +1250,16 @@ exports.login = functions
         await doc.ref.update({ display_name: u.nickname });
       }
     } catch (e) { console.error('login auth_uid rebind error:', e.message); }
-    await db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true });
+
+    // 레거시(무솔트 SHA-256) 계정이 방금 정상 인증됐으면, 이 기회에 salt+scrypt로
+    // 자동 승급 — 평문 비밀번호를 아는 유일한 시점이라 여기서만 가능한 마이그레이션
+    const secPatch = { token, token_exp };
+    if (!sec.salt) {
+      const newSalt = _genSalt();
+      secPatch.salt = newSalt;
+      secPatch.pw_hash = _hashPwSalted(password, newSalt);
+    }
+    await db.collection('user_secrets').doc(doc.id).set(secPatch, { merge: true });
 
     return {
       ok: true, token, user_id: u.user_id, nickname: u.nickname,
@@ -1278,17 +1316,18 @@ exports.changePassword = functions
     const secSnap = await secRef.get();
     if (!secSnap.exists || secSnap.data().token !== token) throw new functions.https.HttpsError('permission-denied', '로그인이 필요합니다.');
     const sec = secSnap.data();
-    const curHash = crypto.createHash('sha256').update(current_password).digest('hex');
-    if (sec.pw_hash !== curHash) return { ok: false, error: '현재 비밀번호가 올바르지 않습니다.' };
+    if (!_verifyPw(current_password, sec)) return { ok: false, error: '현재 비밀번호가 올바르지 않습니다.' };
 
     // 비밀번호 변경의 목적 자체가 "혹시 모를 침해(토큰 유출 등) 대응"인데, pw_hash만
     // 바꾸고 기존 token을 그대로 두면 이미 유출된 토큰을 쥔 공격자는 계속 그 세션으로
     // 들어올 수 있어 방어 목적을 달성 못 함 — login과 동일하게 새 token을 발급해서
-    // 기존 토큰을 함께 무효화하고, 이 기기가 끊기지 않도록 새 token을 응답에 포함
-    const newHash = crypto.createHash('sha256').update(new_password).digest('hex');
+    // 기존 토큰을 함께 무효화하고, 이 기기가 끊기지 않도록 새 token을 응답에 포함.
+    // 새 비밀번호는 항상 salt+scrypt로 저장 — 레거시 계정이었어도 여기서 자동 승급됨.
+    const newSalt = _genSalt();
+    const newHash = _hashPwSalted(new_password, newSalt);
     const newToken = _genSecretId();
     const newTokenExp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    await secRef.update({ pw_hash: newHash, token: newToken, token_exp: newTokenExp });
+    await secRef.update({ pw_hash: newHash, salt: newSalt, token: newToken, token_exp: newTokenExp });
     return { ok: true, token: newToken };
   });
 
@@ -1309,10 +1348,12 @@ exports.resetPassword = functions
     if (!u.name || u.name.trim() !== name) return { ok: false, error: '닉네임 또는 이름이 일치하지 않습니다.' };
 
     // changePassword와 동일한 이유로 token도 함께 무효화 — 이 플로우는 로그인 상태가
-    // 아니라 새 token을 이 기기에 돌려줄 필요는 없음(다음 로그인에서 새로 발급됨)
-    const newHash = crypto.createHash('sha256').update(new_password).digest('hex');
+    // 아니라 새 token을 이 기기에 돌려줄 필요는 없음(다음 로그인에서 새로 발급됨).
+    // 새 비밀번호는 항상 salt+scrypt로 저장 — 레거시 계정이었어도 여기서 자동 승급됨.
+    const newSalt = _genSalt();
+    const newHash = _hashPwSalted(new_password, newSalt);
     await db.collection('user_secrets').doc(doc.id).set({
-      pw_hash: newHash, token: _genSecretId(), token_exp: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      pw_hash: newHash, salt: newSalt, token: _genSecretId(), token_exp: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     }, { merge: true });
     return { ok: true };
   });
@@ -1590,7 +1631,7 @@ exports.closeWordChallenge = functions
 exports.adminForceStartWordChallenge = functions
   .region('asia-northeast3')
   .https.onCall(async (data) => {
-    if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    await _requireAdmin(data.user_id, data.token);
     await _serverStartWordChallenge(admin.firestore());
     return { ok: true };
   });
@@ -1598,7 +1639,7 @@ exports.adminForceStartWordChallenge = functions
 exports.adminForceCloseWordChallenge = functions
   .region('asia-northeast3')
   .https.onCall(async (data) => {
-    if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    await _requireAdmin(data.user_id, data.token);
     await _serverCloseWordChallenge(admin.firestore());
     return { ok: true };
   });
@@ -1939,7 +1980,7 @@ exports.closeSentenceRounds = functions
 exports.adminInitSpotlight = functions
   .region('asia-northeast3')
   .https.onCall(async (data) => {
-    if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    await _requireAdmin(data.user_id, data.token);
     const db = admin.firestore();
     const ptrRef = db.collection('config').doc('spotlight_slots');
     const ptrSnap = await ptrRef.get();
@@ -1981,7 +2022,7 @@ exports.adminInitSpotlight = functions
 exports.adminFixSpotlightBootstrap = functions
   .region('asia-northeast3')
   .https.onCall(async (data) => {
-    if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    await _requireAdmin(data.user_id, data.token);
     const db = admin.firestore();
     const ptrRef0 = db.collection('config').doc('spotlight_slots');
     const ptrSnap0 = await ptrRef0.get();
@@ -2030,7 +2071,7 @@ exports.adminBackfillAchievements = functions
   .region('asia-northeast3')
   .runWith({ timeoutSeconds: 300 })
   .https.onCall(async (data) => {
-    if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    await _requireAdmin(data.user_id, data.token);
     const db = admin.firestore();
 
     const [usersSnap, subsSnap, votesSnap, storiesSnap, ledgerSnap, wcSnap] = await Promise.all([
@@ -2127,7 +2168,7 @@ exports.adminBackfillAchievements = functions
 exports.adminDebugWordChallenges = functions
   .region('asia-northeast3')
   .https.onCall(async (data) => {
-    if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    await _requireAdmin(data.user_id, data.token);
     const db = admin.firestore();
     const snap = await db.collection('word_challenges').orderBy('start_at', 'desc').limit(8).get();
     const challenges = await Promise.all(snap.docs.map(async d => {
@@ -2154,7 +2195,7 @@ exports.adminInvalidateAllSessions = functions
   .region('asia-northeast3')
   .runWith({ timeoutSeconds: 300 })
   .https.onCall(async (data) => {
-    if (data.admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    await _requireAdmin(data.user_id, data.token);
     const db = admin.firestore();
     const snap = await db.collection('user_secrets').get();
     const docs = snap.docs;

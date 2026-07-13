@@ -83,5 +83,8 @@ service cloud.firestore {
     match /sentence_rounds/{docId} { allow read, write: if true; }
     match /sentence_round_submissions/{docId} { allow read, write: if true; }
     match /sentence_round_votes/{docId} { allow read, write: if true; }
+    // 비밀번호 재설정 토큰 — 이메일 링크를 통해서만 소진돼야 하므로 클라이언트가
+    // 직접 읽거나 쓸 이유가 전혀 없음(resetPasswordWithToken Cloud Function 전용).
+    match /password_reset_tokens/{docId} { allow read, write: if false; }
   }
 }

@@ -1,6 +1,7 @@
-const functions = require('firebase-functions');
-const admin     = require('firebase-admin');
-const crypto    = require('crypto');
+const functions   = require('firebase-functions');
+const admin       = require('firebase-admin');
+const crypto      = require('crypto');
+const nodemailer  = require('nodemailer');
 admin.initializeApp();
 
 // (CI 자동배포 워크플로 동작 확인용 트리거 — 기능 변경 없음)
@@ -1149,12 +1150,16 @@ exports.register = functions
     const display_name = data.display_name || '';
     const referral = data.referral || '';
     const referrer_nickname = data.referrer_nickname || '';
+    const email = (data.email || '').trim().toLowerCase();
 
     if (!nickname || !password) throw new functions.https.HttpsError('invalid-argument', '아이디와 비밀번호를 입력해주세요.');
     if (!/^[가-힣a-zA-Z0-9]{2,12}$/.test(nickname)) return { ok: false, error: '아이디는 2~12자, 한글·영문·숫자만 사용할 수 있어요.' };
     if (password.length < 8) return { ok: false, error: '비밀번호는 8자 이상입니다.' };
     const dn = (display_name || '').trim() || nickname;
     if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(dn)) return { ok: false, error: '닉네임은 2~12자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
+    // 이메일은 선택 입력(가입 문턱을 유지) — 넣었다면 형식만 검사, 계정당 1개
+    // 필수는 아니라서 중복 소유는 허용(아이디/비번찾기 발송 시 여러 계정에 각각 보냄)
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: '올바른 이메일 형식이 아니에요.' };
 
     const db = admin.firestore();
     const refNick = referrer_nickname.trim();
@@ -1178,7 +1183,7 @@ exports.register = functions
     await Promise.all([
       db.collection('users').doc(user_id).set({
         user_id, nickname, display_name: dn,
-        total_points: 0, adoption_count: 0, badge: 'seed', name: name.trim(),
+        total_points: 0, adoption_count: 0, badge: 'seed', name: name.trim(), email,
         referral: referral.trim(), created_at: new Date().toISOString(),
         last_seen_patch_id: initialSeenPatchId,
         auth_uid: context.auth.uid,
@@ -1212,7 +1217,7 @@ exports.register = functions
     }
 
     return {
-      ok: true, token, user_id, nickname, display_name: dn,
+      ok: true, token, user_id, nickname, display_name: dn, email,
       total_points: referral_bonus, badge: 'seed', is_admin: user_id === FB_ADMIN_ID,
       referral_bonus, referral_not_found: !!refNick && !referrerDoc,
     };
@@ -1263,7 +1268,7 @@ exports.login = functions
 
     return {
       ok: true, token, user_id: u.user_id, nickname: u.nickname,
-      display_name: u.display_name || u.nickname,
+      display_name: u.display_name || u.nickname, email: u.email || '',
       total_points: u.total_points || 0, badge: u.badge || 'seed',
       is_admin: u.user_id === FB_ADMIN_ID,
       adoption_count: u.adoption_count || 0,
@@ -1295,7 +1300,7 @@ exports.verifySession = functions
     }
     return {
       ok: true, user_id, nickname: u.nickname,
-      display_name: u.display_name || u.nickname,
+      display_name: u.display_name || u.nickname, email: u.email || '',
       total_points: u.total_points || 0, badge: u.badge || 'seed',
       adoption_count: u.adoption_count || 0,
     };
@@ -1356,6 +1361,154 @@ exports.resetPassword = functions
       pw_hash: newHash, salt: newSalt, token: _genSecretId(), token_exp: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     }, { merge: true });
     return { ok: true };
+  });
+
+// ── 이메일 기반 아이디/비밀번호 찾기 (2026-07-13) ──
+// 이 앱은 Firebase Auth를 안 쓰는 자체 인증 구조라 이메일 발송을 직접 구현해야
+// 함. 가입 시 이름만 받던 기존 resetPassword(위)는 이름이 추측 가능한 약한
+// 값이라 본인확인으로 부족하다는 지적으로 이메일 발송 방식을 추가함(이메일은
+// 선택 입력이라 없는 계정은 기존 이름 기반 방식이 계속 폴백으로 남아있음).
+//
+// Claude API 키와 동일한 패턴(config/secrets, 관리자 전용 콜러블로만 조회/저장)
+// 으로 Gmail SMTP 자격증명을 저장 — 클라이언트는 firestore.rules에서 config/secrets
+// 전체가 차단돼 있어 절대 못 읽음. 관리자가 admin-ai 페이지에서 Gmail 주소+앱
+// 비밀번호(2단계 인증 계정에서 발급하는 16자리, 일반 로그인 비밀번호 아님)를
+// 입력하면 이 함수들이 동작하기 시작함 — 설정 전엔 발송만 조용히 스킵됨(로그
+// 인증/가입 자체는 이메일과 무관하게 항상 정상 동작).
+let _mailTransport = null, _mailTransportUser = null;
+async function _getMailTransport(db) {
+  const secSnap = await db.collection('config').doc('secrets').get();
+  const gmailUser = secSnap.exists ? secSnap.data().gmail_user : null;
+  const gmailPass = secSnap.exists ? secSnap.data().gmail_app_pass : null;
+  if (!gmailUser || !gmailPass) return null;
+  if (_mailTransport && _mailTransportUser === gmailUser) return _mailTransport;
+  _mailTransport = nodemailer.createTransport({ service: 'gmail', auth: { user: gmailUser, pass: gmailPass } });
+  _mailTransportUser = gmailUser;
+  return _mailTransport;
+}
+async function _sendMail(db, to, subject, text) {
+  try {
+    const transport = await _getMailTransport(db);
+    if (!transport) { console.log('mail skipped (Gmail 자격증명 미설정):', subject); return; }
+    await transport.sendMail({ from: `"화씨.방" <${_mailTransportUser}>`, to, subject, text });
+  } catch (e) { console.error('sendMail error:', e.message); }
+}
+
+exports.getEmailConfigStatus = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const secSnap = await admin.firestore().collection('config').doc('secrets').get();
+    const s = secSnap.exists ? secSnap.data() : {};
+    return { ok: true, has_config: !!(s.gmail_user && s.gmail_app_pass), gmail_user: s.gmail_user || null };
+  });
+
+exports.setEmailConfig = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const gmail_user = (data.gmail_user || '').trim();
+    const gmail_app_pass = (data.gmail_app_pass || '').replace(/\s/g, '');
+    if (!gmail_user || !gmail_app_pass) throw new functions.https.HttpsError('invalid-argument', 'Gmail 주소와 앱 비밀번호를 모두 입력해주세요.');
+    await admin.firestore().collection('config').doc('secrets').set({ gmail_user, gmail_app_pass }, { merge: true });
+    _mailTransport = null; // 자격증명이 바뀌었으니 캐시된 트랜스포터 무효화
+    return { ok: true };
+  });
+
+// 계정 존재 여부를 응답으로 노출하지 않음(열거 공격 방지) — 매치가 있든 없든
+// 항상 동일한 {ok:true} 응답, 실제 결과는 이메일로만 전달됨
+exports.findId = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const email = (data.email || '').trim().toLowerCase();
+    if (email) {
+      const db = admin.firestore();
+      try {
+        const snap = await db.collection('users').where('email', '==', email).get();
+        if (!snap.empty) {
+          const nicknames = snap.docs.map(d => d.data().nickname).filter(Boolean);
+          await _sendMail(db, email, '[화씨.방] 아이디 찾기 결과',
+            `안녕하세요, 화씨.방입니다.\n\n입력하신 이메일로 등록된 아이디는 다음과 같습니다:\n\n${nicknames.map(n => `- ${n}`).join('\n')}\n\n본인이 요청하지 않았다면 이 메일은 무시하셔도 됩니다.`);
+        }
+      } catch (e) { console.error('findId error:', e.message); }
+    }
+    return { ok: true };
+  });
+
+exports.sendPasswordResetEmail = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const nickname = (data.nickname || '').trim();
+    const email = (data.email || '').trim().toLowerCase();
+    if (nickname && email) {
+      const db = admin.firestore();
+      try {
+        const snap = await db.collection('users').where('nickname', '==', nickname).limit(1).get();
+        if (!snap.empty) {
+          const doc = snap.docs[0];
+          const u = doc.data();
+          if (u.email && u.email.toLowerCase() === email) {
+            const token = _genSecretId();
+            await db.collection('password_reset_tokens').doc(token).set({
+              user_id: doc.id, created_at: new Date().toISOString(),
+              expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(), used: false,
+            });
+            const link = `https://hwasee.me/bang/#resetpw/${token}`;
+            await _sendMail(db, email, '[화씨.방] 비밀번호 재설정',
+              `안녕하세요, 화씨.방입니다.\n\n아래 링크에서 30분 이내에 새 비밀번호를 설정해주세요:\n\n${link}\n\n본인이 요청하지 않았다면 이 메일은 무시하셔도 됩니다.`);
+          }
+        }
+      } catch (e) { console.error('sendPasswordResetEmail error:', e.message); }
+    }
+    return { ok: true };
+  });
+
+// 트랜잭션으로 토큰 1회성 소진 처리 — _serverStartWordChallenge와 동일한 이유로,
+// 별개 읽기/쓰기면 링크를 두 탭에서 거의 동시에 제출했을 때 이중 처리될 수 있음
+exports.resetPasswordWithToken = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const token = (data.token || '').trim();
+    const new_password = data.new_password || '';
+    if (!token || !new_password) return { ok: false, error: '잘못된 요청입니다.' };
+    if (new_password.length < 8) return { ok: false, error: '비밀번호는 8자 이상이어야 합니다.' };
+
+    const db = admin.firestore();
+    const tokRef = db.collection('password_reset_tokens').doc(token);
+    const claim = await db.runTransaction(async tx => {
+      const snap = await tx.get(tokRef);
+      if (!snap.exists) return { ok: false, error: '유효하지 않거나 만료된 링크예요.' };
+      const t = snap.data();
+      if (t.used) return { ok: false, error: '이미 사용된 링크예요.' };
+      if (new Date(t.expires_at) < new Date()) return { ok: false, error: '만료된 링크예요. 다시 요청해주세요.' };
+      tx.update(tokRef, { used: true });
+      return { ok: true, user_id: t.user_id };
+    });
+    if (!claim.ok) return claim;
+
+    const newSalt = _genSalt();
+    const newHash = _hashPwSalted(new_password, newSalt);
+    await db.collection('user_secrets').doc(claim.user_id).set({
+      pw_hash: newHash, salt: newSalt, token: _genSecretId(),
+      token_exp: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    }, { merge: true });
+    return { ok: true };
+  });
+
+// 로그인 상태에서 본인 이메일 등록/변경(비어있던 계정 위한 자발적 추가 포함) —
+// changePassword와 동일한 session(user_id+token) 검증 패턴
+exports.setMyEmail = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const user_id = data.user_id, token = data.token;
+    const email = (data.email || '').trim().toLowerCase();
+    if (!user_id || !token) throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: '올바른 이메일 형식이 아니에요.' };
+    const db = admin.firestore();
+    const secSnap = await db.collection('user_secrets').doc(user_id).get();
+    if (!secSnap.exists || secSnap.data().token !== token) throw new functions.https.HttpsError('permission-denied', '로그인이 필요합니다.');
+    await db.collection('users').doc(user_id).update({ email });
+    return { ok: true, email };
   });
 
 exports.deleteAccount = functions

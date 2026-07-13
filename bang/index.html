@@ -1004,7 +1004,7 @@ function nav(route, param) {
 
 function render() {
   _renderEpoch++;
-  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, user: userProfile, create, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI, 'admin-patchnotes': adminPatchNotes, 'admin-wordchallenge': adminWordChallenge, patchnotes: userPatchNotes };
+  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, user: userProfile, create, resetpw: resetPasswordPage, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI, 'admin-patchnotes': adminPatchNotes, 'admin-wordchallenge': adminWordChallenge, patchnotes: userPatchNotes };
   (routes[currentRoute] || home)();
 }
 
@@ -1203,10 +1203,26 @@ async function home() {
             id="htab-${t.key}">${t.label}</button>`).join('');
 
   document.getElementById('app').innerHTML = `
+    ${emailNudgeBannerHtml()}
     <div class="home-tabs">${tabHtml}</div>
     <div id="home-content"><div class="loading"></div></div>`;
 
   await loadHomeTab(tab, epoch);
+}
+
+// 이메일 미등록 로그인 유저에게 계정 보호를 위해 이메일 등록을 유도(닫기 가능,
+// 한 번 닫으면 이 브라우저에서는 다시 안 뜸) — 아이디/비번 찾기가 이메일 기반으로
+// 강화되면서, 이메일 없는 계정은 여전히 이름 기반 폴백에만 의존하게 되는 걸 완화
+function emailNudgeBannerHtml() {
+  if (!user || user.email || localStorage.getItem('hwasee_email_banner_dismissed')) return '';
+  return `<div id="email-nudge-banner" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px">
+    <span>📧 계정 보호를 위해 이메일을 등록해주세요 — <a href="#" onclick="nav('profile','settings');return false" style="color:var(--accent2);font-weight:600">등록하기</a></span>
+    <button onclick="dismissEmailBanner()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;flex-shrink:0">✕</button>
+  </div>`;
+}
+function dismissEmailBanner() {
+  localStorage.setItem('hwasee_email_banner_dismissed', '1');
+  document.getElementById('email-nudge-banner')?.remove();
 }
 
 async function switchHomeTab(tab) {
@@ -3242,6 +3258,7 @@ function auth() {
       <div class="tabs">
         <div class="tab ${tab==='login'?'active':''}" onclick="nav('auth','login')">로그인</div>
         <div class="tab ${tab==='register'?'active':''}" onclick="nav('auth','register')">회원가입</div>
+        <div class="tab ${tab==='findid'?'active':''}" onclick="nav('auth','findid')">아이디 찾기</div>
         <div class="tab ${tab==='recover'?'active':''}" onclick="nav('auth','recover')">비밀번호 찾기</div>
       </div>
       ${tab === 'login' ? `
@@ -3258,6 +3275,7 @@ function auth() {
           </div>
         </div>
         <div class="form-group"><label>이름 (비밀번호 찾기에 사용)</label><input id="a-name" type="text" placeholder="실명 또는 별칭" maxlength="20"></div>
+        <div class="form-group"><label>이메일 <span style="color:var(--muted);font-weight:400">(선택, 아이디·비밀번호를 잊었을 때 필요해요)</span></label><input id="a-email" type="email" placeholder="you@example.com" maxlength="100"></div>
         <div class="form-group"><label>비밀번호 (8자 이상)</label><input id="a-pw" type="password" placeholder="비밀번호"></div>
         <div class="form-group"><label>비밀번호 확인</label><input id="a-pw2" type="password" placeholder="비밀번호 재입력" onkeydown="if(event.key==='Enter')doRegister()"></div>
         <div class="form-group">
@@ -3271,15 +3289,47 @@ function auth() {
         </div>
         <div class="form-group"><label>추천인 닉네임 <span style="color:var(--muted);font-weight:400">(선택, 서로 +50P)</span></label><input id="a-referrer-nick" type="text" placeholder="추천해준 사람의 닉네임" maxlength="12"></div>
         <button class="btn btn-primary" style="width:100%" onclick="doRegister()">가입하기</button>
+      ` : tab === 'findid' ? `
+        <p style="font-size:13px;color:var(--muted);margin-bottom:20px">가입 시 등록한 이메일로 아이디를 보내드려요. (이메일을 등록하지 않았다면 이 방법을 쓸 수 없어요)</p>
+        <div class="form-group"><label>이메일</label><input id="fi-email" type="email" placeholder="가입 시 등록한 이메일" onkeydown="if(event.key==='Enter')doFindId()"></div>
+        <button class="btn btn-primary" style="width:100%" onclick="doFindId()">아이디 찾기</button>
       ` : `
-        <p style="font-size:13px;color:var(--muted);margin-bottom:20px">가입 시 입력한 아이디와 이름이 일치하면 비밀번호를 재설정할 수 있어요.</p>
-        <div class="form-group"><label>아이디</label><input id="a-nick" type="text" placeholder="아이디"></div>
-        <div class="form-group"><label>가입 시 입력한 이름</label><input id="a-name" type="text" placeholder="이름"></div>
-        <div class="form-group"><label>새 비밀번호 (8자 이상)</label><input id="a-pw" type="password" placeholder="새 비밀번호"></div>
-        <div class="form-group"><label>새 비밀번호 확인</label><input id="a-pw2" type="password" placeholder="비밀번호 재입력" onkeydown="if(event.key==='Enter')doRecover()"></div>
-        <button class="btn btn-primary" style="width:100%" onclick="doRecover()">비밀번호 재설정</button>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:20px">가입 시 등록한 이메일로 재설정 링크를 보내드려요.</p>
+        <div class="form-group"><label>아이디</label><input id="r-nick" type="text" placeholder="아이디"></div>
+        <div class="form-group"><label>이메일</label><input id="r-email" type="email" placeholder="가입 시 등록한 이메일" onkeydown="if(event.key==='Enter')doSendResetEmail()"></div>
+        <button class="btn btn-primary" style="width:100%" onclick="doSendResetEmail()">재설정 이메일 보내기</button>
+        <div style="text-align:center;margin-top:16px">
+          <a href="#" onclick="toggleLegacyRecover();return false" style="font-size:12px;color:var(--muted)">이메일을 등록하지 않았다면 → 이름으로 찾기</a>
+        </div>
+        <div id="legacy-recover-area" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+          <div class="form-group"><label>아이디</label><input id="a-nick" type="text" placeholder="아이디"></div>
+          <div class="form-group"><label>가입 시 입력한 이름</label><input id="a-name" type="text" placeholder="이름"></div>
+          <div class="form-group"><label>새 비밀번호 (8자 이상)</label><input id="a-pw" type="password" placeholder="새 비밀번호"></div>
+          <div class="form-group"><label>새 비밀번호 확인</label><input id="a-pw2" type="password" placeholder="비밀번호 재입력" onkeydown="if(event.key==='Enter')doRecover()"></div>
+          <button class="btn btn-primary" style="width:100%" onclick="doRecover()">비밀번호 재설정</button>
+        </div>
       `}
     </div>`;
+}
+
+function toggleLegacyRecover() {
+  const area = document.getElementById('legacy-recover-area');
+  if (area) area.style.display = area.style.display === 'none' ? 'block' : 'none';
+}
+
+async function doFindId() {
+  const email = (document.getElementById('fi-email')?.value || '').trim();
+  if (!email) { toast('이메일을 입력해주세요.', true); return; }
+  await api('findId', { email });
+  toast('입력하신 이메일로 등록된 계정이 있다면 아이디를 보내드렸어요.');
+}
+
+async function doSendResetEmail() {
+  const nickname = (document.getElementById('r-nick')?.value || '').trim();
+  const email = (document.getElementById('r-email')?.value || '').trim();
+  if (!nickname || !email) { toast('아이디와 이메일을 모두 입력해주세요.', true); return; }
+  await api('sendPasswordResetEmail', { nickname, email });
+  toast('입력하신 정보가 일치하면 이메일로 재설정 링크를 보내드렸어요.');
 }
 
 function selectReferral(btn, value) {
@@ -3337,6 +3387,7 @@ async function doRegister() {
   const nickname    = document.getElementById('a-nick').value.trim();
   const displayName = (document.getElementById('a-display')?.value || '').trim();
   const nameVal     = (document.getElementById('a-name')?.value || '').trim();
+  const emailVal    = (document.getElementById('a-email')?.value || '').trim();
   const password    = document.getElementById('a-pw').value;
   const password2   = document.getElementById('a-pw2').value;
   if (!/^[가-힣a-zA-Z0-9]{2,12}$/.test(nickname)) {
@@ -3348,6 +3399,9 @@ async function doRegister() {
   if (!nameVal) {
     toast('이름을 입력해주세요. (비밀번호 찾기에 사용됩니다)', true); return;
   }
+  if (emailVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+    toast('올바른 이메일 형식이 아니에요.', true); return;
+  }
   if (password.length < 8) {
     toast('비밀번호는 8자 이상이어야 해요.', true); return;
   }
@@ -3356,7 +3410,7 @@ async function doRegister() {
   }
   const referral = (document.getElementById('a-referral')?.value || '').trim();
   const referrerNickname = (document.getElementById('a-referrer-nick')?.value || '').trim();
-  const res = await api('register', { nickname, password, name: nameVal, display_name: displayName, referral, referrer_nickname: referrerNickname });
+  const res = await api('register', { nickname, password, name: nameVal, display_name: displayName, referral, referrer_nickname: referrerNickname, email: emailVal });
   if (!res.ok) { toast(res.error, true); return; }
   saveUser(res);
   if (typeof gtag === 'function') gtag('event', 'sign_up', { method: 'email', referral_source: referral || '미입력' });
@@ -3377,6 +3431,31 @@ async function doRecover() {
   if (new_password.length < 8) { toast('새 비밀번호는 8자 이상이어야 해요.', true); return; }
   if (new_password !== new_password2) { toast('비밀번호가 일치하지 않아요.', true); return; }
   const res = await api('resetPassword', { nickname, name: nameVal, new_password });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast('비밀번호가 재설정됐어요. 로그인해주세요.');
+  nav('auth', 'login');
+}
+
+// 이메일 재설정 링크(#resetpw/{token})로 도착하는 페이지
+function resetPasswordPage() {
+  const token = currentParam;
+  if (!token) { nav('auth', 'recover'); return; }
+  document.getElementById('app').innerHTML = `
+    <div style="max-width:400px;margin:40px auto">
+      <h2 style="margin-bottom:24px;text-align:center;font-family:var(--serif)">새 비밀번호 설정</h2>
+      <div class="form-group"><label>새 비밀번호 (8자 이상)</label><input id="rt-pw" type="password" placeholder="새 비밀번호"></div>
+      <div class="form-group"><label>새 비밀번호 확인</label><input id="rt-pw2" type="password" placeholder="비밀번호 재입력" onkeydown="if(event.key==='Enter')doResetWithToken()"></div>
+      <button class="btn btn-primary" style="width:100%" onclick="doResetWithToken()">비밀번호 재설정</button>
+    </div>`;
+}
+
+async function doResetWithToken() {
+  const token = currentParam;
+  const new_password  = document.getElementById('rt-pw').value;
+  const new_password2 = document.getElementById('rt-pw2').value;
+  if (new_password.length < 8) { toast('새 비밀번호는 8자 이상이어야 해요.', true); return; }
+  if (new_password !== new_password2) { toast('비밀번호가 일치하지 않아요.', true); return; }
+  const res = await api('resetPasswordWithToken', { token, new_password });
   if (!res.ok) { toast(res.error, true); return; }
   toast('비밀번호가 재설정됐어요. 로그인해주세요.');
   nav('auth', 'login');
@@ -3533,6 +3612,14 @@ async function profile() {
         </div>
       </div>
       <button class="btn btn-primary" style="width:100%" onclick="doChangeDisplayName()">닉네임 변경 (20p)</button>
+    </div>
+    <h2 style="margin-bottom:12px">이메일 <span style="font-size:12px;color:var(--muted);font-weight:400">— 아이디·비밀번호를 잊었을 때 필요해요</span></h2>
+    <div class="card" style="margin-bottom:24px">
+      <div class="form-group">
+        <label>이메일</label>
+        <input id="email-new" type="email" placeholder="you@example.com" maxlength="100" value="${esc(u.email || '')}">
+      </div>
+      <button class="btn btn-primary" style="width:100%" onclick="doSetMyEmail()">${u.email ? '이메일 변경' : '이메일 등록'}</button>
     </div>
     <h2 style="margin-bottom:12px">비밀번호 변경</h2>
     <div class="card" style="margin-bottom:24px">
@@ -4866,6 +4953,22 @@ function _renderAdminAI(tab, page) {
       </div>
       <div style="font-size:11px;color:var(--muted);margin-top:6px">Anthropic Console → API Keys에서 발급. 서버(Cloud Functions) 경로로만 저장되며 클라이언트에 원문이 노출되지 않음.</div>
     </div>
+    <div class="card" style="padding:16px 18px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px">
+        이메일 발송 (아이디·비밀번호 찾기)
+        <span style="font-size:11px;font-weight:400;margin-left:6px;color:${res.has_email_config ? 'var(--success)' : 'var(--accent2)'}">${res.has_email_config ? `✓ 설정됨 (${esc(res.gmail_user || '')})` : '미설정 — 이메일 발송 비활성'}</span>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <input type="text" id="gmail-user-input" placeholder="Gmail 주소 (예: hwasee.bang@gmail.com)" autocomplete="off"
+          style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--bg);color:var(--text);box-sizing:border-box">
+      </div>
+      <div style="display:flex;gap:8px">
+        <input type="password" id="gmail-pass-input" placeholder="앱 비밀번호 (16자리)" autocomplete="off"
+          style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--bg);color:var(--text)">
+        <button class="btn btn-primary btn-sm" onclick="saveEmailConfig()">저장</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Google 계정(2단계 인증 필요) → 보안 → 앱 비밀번호에서 발급한 16자리 값. 일반 로그인 비밀번호가 아님. 서버 경로로만 저장되며 클라이언트에 원문이 노출되지 않음.</div>
+    </div>
     <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:12px">
       ${tabBtn('subs', `제출 내역 (${res.total_subs})`)}
       ${tabBtn('votes', `공감 내역 (${res.total_votes})`)}
@@ -4882,6 +4985,18 @@ async function saveClaudeKey() {
     const res = await api('setClaudeKey', { key });
     if (!res.ok) { toast(res.error, true); return; }
     toast('Claude API 키가 저장됐습니다.');
+    nav('admin-ai');
+  } catch(e) { toast('오류: ' + e.message, true); }
+}
+
+async function saveEmailConfig() {
+  try {
+    const gmail_user = document.getElementById('gmail-user-input')?.value.trim();
+    const gmail_app_pass = document.getElementById('gmail-pass-input')?.value.trim();
+    if (!gmail_user || !gmail_app_pass) { toast('Gmail 주소와 앱 비밀번호를 모두 입력해주세요.', true); return; }
+    const res = await api('setEmailConfig', { gmail_user, gmail_app_pass });
+    if (!res.ok) { toast(res.error, true); return; }
+    toast('이메일 발송 설정이 저장됐습니다.');
     nav('admin-ai');
   } catch(e) { toast('오류: ' + e.message, true); }
 }
@@ -5343,6 +5458,17 @@ async function doChangeDisplayName() {
   nav('profile', 'settings');
 }
 
+async function doSetMyEmail() {
+  const val = (document.getElementById('email-new')?.value || '').trim();
+  if (val && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) { toast('올바른 이메일 형식이 아니에요.', true); return; }
+  const res = await api('setMyEmail', { email: val });
+  if (!res.ok) { toast(res.error, true); return; }
+  user.email = res.email;
+  saveUser(user);
+  document.getElementById('email-nudge-banner')?.remove();
+  toast(val ? '이메일이 등록됐어요.' : '이메일이 삭제됐어요.');
+}
+
 async function loadBugReportList() {
   const res = await api('getBugReports');
   const el = document.getElementById('bug-report-list');
@@ -5683,7 +5809,7 @@ function parseHash() {
   const h     = location.hash.slice(1) || 'seed';
   const parts = h.split('/');
   const route = parts[0];
-  currentRoute = ['home','seed','spotlight','free','popular','mine','done','story','episode','auth','profile','user','create','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','admin-wordchallenge','patchnotes'].includes(route) ? route : 'seed';
+  currentRoute = ['home','seed','spotlight','free','popular','mine','done','story','episode','auth','profile','user','create','resetpw','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','admin-wordchallenge','patchnotes'].includes(route) ? route : 'seed';
   currentParam = parts.slice(1).join('/') || null;
 }
 
@@ -5753,6 +5879,7 @@ window.onload = async () => {
       if (session && session.badge) {
         user.total_points = session.total_points;
         user.badge = session.badge;
+        user.email = session.email || '';
         saveUser(user);
       }
       const br = await api('checkDailyBonus');

@@ -227,7 +227,7 @@ async function fbGetSession(token) {
   const result = await _ensureSessionVerified();
   if (result === undefined) return undefined;
   if (!result.ok) return null;
-  return { user_id: result.user_id, nickname: result.nickname, display_name: result.display_name, total_points: result.total_points, badge: result.badge };
+  return { user_id: result.user_id, nickname: result.nickname, display_name: result.display_name, total_points: result.total_points, badge: result.badge, email: result.email };
 }
 
 // ─── 포인트 ──────────────────────────────────────────────
@@ -275,11 +275,11 @@ async function _fbSpendPoints(user_id, pts, reason) {
 // register/login은 user_secrets(pw_hash/token)를 직접 만지므로 서버(Cloud Function,
 // Admin SDK)에서 처리 — user_secrets가 완전 차단된 이후에도 동작해야 함.
 // 콜러블은 context.auth를 요구하므로 익명 인증이 먼저 끝나 있어야 함(fbGetAuthUid).
-async function fbRegister(nickname, password, name, display_name, referral, referrer_nickname) {
+async function fbRegister(nickname, password, name, display_name, referral, referrer_nickname, email) {
   await fbGetAuthUid();
   let res;
   try {
-    res = (await functionsRegion.httpsCallable('register')({ nickname, password, name, display_name, referral, referrer_nickname })).data;
+    res = (await functionsRegion.httpsCallable('register')({ nickname, password, name, display_name, referral, referrer_nickname, email })).data;
   } catch (e) { return { ok: false, error: e.message || '가입 중 오류가 발생했습니다.' }; }
   if (res.ok) {
     localStorage.setItem('hwasee_uid', res.user_id);
@@ -387,6 +387,52 @@ async function fbFindAccount(name) {
 async function fbResetPassword(nickname, name, new_password) {
   try {
     return (await functionsRegion.httpsCallable('resetPassword')({ nickname, name, new_password })).data;
+  } catch (e) { return { ok: false, error: e.message || '오류가 발생했습니다.' }; }
+}
+
+// ─── 이메일 기반 아이디/비밀번호 찾기 ─────────────────────
+// 계정 존재 여부를 클라이언트에 알려주지 않는 서버 설계(findId/sendPasswordResetEmail
+// 둘 다 매치 유무와 무관하게 항상 {ok:true}만 반환) — 여기서도 그 응답을 그대로 전달.
+async function fbFindId(email) {
+  try {
+    return (await functionsRegion.httpsCallable('findId')({ email })).data;
+  } catch (e) { return { ok: false, error: e.message || '오류가 발생했습니다.' }; }
+}
+
+async function fbSendPasswordResetEmail(nickname, email) {
+  try {
+    return (await functionsRegion.httpsCallable('sendPasswordResetEmail')({ nickname, email })).data;
+  } catch (e) { return { ok: false, error: e.message || '오류가 발생했습니다.' }; }
+}
+
+async function fbResetPasswordWithToken(token, new_password) {
+  try {
+    return (await functionsRegion.httpsCallable('resetPasswordWithToken')({ token, new_password })).data;
+  } catch (e) { return { ok: false, error: e.message || '오류가 발생했습니다.' }; }
+}
+
+async function fbSetMyEmail(user_id, email) {
+  const token = localStorage.getItem('hwasee_token');
+  if (!user_id || !token) return { ok: false, error: '로그인이 필요합니다.' };
+  try {
+    return (await functionsRegion.httpsCallable('setMyEmail')({ user_id, token, email })).data;
+  } catch (e) { return { ok: false, error: e.message || '오류가 발생했습니다.' }; }
+}
+
+// ─── 관리자: 이메일 발송(Gmail SMTP) 설정 ──────────────────
+// getClaudeKeyStatus/setClaudeKey와 동일 패턴 — admin_id 문자열이 아니라 실제
+// 세션(user_id+token)을 서버가 검증함.
+async function fbGetEmailConfigStatus(admin_id) {
+  try {
+    const r = await functionsRegion.httpsCallable('getEmailConfigStatus')({ user_id: admin_id, token: localStorage.getItem('hwasee_token') });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '오류가 발생했습니다.' }; }
+}
+
+async function fbSetEmailConfig(admin_id, gmail_user, gmail_app_pass) {
+  try {
+    const r = await functionsRegion.httpsCallable('setEmailConfig')({ user_id: admin_id, token: localStorage.getItem('hwasee_token'), gmail_user, gmail_app_pass });
+    return r.data;
   } catch (e) { return { ok: false, error: e.message || '오류가 발생했습니다.' }; }
 }
 
@@ -2410,6 +2456,12 @@ async function fbGetAIActivities(admin_id) {
     functionsRegion.httpsCallable('getClaudeKeyStatus')({ user_id: admin_id, token: localStorage.getItem('hwasee_token') }).then(r => r.data),
     new Promise(resolve => setTimeout(() => resolve({ has_key: false }), 5000)),
   ]).catch(() => ({ has_key: false }));
+  // Claude 키와 같은 이유(가장 드물게 호출되는 콜드스타트 후보)로 동일하게
+  // 5초 자체 타임아웃 + 나머지 데이터와 분리
+  const emailConfigPromise = Promise.race([
+    functionsRegion.httpsCallable('getEmailConfigStatus')({ user_id: admin_id, token: localStorage.getItem('hwasee_token') }).then(r => r.data),
+    new Promise(resolve => setTimeout(() => resolve({ has_config: false, gmail_user: null }), 5000)),
+  ]).catch(() => ({ has_config: false, gmail_user: null }));
   const [configSnap, notifSettingsSnap] = await Promise.all([
     db.collection('config').doc('ai_config').get(),
     db.collection('config').doc('notification_settings').get(),
@@ -2424,8 +2476,12 @@ async function fbGetAIActivities(admin_id) {
       db.collection('votes').where('voter_id', '==', FB_AI_ID).where('is_ai', '==', true).orderBy('created_at', 'desc').limit(300).get(),
     ]);
   } catch(e) {
-    const keyStatus = await keyStatusPromise;
-    return { ok: true, ai_config: aiConfig, has_key: !!keyStatus.has_key, submissions: [], votes: [], total_subs: 0, total_votes: 0 };
+    const [keyStatus, emailConfig] = await Promise.all([keyStatusPromise, emailConfigPromise]);
+    return {
+      ok: true, ai_config: aiConfig, has_key: !!keyStatus.has_key,
+      has_email_config: !!emailConfig.has_config, gmail_user: emailConfig.gmail_user || null,
+      submissions: [], votes: [], total_subs: 0, total_votes: 0,
+    };
   }
   const subs = subsSnap.docs.map(d => d.data())
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).slice(0, 200);
@@ -2446,9 +2502,10 @@ async function fbGetAIActivities(admin_id) {
   if (voteStoryIds.length) {
     await Promise.all(voteStoryIds.map(id => db.collection('stories').doc(id).get().then(d => { if (d.exists) storyMap[d.id] = d.data().opening || ''; })));
   }
-  const keyStatus = await keyStatusPromise;
+  const [keyStatus, emailConfig] = await Promise.all([keyStatusPromise, emailConfigPromise]);
   return {
     ok: true, ai_config: aiConfig, has_key: !!keyStatus.has_key,
+    has_email_config: !!emailConfig.has_config, gmail_user: emailConfig.gmail_user || null,
     notification_batch_enabled: notificationBatchEnabled,
     submissions: subs.map(s => ({ ...s, story_opening: storyMap[s.story_id] || '' })),
     votes: votes.map(v => {
@@ -2657,12 +2714,16 @@ async function firebaseApi(action, params = {}) {
   };
 
   switch (action) {
-    case 'register':           return fbRegister(params.nickname, params.password, params.name, params.display_name, params.referral, params.referrer_nickname);
+    case 'register':           return fbRegister(params.nickname, params.password, params.name, params.display_name, params.referral, params.referrer_nickname, params.email);
     case 'login':              return fbLogin(params.nickname, params.password);
     case 'deleteAccount':      return fbDeleteAccount(await requireUid(), params.reason, params.detail);
     case 'changePassword':     return fbChangePassword(await requireUid(), params.current_password, params.new_password);
     case 'findAccount':        return fbFindAccount(params.name);
     case 'resetPassword':      return fbResetPassword(params.nickname, params.name, params.new_password);
+    case 'findId':                return fbFindId(params.email);
+    case 'sendPasswordResetEmail': return fbSendPasswordResetEmail(params.nickname, params.email);
+    case 'resetPasswordWithToken': return fbResetPasswordWithToken(params.token, params.new_password);
+    case 'setMyEmail':             return fbSetMyEmail(await requireUid(), params.email);
 
     case 'getStories':         return fbGetStories(params.page);
     case 'getStory':           return fbGetStory(params.story_id, uid || null);
@@ -2728,6 +2789,8 @@ async function firebaseApi(action, params = {}) {
     case 'setAIConfig':           return fbSetAIConfig(await requireUid(), params);
     case 'setNotificationBatchEnabled': return fbSetNotificationBatchEnabled(await requireUid(), params.enabled);
     case 'setClaudeKey':          return fbSetClaudeKey(await requireUid(), params.key);
+    case 'getEmailConfigStatus':  return fbGetEmailConfigStatus(await requireUid());
+    case 'setEmailConfig':        return fbSetEmailConfig(await requireUid(), params.gmail_user, params.gmail_app_pass);
 
     case 'saveFcmToken':    return fbSaveFcmToken(await requireUid(), params.fcm_token);
     case 'trackVisit':      return fbTrackVisit(params.is_unique);

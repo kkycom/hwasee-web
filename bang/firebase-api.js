@@ -3116,12 +3116,24 @@ async function fbGetSpotlight(viewer_id) {
         .map(d => ({ step: Number(d.data().step), sub_count: subCountMap[d.id] || 0 }))
         .sort((a, b) => a.step - b.step);
 
+      // NEW 배지 — fbGetMyStories와 동일한 story_visits 대조(마지막으로 본 상태보다
+      // 단계/활동량이 늘었으면 표시). 슬롯당 스토리가 하나뿐이라 단건 조회로 충분.
+      let is_new = false;
+      if (viewer_id) {
+        const visitSnap = await db.collection('story_visits').doc(`${viewer_id}_${s.story_id}`).get();
+        if (visitSnap.exists) {
+          const v = visitSnap.data();
+          is_new = Number(story.current_step || 0) > (v.seen_step || 0)
+            || Number(story.participant_count || 0) > (v.seen_activity_count || 0);
+        }
+      }
+
       return {
         state: 'story', story_id: s.story_id, opening: story.opening, current_step: story.current_step || 0,
         has_branch: !!story.has_branch, branch_from_step: story.branch_from_step || null,
         branch_display_offset: story.branch_display_offset ?? null,
         participant_count: story.participant_count || 0,
-        open_eps,
+        open_eps, is_new,
         my_submissions,
       };
     } else if (key === 'sentence' && s.state === 'proposing' && s.round_id) {

@@ -2550,7 +2550,8 @@ function renderSpotlight() {
       bodyHtml = `<div style="font-size:12px;color:var(--muted);padding:16px 0;text-align:center">다음 이야기 준비 중</div>`;
     }
     return `
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px">
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;position:relative">
+        ${slot.state === 'story' ? cardStickersHtml(slot, false) : ''}
         <div style="display:flex;align-items:center;gap:4px">
           <span style="font-size:14px;font-weight:700">${meta.icon} ${esc(meta.title)}</span>
           <button onclick="openSlotInfo('${key}')" aria-label="설명 보기" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 2px">ⓘ</button>

@@ -502,6 +502,27 @@
   .loading { text-align: center; padding: 40px; color: var(--muted); }
   .loading::before { content: '✍️'; display: inline-block; font-size: 20px; animation: writing 5s ease-in-out infinite; filter: saturate(0.55) brightness(1.1); }
   .loading::after  { content: '불러오는 중입니다'; display: block; font-size: 13px; color: var(--muted); margin-top: 10px; letter-spacing: .3px; }
+
+  /* ── 로그인/정보변경 등 짧은 저장 구간용 반투명 오버레이(위 .loading은 화면
+     전체를 대체하는 긴 로딩 구간용이라, 버튼 누르고 잠깐 기다리는 정도에는
+     과함 — 화면은 그대로 두고 위에 얇게 덮어서 "처리 중"만 표시) */
+  #busy-overlay {
+    position: fixed; inset: 0; background: rgba(28,14,6,.28);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 9999; opacity: 0; pointer-events: none; transition: opacity .15s;
+  }
+  #busy-overlay.show { opacity: 1; pointer-events: all; }
+  .busy-scribble { width: 56px; height: 20px; }
+  .busy-scribble path {
+    fill: none; stroke: var(--card); stroke-width: 2.5; stroke-linecap: round;
+    stroke-dasharray: 40; stroke-dashoffset: 0;
+    animation: busy-write 1.1s ease-in-out infinite;
+  }
+  @keyframes busy-write {
+    0%   { stroke-dashoffset: 40; }
+    50%  { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: -40; }
+  }
   .empty   { text-align: center; padding: 48px 0; color: var(--muted); }
   .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--border); font-size: 12px; color: var(--muted); margin-right: 6px; white-space: nowrap; }
   .section-label { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .08em; margin-bottom: 10px; }
@@ -666,6 +687,12 @@
 
 <main id="app"><div class="loading"></div></main>
 <div class="toast" id="toast"></div>
+
+<div id="busy-overlay">
+  <svg class="busy-scribble" viewBox="0 0 48 16" xmlns="http://www.w3.org/2000/svg">
+    <path d="M2 8 Q 8 2, 14 8 T 26 8 T 38 8 T 46 8"/>
+  </svg>
+</div>
 
 <div id="onboarding-overlay">
   <div class="ob-card">
@@ -946,6 +973,11 @@ function toast(msg, isErr) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.className = 'toast'; }, 2800);
 }
+
+// 로그인/가입/비번찾기/정보변경처럼 화면 전환 없이 짧게 기다리는 버튼 액션용
+// 반투명 오버레이 — .loading(화면 전체 로딩)과 달리 지금 화면 위에 얇게만 덮음
+function showBusy() { document.getElementById('busy-overlay')?.classList.add('show'); }
+function hideBusy() { document.getElementById('busy-overlay')?.classList.remove('show'); }
 function showPatchNoteModal(msg) {
   const existing = document.getElementById('patchnote-modal');
   if (existing) existing.remove();
@@ -2481,7 +2513,7 @@ function renderSpotlight() {
           <div class="prose-opening">${esc(slot.opening)}</div>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-          <span class="step-pill"><span class="step-dot"></span>${(Number(slot.current_step) || 0) + 1}단계 진행 중</span>
+          <div>${stepPillsHtml(slot, slot.participant_count || 0, `${(Number(slot.current_step) || 0) + 2}단계`)}</div>
           ${ctaHtml}
         </div>
         ${hasHistory ? `<div id="sp-hist-${key}" style="display:none;margin-top:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">${histHtml}</div>` : ''}`;
@@ -3266,7 +3298,13 @@ function auth() {
         <div class="form-group"><label>비밀번호</label><input id="a-pw" type="password" placeholder="비밀번호" onkeydown="if(event.key==='Enter')doLogin()"></div>
         <button class="btn btn-primary" style="width:100%" onclick="doLogin()">로그인</button>
       ` : tab === 'register' ? `
-        <div class="form-group"><label>아이디 (로그인용, 2~12자)</label><input id="a-nick" type="text" placeholder="아이디" maxlength="12"></div>
+        <div class="form-group">
+          <label>아이디 (로그인용, 2~12자)</label>
+          <div style="display:flex;gap:8px">
+            <input id="a-nick" type="text" placeholder="아이디" maxlength="12" style="flex:1" oninput="checkNickAvail()">
+            <span id="nick-status" style="font-size:11px;align-self:center;min-width:48px;text-align:right"></span>
+          </div>
+        </div>
         <div class="form-group">
           <label>닉네임 (표시용, 2~12자)</label>
           <div style="display:flex;gap:8px">
@@ -3276,7 +3314,11 @@ function auth() {
         </div>
         <div class="form-group"><label>이름 (비밀번호 찾기에 사용)</label><input id="a-name" type="text" placeholder="실명 또는 별칭" maxlength="20"></div>
         <div class="form-group"><label>이메일 <span style="color:var(--muted);font-weight:400">(선택, 아이디·비밀번호를 잊었을 때 필요해요)</span></label><input id="a-email" type="email" placeholder="you@example.com" maxlength="100"></div>
-        <div class="form-group"><label>비밀번호 (8자 이상)</label><input id="a-pw" type="password" placeholder="비밀번호"></div>
+        <div class="form-group">
+          <label>비밀번호</label>
+          <input id="a-pw" type="password" placeholder="비밀번호">
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">영문 대/소문자·숫자·특수문자 중 3종류 이상이면 8자 이상, 2종류면 10자 이상</div>
+        </div>
         <div class="form-group"><label>비밀번호 확인</label><input id="a-pw2" type="password" placeholder="비밀번호 재입력" onkeydown="if(event.key==='Enter')doRegister()"></div>
         <div class="form-group">
           <label style="margin-bottom:10px;display:block">어떻게 알게 됐어요? <span style="color:var(--muted);font-weight:400">(선택)</span></label>
@@ -3304,7 +3346,11 @@ function auth() {
         <div id="legacy-recover-area" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
           <div class="form-group"><label>아이디</label><input id="a-nick" type="text" placeholder="아이디"></div>
           <div class="form-group"><label>가입 시 입력한 이름</label><input id="a-name" type="text" placeholder="이름"></div>
-          <div class="form-group"><label>새 비밀번호 (8자 이상)</label><input id="a-pw" type="password" placeholder="새 비밀번호"></div>
+          <div class="form-group">
+            <label>새 비밀번호</label>
+            <input id="a-pw" type="password" placeholder="새 비밀번호">
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">영문 대/소문자·숫자·특수문자 중 3종류 이상이면 8자 이상, 2종류면 10자 이상</div>
+          </div>
           <div class="form-group"><label>새 비밀번호 확인</label><input id="a-pw2" type="password" placeholder="비밀번호 재입력" onkeydown="if(event.key==='Enter')doRecover()"></div>
           <button class="btn btn-primary" style="width:100%" onclick="doRecover()">비밀번호 재설정</button>
         </div>
@@ -3320,7 +3366,9 @@ function toggleLegacyRecover() {
 async function doFindId() {
   const email = (document.getElementById('fi-email')?.value || '').trim();
   if (!email) { toast('이메일을 입력해주세요.', true); return; }
+  showBusy();
   await api('findId', { email });
+  hideBusy();
   toast('입력하신 이메일로 등록된 계정이 있다면 아이디를 보내드렸어요.');
 }
 
@@ -3328,7 +3376,9 @@ async function doSendResetEmail() {
   const nickname = (document.getElementById('r-nick')?.value || '').trim();
   const email = (document.getElementById('r-email')?.value || '').trim();
   if (!nickname || !email) { toast('아이디와 이메일을 모두 입력해주세요.', true); return; }
+  showBusy();
   await api('sendPasswordResetEmail', { nickname, email });
+  hideBusy();
   toast('입력하신 정보가 일치하면 이메일로 재설정 링크를 보내드렸어요.');
 }
 
@@ -3347,7 +3397,9 @@ function selectReferral(btn, value) {
 async function doLogin() {
   const nickname = document.getElementById('a-nick').value.trim();
   const password = document.getElementById('a-pw').value;
+  showBusy();
   const res = await api('login', { nickname, password });
+  hideBusy();
   if (!res.ok) { toast(res.error, true); return; }
   saveUser(res);
   const dn = res.display_name || res.nickname;
@@ -3364,6 +3416,38 @@ async function doLogin() {
   nav('seed');
   if (!localStorage.getItem('hwasee_onboarding_seen')) setTimeout(showOnboarding, 400);
   setTimeout(checkPatchNoteAnnouncement, 1400);
+}
+
+// 서버(functions/index.js의 _isValidPassword/PW_RULE_MSG)와 반드시 동일하게
+// 유지할 것 — 개인정보의 안전성 확보조치 기준 제5조⑤(비밀번호 작성규칙 수립·
+// 적용 의무) 대응. 여기는 제출 전 즉시 피드백용, 실제 강제는 서버가 함.
+const PW_RULE_MSG = '비밀번호는 영문 대/소문자·숫자·특수문자 중 3종류 이상 조합 시 8자 이상, 2종류 조합 시 10자 이상이어야 해요.';
+function isValidPassword(pw) {
+  let types = 0;
+  if (/[A-Z]/.test(pw)) types++;
+  if (/[a-z]/.test(pw)) types++;
+  if (/[0-9]/.test(pw)) types++;
+  if (/[^A-Za-z0-9]/.test(pw)) types++;
+  if (types >= 3) return pw.length >= 8;
+  if (types >= 2) return pw.length >= 10;
+  return false;
+}
+
+let _nickCheckTimer;
+async function checkNickAvail() {
+  const el = document.getElementById('a-nick');
+  const status = document.getElementById('nick-status');
+  if (!el || !status) return;
+  const val = el.value.trim();
+  status.textContent = '';
+  clearTimeout(_nickCheckTimer);
+  if (!/^[가-힣a-zA-Z0-9]{2,12}$/.test(val)) return;
+  _nickCheckTimer = setTimeout(async () => {
+    const res = await api('checkNickname', { nickname: val });
+    if (!res.ok) return;
+    status.textContent = res.available ? '✓ 사용가능' : '✗ 중복';
+    status.style.color = res.available ? 'var(--success)' : 'var(--accent2)';
+  }, 500);
 }
 
 let _dnCheckTimer;
@@ -3402,15 +3486,17 @@ async function doRegister() {
   if (emailVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
     toast('올바른 이메일 형식이 아니에요.', true); return;
   }
-  if (password.length < 8) {
-    toast('비밀번호는 8자 이상이어야 해요.', true); return;
+  if (!isValidPassword(password)) {
+    toast(PW_RULE_MSG, true); return;
   }
   if (password !== password2) {
     toast('비밀번호가 일치하지 않아요.', true); return;
   }
   const referral = (document.getElementById('a-referral')?.value || '').trim();
   const referrerNickname = (document.getElementById('a-referrer-nick')?.value || '').trim();
+  showBusy();
   const res = await api('register', { nickname, password, name: nameVal, display_name: displayName, referral, referrer_nickname: referrerNickname, email: emailVal });
+  hideBusy();
   if (!res.ok) { toast(res.error, true); return; }
   saveUser(res);
   if (typeof gtag === 'function') gtag('event', 'sign_up', { method: 'email', referral_source: referral || '미입력' });
@@ -3428,9 +3514,11 @@ async function doRecover() {
   const new_password  = document.getElementById('a-pw').value;
   const new_password2 = document.getElementById('a-pw2').value;
   if (!nickname || !nameVal) { toast('닉네임과 이름을 모두 입력해주세요.', true); return; }
-  if (new_password.length < 8) { toast('새 비밀번호는 8자 이상이어야 해요.', true); return; }
+  if (!isValidPassword(new_password)) { toast(PW_RULE_MSG, true); return; }
   if (new_password !== new_password2) { toast('비밀번호가 일치하지 않아요.', true); return; }
+  showBusy();
   const res = await api('resetPassword', { nickname, name: nameVal, new_password });
+  hideBusy();
   if (!res.ok) { toast(res.error, true); return; }
   toast('비밀번호가 재설정됐어요. 로그인해주세요.');
   nav('auth', 'login');
@@ -3443,7 +3531,11 @@ function resetPasswordPage() {
   document.getElementById('app').innerHTML = `
     <div style="max-width:400px;margin:40px auto">
       <h2 style="margin-bottom:24px;text-align:center;font-family:var(--serif)">새 비밀번호 설정</h2>
-      <div class="form-group"><label>새 비밀번호 (8자 이상)</label><input id="rt-pw" type="password" placeholder="새 비밀번호"></div>
+      <div class="form-group">
+        <label>새 비밀번호</label>
+        <input id="rt-pw" type="password" placeholder="새 비밀번호">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">영문 대/소문자·숫자·특수문자 중 3종류 이상이면 8자 이상, 2종류면 10자 이상</div>
+      </div>
       <div class="form-group"><label>새 비밀번호 확인</label><input id="rt-pw2" type="password" placeholder="비밀번호 재입력" onkeydown="if(event.key==='Enter')doResetWithToken()"></div>
       <button class="btn btn-primary" style="width:100%" onclick="doResetWithToken()">비밀번호 재설정</button>
     </div>`;
@@ -3453,9 +3545,11 @@ async function doResetWithToken() {
   const token = currentParam;
   const new_password  = document.getElementById('rt-pw').value;
   const new_password2 = document.getElementById('rt-pw2').value;
-  if (new_password.length < 8) { toast('새 비밀번호는 8자 이상이어야 해요.', true); return; }
+  if (!isValidPassword(new_password)) { toast(PW_RULE_MSG, true); return; }
   if (new_password !== new_password2) { toast('비밀번호가 일치하지 않아요.', true); return; }
+  showBusy();
   const res = await api('resetPasswordWithToken', { token, new_password });
+  hideBusy();
   if (!res.ok) { toast(res.error, true); return; }
   toast('비밀번호가 재설정됐어요. 로그인해주세요.');
   nav('auth', 'login');
@@ -3624,7 +3718,11 @@ async function profile() {
     <h2 style="margin-bottom:12px">비밀번호 변경</h2>
     <div class="card" style="margin-bottom:24px">
       <div class="form-group"><label>현재 비밀번호</label><input id="pw-cur" type="password" placeholder="현재 비밀번호"></div>
-      <div class="form-group"><label>새 비밀번호 (8자 이상)</label><input id="pw-new" type="password" placeholder="새 비밀번호"></div>
+      <div class="form-group">
+        <label>새 비밀번호</label>
+        <input id="pw-new" type="password" placeholder="새 비밀번호">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">영문 대/소문자·숫자·특수문자 중 3종류 이상이면 8자 이상, 2종류면 10자 이상</div>
+      </div>
       <div class="form-group"><label>새 비밀번호 확인</label><input id="pw-new2" type="password" placeholder="새 비밀번호 재입력"></div>
       <button class="btn btn-primary" style="width:100%" onclick="doChangePw()">변경하기</button>
     </div>
@@ -5449,7 +5547,9 @@ async function doChangeDisplayName() {
   const val = document.getElementById('dn-new')?.value.trim();
   if (!val) { toast('새 닉네임을 입력해주세요.', true); return; }
   if (val.length < 2) { toast('닉네임은 2자 이상이어야 해요.', true); return; }
+  showBusy();
   const res = await api('changeDisplayName', { display_name: val });
+  hideBusy();
   if (!res.ok) { toast(res.error, true); return; }
   user.display_name = res.display_name;
   saveUser(user);
@@ -5461,7 +5561,9 @@ async function doChangeDisplayName() {
 async function doSetMyEmail() {
   const val = (document.getElementById('email-new')?.value || '').trim();
   if (val && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) { toast('올바른 이메일 형식이 아니에요.', true); return; }
+  showBusy();
   const res = await api('setMyEmail', { email: val });
+  hideBusy();
   if (!res.ok) { toast(res.error, true); return; }
   user.email = res.email;
   saveUser(user);
@@ -5535,9 +5637,11 @@ async function doChangePw() {
   const nw   = document.getElementById('pw-new')?.value;
   const nw2  = document.getElementById('pw-new2')?.value;
   if (!cur || !nw || !nw2) { toast('모든 항목을 입력해주세요.', true); return; }
-  if (nw.length < 8) { toast('새 비밀번호는 8자 이상이어야 합니다.', true); return; }
+  if (!isValidPassword(nw)) { toast(PW_RULE_MSG, true); return; }
   if (nw !== nw2) { toast('새 비밀번호가 일치하지 않습니다.', true); return; }
+  showBusy();
   const res = await api('changePassword', { current_password: cur, new_password: nw });
+  hideBusy();
   if (!res.ok) { toast(res.error, true); return; }
   toast('비밀번호가 변경됐습니다.');
   document.getElementById('pw-cur').value = '';

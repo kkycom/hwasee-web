@@ -2320,6 +2320,17 @@ async function fbCheckDisplayName(display_name) {
   return { ok: true, available: snap.empty };
 }
 
+// 아이디(로그인용 nickname)는 가입 후 변경 불가라 회원가입 화면에서만 필요 —
+// checkDisplayName과 동일한 패턴(공개 read라 클라이언트에서 직접 조회), 실제
+// 중복 차단은 register(Cloud Function)가 이미 해왔음(dupId 체크) — 이건 그
+// 판정을 제출 전에 미리 보여주는 UX용
+async function fbCheckNickname(nickname) {
+  const nick = (nickname || '').trim();
+  if (!nick) return { ok: true, available: false };
+  const snap = await db.collection('users').where('nickname', '==', nick).limit(1).get();
+  return { ok: true, available: snap.empty };
+}
+
 async function fbChangeDisplayName(user_id, new_display_name) {
   const dn = (new_display_name || '').trim();
   if (!dn || dn.length < 2) return { ok: false, error: '닉네임은 2자 이상이어야 합니다.' };
@@ -2767,6 +2778,7 @@ async function firebaseApi(action, params = {}) {
     case 'buyAvatar':            return fbBuyAvatar(params.emoji_id, await requireUid());
     case 'setAvatar':            return fbSetAvatar(params.emoji_id, await requireUid());
     case 'checkDisplayName':     return fbCheckDisplayName(params.display_name);
+    case 'checkNickname':        return fbCheckNickname(params.nickname);
     case 'changeDisplayName':    return fbChangeDisplayName(await requireUid(), params.display_name);
 
     case 'voteMvp':            return fbVoteMvp(params.story_id, params.episode_id, await requireUid());
@@ -3047,10 +3059,32 @@ async function fbGetSpotlight(viewer_id) {
           .sort((a, b) => a.step - b.step);
       }
 
+      // 다른 카드(popularCardHtml 등)와 동일하게 stepPillsHtml로 "N단계 · 제출 N개"를
+      // 보여주기 위한 open_eps 규격 — fbGetStories의 open_eps 계산과 동일한 방식
+      const openEpsSnap = await db.collection('episodes')
+        .where('story_id', '==', s.story_id).where('status', '==', 'open').get();
+      const openEpIds = openEpsSnap.docs.map(d => d.id);
+      const subCountMap = {};
+      if (openEpIds.length) {
+        const _chunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
+        const subChunkSnaps = await Promise.all(
+          _chunks(openEpIds).map(ch => db.collection('submissions').where('episode_id', 'in', ch).get())
+        );
+        subChunkSnaps.forEach(snap => snap.docs.forEach(d => {
+          const epId = d.data().episode_id;
+          subCountMap[epId] = (subCountMap[epId] || 0) + 1;
+        }));
+      }
+      const open_eps = openEpsSnap.docs
+        .map(d => ({ step: Number(d.data().step), sub_count: subCountMap[d.id] || 0 }))
+        .sort((a, b) => a.step - b.step);
+
       return {
         state: 'story', story_id: s.story_id, opening: story.opening, current_step: story.current_step || 0,
         has_branch: !!story.has_branch, branch_from_step: story.branch_from_step || null,
         branch_display_offset: story.branch_display_offset ?? null,
+        participant_count: story.participant_count || 0,
+        open_eps,
         my_submissions,
       };
     } else if (key === 'sentence' && s.state === 'proposing' && s.round_id) {

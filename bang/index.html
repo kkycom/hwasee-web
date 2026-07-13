@@ -2494,6 +2494,10 @@ const SPOTLIGHT_META = {
 const SR_PAGE_SIZE = 10;
 let _srVisibleCount = SR_PAGE_SIZE;
 let _srCountdownTimer = null;
+// 투표하면 renderSpotlight()가 카드를 통째로 다시 그려서(득표수 갱신 위해),
+// 펼쳐뒀던 제안 목록이 매번 닫힌 상태로 리셋되던 문제 — 열림 여부를 여기 따로
+// 기억해뒀다가 다시 그릴 때도 유지되게 함
+let _srListOpen = false;
 
 function renderSpotlight() {
   const area = document.getElementById('spotlight-area');
@@ -2654,8 +2658,8 @@ function renderSentenceRoundInner(slot) {
       ${mySubBadge}
     </div>
     ${loginHint}${formHtml}
-    <button class="btn btn-ghost btn-sm" style="width:100%" onclick="const l=document.getElementById('sr-submissions-list'),a=this.querySelector('.sr-arrow'),open=l.style.display==='none';l.style.display=open?'block':'none';a.textContent=open?'▴':'▾'">${submissions.length}개 제안 보기 <span class="sr-arrow">▾</span></button>
-    <div id="sr-submissions-list" style="display:none;margin-top:8px">${listHtml}${showMoreHtml}</div>`;
+    <button class="btn btn-ghost btn-sm" style="width:100%" onclick="_srListOpen=!_srListOpen;const l=document.getElementById('sr-submissions-list'),a=this.querySelector('.sr-arrow');l.style.display=_srListOpen?'block':'none';a.textContent=_srListOpen?'▴':'▾'">${submissions.length}개 제안 보기 <span class="sr-arrow">${_srListOpen ? '▴' : '▾'}</span></button>
+    <div id="sr-submissions-list" style="display:${_srListOpen ? 'block' : 'none'};margin-top:8px">${listHtml}${showMoreHtml}</div>`;
 }
 
 function _srCheckInput() {

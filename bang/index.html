@@ -749,6 +749,13 @@ const _lsc = {
   del(...ks) { ks.forEach(k => { try { localStorage.removeItem('hc:' + k); } catch {} }); },
   // TTL을 0으로 만들어 expired지만 stale read는 가능하게 (즉시 렌더 + 백그라운드 갱신)
   expire(...ks) { ks.forEach(k => { try { const r = localStorage.getItem('hc:'+k); if (r) { const p = JSON.parse(r); p.e = 0; localStorage.setItem('hc:'+k, JSON.stringify(p)); } } catch {} }); },
+  // 모든 캐시 키가 유저 구분 없이 공용(hc:spotlight 등)이라, 같은 기기에서 계정을
+  // 전환하면 이전 계정 것으로 채워진 캐시(내 제안/투표 여부, "(나)" 라벨 등)가
+  // 그대로 새 계정 화면에 보이는 문제가 있었음(2026-07-13 실제 제보) — saveUser()가
+  // 로그인 유저가 바뀔 때마다 이걸 호출해서 전부 비움.
+  clearAll() {
+    try { Object.keys(localStorage).filter(k => k.startsWith('hc:')).forEach(k => localStorage.removeItem(k)); } catch {}
+  },
 };
 
 // ─── 렌더 에포크 (중복 비동기 렌더 방지) ───────────────────
@@ -909,6 +916,12 @@ function loadUser() {
   } catch {}
 }
 function saveUser(u) {
+  // 로그인 유저 자체가 바뀔 때만(로그인/로그아웃/계정전환) 캐시 전부 비움 —
+  // 같은 유저의 필드만 갱신하는 흔한 호출(아바타/포인트 등)에서는 굳이 비우지
+  // 않아 캐시 이점을 그대로 유지함
+  const prevUid = user?.user_id || null;
+  const nextUid = u?.user_id || null;
+  if (prevUid !== nextUid) _lsc.clearAll();
   user = u;
   if (u) {
     localStorage.setItem('hwasee_token', u.token);

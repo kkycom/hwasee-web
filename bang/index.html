@@ -2409,9 +2409,36 @@ async function _submitWordChallenge() {
 }
 
 async function _voteWordChallenge(submission_id) {
-  const res = await api('voteWordChallenge', { challenge_id: window._wcData.challenge.challenge_id, submission_id });
-  if (!res.ok) { toast(res.error, true); return; }
-  await loadWordChallenge();
+  const data = window._wcData;
+  if (!data) return;
+  // 서버 왕복(+재조회까지 이어지던 것)을 기다리는 동안 멍하니 있던 문제 —
+  // 실제 투표 로직(같은 문장 재클릭=취소, 다른 문장=전환)을 그대로 미리 반영해
+  // 즉시 화면부터 갱신하고, 실패하면 되돌림
+  const prevVoteId = data.my_vote_submission_id;
+  const sub = data.submissions.find(s => s.submission_id === submission_id);
+  if (!sub) return;
+  const prevSubs = data.submissions.map(s => ({ submission_id: s.submission_id, vote_count: s.vote_count }));
+  if (prevVoteId === submission_id) {
+    sub.vote_count = Math.max(0, (sub.vote_count || 0) - 1);
+    data.my_vote_submission_id = null;
+  } else {
+    if (prevVoteId) {
+      const oldSub = data.submissions.find(s => s.submission_id === prevVoteId);
+      if (oldSub) oldSub.vote_count = Math.max(0, (oldSub.vote_count || 0) - 1);
+    }
+    sub.vote_count = (sub.vote_count || 0) + 1;
+    data.my_vote_submission_id = submission_id;
+  }
+  renderWordChallenge();
+  const res = await api('voteWordChallenge', { challenge_id: data.challenge.challenge_id, submission_id });
+  if (!res.ok) {
+    prevSubs.forEach(p => { const s = data.submissions.find(x => x.submission_id === p.submission_id); if (s) s.vote_count = p.vote_count; });
+    data.my_vote_submission_id = prevVoteId;
+    renderWordChallenge();
+    toast(res.error, true);
+    return;
+  }
+  _lsc.set('wordChallenge', data, 15);
 }
 
 async function openWordChallengeHistory() {
@@ -2681,11 +2708,36 @@ async function _submitSentenceProposal() {
 }
 
 async function _voteSentenceRound(submission_id) {
-  const round_id = window._spotlightData?.slots?.sentence?.round?.round_id;
+  const slot = window._spotlightData?.slots?.sentence;
+  const round_id = slot?.round?.round_id;
   if (!round_id) return;
+  // 단어챌린지 투표와 동일한 이유로 낙관적 업데이트 — 서버 왕복(+전체 스포트라이트
+  // 재조회까지 이어지던 것)을 기다리지 않고 즉시 반영, 실패하면 되돌림
+  const prevVoteId = slot.my_vote_submission_id;
+  const sub = slot.submissions.find(s => s.submission_id === submission_id);
+  if (!sub) return;
+  const prevSubs = slot.submissions.map(s => ({ submission_id: s.submission_id, vote_count: s.vote_count }));
+  if (prevVoteId === submission_id) {
+    sub.vote_count = Math.max(0, (sub.vote_count || 0) - 1);
+    slot.my_vote_submission_id = null;
+  } else {
+    if (prevVoteId) {
+      const oldSub = slot.submissions.find(s => s.submission_id === prevVoteId);
+      if (oldSub) oldSub.vote_count = Math.max(0, (oldSub.vote_count || 0) - 1);
+    }
+    sub.vote_count = (sub.vote_count || 0) + 1;
+    slot.my_vote_submission_id = submission_id;
+  }
+  renderSpotlight();
   const res = await api('voteSentenceRound', { round_id, submission_id });
-  if (!res.ok) { toast(res.error, true); return; }
-  await loadSpotlightSlot();
+  if (!res.ok) {
+    prevSubs.forEach(p => { const s = slot.submissions.find(x => x.submission_id === p.submission_id); if (s) s.vote_count = p.vote_count; });
+    slot.my_vote_submission_id = prevVoteId;
+    renderSpotlight();
+    toast(res.error, true);
+    return;
+  }
+  _lsc.set('spotlight', window._spotlightData, 20);
 }
 
 function _srShowMore() {

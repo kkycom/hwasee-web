@@ -2526,6 +2526,25 @@ let _srCountdownTimer = null;
 // 기억해뒀다가 다시 그릴 때도 유지되게 함
 let _srListOpen = false;
 
+// 참여 중인 이야기(자유 이야기 탭 mine 그룹) 중 NEW 배지가 붙은 개수 — 카드
+// 하나하나 안 훑어봐도 한눈에 파악되도록 오늘의 이야기 진입 시 요약해서 보여줌.
+// 새 네트워크 요청 없이 이미 프리페치돼있는 'free' 탭 캐시(window.onload의
+// 백그라운드 프리페치, TTL 지나도 1시간 이내면 stale 허용)만 재사용함.
+function _myNewCount() {
+  const cached = _lsc.getStale('free');
+  if (!cached?.myRes?.ok) return 0;
+  return cached.myRes.stories.filter(s => s.status === 'active' && s.is_new).length;
+}
+
+function newSummaryBannerHtml() {
+  const n = _myNewCount();
+  if (n <= 0) return '';
+  return `<div onclick="switchHomeTab('free')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12px;cursor:pointer">
+    <span>📖 참여하신 ${n}개 이야기에 새 소식이 있어요</span>
+    <span style="color:var(--muted);flex-shrink:0">보러가기 →</span>
+  </div>`;
+}
+
 function renderSpotlight() {
   const area = document.getElementById('spotlight-area');
   if (!area || !window._spotlightData) return;
@@ -2592,6 +2611,7 @@ function renderSpotlight() {
   };
 
   area.innerHTML = `
+    ${newSummaryBannerHtml()}
     <p style="font-family:var(--serif);font-size:16px;line-height:1.9;color:#9a8070;text-align:center;margin-bottom:20px">
       당신의 한 문장을 기다리는 이야기들이 있어요.
     </p>

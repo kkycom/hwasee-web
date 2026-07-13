@@ -2228,6 +2228,64 @@ exports.closeSentenceRounds = functions
     return null;
   });
 
+// 방치된 AI 씨앗 이야기 자동 정리 — 원래 클라이언트(자유 이야기 탭 로딩 시점)에서
+// 실행했는데, 캐시된 구버전 클라이언트 JS가 계속 떠돌면서 그 로직이 스포트라이트
+// 슬롯 이야기까지 잘못 청소해버리는 사고가 반복됨(2026-07-12, 07-13 두 번 — 서버
+// 코드는 vote_threshold 있는 이야기를 제외하도록 이미 고쳐뒀는데도, 그 수정이
+// 반영 안 된 오래된 클라이언트가 실행하면 재발함). 클라이언트 JS 버전과 무관하게
+// 항상 최신 로직으로만 동작하도록 서버 스케줄러로 이관.
+exports.cleanupAbandonedSeeds = functions
+  .region('asia-northeast3')
+  .pubsub.schedule('every 30 minutes')
+  .onRun(async () => {
+    const db = admin.firestore();
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const storiesSnap = await db.collection('stories').where('status', '==', 'active').get();
+    const abandoned = storiesSnap.docs.filter(d => {
+      const s = d.data();
+      return s.is_ai_seed === true && !s.vote_threshold && (s.participant_count || 0) === 0 && (s.created_at || '') < oneHourAgo;
+    });
+    if (!abandoned.length) return null;
+
+    // 문서별 트랜잭션으로 선점(이 함수 자체는 30분 주기 단일 실행이라 겹칠 일은
+    // 없지만, 기존 클라이언트 구현의 안전장치를 그대로 유지)
+    const claimed = [];
+    for (const doc of abandoned) {
+      const won = await db.runTransaction(async tx => {
+        const snap = await tx.get(doc.ref);
+        if (!snap.exists || snap.data().status !== 'active') return false;
+        tx.update(doc.ref, { status: 'inactive' });
+        return true;
+      });
+      if (won) claimed.push(doc);
+    }
+    if (!claimed.length) return null;
+
+    // 폐기된 씨앗 오프닝을 used_openings에서 제거(다시 씨앗 풀로 복귀)
+    const toRestore = claimed.map(doc => doc.data().opening).filter(Boolean);
+    if (toRestore.length) {
+      const deleteFields = {};
+      toRestore.forEach(o => { deleteFields[o] = admin.firestore.FieldValue.delete(); });
+      await db.collection('config').doc('used_openings').update(deleteFields).catch(() => {});
+    }
+
+    const batch = db.batch();
+    let hasNotif = false;
+    claimed.forEach(doc => {
+      const s = doc.data();
+      if (!s.creator_id) return;
+      const snippet = (s.opening || '').length > 30 ? s.opening.substring(0, 30) + '…' : (s.opening || '');
+      batch.set(db.collection('notifications').doc(), {
+        user_id: s.creator_id, type: 'seed_recycled', story_id: '',
+        message: `시간이 경과하여 선택하신 이야기가 다시 되돌아갔습니다.\n"${snippet}"`,
+        is_read: false, created_at: new Date().toISOString(), push_sent: false,
+      });
+      hasNotif = true;
+    });
+    if (hasNotif) await batch.commit();
+    return null;
+  });
+
 // 스포트라이트 최초 도입 시 1회 실행 — 포인터 doc이 없으면 3슬롯이 전부 비어
 // 보이므로, 관리자가 배포 후 한 번 호출해 3슬롯을 AI 씨앗으로 부트스트랩함.
 // 이후로는 각 슬롯의 지정된 소스(단어챌린지 풀/제안투표 풀/AI 랜덤픽)가 이어받음.

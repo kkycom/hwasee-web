@@ -473,20 +473,12 @@ async function fbGetStories(page) {
       }));
     }
 
-    // 1시간 경과 + 참여자 0 + AI 씨앗 → inactive 처리 + 생성자에게 알림 + 오프닝 복구.
-    // 단, 스포트라이트 슬롯 이야기(vote_threshold 있음)는 제외 — 첫 화면에 대표로
-    // 걸려있는 이야기라 아직 첫 참여자가 없다는 이유로 이 청소 로직에 같이 걸려
-    // inactive(=완결 취급) 처리되면 그 슬롯의 "참여하기"가 통째로 막혀버림
-    // (실제로 2026-07-12 AI 슬롯 이야기가 이렇게 막혔던 걸 발견해서 수정함).
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const abandoned = storiesSnap.docs.filter(d => {
-      const s = d.data();
-      return s.is_ai_seed === true && !s.vote_threshold && (s.participant_count || 0) === 0 && (s.created_at || '') < oneHourAgo;
-    });
-    if (abandoned.length) await _fbRecycleAbandonedSeeds(abandoned);
-    const recycledSet = new Set(abandoned.map(d => d.id));
-
-    const stories = storiesSnap.docs.filter(d => !recycledSet.has(d.id)).map(d => ({
+    // 방치된 AI 씨앗 자동정리는 여기(클라이언트, 자유 이야기 탭 로딩 시점)에서
+    // 하지 않음 — 오래된(캐시된) 클라이언트 JS가 이 로직을 들고 있으면 서버 코드를
+    // 아무리 고쳐도 스포트라이트 슬롯 이야기가 잘못 청소되는 사고가 반복됐음
+    // (2026-07-12, 07-13 두 번 발생). 서버 스케줄러(cleanupAbandonedSeeds,
+    // functions/index.js)로 이관해서 클라이언트 캐시 버전과 무관하게 동작하게 함.
+    const stories = storiesSnap.docs.map(d => ({
       ...d.data(),
       is_boosted:        boostSet.has(d.id),
       activity_count:    d.data().participant_count || 0,
@@ -1509,45 +1501,10 @@ const FB_AI_OPENING_HINTS = [
   "엄마는 그냥 웃기만 했다.",
 ];
 
-async function _fbRecycleAbandonedSeeds(docs) {
-  if (!docs.length) return;
-  // 여러 유저(탭)가 거의 동시에 홈 탭을 열면 같은 방치 이야기를 각자 발견해서
-  // 중복 처리(알림도 중복 발송)하는 문제가 있었음 — 트랜잭션으로 문서별로
-  // "먼저 처리한 쪽"만 실제로 진행하도록 선점. 문서마다 독립적이라 병렬 처리
-  // 가능 — 순차 await는 방치 이야기 개수만큼 관심받는 탭 로딩을 늦추고 있었음
-  const wonDocs = await Promise.all(docs.map(doc =>
-    db.runTransaction(async tx => {
-      const snap = await tx.get(doc.ref);
-      if (!snap.exists || snap.data().status !== 'active') return null;
-      tx.update(doc.ref, { status: 'inactive' });
-      return doc;
-    })
-  ));
-  const claimed = wonDocs.filter(Boolean);
-  if (!claimed.length) return;
-
-  // 폐기된 씨앗 오프닝을 used_openings에서 제거 (다시 씨앗 풀로 복귀)
-  const toRestore = claimed.map(doc => doc.data().opening).filter(Boolean);
-  if (toRestore.length) {
-    const deleteFields = {};
-    toRestore.forEach(o => { deleteFields[o] = firebase.firestore.FieldValue.delete(); });
-    await db.collection('config').doc('used_openings').update(deleteFields).catch(() => {});
-  }
-  const nb = db.batch();
-  let hasNotif = false;
-  claimed.forEach(doc => {
-    const s = doc.data();
-    if (!s.creator_id) return;
-    const snippet = (s.opening || '').length > 30 ? s.opening.substring(0, 30) + '…' : (s.opening || '');
-    nb.set(db.collection('notifications').doc(fbGenId()), {
-      user_id: s.creator_id, type: 'seed_recycled', story_id: '',
-      message: `시간이 경과하여 선택하신 이야기가 다시 되돌아갔습니다.\n"${snippet}"`,
-      is_read: false, created_at: fbNow(), push_sent: false,
-    });
-    hasNotif = true;
-  });
-  if (hasNotif) await nb.commit();
-}
+// 방치된 씨앗 자동정리는 서버 스케줄러(cleanupAbandonedSeeds, functions/index.js)로
+// 이관함 — 예전엔 이 함수가 클라이언트에서 실행됐는데, 캐시된 구버전 클라이언트가
+// 스포트라이트 슬롯 이야기까지 잘못 청소하는 사고가 반복돼서(2026-07-12, 07-13)
+// 클라이언트 JS 버전에 의존하지 않는 서버 쪽으로 옮김.
 
 const FB_OPENING_HINT_MAP = new Map(FB_AI_OPENINGS.map((o, i) => [o, FB_AI_OPENING_HINTS[i]]));
 

@@ -1142,13 +1142,19 @@ async function fbCreateSubmission(episode_id, content, author_id, derived_from, 
     .then(() => _fbCheckAchievements(author_id, 'submission_count', newSubCount))
     .catch(() => {});
 
-  // participant_count 증가 (첫 제출 시) — 복합 인덱스 없이 단일 필드 쿼리 후 클라이언트 필터
+  // participant_count 증가 (첫 제출 시) — 복합 인덱스 없이 단일 필드 쿼리 후 클라이언트 필터.
+  // 증가 자체는 트랜잭션으로 묶어서(예전엔 이 조회 따로 + update 따로라 동시 제출 시
+  // 레이스 가능성 있었음 — 실제로 참여자 3명인 이야기가 2명으로 집계된 사례 발견) 안전하게 함
   const mySubsSnap = await db.collection('submissions')
     .where('author_id','==',author_id).get();
   const prevCount = mySubsSnap.docs.filter(d => d.data().story_id === ep.story_id && d.id !== sub_id).length;
   if (prevCount === 0) {
     const storyRef = db.collection('stories').doc(ep.story_id);
-    await storyRef.update({ participant_count: firebase.firestore.FieldValue.increment(1) });
+    await db.runTransaction(async tx => {
+      const snap = await tx.get(storyRef);
+      if (!snap.exists) return;
+      tx.update(storyRef, { participant_count: (Number(snap.data().participant_count) || 0) + 1 });
+    });
     // 첫 사람 제출이 step 1이면 해당 오프닝을 used_openings에 기록 (씨앗 중복 방지 — fbCreateStory에서도 마킹하지만 fallback)
     if (Number(ep.step) === 1) {
       const storySnap = await storyRef.get();

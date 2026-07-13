@@ -1419,6 +1419,35 @@ async function _sendMail(db, to, subject, text) {
   } catch (e) { console.error('sendMail error:', e.message); }
 }
 
+// ── 이메일 발송 rate limit (2026-07-13, 보안방) ──
+// findId/sendPasswordResetEmail 둘 다 발송 빈도 제한이 전혀 없어서, 같은 이메일로
+// 무한정 반복 호출하면 스팸/메일폭탄으로 악용될 수 있었음(트래픽이 적은 지금은
+// 위험이 낮지만 방치하면 안 되는 항목). 계정 존재 여부와 무관하게 "입력된 이메일
+// 문자열" 자체를 키로 제한해서 열거 공격 내성(계정 유무 노출 안 함)은 그대로 유지.
+// 두 함수가 같은 컬렉션/키를 공유해서, 한쪽 한도를 다 쓰면 다른 함수로 우회 못 함.
+const EMAIL_RATE_LIMIT_COOLDOWN_MS = 60 * 1000;   // 같은 이메일 재발송 최소 간격
+const EMAIL_RATE_LIMIT_DAILY_MAX   = 5;           // 같은 이메일 하루 최대 발송 횟수(합산)
+
+async function _checkEmailRateLimit(db, email) {
+  if (!email) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  const ref = db.collection('email_rate_limits').doc(email);
+  return db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    const now = new Date();
+    if (!snap.exists) {
+      tx.set(ref, { last_sent_at: now.toISOString(), date: today, count: 1 });
+      return true;
+    }
+    const d = snap.data();
+    if (d.last_sent_at && now.getTime() - new Date(d.last_sent_at).getTime() < EMAIL_RATE_LIMIT_COOLDOWN_MS) return false;
+    const count = d.date === today ? (d.count || 0) : 0;
+    if (count >= EMAIL_RATE_LIMIT_DAILY_MAX) return false;
+    tx.set(ref, { last_sent_at: now.toISOString(), date: today, count: count + 1 });
+    return true;
+  });
+}
+
 exports.getEmailConfigStatus = functions
   .region('asia-northeast3')
   .https.onCall(async (data) => {
@@ -1450,7 +1479,7 @@ exports.findId = functions
       const db = admin.firestore();
       try {
         const snap = await db.collection('users').where('email', '==', email).get();
-        if (!snap.empty) {
+        if (!snap.empty && await _checkEmailRateLimit(db, email)) {
           const nicknames = snap.docs.map(d => d.data().nickname).filter(Boolean);
           await _sendMail(db, email, '[화씨.방] 아이디 찾기 결과',
             `안녕하세요, 화씨.방입니다.\n\n입력하신 이메일로 등록된 아이디는 다음과 같습니다:\n\n${nicknames.map(n => `- ${n}`).join('\n')}\n\n본인이 요청하지 않았다면 이 메일은 무시하셔도 됩니다.`);
@@ -1472,7 +1501,7 @@ exports.sendPasswordResetEmail = functions
         if (!snap.empty) {
           const doc = snap.docs[0];
           const u = doc.data();
-          if (u.email && u.email.toLowerCase() === email) {
+          if (u.email && u.email.toLowerCase() === email && await _checkEmailRateLimit(db, email)) {
             const token = _genSecretId();
             await db.collection('password_reset_tokens').doc(token).set({
               user_id: doc.id, created_at: new Date().toISOString(),
@@ -1518,6 +1547,34 @@ exports.resetPasswordWithToken = functions
       token_exp: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     }, { merge: true });
     return { ok: true };
+  });
+
+// ── password_reset_tokens 정기 정리 (2026-07-13, 보안방) ──
+// 토큰은 30분 만료/1회 소진되면 더 이상 유효하지 않지만, 문서 자체는 그대로
+// 영원히 쌓이는 구조였음. 이 환경엔 gcloud CLI가 없어 Firestore 네이티브 TTL
+// 정책(콘솔/gcloud에서 설정)을 직접 걸 수 없어서, 대신 매일 도는 스케줄 함수로
+// 만료됐거나 이미 소진된 문서를 직접 삭제 — 실질 효과는 TTL 정책과 동일함.
+exports.cleanupPasswordResetTokens = functions
+  .region('asia-northeast3')
+  .pubsub.schedule('every 24 hours')
+  .timeZone('Asia/Seoul')
+  .onRun(async () => {
+    const db = admin.firestore();
+    const nowIso = new Date().toISOString();
+    const [expiredSnap, usedSnap] = await Promise.all([
+      db.collection('password_reset_tokens').where('expires_at', '<', nowIso).get(),
+      db.collection('password_reset_tokens').where('used', '==', true).get(),
+    ]);
+    const toDelete = new Map();
+    expiredSnap.docs.forEach(d => toDelete.set(d.id, d.ref));
+    usedSnap.docs.forEach(d => toDelete.set(d.id, d.ref));
+    const refs = [...toDelete.values()];
+    for (let i = 0; i < refs.length; i += 400) {
+      const batch = db.batch();
+      refs.slice(i, i + 400).forEach(ref => batch.delete(ref));
+      await batch.commit();
+    }
+    return null;
   });
 
 // 로그인 상태에서 본인 이메일 등록/변경(비어있던 계정 위한 자발적 추가 포함) —

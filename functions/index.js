@@ -1117,6 +1117,31 @@ function _genSecretId() { return crypto.randomUUID(); }
 function _genSalt() { return crypto.randomBytes(16).toString('hex'); }
 function _hashPwLegacy(password) { return crypto.createHash('sha256').update(password).digest('hex'); }
 function _hashPwSalted(password, salt) { return crypto.scryptSync(password, salt, 64).toString('hex'); }
+
+// ── 비밀번호 작성규칙 (2026-07-13) ──
+// "개인정보의 안전성 확보조치 기준"(개인정보보호위원회 고시) 제5조⑤은 "안전한
+// 비밀번호를 설정할 수 있도록 비밀번호 작성규칙을 수립·적용"할 의무만 규정하고
+// 특정 자릿수·문자종류를 법으로 강제하지는 않음(2023.9 개정으로 구체적 수치
+// 기준은 삭제됨) — 그래도 지금 규칙(8자 이상, 종류 무관)은 사실상 규칙이 없는
+// 것과 같아 이 조항 취지를 충족한다고 보기 어려움. 업계에서 여전히 표준으로
+// 쓰이는 조합(영문 대/소문자·숫자·특수문자 중 3종류 이상+8자 이상, 또는
+// 2종류 이상+10자 이상)을 채택해 실질적인 작성규칙을 갖춤.
+function _pwCharTypeCount(pw) {
+  let n = 0;
+  if (/[A-Z]/.test(pw)) n++;
+  if (/[a-z]/.test(pw)) n++;
+  if (/[0-9]/.test(pw)) n++;
+  if (/[^A-Za-z0-9]/.test(pw)) n++;
+  return n;
+}
+function _isValidPassword(pw) {
+  if (!pw) return false;
+  const types = _pwCharTypeCount(pw);
+  if (types >= 3) return pw.length >= 8;
+  if (types >= 2) return pw.length >= 10;
+  return false;
+}
+const PW_RULE_MSG = '비밀번호는 영문 대/소문자·숫자·특수문자 중 3종류 이상 조합 시 8자 이상, 2종류 조합 시 10자 이상이어야 해요.';
 // sec: user_secrets 문서 데이터. salt 필드 유무로 신/구 스킴을 구분.
 function _verifyPw(password, sec) {
   if (!sec) return false;
@@ -1154,7 +1179,7 @@ exports.register = functions
 
     if (!nickname || !password) throw new functions.https.HttpsError('invalid-argument', '아이디와 비밀번호를 입력해주세요.');
     if (!/^[가-힣a-zA-Z0-9]{2,12}$/.test(nickname)) return { ok: false, error: '아이디는 2~12자, 한글·영문·숫자만 사용할 수 있어요.' };
-    if (password.length < 8) return { ok: false, error: '비밀번호는 8자 이상입니다.' };
+    if (!_isValidPassword(password)) return { ok: false, error: PW_RULE_MSG };
     const dn = (display_name || '').trim() || nickname;
     if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(dn)) return { ok: false, error: '닉네임은 2~12자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
     // 이메일은 선택 입력(가입 문턱을 유지) — 넣었다면 형식만 검사, 계정당 1개
@@ -1314,7 +1339,7 @@ exports.changePassword = functions
     const current_password = data.current_password || '';
     const new_password = data.new_password || '';
     if (!user_id || !token) throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
-    if (new_password.length < 8) return { ok: false, error: '비밀번호는 8자 이상이어야 합니다.' };
+    if (!_isValidPassword(new_password)) return { ok: false, error: PW_RULE_MSG };
 
     const db = admin.firestore();
     const secRef = db.collection('user_secrets').doc(user_id);
@@ -1343,7 +1368,7 @@ exports.resetPassword = functions
     const name = (data.name || '').trim();
     const new_password = data.new_password || '';
     if (!nickname || !name || !new_password) return { ok: false, error: '모든 항목을 입력해주세요.' };
-    if (new_password.length < 8) return { ok: false, error: '비밀번호는 8자 이상이어야 합니다.' };
+    if (!_isValidPassword(new_password)) return { ok: false, error: PW_RULE_MSG };
 
     const db = admin.firestore();
     const snap = await db.collection('users').where('nickname', '==', nickname).limit(1).get();
@@ -1471,7 +1496,7 @@ exports.resetPasswordWithToken = functions
     const token = (data.token || '').trim();
     const new_password = data.new_password || '';
     if (!token || !new_password) return { ok: false, error: '잘못된 요청입니다.' };
-    if (new_password.length < 8) return { ok: false, error: '비밀번호는 8자 이상이어야 합니다.' };
+    if (!_isValidPassword(new_password)) return { ok: false, error: PW_RULE_MSG };
 
     const db = admin.firestore();
     const tokRef = db.collection('password_reset_tokens').doc(token);

@@ -180,13 +180,14 @@
     position:absolute; top:0; right:12px;
     display:flex; gap:4px; pointer-events:none;
   }
-  .card-branch-sticker, .card-bookmark-sticker {
+  .card-branch-sticker, .card-bookmark-sticker, .card-new-sticker {
     background:#c8b898; color:#5a4030;
     border:1px solid rgba(154,104,64,.25); border-top:none;
     font-size:10px; font-weight:700; padding:2px 8px;
     border-radius:0 0 5px 5px; letter-spacing:.04em;
   }
   .card-bookmark-sticker { color:#a06020; border-color:rgba(200,130,58,.35); }
+  .card-new-sticker { color:#2878b0; border-color:rgba(40,120,176,.25); }
 
   @keyframes boost-glow {
     0%, 100% { border-color:rgba(200,130,58,.45); box-shadow:0 0 10px rgba(200,130,58,.1); }
@@ -1518,9 +1519,13 @@ function cardStickersHtml(s, alwaysBm) {
   // 연장본"인 경우, has_continuation은 "이 이야기가 연장됐다"인 경우라 서로 다름)
   const branchTag = (s.has_branch || s.branch_from_step) ? `<span class="card-branch-sticker">⑂ 분기</span>` : '';
   const contTag    = (s.is_continuation || s.has_continuation) ? `<span class="card-branch-sticker">〜 연장</span>` : '';
+  // 참여 중인 이야기 전용(fbGetMyStories가 story_visits 대비로 계산해서 내려줌) —
+  // 마지막으로 본 상태보다 단계/활동량이 늘었으면 표시
+  const newTag = s.is_new ? `<span class="card-new-sticker">N</span>` : '';
   const parts = [
     branchTag,
     contTag,
+    newTag,
     hasBm ? `<span class="card-bookmark-sticker">★</span>` : '',
   ].filter(Boolean).join('');
   return parts ? `<div class="card-stickers">${parts}</div>` : '';
@@ -1697,6 +1702,9 @@ function _applyStoryData(res, story_id) {
   if (currentParam !== story_id) return;
 
   const { story: s, episodes, submissions, is_bookmarked, is_liked = false, like_count = 0, my_voted_sub_ids = [], story_comments } = res;
+  // 참여 중인 이야기 NEW 배지 판단용 "마지막으로 본 상태" 기록 — 화면 렌더를
+  // 안 막는 fire-and-forget(story_visits, fbGetMyStories에서 대조)
+  if (user) api('markStoryVisited', { story_id, current_step: s.current_step, activity_count: s.participant_count }).catch(() => {});
   // 분기 이야기: fork 갈래 자동 선택 (B이야기 로드 시 B갈래가 산문뷰에 보이도록)
   if (s.branch_episode_id && s.branch_sub_id && !(s.branch_episode_id in window._branchChoice)) {
     window._branchChoice[s.branch_episode_id] = s.branch_sub_id;

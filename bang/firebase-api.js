@@ -968,10 +968,46 @@ async function fbGetMyStories(user_id) {
       if ((data.expires_at || '') > nowIso) boostSet.add(data.story_id);
     }));
     stories.forEach(s => { s.is_boosted = boostSet.has(s.story_id); });
+
+    // NEW 배지 — 참여한 이야기에서 마지막으로 본 상태(story_visits) 대비 진행
+    // 단계나 활동량이 늘었으면 표시. 기기 무관하게 정확하도록 서버(Firestore)에
+    // 저장된 스냅샷과 비교(예전엔 localStorage 스냅샷이라 기기 바뀌면 다 새로
+    // NEW로 잘못 떴었음). 방문 기록이 없으면(이론상 거의 없음 — 제출/투표하려면
+    // 이미 상세 페이지를 열어봤어야 함) 배지 안 띄움.
+    const visitIds = allStoryIds.map(id => `${user_id}_${id}`);
+    const visitBatches = [];
+    for (let i = 0; i < visitIds.length; i += 30) visitBatches.push(visitIds.slice(i, i+30));
+    const visitSnaps = await Promise.all(visitBatches.map(b =>
+      db.collection('story_visits').where(firebase.firestore.FieldPath.documentId(), 'in', b).get()
+    ));
+    const visitMap = {};
+    visitSnaps.forEach(s => s.docs.forEach(d => { visitMap[d.data().story_id] = d.data(); }));
+    stories.forEach(s => {
+      const v = visitMap[s.story_id];
+      s.is_new = !!v && (
+        Number(s.current_step) > (v.seen_step || 0) ||
+        Number(s.activity_count) > (v.seen_activity_count || 0)
+      );
+    });
   }
 
   stories.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   return { ok: true, stories };
+}
+
+// 참여 중인 이야기 NEW 배지 판단용 "마지막으로 본 상태" 기록 — story() 진입마다
+// 갱신하되, 화면 렌더를 안 막는 fire-and-forget으로 호출됨(호출부 참고)
+async function fbMarkStoryVisited(story_id, user_id, current_step, activity_count) {
+  if (!story_id || !user_id) return { ok: true };
+  try {
+    await db.collection('story_visits').doc(`${user_id}_${story_id}`).set({
+      user_id, story_id,
+      seen_step: Number(current_step) || 0,
+      seen_activity_count: Number(activity_count) || 0,
+      seen_at: fbNow(),
+    });
+  } catch (e) {}
+  return { ok: true };
 }
 
 // ─── 에피소드 ────────────────────────────────────────────
@@ -2740,6 +2776,7 @@ async function firebaseApi(action, params = {}) {
     case 'getStory':           return fbGetStory(params.story_id, uid || null);
     case 'createStory':        return fbCreateStory(params.opening, await requireUid(), params.is_ai_seed);
     case 'getMyStories':       return fbGetMyStories(await requireUid());
+    case 'markStoryVisited':   return fbMarkStoryVisited(params.story_id, uid || null, params.current_step, params.activity_count);
 
     case 'getEpisode':         return fbGetEpisode(params.episode_id);
     case 'createSubmission':   return fbCreateSubmission(params.episode_id, params.content, await requireUid(), params.derived_from, params.closing);

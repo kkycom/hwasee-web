@@ -806,6 +806,9 @@ let _doneCache = null; // { stories }
 let _doneLimit = 20;
 let _freeFetching = false;
 let _doneFetching = false;
+let _spotlightFetching = false;
+let _submitSubInFlight = false;
+let _submitSubInStoryInFlight = false;
 let _bmIds     = new Set();
 async function _loadBmIds() {
   if (!user) { _bmIds = new Set(); return; }
@@ -1295,10 +1298,7 @@ async function loadHomeTab(tab, epoch) {
       gc().innerHTML = `<div class="empty">오늘의 이야기를 준비 중이에요.</div>`;
       return;
     }
-    if (!_cachedSp) {
-      _lsc.set('spotlight', res, 20);
-      if (_staleSp) api('getSpotlight').then(r => { if (r.ok && r.initialized) _lsc.set('spotlight', r, 20); });
-    }
+    _lsc.set('spotlight', res, 20);
     gc().innerHTML = '<div id="spotlight-area"></div>';
     window._spotlightData = res;
     _srVisibleCount = SR_PAGE_SIZE;
@@ -1309,6 +1309,26 @@ async function loadHomeTab(tab, epoch) {
     wcSection.innerHTML = `<div style="text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;font-size:12px;color:var(--muted)">불러오는 중...</div>`;
     gc()?.appendChild(wcSection);
     loadWordChallenge();
+
+    // 캐시(fresh든 stale든)로 먼저 그린 경우에도 항상 백그라운드로 최신 데이터를
+    // 재검증하고 화면까지 다시 그림 — 예전엔 fresh 캐시(20초 이내)면 재검증 자체를
+    // 안 했고, stale 캐시 재검증도 결과를 캐시에만 반영하고 화면은 다시 안 그려서,
+    // 이야기를 보고 돌아와도 NEW 배지가 곧바로 안 사라지고 그 다음 방문에서야
+    // 사라지는 문제가 있었음(2026-07-14 유저 제보 — "두 번 들어가야 없어진다").
+    // 단, 마침 슬롯2 제안 입력창에 타이핑 중이면 이번 재렌더는 건너뛰어서 입력
+    // 내용이 날아가지 않게 함(다음 방문 때 반영됨).
+    if (_staleSp && !_spotlightFetching) {
+      _spotlightFetching = true;
+      api('getSpotlight').then(r => {
+        _spotlightFetching = false;
+        if (!r.ok || !r.initialized) return;
+        _lsc.set('spotlight', r, 20);
+        if (!ok()) return;
+        const srInput = document.getElementById('sr-input');
+        const typing = srInput && (document.activeElement === srInput || srInput.value.trim());
+        if (!typing) { window._spotlightData = r; renderSpotlight(); }
+      }).catch(() => { _spotlightFetching = false; });
+    }
 
   } else if (tab === 'free') {
     // 관심받는(popular)+참여중(mine) 통합 — 예전 popular 탭의 병렬 조회+상호
@@ -2902,17 +2922,24 @@ function toggleSub(sub_id) {
 }
 
 async function submitSubInStory(episode_id, closing = false) {
+  // 키보드가 떠 있는 상태에서 버튼을 누르면 첫 탭은 키보드를 닫는 데만 쓰이고
+  // click이 안 잡히는 경우가 흔해서(버튼에 ontouchend로도 이 함수를 걸어둠),
+  // 두 이벤트가 겹쳐 들어와도 중복 제출되지 않게 재진입 가드
+  if (_submitSubInStoryInFlight) return;
   const content = document.getElementById('sub-input').value.trim();
   if (!content) { toast('문장을 입력해주세요.', true); return; }
   if (content.length > 50) { toast('조금 더 짧게 써주세요.', true); return; }
-  const derived_from = window._polishFrom || '';
-  const res = await api('createSubmission', { episode_id, content, derived_from, closing });
-  if (!res.ok) { toast(res.error, true); return; }
-  window._polishFrom = null;
-  _lsc.expire('pop', 'done', 'mine');
-  _lsc.del('story_' + currentParam);
-  toast(closing ? '제출 완료! 이야기 마무리 공감이 시작됩니다.' : '제출 완료!');
-  story();
+  _submitSubInStoryInFlight = true;
+  try {
+    const derived_from = window._polishFrom || '';
+    const res = await api('createSubmission', { episode_id, content, derived_from, closing });
+    if (!res.ok) { toast(res.error, true); return; }
+    window._polishFrom = null;
+    _lsc.expire('pop', 'done', 'mine');
+    _lsc.del('story_' + currentParam);
+    toast(closing ? '제출 완료! 이야기 마무리 공감이 시작됩니다.' : '제출 완료!');
+    story();
+  } finally { _submitSubInStoryInFlight = false; }
 }
 
 function polishSub(sub_id, content, author_nickname) {
@@ -3124,7 +3151,7 @@ async function episode() {
       ${mySubId ? `<div style="color:var(--muted);font-size:14px">이미 제출하셨습니다.</div>` : `
         <input type="text" id="sub-input" maxlength="50" placeholder="한 문장으로 이어가세요" oninput="updateCount('sub-input','sub-cc')" style="margin-bottom:6px">
         <div class="char-count" id="sub-cc" style="margin-bottom:10px">0자</div>
-        <button class="btn btn-primary btn-sm" onclick="submitSub('${esc(episode_id)}')">제출</button>`}
+        <button class="btn btn-primary btn-sm" ontouchend="event.preventDefault();submitSub('${esc(episode_id)}')" onclick="submitSub('${esc(episode_id)}')">제출</button>`}
     </div>` : `
     <div class="card" style="margin-bottom:24px;text-align:center">
       <span style="color:var(--muted)">참여하려면 </span>
@@ -3189,14 +3216,21 @@ function renderSubCard(s, isClosed, mySubIds, maxVotes, step = 1) {
 }
 
 async function submitSub(episode_id) {
+  // 키보드가 떠 있는 상태에서 버튼을 누르면 첫 탭은 키보드를 닫는 데만 쓰이고
+  // click이 안 잡히는 경우가 흔해서(버튼에 ontouchend로도 이 함수를 걸어둠),
+  // 두 이벤트가 겹쳐 들어와도 중복 제출되지 않게 재진입 가드
+  if (_submitSubInFlight) return;
   const content = document.getElementById('sub-input').value.trim();
   if (!content) { toast('문장을 입력해주세요.', true); return; }
   if (content.length > 50) { toast('조금 더 짧게 써주세요.', true); return; }
-  const res = await api('createSubmission', { episode_id, content, derived_from: '' });
-  if (!res.ok) { toast(res.error, true); return; }
-  _lsc.expire('pop', 'done', 'mine');
-  toast('제출 완료!');
-  episode();
+  _submitSubInFlight = true;
+  try {
+    const res = await api('createSubmission', { episode_id, content, derived_from: '' });
+    if (!res.ok) { toast(res.error, true); return; }
+    _lsc.expire('pop', 'done', 'mine');
+    toast('제출 완료!');
+    episode();
+  } finally { _submitSubInFlight = false; }
 }
 
 async function submitVote(episode_id) {
@@ -4195,9 +4229,9 @@ function buildStoryActionHtml(openEp) {
         <div class="char-count" id="sub-cc" style="margin-bottom:10px">0자</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${effectiveClosedCount >= 1
-            ? `<button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">연재하기</button>
-               <button class="btn btn-sm" style="background:var(--accent2);color:#fff;border:none;font-weight:700" onclick="submitSubInStory('${esc(openEp.episode_id)}', true)">완결하기</button>`
-            : `<button class="btn btn-primary btn-sm" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">제출</button>`}
+            ? `<button class="btn btn-primary btn-sm" ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', false)" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">연재하기</button>
+               <button class="btn btn-sm" style="background:var(--accent2);color:#fff;border:none;font-weight:700" ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', true)" onclick="submitSubInStory('${esc(openEp.episode_id)}', true)">완결하기</button>`
+            : `<button class="btn btn-primary btn-sm" ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', false)" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">제출</button>`}
         </div>
       </div>` : ''}
     ${user && !canSubmitMore ? `

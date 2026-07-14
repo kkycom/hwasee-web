@@ -2442,6 +2442,9 @@ async function fbAdminFixParticipantCount(story_id, admin_id) {
 async function fbAdminCloseStory(story_id, admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   const stSnap = await db.collection('stories').doc(story_id).get();
+  if (stSnap.exists && stSnap.data().vote_threshold) {
+    return { ok: false, error: '스포트라이트 슬롯 이야기는 이 버튼으로 종료할 수 없습니다.' };
+  }
   await db.collection('stories').doc(story_id).update({ status: 'inactive' });
   if (stSnap.exists) {
     const d = stSnap.data();

@@ -57,7 +57,23 @@ service cloud.firestore {
     // 그 외 컬렉션: 앱이 Firebase Auth를 쓰지 않고 자체 발급 user_id(localStorage)로
     // 신원을 관리하는 구조라 request.auth 기반 소유권 검증이 불가능함.
     // (실제 소유권/역할 검증을 하려면 Firebase Auth 도입이 선행되어야 함 — 별도 논의 필요)
-    match /stories/{docId} { allow read, write: if true; }
+    // stories는 다른 컬렉션처럼 완전 개방이지만, "오늘의 이야기" 스포트라이트
+    // 슬롯(vote_threshold 필드로 식별)만은 예외 — 2026-07-14, 이 필드를 가진
+    // 스토리가 원인불명으로 반복해서 status:'inactive'/'completed'로 바뀌는
+    // 사고가 있었음(관리자 종료 버튼에서도 제외했지만, stories 전체가 인증
+    // 없이 누구나 직접 쓸 수 있는 구조라 앱 밖에서의 쓰기도 막아야 확실함).
+    // 우리 서버(Cloud Functions)는 Admin SDK를 쓰므로 이 규칙을 우회해서
+    // 정상적인 스포트라이트 완결 처리는 그대로 동작함 — 여기서 막히는 건
+    // 클라이언트/외부에서 오는 쓰기뿐.
+    match /stories/{docId} {
+      allow read: if true;
+      allow create, delete: if true;
+      allow update: if !(
+        resource.data.get('vote_threshold', 0) > 0 &&
+        resource.data.status == 'active' &&
+        (request.resource.data.status == 'inactive' || request.resource.data.status == 'completed')
+      );
+    }
     match /episodes/{docId} { allow read, write: if true; }
     match /submissions/{docId} { allow read, write: if true; }
     match /votes/{docId} { allow read, write: if true; }

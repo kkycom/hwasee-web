@@ -958,8 +958,14 @@ function saveUser(u) {
   // 않아 캐시 이점을 그대로 유지함
   const prevUid = user?.user_id || null;
   const nextUid = u?.user_id || null;
-  if (prevUid !== nextUid) _lsc.clearAll();
+  const uidChanged = prevUid !== nextUid;
+  if (uidChanged) _lsc.clearAll();
   user = u;
+  // 북마크 id 목록(_bmIds)은 페이지 첫 로드 때만 불러오고 있었음 — 새로고침
+  // 없이 로그인/로그아웃/계정전환하면 다른 유저(또는 이전 유저)의 북마크
+  // 상태가 그대로 남아있는 문제가 있었음. _lsc.clearAll()과 같은 조건으로
+  // 유저 자체가 바뀔 때만 다시 불러옴(같은 유저 필드 갱신 호출은 건너뜀).
+  if (uidChanged) _loadBmIds();
   if (u) {
     localStorage.setItem('hwasee_token', u.token);
     localStorage.setItem('hwasee_user', JSON.stringify(u));
@@ -1273,6 +1279,10 @@ async function switchHomeTab(tab) {
   currentRoute = tab;
   _skipHashChange = true;
   location.hash = tab;
+  // 다른 탭으로 벗어나면 "더보기"로 늘려뒀던 개수를 초기화 — 안 그러면 탭을
+  // 나갔다 들어올 때마다 카드가 몇 개 보일지 이전 방문 기록에 따라 들쭉날쭉해짐
+  if (tab !== 'free') _freeLimit = 20;
+  if (tab !== 'done') _doneLimit = 20;
   HOME_TABS.forEach(t => {
     const el = document.getElementById('htab-' + t.key);
     if (el) el.classList.toggle('active', t.key === tab);
@@ -1889,7 +1899,7 @@ function _applyStoryData(res, story_id) {
           <div class="comment-input-row" style="margin-top:12px">
             <input type="text" id="sc-input" maxlength="300" placeholder="감상을 남겨보세요..."
               onkeydown="if(event.key==='Enter')submitStoryComment('${esc(s.story_id)}')">
-            <button class="btn btn-primary btn-sm" onclick="submitStoryComment('${esc(s.story_id)}')">등록</button>
+            <button class="btn btn-primary btn-sm" ontouchend="event.preventDefault();submitStoryComment('${esc(s.story_id)}')" onclick="submitStoryComment('${esc(s.story_id)}')">등록</button>
           </div>` : `<div style="font-size:13px;color:var(--muted);margin-top:12px">로그인 후 감상을 남길 수 있어요.</div>`}
       </div>` : ''}`;
 
@@ -2332,7 +2342,7 @@ function renderWordChallenge() {
       </div>
       <div style="display:flex;gap:8px">
         <input id="wc-input" maxlength="${FB_WORD_CHALLENGE_MAX_CHARS}" placeholder="세 단어를 넣어 문장을 지어보세요" oninput="_wcCheckInput()" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text)">
-        <button id="wc-submit-btn" class="btn btn-primary btn-sm" onclick="_submitWordChallenge()" disabled>제출</button>
+        <button id="wc-submit-btn" class="btn btn-primary btn-sm" ontouchend="event.preventDefault();_submitWordChallenge()" onclick="_submitWordChallenge()" disabled>제출</button>
       </div>
       <div style="text-align:right;font-size:11px;color:var(--muted);margin-top:4px"><span id="wc-char-count">0</span>/${FB_WORD_CHALLENGE_MAX_CHARS}</div>
     </div>` : '';
@@ -2428,37 +2438,45 @@ async function _submitWordChallenge() {
   await loadWordChallenge();
 }
 
+let _voteWcInFlight = false;
 async function _voteWordChallenge(submission_id) {
   const data = window._wcData;
   if (!data) return;
-  // 서버 왕복(+재조회까지 이어지던 것)을 기다리는 동안 멍하니 있던 문제 —
-  // 실제 투표 로직(같은 문장 재클릭=취소, 다른 문장=전환)을 그대로 미리 반영해
-  // 즉시 화면부터 갱신하고, 실패하면 되돌림
-  const prevVoteId = data.my_vote_submission_id;
+  // 응답 오기 전에 연타해서 두 요청이 겹치면, 먼저 보낸 요청이 나중에
+  // 실패 응답으로 와서 이미 성공한 두 번째 투표까지 롤백해버릴 수 있음 —
+  // 겹치지 않게 순차적으로만 처리
+  if (_voteWcInFlight) return;
   const sub = data.submissions.find(s => s.submission_id === submission_id);
   if (!sub) return;
-  const prevSubs = data.submissions.map(s => ({ submission_id: s.submission_id, vote_count: s.vote_count }));
-  if (prevVoteId === submission_id) {
-    sub.vote_count = Math.max(0, (sub.vote_count || 0) - 1);
-    data.my_vote_submission_id = null;
-  } else {
-    if (prevVoteId) {
-      const oldSub = data.submissions.find(s => s.submission_id === prevVoteId);
-      if (oldSub) oldSub.vote_count = Math.max(0, (oldSub.vote_count || 0) - 1);
+  _voteWcInFlight = true;
+  try {
+    // 서버 왕복(+재조회까지 이어지던 것)을 기다리는 동안 멍하니 있던 문제 —
+    // 실제 투표 로직(같은 문장 재클릭=취소, 다른 문장=전환)을 그대로 미리 반영해
+    // 즉시 화면부터 갱신하고, 실패하면 되돌림
+    const prevVoteId = data.my_vote_submission_id;
+    const prevSubs = data.submissions.map(s => ({ submission_id: s.submission_id, vote_count: s.vote_count }));
+    if (prevVoteId === submission_id) {
+      sub.vote_count = Math.max(0, (sub.vote_count || 0) - 1);
+      data.my_vote_submission_id = null;
+    } else {
+      if (prevVoteId) {
+        const oldSub = data.submissions.find(s => s.submission_id === prevVoteId);
+        if (oldSub) oldSub.vote_count = Math.max(0, (oldSub.vote_count || 0) - 1);
+      }
+      sub.vote_count = (sub.vote_count || 0) + 1;
+      data.my_vote_submission_id = submission_id;
     }
-    sub.vote_count = (sub.vote_count || 0) + 1;
-    data.my_vote_submission_id = submission_id;
-  }
-  renderWordChallenge();
-  const res = await api('voteWordChallenge', { challenge_id: data.challenge.challenge_id, submission_id });
-  if (!res.ok) {
-    prevSubs.forEach(p => { const s = data.submissions.find(x => x.submission_id === p.submission_id); if (s) s.vote_count = p.vote_count; });
-    data.my_vote_submission_id = prevVoteId;
     renderWordChallenge();
-    toast(res.error, true);
-    return;
-  }
-  _lsc.set('wordChallenge', data, 15);
+    const res = await api('voteWordChallenge', { challenge_id: data.challenge.challenge_id, submission_id });
+    if (!res.ok) {
+      prevSubs.forEach(p => { const s = data.submissions.find(x => x.submission_id === p.submission_id); if (s) s.vote_count = p.vote_count; });
+      data.my_vote_submission_id = prevVoteId;
+      renderWordChallenge();
+      toast(res.error, true);
+      return;
+    }
+    _lsc.set('wordChallenge', data, 15);
+  } finally { _voteWcInFlight = false; }
 }
 
 async function openWordChallengeHistory() {
@@ -2683,7 +2701,7 @@ function renderSentenceRoundInner(slot) {
     <div style="margin:12px 0">
       <div style="display:flex;gap:8px">
         <input id="sr-input" maxlength="${FB_WORD_CHALLENGE_MAX_CHARS}" placeholder="이야기를 시작할 첫 문장을 제안해보세요" oninput="_srCheckInput()" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text)">
-        <button id="sr-submit-btn" class="btn btn-primary btn-sm" onclick="_submitSentenceProposal()">제안</button>
+        <button id="sr-submit-btn" class="btn btn-primary btn-sm" ontouchend="event.preventDefault();_submitSentenceProposal()" onclick="_submitSentenceProposal()">제안</button>
       </div>
       <div style="text-align:right;font-size:11px;color:var(--muted);margin-top:4px"><span id="sr-char-count">0</span>/${FB_WORD_CHALLENGE_MAX_CHARS}</div>
     </div>` : '';
@@ -2747,37 +2765,45 @@ async function _submitSentenceProposal() {
   await loadSpotlightSlot();
 }
 
+let _voteSrInFlight = false;
 async function _voteSentenceRound(submission_id) {
   const slot = window._spotlightData?.slots?.sentence;
   const round_id = slot?.round?.round_id;
   if (!round_id) return;
-  // 단어챌린지 투표와 동일한 이유로 낙관적 업데이트 — 서버 왕복(+전체 스포트라이트
-  // 재조회까지 이어지던 것)을 기다리지 않고 즉시 반영, 실패하면 되돌림
-  const prevVoteId = slot.my_vote_submission_id;
   const sub = slot.submissions.find(s => s.submission_id === submission_id);
   if (!sub) return;
-  const prevSubs = slot.submissions.map(s => ({ submission_id: s.submission_id, vote_count: s.vote_count }));
-  if (prevVoteId === submission_id) {
-    sub.vote_count = Math.max(0, (sub.vote_count || 0) - 1);
-    slot.my_vote_submission_id = null;
-  } else {
-    if (prevVoteId) {
-      const oldSub = slot.submissions.find(s => s.submission_id === prevVoteId);
-      if (oldSub) oldSub.vote_count = Math.max(0, (oldSub.vote_count || 0) - 1);
+  // 단어챌린지 투표와 동일한 이유로 재진입 가드 — 응답 오기 전 연타로 두 요청이
+  // 겹치면, 먼저 보낸 요청이 나중에 실패로 와서 이미 성공한 두 번째 투표까지
+  // 롤백해버릴 수 있음
+  if (_voteSrInFlight) return;
+  _voteSrInFlight = true;
+  try {
+    // 낙관적 업데이트 — 서버 왕복(+전체 스포트라이트 재조회까지 이어지던 것)을
+    // 기다리지 않고 즉시 반영, 실패하면 되돌림
+    const prevVoteId = slot.my_vote_submission_id;
+    const prevSubs = slot.submissions.map(s => ({ submission_id: s.submission_id, vote_count: s.vote_count }));
+    if (prevVoteId === submission_id) {
+      sub.vote_count = Math.max(0, (sub.vote_count || 0) - 1);
+      slot.my_vote_submission_id = null;
+    } else {
+      if (prevVoteId) {
+        const oldSub = slot.submissions.find(s => s.submission_id === prevVoteId);
+        if (oldSub) oldSub.vote_count = Math.max(0, (oldSub.vote_count || 0) - 1);
+      }
+      sub.vote_count = (sub.vote_count || 0) + 1;
+      slot.my_vote_submission_id = submission_id;
     }
-    sub.vote_count = (sub.vote_count || 0) + 1;
-    slot.my_vote_submission_id = submission_id;
-  }
-  renderSpotlight();
-  const res = await api('voteSentenceRound', { round_id, submission_id });
-  if (!res.ok) {
-    prevSubs.forEach(p => { const s = slot.submissions.find(x => x.submission_id === p.submission_id); if (s) s.vote_count = p.vote_count; });
-    slot.my_vote_submission_id = prevVoteId;
     renderSpotlight();
-    toast(res.error, true);
-    return;
-  }
-  _lsc.set('spotlight', window._spotlightData, 20);
+    const res = await api('voteSentenceRound', { round_id, submission_id });
+    if (!res.ok) {
+      prevSubs.forEach(p => { const s = slot.submissions.find(x => x.submission_id === p.submission_id); if (s) s.vote_count = p.vote_count; });
+      slot.my_vote_submission_id = prevVoteId;
+      renderSpotlight();
+      toast(res.error, true);
+      return;
+    }
+    _lsc.set('spotlight', window._spotlightData, 20);
+  } finally { _voteSrInFlight = false; }
 }
 
 function _srShowMore() {
@@ -2894,7 +2920,7 @@ function renderCommentsInner(sub_id, comments) {
           <input type="text" id="ci-${sub_id}" maxlength="100" placeholder="댓글 달기..."
             onclick="event.stopPropagation()"
             onkeydown="if(event.key==='Enter'){event.stopPropagation();addComment('${sub_id}')}">
-          <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();addComment('${sub_id}')">등록</button>
+          <button class="btn btn-primary btn-sm" ontouchend="event.preventDefault();event.stopPropagation();addComment('${sub_id}')" onclick="event.stopPropagation();addComment('${sub_id}')">등록</button>
         </div>` : ''}
     </div>`;
 }
@@ -2935,7 +2961,7 @@ async function submitSubInStory(episode_id, closing = false) {
     const res = await api('createSubmission', { episode_id, content, derived_from, closing });
     if (!res.ok) { toast(res.error, true); return; }
     window._polishFrom = null;
-    _lsc.expire('pop', 'done', 'mine');
+    _lsc.expire('free', 'done');
     _lsc.del('story_' + currentParam);
     toast(closing ? '제출 완료! 이야기 마무리 공감이 시작됩니다.' : '제출 완료!');
     story();
@@ -2954,16 +2980,30 @@ function polishSub(sub_id, content, author_nickname) {
   input.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
+function _bmBtnPaint(btn, marked) {
+  btn.setAttribute('data-bm', marked ? '1' : '');
+  btn.style.color = marked ? 'var(--accent2)' : 'var(--muted)';
+  btn.innerHTML = `<svg width="9" height="12" viewBox="0 0 9 12" fill="${marked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M1 1h7v10l-3.5-2.5L1 11z"/></svg>${marked ? '책갈피됨' : '책갈피'}`;
+}
+
 async function toggleBookmark(story_id, btn) {
   if (!user) { toast('로그인이 필요합니다.', true); return; }
+  if (btn.dataset.bmBusy === '1') return; // 응답 오기 전 연타 시 이전 상태를 또 읽어 같은 API를 중복 호출하는 것 방지
+  btn.dataset.bmBusy = '1';
   const isMarked = btn.getAttribute('data-bm') === '1';
-  const res = await api(isMarked ? 'removeBookmark' : 'addBookmark', { story_id });
-  if (!res.ok && !res.already) { toast(res.error, true); return; }
-  if (isMarked) _bmIds.delete(story_id); else _bmIds.add(story_id);
   const nowMarked = !isMarked;
-  btn.setAttribute('data-bm', nowMarked ? '1' : '');
-  btn.style.color = nowMarked ? 'var(--accent2)' : 'var(--muted)';
-  btn.innerHTML = `<svg width="9" height="12" viewBox="0 0 9 12" fill="${nowMarked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M1 1h7v10l-3.5-2.5L1 11z"/></svg>${nowMarked ? '책갈피됨' : '책갈피'}`;
+  // 낙관적 업데이트 — 응답을 기다리는 동안에도 다음 연타가 최신(전환 후) 상태를
+  // 읽도록 즉시 반영, 실패하면 되돌림(투표류와 동일한 패턴)
+  _bmBtnPaint(btn, nowMarked);
+  if (nowMarked) _bmIds.add(story_id); else _bmIds.delete(story_id);
+  const res = await api(isMarked ? 'removeBookmark' : 'addBookmark', { story_id });
+  btn.dataset.bmBusy = '';
+  if (!res.ok && !res.already) {
+    _bmBtnPaint(btn, isMarked);
+    if (isMarked) _bmIds.add(story_id); else _bmIds.delete(story_id);
+    toast(res.error, true);
+    return;
+  }
   toast(isMarked ? '책갈피 해제됐습니다.' : '책갈피에 추가됐습니다.');
 }
 
@@ -3021,7 +3061,7 @@ async function submitVoteInStory(episode_id) {
   const res = await api('vote', { episode_id, sub_ids: selectedSubs });
   if (!res.ok) { toast(res.error, true); if (btn) btn.disabled = false; return; }
   _lsc.set('ep_vote_' + episode_id, [...selectedSubs], 86400 * 30);
-  _lsc.expire('pop', 'done', 'mine');
+  _lsc.expire('free', 'done');
   _lsc.del('story_' + currentParam);
   toast(wasRevote ? '공감이 변경됐어요!' : '공감 완료!');
   if (res.max_votes >= (res.vote_threshold || FB_VOTE_THRESHOLD)) {
@@ -3227,7 +3267,7 @@ async function submitSub(episode_id) {
   try {
     const res = await api('createSubmission', { episode_id, content, derived_from: '' });
     if (!res.ok) { toast(res.error, true); return; }
-    _lsc.expire('pop', 'done', 'mine');
+    _lsc.expire('free', 'done');
     toast('제출 완료!');
     episode();
   } finally { _submitSubInFlight = false; }
@@ -3239,7 +3279,7 @@ async function submitVote(episode_id) {
   btn.disabled = true; btn.textContent = '공감 중...';
   const res = await api('vote', { episode_id, sub_ids: selectedSubs });
   if (!res.ok) { toast(res.error, true); btn.disabled = false; return; }
-  _lsc.expire('pop', 'done', 'mine');
+  _lsc.expire('free', 'done');
   toast('공감 완료!');
   if (res.max_votes >= (res.vote_threshold || FB_VOTE_THRESHOLD)) {
     btn.textContent = '다음 단계로 넘어가는 중...';
@@ -3434,7 +3474,7 @@ function auth() {
       ${tab === 'login' ? `
         <div class="form-group"><label>아이디</label><input id="a-nick" type="text" placeholder="아이디" onkeydown="if(event.key==='Enter')doLogin()"></div>
         <div class="form-group"><label>비밀번호</label><input id="a-pw" type="password" placeholder="비밀번호" onkeydown="if(event.key==='Enter')doLogin()"></div>
-        <button class="btn btn-primary" style="width:100%" onclick="doLogin()">로그인</button>
+        <button class="btn btn-primary" style="width:100%" ontouchend="event.preventDefault();doLogin()" onclick="doLogin()">로그인</button>
       ` : tab === 'register' ? `
         <div class="form-group">
           <label>아이디 (로그인용, 2~12자)</label>
@@ -3468,11 +3508,11 @@ function auth() {
           <input type="hidden" id="a-referral" value="">
         </div>
         <div class="form-group"><label>추천인 닉네임 <span style="color:var(--muted);font-weight:400">(선택, 서로 +50P)</span></label><input id="a-referrer-nick" type="text" placeholder="추천해준 사람의 닉네임" maxlength="12"></div>
-        <button class="btn btn-primary" style="width:100%" onclick="doRegister()">가입하기</button>
+        <button class="btn btn-primary" style="width:100%" ontouchend="event.preventDefault();doRegister()" onclick="doRegister()">가입하기</button>
       ` : tab === 'findid' ? `
         <p style="font-size:13px;color:var(--muted);margin-bottom:20px">가입 시 등록한 이메일로 아이디를 보내드려요. (이메일을 등록하지 않았다면 이 방법을 쓸 수 없어요)</p>
         <div class="form-group"><label>이메일</label><input id="fi-email" type="email" placeholder="가입 시 등록한 이메일" onkeydown="if(event.key==='Enter')doFindId()"></div>
-        <button class="btn btn-primary" style="width:100%" onclick="doFindId()">아이디 찾기</button>
+        <button class="btn btn-primary" style="width:100%" ontouchend="event.preventDefault();doFindId()" onclick="doFindId()">아이디 찾기</button>
       ` : `
         <p style="font-size:13px;color:var(--muted);margin-bottom:20px">가입 시 등록한 이메일로 재설정 링크를 보내드려요.</p>
         <div class="form-group"><label>아이디</label><input id="r-nick" type="text" placeholder="아이디"></div>
@@ -3490,7 +3530,7 @@ function auth() {
             <div style="font-size:11px;color:var(--muted);margin-top:4px">영문 대/소문자·숫자·특수문자 중 3종류 이상이면 8자 이상, 2종류면 10자 이상</div>
           </div>
           <div class="form-group"><label>새 비밀번호 확인</label><input id="a-pw2" type="password" placeholder="비밀번호 재입력" onkeydown="if(event.key==='Enter')doRecover()"></div>
-          <button class="btn btn-primary" style="width:100%" onclick="doRecover()">비밀번호 재설정</button>
+          <button class="btn btn-primary" style="width:100%" ontouchend="event.preventDefault();doRecover()" onclick="doRecover()">비밀번호 재설정</button>
         </div>
       `}
     </div>`;
@@ -3597,6 +3637,15 @@ async function checkDnAvail() {
   status.textContent = '';
   clearTimeout(_dnCheckTimer);
   if (!val || val.length < 2) return;
+  // 서버(functions/index.js: /^[가-힣a-zA-Z0-9 ._-]{2,12}$/)와 동일한 형식
+  // 검사 — 예전엔 여기서 중복 여부만 보고 "✓ 사용가능"을 띄운 뒤, 정작 가입
+  // 제출 시 서버가 형식 위반으로 튕겨내는 모순된 경험이 있었음(아이디 필드는
+  // 이미 이 검사를 하고 있어서 문제 없었음).
+  if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(val)) {
+    status.textContent = '✗ 2~12자, 한글·영문·숫자·공백·._- 만 가능';
+    status.style.color = 'var(--accent2)';
+    return;
+  }
   _dnCheckTimer = setTimeout(async () => {
     const res = await api('checkDisplayName', { display_name: val });
     if (!res.ok) return;
@@ -3617,6 +3666,9 @@ async function doRegister() {
   }
   if (!displayName) {
     toast('닉네임을 입력해주세요.', true); return;
+  }
+  if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(displayName)) {
+    toast('닉네임은 2~12자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.', true); return;
   }
   if (!nameVal) {
     toast('이름을 입력해주세요. (비밀번호 찾기에 사용됩니다)', true); return;
@@ -3675,7 +3727,7 @@ function resetPasswordPage() {
         <div style="font-size:11px;color:var(--muted);margin-top:4px">영문 대/소문자·숫자·특수문자 중 3종류 이상이면 8자 이상, 2종류면 10자 이상</div>
       </div>
       <div class="form-group"><label>새 비밀번호 확인</label><input id="rt-pw2" type="password" placeholder="비밀번호 재입력" onkeydown="if(event.key==='Enter')doResetWithToken()"></div>
-      <button class="btn btn-primary" style="width:100%" onclick="doResetWithToken()">비밀번호 재설정</button>
+      <button class="btn btn-primary" style="width:100%" ontouchend="event.preventDefault();doResetWithToken()" onclick="doResetWithToken()">비밀번호 재설정</button>
     </div>`;
 }
 
@@ -3882,7 +3934,7 @@ async function profile() {
             <label>버그 내용</label>
             <textarea id="bug-content" rows="5" placeholder="어떤 버그인지 자세히 알려주세요 (5자 이상)" style="width:100%;resize:vertical;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:14px;color:var(--text);font-family:inherit;line-height:1.6"></textarea>
           </div>
-          <button id="bug-submit-btn" class="btn btn-primary" style="width:100%" onclick="doSubmitBugReport()">제보하기 (+10p)</button>
+          <button id="bug-submit-btn" class="btn btn-primary" style="width:100%" ontouchend="event.preventDefault();doSubmitBugReport()" onclick="doSubmitBugReport()">제보하기 (+10p)</button>
         </div>
       </div>`;
 
@@ -5673,6 +5725,12 @@ async function checkDnAvailProfile() {
   status.textContent = '';
   clearTimeout(_dnProfileTimer);
   if (!val || val.length < 2) return;
+  // checkDnAvail()과 동일한 이유로 서버 형식 규칙과 맞춰둠
+  if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(val)) {
+    status.textContent = '✗ 2~12자, 한글·영문·숫자·공백·._- 만 가능';
+    status.style.color = 'var(--accent2)';
+    return;
+  }
   _dnProfileTimer = setTimeout(async () => {
     const res = await api('checkDisplayName', { display_name: val });
     if (!res.ok) return;

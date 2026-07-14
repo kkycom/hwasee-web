@@ -3461,7 +3461,15 @@ function auth() {
   // 다르게, 유저가 곧 로그인/가입 버튼을 누를 거라는 강한 신호가 있는 시점에만
   // 트리거함 — 아이디/비번 입력하는 동안 백그라운드에서 끝나 있으면 실제
   // 제출 시점엔 fbGetAuthUid()가 캐시된 결과를 즉시 반환함
-  if (tab === 'login' || tab === 'register') fbGetAuthUid().catch(() => {});
+  if (tab === 'login' || tab === 'register') {
+    fbGetAuthUid().catch(() => {}).then(() => {
+      // login/register 자체가 user_secrets 보호 때문에 Cloud Function(콜드스타트
+      // 가능)으로 처리됨 — 익명 인증 워밍업과 별개로 해당 함수 인스턴스도 여기서
+      // 미리 깨워둠. 빈 자격증명으로 호출하면 서버가 DB 조회 전에 즉시
+      // invalid-argument로 거부하므로 부작용은 없고, 인스턴스만 웜 상태가 됨.
+      functionsRegion.httpsCallable(tab)({ nickname: '', password: '' }).catch(() => {});
+    });
+  }
   document.getElementById('app').innerHTML = `
     <div style="max-width:400px;margin:40px auto">
       <h2 style="margin-bottom:24px;text-align:center;font-family:var(--serif)">화씨.방에 오신 것을 환영해요</h2>

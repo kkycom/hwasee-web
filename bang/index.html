@@ -2449,11 +2449,13 @@ function renderWordChallenge() {
       ${winners.map((w, i) => `
         <div style="font-size:18px;line-height:1.7;font-family:var(--serif);font-weight:600;text-wrap:balance;${i > 0 ? 'margin-top:14px' : ''}">${boldChallengeWords(w.text, challenge.words)}</div>
         <div style="font-size:13px;color:var(--muted);margin-top:6px">👑 ${esc(w.nickname)} · +${w.points}p</div>`).join('')}
+      <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-top:14px">⏰ 다음 챌린지까지 <span id="wc-countdown"></span></div>
     </div>` : `
     <div style="position:relative;text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;margin-bottom:20px">
       ${WC_HISTORY_BTN_HTML}
       <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:8px">🏆 오늘의 장원</div>
       <div style="font-size:13px;color:var(--muted)">참여자가 없어 우승자가 없었어요</div>
+      <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-top:10px">⏰ 다음 챌린지까지 <span id="wc-countdown"></span></div>
     </div>`);
 
   const hasVoted = !!my_vote_submission_id;
@@ -2519,6 +2521,17 @@ function renderWordChallenge() {
     ${showMoreHtml}`;
 
   if (isActive) _startWordChallengeCountdown(challenge.end_at);
+  else _startWordChallengeCountdown(_nextKstMidnightIso());
+}
+
+// 다음 단어챌린지 시작 시각(매일 00:00 KST 고정) — 서버 스케줄(startWordChallenge,
+// functions/index.js)과 동일한 기준. 뷰어의 기기 타임존과 무관하게 항상 KST
+// 자정을 기준으로 계산(이 앱 유저는 사실상 전부 한국 시간대라 서버 스케줄과
+// 어긋날 일이 없게 하기 위함).
+function _nextKstMidnightIso() {
+  const kstNow = new Date(Date.now() + 9 * 3600 * 1000);
+  const kstMidnightUtcMs = Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate() + 1, 0, 0, 0);
+  return new Date(kstMidnightUtcMs - 9 * 3600 * 1000).toISOString();
 }
 
 function _startWordChallengeCountdown(end_at) {

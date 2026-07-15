@@ -333,7 +333,7 @@
   .comment-body { flex:1; }
   .comment-author { color: var(--muted); font-size: 11px; margin-right: 6px; }
   .comment-time   { color: var(--muted); font-size: 11px; margin-left: 8px; }
-  .comment-del-btn { background:none; border:none; color:var(--muted); font-size:11px; cursor:pointer; padding:0 2px; flex-shrink:0; }
+  .comment-del-btn { background:none; border:none; color:var(--muted); font-size:11px; cursor:pointer; padding:8px; margin:-8px; flex-shrink:0; }
   .comment-del-btn:hover { color:#e57373; }
   .comment-input-row { display: flex; gap: 8px; margin-top: 10px; }
   .comment-input-row input { flex: 1; font-size: 13px; padding: 7px 12px; }
@@ -884,7 +884,9 @@ function renderFreeCards() {
         `<button class="btn btn-primary btn-sm" style="flex:none" onclick="nav('create')">+ 새 이야기</button>`)
     + ((mineSorted.length || othersSorted.length)
       ? cardsHtml + loadMoreHtml
-      : `<div class="empty" style="padding-top:40px">아직 이야기가 없어요.<br>오늘의 이야기에서 참여해 보세요!</div>`);
+      : `<div class="empty" style="padding-top:40px">아직 이야기가 없어요.<br>오늘의 이야기에서 참여해 보세요!<br>
+          <button class="btn btn-primary btn-sm" style="margin-top:16px" onclick="switchHomeTab('spotlight')">오늘의 이야기로 가기</button>
+        </div>`);
 }
 
 function loadMoreFree() {
@@ -1701,7 +1703,7 @@ function create() {
         <textarea id="opening" rows="3" placeholder="예: 그날 밤, 버스는 오지 않았다." oninput="updateCount('opening','oc')"></textarea>
         <div class="char-count" id="oc">0자</div>
       </div>
-      <button class="btn btn-primary" style="width:100%" onclick="submitStory()">이야기 시작</button>
+      <button class="btn btn-primary" style="width:100%" ontouchend="event.preventDefault();submitStory()" onclick="submitStory()">이야기 시작</button>
     </div>`;
 }
 
@@ -1841,7 +1843,7 @@ function _applyStoryData(res, story_id) {
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>으뜸 글 뽑기
         </button>
         <button id="like-btn" class="btn ${is_liked ? 'btn-primary' : 'btn-ghost'} btn-sm" style="${_actBtnStyle(1.3)}"
-          onclick="doToggleStoryLike('${esc(s.story_id)}')">
+          onclick="doToggleStoryLike('${esc(s.story_id)}', this)">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>이야기 추천해요${like_count > 0 ? ` (${like_count})` : ''}
         </button>
         ${s.status === 'completed' && !continuation
@@ -1899,7 +1901,7 @@ function _applyStoryData(res, story_id) {
           <div class="comment-input-row" style="margin-top:12px">
             <input type="text" id="sc-input" maxlength="300" placeholder="감상을 남겨보세요..."
               onkeydown="if(event.key==='Enter')submitStoryComment('${esc(s.story_id)}')">
-            <button class="btn btn-primary btn-sm" ontouchend="event.preventDefault();submitStoryComment('${esc(s.story_id)}')" onclick="submitStoryComment('${esc(s.story_id)}')">등록</button>
+            <button class="btn btn-primary btn-sm" ontouchend="event.preventDefault();submitStoryComment('${esc(s.story_id)}', this)" onclick="submitStoryComment('${esc(s.story_id)}', this)">등록</button>
           </div>` : `<div style="font-size:13px;color:var(--muted);margin-top:12px">로그인 후 감상을 남길 수 있어요.</div>`}
       </div>` : ''}`;
 
@@ -2033,12 +2035,15 @@ function renderStoryCommentList(comments, story_id) {
     </div>`;
 }
 
-async function submitStoryComment(story_id) {
+async function submitStoryComment(story_id, btn) {
   const input = document.getElementById('sc-input');
   if (!input) return;
   const content = input.value.trim();
   if (!content) return;
+  if (btn?.disabled) return; // 응답 오기 전 연타로 중복 등록되는 것 방지
+  if (btn) btn.disabled = true;
   const res = await api('addStoryComment', { story_id, content });
+  if (btn) btn.disabled = false;
   if (!res.ok) { toast(res.error, true); return; }
   input.value = '';
   loadStoryComments(story_id);
@@ -2951,7 +2956,7 @@ function renderCommentsInner(sub_id, comments) {
           <input type="text" id="ci-${sub_id}" maxlength="100" placeholder="댓글 달기..."
             onclick="event.stopPropagation()"
             onkeydown="if(event.key==='Enter'){event.stopPropagation();addComment('${sub_id}')}">
-          <button class="btn btn-primary btn-sm" ontouchend="event.preventDefault();event.stopPropagation();addComment('${sub_id}')" onclick="event.stopPropagation();addComment('${sub_id}')">등록</button>
+          <button class="btn btn-primary btn-sm" ontouchend="event.preventDefault();event.stopPropagation();addComment('${sub_id}', this)" onclick="event.stopPropagation();addComment('${sub_id}', this)">등록</button>
         </div>` : ''}
     </div>`;
 }
@@ -3103,26 +3108,40 @@ async function submitVoteInStory(episode_id) {
   story(true); // 갈래 선택 유지
 }
 
-async function deleteComment(comment_id, sub_id) {
-  if (!confirm('댓글을 삭제할까요?')) return;
-  const res = await api('deleteComment', { comment_id });
-  if (!res.ok) { toast(res.error, true); return; }
-  delete commentCache[sub_id];
-  const el = document.getElementById('comments-' + sub_id);
-  if (el && el.style.display !== 'none') {
-    const r2 = await api('getComments', { sub_id });
-    commentCache[sub_id] = r2.ok ? r2.comments : [];
-    el.innerHTML = renderCommentsInner(sub_id, commentCache[sub_id]);
-  }
+// 브라우저 기본 confirm()은 PWA 안에서 앱 자체 UI와 안 어울려서(유일하게 이
+// 삭제 액션만 튀어보임), 다른 삭제 액션들과 동일한 showConfirmModal 패턴으로 교체
+function deleteComment(comment_id, sub_id) {
+  const mid = 'delcomment-modal';
+  const existing = document.getElementById(mid);
+  if (existing) { existing.remove(); return; }
+  const icon = `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent2)"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
+  _modalCallbacks[mid] = async (m) => {
+    const btn = document.getElementById(`${m}-confirm-btn`);
+    if (btn) { btn.disabled = true; btn.textContent = '삭제 중...'; }
+    const res = await api('deleteComment', { comment_id });
+    document.getElementById(m)?.remove(); delete _modalCallbacks[m];
+    if (!res.ok) { toast(res.error, true); return; }
+    delete commentCache[sub_id];
+    const el = document.getElementById('comments-' + sub_id);
+    if (el && el.style.display !== 'none') {
+      const r2 = await api('getComments', { sub_id });
+      commentCache[sub_id] = r2.ok ? r2.comments : [];
+      el.innerHTML = renderCommentsInner(sub_id, commentCache[sub_id]);
+    }
+  };
+  showConfirmModal({ id: mid, icon, title: '댓글 삭제', desc: '이 댓글을 삭제할까요?', confirmLabel: '삭제하기' });
 }
 
-async function addComment(sub_id) {
+async function addComment(sub_id, btn) {
   if (!user) { toast('로그인이 필요합니다.', true); return; }
   const input = document.getElementById('ci-' + sub_id);
   if (!input) return;
   const content = input.value.trim();
   if (!content) { toast('댓글 내용을 입력해주세요.', true); return; }
+  if (btn?.disabled) return; // 응답 오기 전 연타로 중복 등록되는 것 방지
+  if (btn) btn.disabled = true;
   const res = await api('addComment', { sub_id, content });
+  if (btn) btn.disabled = false;
   if (!res.ok) { toast(res.error, true); return; }
   input.value = '';
   toast('댓글 등록!');
@@ -3800,6 +3819,7 @@ async function profile() {
     saveUser(user); renderNav();
   }
   const bookmarks = bmRes.ok ? bmRes.stories : [];
+  _bookmarksFull = bookmarks; // 자체 검색(filterBookmarks)용 전체 목록 보관
   const tab       = currentParam === 'settings' ? 'settings' : currentParam === 'bugreport' ? 'bugreport' : 'points';
   const nextBadge = {
     seed:'금간 씨앗(20p)', seed1:'발아하는 씨앗(60p)', seed2:'여린 새싹(150p)',
@@ -3877,15 +3897,9 @@ async function profile() {
           <span class="bm-arrow" style="font-size:11px;color:var(--muted);transition:transform .2s;transform:rotate(180deg)">▼</span>
         </button>
         <div style="display:block;padding:12px 16px">
-          ${bookmarks.map(s => `
-            <div class="story-card" onclick="nav('story','${esc(s.story_id)}')" style="margin-bottom:8px">
-              ${cardStickersHtml(s, true)}
-              <div class="story-card-title">${esc(s.opening)}</div>
-              <div class="story-card-footer">
-                <span class="step-pill">${s.status==='active' ? Number(s.current_step) + 2 : Number(s.current_step) + 1}단계</span>
-                <span class="story-status ${s.status==='active'?'status-active':'status-completed'}">${s.status==='active'?'진행 중':'완결'}</span>
-              </div>
-            </div>`).join('')}
+          ${bookmarks.length > 5 ? `<input id="bm-search" type="text" placeholder="🔍 제목으로 찾기" oninput="filterBookmarks()"
+              style="width:100%;padding:8px 12px;margin-bottom:10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);box-sizing:border-box">` : ''}
+          <div id="bookmarks-list">${bookmarks.map(bookmarkItemHtml).join('')}</div>
         </div>
       </div>` : ''}
     <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
@@ -3934,7 +3948,7 @@ async function profile() {
           <span id="dn-profile-status" style="font-size:11px;align-self:center;min-width:48px;text-align:right"></span>
         </div>
       </div>
-      <button class="btn btn-primary" style="width:100%" onclick="doChangeDisplayName()">닉네임 변경 (20p)</button>
+      <button class="btn btn-primary" style="width:100%" ontouchend="event.preventDefault();doChangeDisplayName()" onclick="doChangeDisplayName()">닉네임 변경 (20p)</button>
     </div>
     <h2 style="margin-bottom:12px">이메일 <span style="font-size:12px;color:var(--muted);font-weight:400">— 아이디·비밀번호를 잊었을 때 필요해요</span></h2>
     <div class="card" style="margin-bottom:24px">
@@ -3942,7 +3956,7 @@ async function profile() {
         <label>이메일</label>
         <input id="email-new" type="email" placeholder="you@example.com" maxlength="100" value="${esc(u.email || '')}">
       </div>
-      <button class="btn btn-primary" style="width:100%" onclick="doSetMyEmail()">${u.email ? '이메일 변경' : '이메일 등록'}</button>
+      <button class="btn btn-primary" style="width:100%" ontouchend="event.preventDefault();doSetMyEmail()" onclick="doSetMyEmail()">${u.email ? '이메일 변경' : '이메일 등록'}</button>
     </div>
     <h2 style="margin-bottom:12px">비밀번호 변경</h2>
     <div class="card" style="margin-bottom:24px">
@@ -3953,7 +3967,7 @@ async function profile() {
         <div style="font-size:11px;color:var(--muted);margin-top:4px">영문 대/소문자·숫자·특수문자 중 3종류 이상이면 8자 이상, 2종류면 10자 이상</div>
       </div>
       <div class="form-group"><label>새 비밀번호 확인</label><input id="pw-new2" type="password" placeholder="새 비밀번호 재입력"></div>
-      <button class="btn btn-primary" style="width:100%" onclick="doChangePw()">변경하기</button>
+      <button class="btn btn-primary" style="width:100%" ontouchend="event.preventDefault();doChangePw()" onclick="doChangePw()">변경하기</button>
     </div>
     <div style="padding-top:16px;border-top:1px solid var(--border);text-align:center">
       <button class="btn btn-ghost btn-sm" onclick="doDeleteAccount()" style="color:var(--accent2);font-size:12px">회원탈퇴</button>
@@ -4115,12 +4129,42 @@ function writingItemHtml(a) {
       </div>
     </div>`;
 }
+// 책갈피한 이야기 자체 검색(외부 검색엔진 없이 이미 전체 목록을 받아온 상태에서
+// 문자열 매칭만) — writingsListHtml/filterWritings와 동일한 취지
+let _bookmarksFull = [];
+function bookmarkItemHtml(s) {
+  return `
+    <div class="story-card" onclick="nav('story','${esc(s.story_id)}')" style="margin-bottom:8px">
+      ${cardStickersHtml(s, true)}
+      <div class="story-card-title">${esc(s.opening)}</div>
+      <div class="story-card-footer">
+        <span class="step-pill">${s.status==='active' ? Number(s.current_step) + 2 : Number(s.current_step) + 1}단계</span>
+        <span class="story-status ${s.status==='active'?'status-active':'status-completed'}">${s.status==='active'?'진행 중':'완결'}</span>
+      </div>
+    </div>`;
+}
+function filterBookmarks() {
+  const q = (document.getElementById('bm-search')?.value || '').trim().toLowerCase();
+  const list = document.getElementById('bookmarks-list');
+  if (!list) return;
+  const source = q ? _bookmarksFull.filter(s => (s.opening || '').toLowerCase().includes(q)) : _bookmarksFull;
+  list.innerHTML = source.length ? source.map(bookmarkItemHtml).join('') : `<div class="empty" style="padding:16px 0">검색 결과가 없어요.</div>`;
+}
+
 function writingsListHtml(writings, idPrefix) {
   if (!writings || !writings.length) return '<div class="empty" style="padding:20px 0">아직 쓴 글이 없어요.</div>';
   _writingsFull = writings;
   _writingsLimit = 50;
   const remaining = writings.length - _writingsLimit;
-  return `<div id="writings-list-${idPrefix}">${writings.slice(0, _writingsLimit).map(writingItemHtml).join('')}</div>`
+  // 자체(외부 검색엔진 없는) 검색 — 이미 전체를 한 번에 받아온 목록이라 서버
+  // 조회 없이 브라우저에서 문자열 매칭만 하면 됨. 목록이 짧으면 검색 자체가
+  // 안 쓰이니 5개 넘을 때만 노출.
+  const searchHtml = writings.length > 5
+    ? `<input id="writings-search-${idPrefix}" type="text" placeholder="🔍 내용으로 찾기" oninput="filterWritings('${idPrefix}')"
+        style="width:100%;padding:8px 12px;margin-bottom:10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);box-sizing:border-box">`
+    : '';
+  return searchHtml
+    + `<div id="writings-list-${idPrefix}">${writings.slice(0, _writingsLimit).map(writingItemHtml).join('')}</div>`
     + (remaining > 0 ? `<button id="writings-load-more-${idPrefix}" class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px;color:var(--muted)" onclick="loadMoreWritings('${idPrefix}')">더 보기 (${remaining}개)</button>` : '');
 }
 function loadMoreWritings(idPrefix) {
@@ -4133,6 +4177,26 @@ function loadMoreWritings(idPrefix) {
   const remaining = _writingsFull.length - _writingsLimit;
   if (remaining > 0) btn.textContent = `더 보기 (${remaining}개)`;
   else btn.remove();
+}
+function filterWritings(idPrefix) {
+  const q = (document.getElementById(`writings-search-${idPrefix}`)?.value || '').trim().toLowerCase();
+  const list = document.getElementById(`writings-list-${idPrefix}`);
+  const loadMoreBtn = document.getElementById(`writings-load-more-${idPrefix}`);
+  if (!list) return;
+  if (!q) {
+    // 검색어 지우면 원래 더보기 페이징 상태로 복귀
+    _writingsLimit = 50;
+    list.innerHTML = _writingsFull.slice(0, _writingsLimit).map(writingItemHtml).join('');
+    const remaining = _writingsFull.length - _writingsLimit;
+    if (loadMoreBtn) {
+      loadMoreBtn.style.display = remaining > 0 ? '' : 'none';
+      if (remaining > 0) loadMoreBtn.textContent = `더 보기 (${remaining}개)`;
+    }
+    return;
+  }
+  const matched = _writingsFull.filter(a => (a.content || '').toLowerCase().includes(q) || (a.story_opening || '').toLowerCase().includes(q));
+  list.innerHTML = matched.length ? matched.map(writingItemHtml).join('') : `<div class="empty" style="padding:16px 0">검색 결과가 없어요.</div>`;
+  if (loadMoreBtn) loadMoreBtn.style.display = 'none'; // 검색 중엔 매칭 결과를 한 번에 다 보여줌(페이징 불필요)
 }
 
 // ─── 알림 ──────────────────────────────────────────────
@@ -5724,9 +5788,13 @@ function toggleAvatarShop() {
   if (opening) { refreshAvatarShop(); card.scrollIntoView({ behavior:'smooth', block:'nearest' }); }
 }
 
+let _settingAvatar = false; // 아바타 상점 그리드/기본으로 되돌리기 등 여러 진입점을 공유하는 in-flight 가드
 async function doSetAvatar(emoji_id) {
+  if (_settingAvatar) return;
+  _settingAvatar = true;
   const val = emoji_id || null;
   const res = await api('setAvatar', { emoji_id: val });
+  _settingAvatar = false;
   if (!res.ok) { toast(res.error, true); return; }
   if (user) { user.avatar = res.avatar; saveUser(user); renderNav(); }
   if (_profileUser) { _profileUser.avatar = res.avatar; refreshAvatarShop(); }
@@ -5933,11 +6001,15 @@ async function _doDeleteAccount(mid) {
   toast('탈퇴가 완료됐습니다.');
 }
 
-async function doToggleStoryLike(story_id) {
+async function doToggleStoryLike(story_id, btn) {
   if (!user) { toast('로그인이 필요합니다.', true); return; }
+  btn = btn || document.getElementById('like-btn');
+  // 응답 오기 전 연타 시 중복 호출 방지 (toggleBookmark와 동일 패턴)
+  if (btn?.dataset.likeBusy === '1') return;
+  if (btn) btn.dataset.likeBusy = '1';
   const res = await api('toggleStoryLike', { story_id });
+  if (btn) btn.dataset.likeBusy = '';
   if (!res.ok) { toast(res.error, true); return; }
-  const btn = document.getElementById('like-btn');
   if (btn) {
     btn.className = `btn ${res.liked ? 'btn-primary' : 'btn-ghost'} btn-sm`;
     btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>이야기 추천해요${res.like_count > 0 ? ` (${res.like_count})` : ''}`;

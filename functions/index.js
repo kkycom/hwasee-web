@@ -769,9 +769,15 @@ async function _serverCloseEpisode(db, episode_id, ep) {
 
   // 스포트라이트 슬롯 이야기(vote_threshold 있음)는 매 단계 마감마다 장르 확률을
   // 갱신 — 완결 전에도 카드/상세페이지에서 등락을 보여줘야 하므로 여기서 호출.
-  // 부가 기능이라 완결 흐름을 막지 않도록 await 없이 fire-and-forget.
+  // ⚠️ 반드시 await할 것: 이 프로젝트 Cloud Functions는 firebase-functions v1(1st Gen)
+  // 이라 HTTPS 콜러블(closeEpisode)이 응답을 보낸 직후 인스턴스 CPU가 스로틀링될 수
+  // 있음 — await 없이 던지면(원래 "부가 기능이라 완결 흐름을 막지 않도록" 의도로
+  // fire-and-forget 했었음) Claude API 호출처럼 시간이 걸리는 작업이 응답 이후 죽어서
+  // 저장이 안 될 수 있음(속도개선방 지적, 2026-07-15). 클라이언트가 애초에 closeEpisode
+  // 결과를 기다리지 않고 호출하므로(firebase-api.js closeEpisode 호출부 .catch(()=>{})
+  // fire-and-forget) 여기서 await해도 체감 지연은 없음.
   if (st.vote_threshold) {
-    _classifyStoryGenre(db, ep.story_id, nextStep).catch(e => console.error('genre classify error:', e.message));
+    await _classifyStoryGenre(db, ep.story_id, nextStep).catch(e => console.error('genre classify error:', e.message));
   }
 
   if (anyClose) {

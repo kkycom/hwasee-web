@@ -804,22 +804,19 @@ async function fbGetStory(story_id, user_id) {
     .map(d => ({ comment_id: d.id, ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }))
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
-  // 추가 제출권 구매 후에도 "이미 제출하셨습니다"에 막혀 두 번째 문장을 못 넣던
-  // 문제 — 현재 열린 에피소드에 내 추가 제출권이 있는지 클라이언트가 알아야 함
-  let has_extra_submit = false;
-  if (user_id && openEp) {
-    const exSnap = await db.collection('extra_submits')
-      .where('episode_id', '==', openEp.episode_id).where('user_id', '==', user_id).limit(1).get();
-    has_extra_submit = !exSnap.empty;
-  }
-
-  // 장르 확률 등락 차트용 단계별 이력 — 스포트라이트 슬롯 출신(vote_threshold 있음)
-  // 이야기만 조회. 완결 여부와 무관하게 참여 중에도 보여줘야 해서 status 조건 없음.
-  let genre_history = null;
-  if (story.vote_threshold) {
-    const genreSnap = await db.collection('story_genre_probs').doc(story_id).get();
-    if (genreSnap.exists) genre_history = genreSnap.data().history || [];
-  }
+  // 추가 제출권 확인(현재 열린 에피소드에 내 추가 제출권이 있는지)과 장르 확률
+  // 등락 차트용 이력(스포트라이트 슬롯 출신, vote_threshold 있음) 조회는 서로
+  // 독립적 — 순차로 따로 기다리지 않고 병렬 처리
+  const [exSnap, genreSnap] = await Promise.all([
+    (user_id && openEp)
+      ? db.collection('extra_submits').where('episode_id', '==', openEp.episode_id).where('user_id', '==', user_id).limit(1).get()
+      : Promise.resolve(null),
+    story.vote_threshold
+      ? db.collection('story_genre_probs').doc(story_id).get()
+      : Promise.resolve(null),
+  ]);
+  const has_extra_submit = exSnap ? !exSnap.empty : false;
+  const genre_history = (genreSnap && genreSnap.exists) ? (genreSnap.data().history || []) : null;
 
   return { ok: true, story: storyWithCreator, episodes, submissions, is_bookmarked, is_liked, like_count, my_voted_sub_ids, branches, parent_chain, mvp_map, my_mvp_episode_id, story_comments, has_extra_submit, genre_history };
 }
@@ -3053,10 +3050,25 @@ async function fbGetSpotlight(viewer_id) {
       const story = storySnap.data();
 
       const mySubsForStory = mySubsAll.filter(sub => sub.story_id === s.story_id);
+      const epIds = mySubsForStory.length ? [...new Set(mySubsForStory.map(sub => sub.episode_id))] : [];
+
+      // 서로 독립적인 조회 4가지(내 제출 단계 조회용 에피소드들/열린 에피소드
+      // 목록/NEW 배지용 방문기록/장르 확률)를 순차로 하나씩 기다리지 않고 병렬 처리
+      const [epSnaps, openEpsSnap, visitSnap, genreSnap] = await Promise.all([
+        epIds.length ? Promise.all(epIds.map(id => db.collection('episodes').doc(id).get())) : Promise.resolve([]),
+        // 다른 카드(popularCardHtml 등)와 동일하게 stepPillsHtml로 "N단계 · 제출 N개"를
+        // 보여주기 위한 open_eps 규격 — fbGetStories의 open_eps 계산과 동일한 방식
+        db.collection('episodes').where('story_id', '==', s.story_id).where('status', '==', 'open').get(),
+        // NEW 배지 — fbGetMyStories와 동일한 story_visits 대조. 슬롯당 스토리가
+        // 하나뿐이라 단건 조회로 충분.
+        viewer_id ? db.collection('story_visits').doc(`${viewer_id}_${s.story_id}`).get() : Promise.resolve(null),
+        // 장르 확률 상위 태그 — _classifyStoryGenre(functions/index.js)가 에피소드
+        // 마감마다 채워둔 것. 아직 첫 마감 전이면 문서가 없어 null(카드에서 패널 자체를 숨김).
+        db.collection('story_genre_probs').doc(s.story_id).get(),
+      ]);
+
       let my_submissions = [];
       if (mySubsForStory.length) {
-        const epIds = [...new Set(mySubsForStory.map(sub => sub.episode_id))];
-        const epSnaps = await Promise.all(epIds.map(id => db.collection('episodes').doc(id).get()));
         const epMap = {};
         epSnaps.forEach(d => { if (d.exists) epMap[d.id] = d.data(); });
         my_submissions = mySubsForStory
@@ -3070,10 +3082,6 @@ async function fbGetSpotlight(viewer_id) {
           .sort((a, b) => a.step - b.step);
       }
 
-      // 다른 카드(popularCardHtml 등)와 동일하게 stepPillsHtml로 "N단계 · 제출 N개"를
-      // 보여주기 위한 open_eps 규격 — fbGetStories의 open_eps 계산과 동일한 방식
-      const openEpsSnap = await db.collection('episodes')
-        .where('story_id', '==', s.story_id).where('status', '==', 'open').get();
       const openEpIds = openEpsSnap.docs.map(d => d.id);
       const subCountMap = {};
       if (openEpIds.length) {
@@ -3090,21 +3098,13 @@ async function fbGetSpotlight(viewer_id) {
         .map(d => ({ step: Number(d.data().step), sub_count: subCountMap[d.id] || 0 }))
         .sort((a, b) => a.step - b.step);
 
-      // NEW 배지 — fbGetMyStories와 동일한 story_visits 대조(마지막으로 본 상태보다
-      // 단계/활동량이 늘었으면 표시). 슬롯당 스토리가 하나뿐이라 단건 조회로 충분.
       let is_new = false;
-      if (viewer_id) {
-        const visitSnap = await db.collection('story_visits').doc(`${viewer_id}_${s.story_id}`).get();
-        if (visitSnap.exists) {
-          const v = visitSnap.data();
-          is_new = Number(story.current_step || 0) > (v.seen_step || 0)
-            || Number(story.participant_count || 0) > (v.seen_activity_count || 0);
-        }
+      if (viewer_id && visitSnap && visitSnap.exists) {
+        const v = visitSnap.data();
+        is_new = Number(story.current_step || 0) > (v.seen_step || 0)
+          || Number(story.participant_count || 0) > (v.seen_activity_count || 0);
       }
 
-      // 장르 확률 상위 태그 — _classifyStoryGenre(functions/index.js)가 에피소드
-      // 마감마다 채워둔 것. 아직 첫 마감 전이면 문서가 없어 null(카드에서 패널 자체를 숨김).
-      const genreSnap = await db.collection('story_genre_probs').doc(s.story_id).get();
       const genre_probs = genreSnap.exists ? genreSnap.data().top : null;
 
       return {

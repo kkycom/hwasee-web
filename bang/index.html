@@ -4541,7 +4541,7 @@ function buildStoryActionHtml(openEp) {
           onclick="doBuyExtraSubmit('${esc(openEp.episode_id)}')">추가 제출 (20P)</button>` : ''}
       </div>` : ''}
     ${!user ? `
-      <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px;text-align:center">
         참여하려면 <button class="btn btn-ghost btn-sm" onclick="nav('auth','login')">로그인</button>이 필요합니다.
       </div>` : ''}
     ${openSubs.length === 0

@@ -2130,6 +2130,7 @@ function _serverCreateSeedStory(db, writer, opening) {
 // 참고)을 그대로 써서 (used==false + orderBy) 복합 인덱스 없이 처리.
 async function _serverRefillSpotlightSlot(db, completed_story_id) {
   const ptrRef = db.collection('config').doc('spotlight_slots');
+  let newlyCreatedStoryId = null;
   await db.runTransaction(async tx => {
     const ptrSnap = await tx.get(ptrRef);
     if (!ptrSnap.exists) return; // adminInitSpotlight 실행 전 — 아직 스포트라이트 미도입
@@ -2144,6 +2145,7 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
       const src = available.length ? available : SPOTLIGHT_AI_OPENINGS;
       const opening = src[Math.floor(Math.random() * src.length)];
       const newStoryId = _serverCreateSeedStory(db, tx, opening);
+      newlyCreatedStoryId = newStoryId;
       tx.set(db.collection('config').doc('used_openings'), { [opening]: true }, { merge: true });
       tx.update(ptrRef, { 'ai.story_id': newStoryId });
       return;
@@ -2175,12 +2177,23 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
 
     tx.update(nextEntry.ref, { used: true });
     const newStoryId = _serverCreateSeedStory(db, tx, nextEntry.data().text);
+    newlyCreatedStoryId = newStoryId;
     if (slotKey === 'word') {
       tx.update(ptrRef, { 'word.story_id': newStoryId });
     } else {
       tx.update(ptrRef, { 'sentence.story_id': newStoryId, 'sentence.state': 'story', 'sentence.round_id': null });
     }
   });
+
+  // 씨앗 문장 하나만으로도 장르를 어느 정도 가늠할 수 있어서, 첫 마감을 기다리지
+  // 않고 슬롯이 새 이야기로 채워지는 즉시 1차 분류를 해둠 — 안 그러면 카드가
+  // 새로 채워진 직후엔 장르 패널이 계속 비어있어서(첫 마감까지, 하루 이상 걸릴 수
+  // 있음) "오 뭐지?" 하고 눈길을 끌려는 이 기능의 취지 자체가 무색해짐(유저 지적,
+  // 2026-07-15). 트랜잭션 밖에서(외부 API 호출은 트랜잭션 안에 넣으면 안 됨) await —
+  // fire-and-forget 금지 원칙은 [[feedback_defer_noncritical_writes]] 참고.
+  if (newlyCreatedStoryId) {
+    await _classifyStoryGenre(db, newlyCreatedStoryId, 0).catch(e => console.error('genre classify(seed) error:', e.message));
+  }
 }
 
 // slotKey('word'|'sentence')의 풀에 새 항목이 막 쌓였을 때, 그 슬롯이 마침 비어있는
@@ -2190,6 +2203,7 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
 // 않고 조용히 반환), _serverRefillSpotlightSlot과 트랜잭션이 겹칠 일이 없음.
 async function _serverRefillSlotFromPoolIfEmpty(db, slotKey) {
   const ptrRef = db.collection('config').doc('spotlight_slots');
+  let newlyCreatedStoryId = null;
   await db.runTransaction(async tx => {
     const ptrSnap = await tx.get(ptrRef);
     if (!ptrSnap.exists) return;
@@ -2219,12 +2233,19 @@ async function _serverRefillSlotFromPoolIfEmpty(db, slotKey) {
 
     tx.update(nextEntry.ref, { used: true });
     const newStoryId = _serverCreateSeedStory(db, tx, nextEntry.data().text);
+    newlyCreatedStoryId = newStoryId;
     if (slotKey === 'word') {
       tx.update(ptrRef, { 'word.story_id': newStoryId });
     } else {
       tx.update(ptrRef, { 'sentence.story_id': newStoryId, 'sentence.state': 'story', 'sentence.round_id': null });
     }
   });
+
+  // _serverRefillSpotlightSlot과 동일 이유(씨앗만으로도 1차 분류 가능) + 동일
+  // 원칙(트랜잭션 밖에서 await, fire-and-forget 금지).
+  if (newlyCreatedStoryId) {
+    await _classifyStoryGenre(db, newlyCreatedStoryId, 0).catch(e => console.error('genre classify(seed) error:', e.message));
+  }
 }
 
 // 슬롯2(✍️) 24시간 제안+투표 라운드 마감 — word_challenge는 "매일 00시 시작→21시

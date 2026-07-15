@@ -643,6 +643,71 @@ async function _callClaude(key, prompt, maxTokens) {
   return data.content?.[0]?.text?.trim() || null;
 }
 
+// "오늘의 이야기" 스포트라이트 카드 장르 확률 표시용 — vote_threshold 있는
+// (=스포트라이트 슬롯 출신) 이야기에만 적용. 8개 고정 카테고리, 클라이언트
+// index.html의 GENRE_META와 이름을 반드시 맞춰야 함(FB_ACHIEVEMENTS 이중화 방식과 동일).
+const SPOTLIGHT_GENRES = ['로맨스', '미스터리', '스릴러', '코미디', '판타지', '공포', '드라마', 'SF'];
+
+// 에피소드 마감마다 호출되어(스포트라이트 슬롯 이야기 한정) 단계별 장르 확률
+// 이력을 story_genre_probs/{story_id}에 쌓음 — 카드의 상위 장르 표시와 상세페이지
+// 등락 차트가 이 문서 하나로 렌더링됨. 완결 여부와 무관하게 매 단계 호출.
+async function _classifyStoryGenre(db, story_id, step) {
+  const storySnap = await db.collection('stories').doc(story_id).get();
+  if (!storySnap.exists) return;
+  const story = storySnap.data();
+
+  const secretsSnap = await db.collection('config').doc('secrets').get();
+  const claudeKey = secretsSnap.exists ? secretsSnap.data().claude_key : null;
+  if (!claudeKey) return;
+
+  const text = await _buildStoryContext(db, story_id, story);
+  if (!text.trim()) return;
+
+  const prompt = `다음은 여러 사람이 한 문장씩 이어 쓰고 있는 릴레이 소설의 현재까지 내용입니다. 이 이야기가 최종적으로 어떤 장르로 끝날지 확률을 추정해주세요.
+
+아래 8개 장르 중에서만 골라 각각 확률(%, 정수)을 매기고 합계가 100이 되게 하세요:
+${SPOTLIGHT_GENRES.join(', ')}
+
+이야기 내용:
+"""
+${text}
+"""
+
+다른 설명 없이 JSON 객체 하나만 출력하세요. 형식 예: {"로맨스":10,"미스터리":65,"스릴러":10,"코미디":5,"판타지":5,"공포":5,"드라마":0,"SF":0}`;
+
+  let raw;
+  try { raw = await _callClaude(claudeKey, prompt, 300); } catch (e) { console.error('genre classify call error:', e.message); return; }
+  if (!raw) return;
+
+  let parsed;
+  try {
+    const jsonText = raw.match(/\{[\s\S]*\}/)?.[0];
+    parsed = JSON.parse(jsonText);
+  } catch (e) { console.error('genre classify parse error:', e.message, raw); return; }
+
+  const probs = {};
+  let sum = 0;
+  for (const g of SPOTLIGHT_GENRES) {
+    const v = Math.max(0, Math.round(Number(parsed[g]) || 0));
+    probs[g] = v; sum += v;
+  }
+  if (sum <= 0) return;
+  // 반올림 오차 보정 없이 비율만 다시 정수화(정확히 100 합계는 표시용으로만
+  // 중요하고, 여기선 근사치면 충분해서 단순 나눗셈으로 처리)
+  for (const g of SPOTLIGHT_GENRES) probs[g] = Math.round(probs[g] / sum * 100);
+
+  const top = Object.entries(probs).sort((a, b) => b[1] - a[1]).slice(0, 3)
+    .map(([genre, pct]) => ({ genre, pct }));
+
+  const ref = db.collection('story_genre_probs').doc(story_id);
+  await db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    const history = snap.exists ? (snap.data().history || []) : [];
+    history.push({ step, probs, at: new Date().toISOString() });
+    tx.set(ref, { story_id, top, history, updated_at: new Date().toISOString() });
+  });
+}
+
 async function _serverCloseEpisode(db, episode_id, ep) {
   const epRef = db.collection('episodes').doc(episode_id);
   const alreadyClosed = await db.runTransaction(async tx => {
@@ -701,6 +766,13 @@ async function _serverCloseEpisode(db, episode_id, ep) {
   const st = storySnap.data();
   const nextStep = (Number(st.current_step) || 0) + 1;
   const anyClose = winners.some(w => w.is_closing === true);
+
+  // 스포트라이트 슬롯 이야기(vote_threshold 있음)는 매 단계 마감마다 장르 확률을
+  // 갱신 — 완결 전에도 카드/상세페이지에서 등락을 보여줘야 하므로 여기서 호출.
+  // 부가 기능이라 완결 흐름을 막지 않도록 await 없이 fire-and-forget.
+  if (st.vote_threshold) {
+    _classifyStoryGenre(db, ep.story_id, nextStep).catch(e => console.error('genre classify error:', e.message));
+  }
 
   if (anyClose) {
     await storySnap.ref.update({ current_step: nextStep, status: 'completed' });

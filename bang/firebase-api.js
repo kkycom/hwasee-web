@@ -813,7 +813,15 @@ async function fbGetStory(story_id, user_id) {
     has_extra_submit = !exSnap.empty;
   }
 
-  return { ok: true, story: storyWithCreator, episodes, submissions, is_bookmarked, is_liked, like_count, my_voted_sub_ids, branches, parent_chain, mvp_map, my_mvp_episode_id, story_comments, has_extra_submit };
+  // 장르 확률 등락 차트용 단계별 이력 — 스포트라이트 슬롯 출신(vote_threshold 있음)
+  // 이야기만 조회. 완결 여부와 무관하게 참여 중에도 보여줘야 해서 status 조건 없음.
+  let genre_history = null;
+  if (story.vote_threshold) {
+    const genreSnap = await db.collection('story_genre_probs').doc(story_id).get();
+    if (genreSnap.exists) genre_history = genreSnap.data().history || [];
+  }
+
+  return { ok: true, story: storyWithCreator, episodes, submissions, is_bookmarked, is_liked, like_count, my_voted_sub_ids, branches, parent_chain, mvp_map, my_mvp_episode_id, story_comments, has_extra_submit, genre_history };
 }
 
 async function fbCreateStory(opening, creator_id, is_ai_seed) {
@@ -3094,12 +3102,17 @@ async function fbGetSpotlight(viewer_id) {
         }
       }
 
+      // 장르 확률 상위 태그 — _classifyStoryGenre(functions/index.js)가 에피소드
+      // 마감마다 채워둔 것. 아직 첫 마감 전이면 문서가 없어 null(카드에서 패널 자체를 숨김).
+      const genreSnap = await db.collection('story_genre_probs').doc(s.story_id).get();
+      const genre_probs = genreSnap.exists ? genreSnap.data().top : null;
+
       return {
         state: 'story', story_id: s.story_id, opening: story.opening, current_step: story.current_step || 0,
         has_branch: !!story.has_branch, branch_from_step: story.branch_from_step || null,
         branch_display_offset: story.branch_display_offset ?? null,
         participant_count: story.participant_count || 0,
-        open_eps, is_new,
+        open_eps, is_new, genre_probs,
         my_submissions,
       };
     } else if (key === 'sentence' && s.state === 'proposing' && s.round_id) {

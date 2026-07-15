@@ -86,6 +86,17 @@
     --radius:  12px;
     --font:    'Noto Sans KR', system-ui, sans-serif;
     --serif:   'Gowun Batang', Georgia, serif;
+
+    /* 스포트라이트 장르 확률 패널용 — 8개 고정 카테고리(functions/index.js
+       SPOTLIGHT_GENRES와 이름 반드시 일치, GENRE_META에서 이 변수들을 참조) */
+    --g-romance:  #8a4a5c; --g-romance-wash:  rgba(138,74,92,.20);
+    --g-mystery:  #4a4364; --g-mystery-wash:  rgba(74,67,100,.24);
+    --g-thriller: #7a4030; --g-thriller-wash: rgba(122,64,48,.20);
+    --g-comedy:   #8a6420; --g-comedy-wash:   rgba(138,100,32,.24);
+    --g-fantasy:  #4a4a8a; --g-fantasy-wash:  rgba(74,74,138,.20);
+    --g-horror:   #33402f; --g-horror-wash:   rgba(51,64,47,.22);
+    --g-drama:    #6b5645; --g-drama-wash:    rgba(107,86,69,.20);
+    --g-sf:       #2e5f66; --g-sf-wash:       rgba(46,95,102,.20);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   /* overflow-x: hidden(2026-06-30, 모바일 110% 줌 가로스크롤 버그 수정용)이
@@ -188,6 +199,42 @@
   }
   .card-bookmark-sticker { color:#a06020; border-color:rgba(200,130,58,.35); }
   .card-new-sticker { color:#b03030; border-color:rgba(176,48,48,.3); }
+  .card-today-sticker { color:#5a4a80; border-color:rgba(90,74,128,.3); }
+
+  /* ── 장르 확률 패널(스포트라이트 카드 + 상세페이지 공용) */
+  .genre-panel { border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; border-left: 4px solid var(--g); background: var(--wash); }
+  .genre-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .genre-headline { font-size: 12px; line-height: 1.6; flex: 1 1 160px; color: var(--muted); }
+  .genre-headline .n { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  .genre-pill-primary {
+    display: inline-flex; align-items: baseline; gap: 3px;
+    background: var(--g); color: #faf6ee;
+    padding: 2px 8px; border-radius: 20px; font-weight: 700; font-size: 11.5px;
+    white-space: nowrap; margin: 0 4px 0 2px;
+  }
+  .genre-chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex-shrink: 0; }
+  .genre-chip {
+    display: inline-flex; align-items: baseline; gap: 3px;
+    font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px;
+    background: var(--card); border: 1px solid var(--border); color: var(--muted);
+    white-space: nowrap;
+  }
+  .genre-chip .n { font-variant-numeric: tabular-nums; color: var(--text); }
+
+  /* ── 상세페이지 장르 확률 추이 차트 */
+  .genre-chart-toggle {
+    width: 100%; text-align: center; margin-top: 8px;
+    background: transparent; color: var(--muted); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .genre-chart-toggle:hover { color: var(--text); border-color: var(--accent); }
+  .genre-chart-wrap { margin-top: 10px; padding: 14px 12px 10px; background: var(--surface); border-radius: 10px; border-left: 3px solid var(--accent2); }
+  .genre-chart-title { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 8px; text-align: center; }
+  .genre-chart-legend { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; margin-top: 8px; font-size: 11.5px; }
+  .genre-chart-legend .li { display: inline-flex; align-items: baseline; gap: 5px; }
+  .genre-chart-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .genre-chart-legend .n { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .genre-chart-wrap svg text { font-family: var(--font); fill: var(--muted); }
 
   @keyframes boost-glow {
     0%, 100% { border-color:rgba(200,130,58,.45); box-shadow:0 0 10px rgba(200,130,58,.1); }
@@ -1554,10 +1601,15 @@ function cardStickersHtml(s, alwaysBm) {
   // 참여 중인 이야기 전용(fbGetMyStories가 story_visits 대비로 계산해서 내려줌) —
   // 마지막으로 본 상태보다 단계/활동량이 늘었으면 표시
   const newTag = s.is_new ? `<span class="card-new-sticker">N</span>` : '';
+  // 오늘의 이야기(스포트라이트) 출신 이야기는 완성된 뒤에도 계속 표시 —
+  // vote_threshold는 _serverCreateSeedStory에서 생성 시 한 번 박히고 이후
+  // 절대 지워지지 않으므로(전체 grep 확인) 별도 태깅 없이 이 필드만으로 판별 가능
+  const todayTag = s.vote_threshold ? `<span class="card-today-sticker">✦ 오늘</span>` : '';
   const parts = [
     branchTag,
     contTag,
     newTag,
+    todayTag,
     hasBm ? `<span class="card-bookmark-sticker">★</span>` : '',
   ].filter(Boolean).join('');
   return parts ? `<div class="card-stickers">${parts}</div>` : '';
@@ -1733,7 +1785,7 @@ function _applyStoryData(res, story_id) {
   }
   if (currentParam !== story_id) return;
 
-  const { story: s, episodes, submissions, is_bookmarked, is_liked = false, like_count = 0, my_voted_sub_ids = [], story_comments } = res;
+  const { story: s, episodes, submissions, is_bookmarked, is_liked = false, like_count = 0, my_voted_sub_ids = [], story_comments, genre_history } = res;
   // 참여 중인 이야기 NEW 배지 판단용 "마지막으로 본 상태" 기록 — 화면 렌더를
   // 안 막는 fire-and-forget(story_visits, fbGetMyStories에서 대조)
   if (user) api('markStoryVisited', { story_id, current_step: s.current_step, activity_count: s.participant_count }).catch(() => {});
@@ -1886,6 +1938,7 @@ function _applyStoryData(res, story_id) {
       <button class="btn btn-ghost btn-sm" style="border:none;color:var(--muted);font-size:12px;opacity:0.6;display:inline-flex;align-items:center;gap:3px;padding:4px 6px" onclick="adminCloseStory('${esc(s.story_id)}')"><svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>이야기 종료</button>
     </div>` : ''}
     <div id="story-action-wrap" style="margin-top:14px">${actionHtml}</div>
+    ${s.vote_threshold ? genreChartSectionHtml(genre_history) : ''}
     ${isFinished ? `
       <div style="margin-top:8px">
         <button class="btn btn-ghost btn-sm" style="width:100%;color:var(--muted);font-size:12px"
@@ -1971,6 +2024,73 @@ function toggleHistory() {
     el.style.display = 'none';
     if (btn) btn.textContent = '만들어진 과정 보기 ▾';
   }
+}
+
+// 스포트라이트 슬롯 출신(vote_threshold 있음) 이야기의 장르 확률 등락 차트 —
+// 완결 여부와 무관하게(진행 중에도) 보여줘야 해서 "만들어진 과정 보기"와 달리
+// isFinished 게이트 없음. genre_history는 fbGetStory가 story_genre_probs에서
+// 내려주는 단계별 이력({step, probs:{장르:%}} 배열).
+function genreChartSectionHtml(genre_history) {
+  if (!genre_history || !genre_history.length) return '';
+  const history = genre_history.slice().sort((a, b) => a.step - b.step);
+  const last = history[history.length - 1];
+  const topGenres = Object.entries(last.probs).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([g]) => g);
+
+  const W = 400, H = 190, padL = 34, padR = 12, padT = 14, padB = 28;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const n = history.length;
+  const xAt = i => n <= 1 ? padL + plotW / 2 : padL + i * (plotW / (n - 1));
+  const yAt = v => padT + (100 - v) / 100 * plotH;
+
+  const gridHtml = [0, 25, 50, 75, 100].map(v => `
+    <line x1="${padL}" y1="${yAt(v).toFixed(1)}" x2="${W - padR}" y2="${yAt(v).toFixed(1)}" stroke="var(--border)" stroke-width="1"${v === 0 ? '' : ' stroke-dasharray="2 3"'}/>
+    <text x="6" y="${(yAt(v) + 3).toFixed(1)}" font-size="9">${v}%</text>`).join('');
+
+  const lastIdx = n - 1;
+  const linesHtml = topGenres.map(g => {
+    const suffix = GENRE_META[g] || 'mystery';
+    const pts = history.map((h, i) => `${xAt(i).toFixed(1)},${yAt(h.probs[g] || 0).toFixed(1)}`).join(' ');
+    const dots = history.map((h, i) => {
+      const cx = xAt(i).toFixed(1), cy = yAt(h.probs[g] || 0).toFixed(1);
+      return i === lastIdx
+        ? `<circle cx="${cx}" cy="${cy}" r="4" fill="var(--g-${suffix})" stroke="var(--surface)" stroke-width="1.5"/>`
+        : `<circle cx="${cx}" cy="${cy}" r="2.5" fill="var(--g-${suffix})"/>`;
+    }).join('');
+    return `<polyline points="${pts}" fill="none" stroke="var(--g-${suffix})" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>${dots}`;
+  }).join('');
+
+  const xLabelsHtml = history.map((h, i) => `
+    <text x="${xAt(i).toFixed(1)}" y="${H - 4}" font-size="9" text-anchor="middle"${i === lastIdx ? ' font-weight="700" fill="var(--text)"' : ''}>${h.step}단계${i === lastIdx ? '(현재)' : ''}</text>`).join('');
+
+  const legendHtml = topGenres.map(g => {
+    const suffix = GENRE_META[g] || 'mystery';
+    const pct = last.probs[g] || 0;
+    return `<span class="li"><span class="dot" style="background:var(--g-${suffix})"></span>${esc(g)} <span class="n">${pct}%</span></span>`;
+  }).join('');
+
+  return `
+    <div style="margin-top:8px">
+      <button class="genre-chart-toggle" onclick="toggleGenreChart(this)">장르 확률 추이 보기 ▾</button>
+      <div id="genre-chart-body" style="display:none">
+        <div class="genre-chart-wrap">
+          <div class="genre-chart-title">단계별 등락 — ${last.step}단계까지 진행됨</div>
+          <svg viewBox="0 0 ${W} ${H}" width="100%" height="auto" role="img" aria-label="장르 확률 추이 차트">
+            ${gridHtml}
+            ${linesHtml}
+            ${xLabelsHtml}
+          </svg>
+          <div class="genre-chart-legend">${legendHtml}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function toggleGenreChart(btn) {
+  const body = document.getElementById('genre-chart-body');
+  if (!body) return;
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  btn.textContent = open ? '장르 확률 추이 접기 ▴' : '장르 확률 추이 보기 ▾';
 }
 
 function renderHistoryPanel(episodes, submissions, opening) {
@@ -2561,6 +2681,30 @@ const SPOTLIGHT_META = {
   ai:       { icon: '🤖', title: 'AI가 고른 뜻밖의 시작',     info: 'AI가 골라준 첫 문장으로 이야기가 시작돼요.' },
 };
 
+// 장르 확률 패널 색상 매핑 — functions/index.js의 SPOTLIGHT_GENRES와 이름이
+// 반드시 일치해야 함(FB_ACHIEVEMENTS 이중화 방식과 동일 주의).
+const GENRE_META = {
+  '로맨스': 'romance', '미스터리': 'mystery', '스릴러': 'thriller', '코미디': 'comedy',
+  '판타지': 'fantasy', '공포': 'horror', '드라마': 'drama', 'SF': 'sf',
+};
+
+// genre_probs: [{genre,pct}, ...] 최대 3개(fbGetSpotlight/fbGetStory가 내려줌) —
+// 1등만 알약 배지+문장, 2~3등은 우측에 칩으로. 첫 에피소드 마감 전(genre_probs
+// 없음)엔 패널 자체를 숨김 — vote_threshold만으로 카드를 미리 보여줄 근거가 없음.
+function genrePanelHtml(genre_probs) {
+  if (!genre_probs || !genre_probs.length) return '';
+  const [top, ...rest] = genre_probs;
+  const suffix = GENRE_META[top.genre] || 'mystery';
+  const chips = rest.map(g => `<span class="genre-chip">${esc(g.genre)} <span class="n">${g.pct}%</span></span>`).join('');
+  return `
+    <div class="genre-panel" style="--g:var(--g-${suffix});--wash:var(--g-${suffix}-wash)">
+      <div class="genre-row">
+        <div class="genre-headline">이 이야기, <span class="genre-pill-primary">${esc(top.genre)}</span>로 끝날 확률 <span class="n">${top.pct}%</span></div>
+        <div class="genre-chips">${chips}</div>
+      </div>
+    </div>`;
+}
+
 const SR_PAGE_SIZE = 10;
 let _srVisibleCount = SR_PAGE_SIZE;
 let _srCountdownTimer = null;
@@ -2663,6 +2807,7 @@ function renderSpotlight() {
         <div class="story-prose" style="padding:28px 18px 28px 20px;margin:12px 0">
           <div class="prose-opening">${esc(slot.opening)}</div>
         </div>
+        ${genrePanelHtml(slot.genre_probs)}
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <span class="step-pill"><span class="step-dot"></span>${_stepLabel} · 참여자 ${slot.participant_count || 0}명</span>
           ${ctaHtml}

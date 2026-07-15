@@ -106,5 +106,8 @@ service cloud.firestore {
     // 전용(클라이언트가 직접 읽으면 남의 이메일 존재 여부/발송 이력이 새어나감).
     match /email_rate_limits/{docId} { allow read, write: if false; }
     match /story_visits/{docId} { allow read, write: if true; }
+    // 스포트라이트 이야기 장르 확률 이력 — Cloud Function(_classifyStoryGenre,
+    // Admin SDK)만 씀. 클라이언트는 카드/상세페이지 표시용으로 읽기만 함.
+    match /story_genre_probs/{docId} { allow read: if true; allow write: if false; }
   }
 }

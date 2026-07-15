@@ -2423,6 +2423,31 @@ exports.adminInitSpotlight = functions
     return { ok: true, word_story_id: wordStoryId, sentence_story_id: sentenceStoryId, ai_story_id: aiStoryId };
   });
 
+// 현재 각 슬롯을 차지하고 있는 이야기를 즉시(마감/슬롯교체 기다리지 않고) 장르
+// 분류 — 씨앗 생성 시점 자동 분류 도입 이전에 이미 채워져 있던 슬롯이나, Claude
+// 키가 한동안 비어있어 분류가 밀린 경우 등 수동 재실행용. step은 각 스토리의
+// 현재 current_step 그대로 씀(마감마다 쌓이는 정식 이력과 라벨 규칙을 맞추기 위함).
+exports.adminBackfillGenreProbs = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const ptrSnap = await db.collection('config').doc('spotlight_slots').get();
+    if (!ptrSnap.exists) return { ok: true, classified: [] };
+    const slots = ptrSnap.data();
+    const storyIds = ['word', 'sentence', 'ai'].map(k => slots[k]?.story_id).filter(Boolean);
+
+    const classified = [];
+    for (const story_id of storyIds) {
+      const storySnap = await db.collection('stories').doc(story_id).get();
+      if (!storySnap.exists) continue;
+      const step = Number(storySnap.data().current_step) || 0;
+      await _classifyStoryGenre(db, story_id, step);
+      classified.push(story_id);
+    }
+    return { ok: true, classified };
+  });
+
 // 스포트라이트 도입 시점(adminInitSpotlight)에 슬롯1·2가 실제 단어챌린지 우승작/
 // 제안투표 채택작이 아니라 그냥 랜덤 AI 문장으로 부트스트랩됐던 문제를 바로잡는
 // 1회성 관리자 콜러블. 슬롯1은 스포트라이트 도입 전부터 이미 쌓여있던 단어챌린지

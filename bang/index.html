@@ -5505,6 +5505,11 @@ function _renderAdminAI(tab, page) {
       </div>
       <div style="font-size:11px;color:var(--muted);margin-top:6px">Google 계정(2단계 인증 필요) → 보안 → 앱 비밀번호에서 발급한 16자리 값. 일반 로그인 비밀번호가 아님. 서버 경로로만 저장되며 클라이언트에 원문이 노출되지 않음.</div>
     </div>
+    <div class="card" style="padding:16px 18px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:6px">오늘의 이야기 장르 확률 백필</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">평소엔 마감/슬롯 교체 시점에 자동으로 분류돼요. 지금 떠 있는 3개 슬롯을 기다리지 않고 즉시 다시 분류하고 싶을 때만 눌러주세요.</div>
+      <button class="btn btn-primary btn-sm" onclick="runBackfillGenreProbs(this)">지금 백필</button>
+    </div>
     <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:12px">
       ${tabBtn('subs', `제출 내역 (${res.total_subs})`)}
       ${tabBtn('votes', `공감 내역 (${res.total_votes})`)}
@@ -5535,6 +5540,16 @@ async function saveEmailConfig() {
     toast('이메일 발송 설정이 저장됐습니다.');
     nav('admin-ai');
   } catch(e) { toast('오류: ' + e.message, true); }
+}
+
+async function runBackfillGenreProbs(btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api('adminBackfillGenreProbs', {});
+    if (!res.ok) { toast(res.error, true); return; }
+    toast(`${res.classified.length}개 슬롯 장르 확률을 다시 분류했어요.`);
+  } catch(e) { toast('오류: ' + e.message, true); }
+  finally { if (btn) btn.disabled = false; }
 }
 
 async function toggleAISubEnabled(val) {

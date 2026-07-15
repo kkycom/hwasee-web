@@ -2561,6 +2561,19 @@ async function fbSetClaudeKey(admin_id, key) {
   }
 }
 
+// 현재 스포트라이트 3슬롯을 즉시 장르 분류(마감/슬롯교체 기다리지 않는 수동
+// 백필) — adminBackfillGenreProbs(functions/index.js) 콜러블 래퍼, fbSetClaudeKey와
+// 동일 패턴.
+async function fbAdminBackfillGenreProbs(admin_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  try {
+    const res = await functionsRegion.httpsCallable('adminBackfillGenreProbs')({ user_id: admin_id, token: localStorage.getItem('hwasee_token') });
+    return res.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '백필에 실패했습니다.' };
+  }
+}
+
 async function fbGetBugReports(user_id) {
   const uSnap = await db.collection('users').doc(user_id).get();
   if (!uSnap.exists || uSnap.data().badge !== 'treeguard') return { ok: false, error: '권한이 없습니다.' };
@@ -2811,6 +2824,7 @@ async function firebaseApi(action, params = {}) {
     case 'setClaudeKey':          return fbSetClaudeKey(await requireUid(), params.key);
     case 'getEmailConfigStatus':  return fbGetEmailConfigStatus(await requireUid());
     case 'setEmailConfig':        return fbSetEmailConfig(await requireUid(), params.gmail_user, params.gmail_app_pass);
+    case 'adminBackfillGenreProbs': return fbAdminBackfillGenreProbs(await requireUid());
 
     case 'saveFcmToken':    return fbSaveFcmToken(await requireUid(), params.fcm_token);
     case 'trackVisit':      return fbTrackVisit(params.is_unique);

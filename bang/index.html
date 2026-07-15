@@ -2552,7 +2552,7 @@ function _renderWordChallengeHistory(history) {
 // renderWordChallenge()와 동일한 패턴으로 폼/투표 UI를 보여줌.
 const SPOTLIGHT_META = {
   word:     { icon: '🎲', title: '오늘의 단어 챌린지 우승작', info: '매일 열리는 단어 챌린지에서 사람들이 가장 좋아한 문장으로 새 이야기가 시작돼요.' },
-  sentence: { icon: '✍️', title: '사람들이 뽑은 시작 문장',   info: '사람들이 직접 제안하고 투표해서 뽑은 문장으로 다음 이야기가 시작돼요. (1~3등에게 각 50p)' },
+  sentence: { icon: '✍️', title: '사람들이 뽑은 시작 문장',   info: '사람들이 직접 제안하고 투표해서 뽑은 문장으로 이야기가 시작돼요. (1~3등에게 각 50p)' },
   ai:       { icon: '🤖', title: 'AI가 고른 뜻밖의 시작',     info: 'AI가 골라준 첫 문장으로 이야기가 시작돼요.' },
 };
 
@@ -6145,6 +6145,14 @@ document.addEventListener('visibilitychange', () => {
 
 window.onload = async () => {
   loadUser();
+  // 세션 검증(verifySession, 콜드스타트면 최대 12초까지 걸릴 수 있음)을 최대한
+  // 일찍 미리 시작 — 아래 출석 보너스 체크가 이 흐름 한참 뒤(프리페치 등 거친
+  // 후)에야 세션 검증을 시작해서, 완료+토스트가 뜰 때쯤엔 유저가 이미 다른
+  // 메뉴로 넘어가 있는 경우가 많았음(첫 화면에서는 안 뜨고 다른 메뉴에
+  // 들어가야 뜨는 것처럼 보였던 원인 — 2026-07-15 유저 제보). _ensureSessionVerified가
+  // (uid,token) 쌍으로 메모이즈되므로, 아래 fbGetSession/checkDailyBonus는
+  // 이미 끝나있거나 훨씬 덜 기다린 상태에서 이 결과를 그대로 재사용함.
+  if (user) _ensureSessionVerified();
   parseHash();
   render();       // 캐시 데이터로 즉시 렌더
   renderNav();

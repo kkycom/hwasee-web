@@ -1694,6 +1694,17 @@ async function fbAddWordChallengeComment(wc_submission_id, content, author_id) {
   await db.collection('comments').doc(fbGenId()).set({
     wc_submission_id, author_id, content: text, created_at: fbNow()
   });
+  // 칭찬 댓글이 달렸는데 정작 당사자가 알 방법이 없었던 문제 — word_challenge_win
+  // 알림(functions/index.js _serverCloseWordChallenge)과 동일하게 story_id 없이
+  // 알림만 생성. 본인이 본인 글에 단 경우는 알릴 필요 없어서 제외.
+  const winnerUserId = subSnap.data().user_id;
+  if (winnerUserId && winnerUserId !== author_id) {
+    db.collection('notifications').doc().set({
+      user_id: winnerUserId, type: 'word_challenge_comment', story_id: '',
+      message: '🎲 오늘의 장원 문장에 댓글이 달렸어요',
+      is_read: false, created_at: fbNow(), push_sent: false,
+    }).catch(() => {});
+  }
   return { ok: true };
 }
 

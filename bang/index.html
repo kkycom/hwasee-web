@@ -2448,14 +2448,14 @@ function renderWordChallenge() {
       <div style="font-size:12px;font-weight:700;color:var(--accent2);letter-spacing:.5px;margin-bottom:16px">🏆 오늘의 장원${winners.length > 1 ? ` · ${winners.length}명 동률` : ''}</div>
       ${winners.map((w, i) => `
         <div style="font-size:18px;line-height:1.7;font-family:var(--serif);font-weight:600;text-wrap:balance;${i > 0 ? 'margin-top:14px' : ''}">${boldChallengeWords(w.text, challenge.words)}</div>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px auto 0;max-width:340px">
           <span style="font-size:13px;color:var(--muted)">👑 ${esc(w.nickname)} · +${w.points}p</span>
           <button onclick="event.stopPropagation();toggleWcComments('${w.submission_id}')" aria-label="댓글"
             style="background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;flex-shrink:0;display:inline-flex;align-items:center">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
           </button>
         </div>
-        <div id="wc-comments-${w.submission_id}" style="display:none;margin-top:8px;text-align:left"></div>`).join('')}
+        <div id="wc-comments-${w.submission_id}" style="display:none;margin:8px auto 0;max-width:340px;text-align:left"></div>`).join('')}
       <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-top:14px">⏰ 다음 챌린지까지 <span id="wc-countdown"></span></div>
     </div>` : `
     <div style="position:relative;text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;margin-bottom:20px">
@@ -2772,7 +2772,14 @@ function _renderWordChallengeHistory(history) {
       ${winners.length
         ? winners.map((w, i) => `
             <div style="font-size:14px;line-height:1.6;font-family:var(--serif);${i > 0 ? 'margin-top:10px' : ''}">${boldChallengeWords(w.text, c.words)}</div>
-            <div style="font-size:12px;color:var(--accent2);font-weight:700;margin-top:6px">👑 ${esc(w.nickname)} · +${w.points}p</div>`).join('')
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px auto 0;max-width:340px">
+              <span style="font-size:12px;color:var(--accent2);font-weight:700">👑 ${esc(w.nickname)} · +${w.points}p</span>
+              <button onclick="event.stopPropagation();toggleWcComments('${w.submission_id}')" aria-label="댓글"
+                style="background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;flex-shrink:0;display:inline-flex;align-items:center">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+              </button>
+            </div>
+            <div id="wc-comments-${w.submission_id}" style="display:none;margin:8px auto 0;max-width:340px;text-align:left"></div>`).join('')
         : `<div style="font-size:12px;color:var(--muted)">참여자가 없었어요</div>`}
     </div>`;
   }).join('');

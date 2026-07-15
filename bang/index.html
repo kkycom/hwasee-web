@@ -1932,7 +1932,7 @@ function _applyStoryData(res, story_id) {
       <button class="btn btn-ghost btn-sm" style="border:none;color:var(--muted);font-size:12px;opacity:0.6;display:inline-flex;align-items:center;gap:3px;padding:4px 6px" onclick="adminCloseStory('${esc(s.story_id)}')"><svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>이야기 종료</button>
     </div>` : ''}
     <div id="story-action-wrap" style="margin-top:14px">${actionHtml}</div>
-    ${s.vote_threshold ? genreChartSectionHtml(genre_history) : ''}
+    ${s.vote_threshold ? genreChartSectionHtml(genre_history, s) : ''}
     ${isFinished ? `
       <div style="margin-top:8px">
         <button class="btn btn-ghost btn-sm" style="width:100%;color:var(--muted);font-size:12px"
@@ -2024,7 +2024,7 @@ function toggleHistory() {
 // 완결 여부와 무관하게(진행 중에도) 보여줘야 해서 "만들어진 과정 보기"와 달리
 // isFinished 게이트 없음. genre_history는 fbGetStory가 story_genre_probs에서
 // 내려주는 단계별 이력({step, probs:{장르:%}} 배열).
-function genreChartSectionHtml(genre_history) {
+function genreChartSectionHtml(genre_history, story) {
   if (!genre_history || !genre_history.length) return '';
   const history = genre_history.slice().sort((a, b) => a.step - b.step);
   const last = history[history.length - 1];
@@ -2053,8 +2053,15 @@ function genreChartSectionHtml(genre_history) {
     return `<polyline points="${pts}" fill="none" stroke="var(--g-${suffix})" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>${dots}`;
   }).join('');
 
-  const xLabelsHtml = history.map((h, i) => `
-    <text x="${xAt(i).toFixed(1)}" y="${H - 4}" font-size="9" text-anchor="middle"${i === lastIdx ? ' font-weight="700" fill="var(--text)"' : ''}>${h.step}단계${i === lastIdx ? '(현재)' : ''}</text>`).join('');
+  // 양 끝 라벨을 가운데 정렬(text-anchor=middle)로 두면 뷰박스 경계 밖으로
+  // 텍스트가 삐져나가 잘려 보임(특히 마지막 "N단계(현재)"). 첫 라벨은 왼쪽
+  // 정렬로 오른쪽으로만, 마지막 라벨은 오른쪽 정렬로 왼쪽으로만 자라게 해서
+  // 뷰박스 안에 온전히 들어오게 함(점이 하나뿐이면 그대로 가운데 정렬 유지).
+  const xLabelsHtml = history.map((h, i) => {
+    const anchor = n === 1 ? 'middle' : i === 0 ? 'start' : i === lastIdx ? 'end' : 'middle';
+    return `
+    <text x="${xAt(i).toFixed(1)}" y="${H - 4}" font-size="9" text-anchor="${anchor}"${i === lastIdx ? ' font-weight="700" fill="var(--text)"' : ''}>${calcDisplayStep(story, h.step)}단계${i === lastIdx ? '(현재)' : ''}</text>`;
+  }).join('');
 
   const legendHtml = topGenres.map(g => {
     const suffix = GENRE_META[g] || 'mystery';
@@ -2067,7 +2074,7 @@ function genreChartSectionHtml(genre_history) {
       <button class="genre-chart-toggle" onclick="toggleGenreChart(this)">장르 확률 추이 보기 ▾</button>
       <div id="genre-chart-body" style="display:none">
         <div class="genre-chart-wrap">
-          <div class="genre-chart-title">단계별 등락 — ${last.step}단계까지 진행됨</div>
+          <div class="genre-chart-title">단계별 등락 — ${calcDisplayStep(story, last.step)}단계까지 진행됨</div>
           <svg viewBox="0 0 ${W} ${H}" width="100%" height="auto" role="img" aria-label="장르 확률 추이 차트">
             ${gridHtml}
             ${linesHtml}

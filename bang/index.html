@@ -1101,7 +1101,7 @@ function nav(route, param) {
 
 function render() {
   _renderEpoch++;
-  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, user: userProfile, create, resetpw: resetPasswordPage, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI, 'admin-patchnotes': adminPatchNotes, 'admin-wordchallenge': adminWordChallenge, patchnotes: userPatchNotes };
+  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, user: userProfile, create, resetpw: resetPasswordPage, wordchallenge: wordChallengePage, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI, 'admin-patchnotes': adminPatchNotes, 'admin-wordchallenge': adminWordChallenge, patchnotes: userPatchNotes };
   (routes[currentRoute] || home)();
 }
 
@@ -1362,12 +1362,6 @@ async function loadHomeTab(tab, epoch) {
     window._spotlightData = res;
     _srVisibleCount = SR_PAGE_SIZE;
     renderSpotlight();
-    const wcSection = document.createElement('div');
-    wcSection.id = 'word-challenge-section';
-    wcSection.style.cssText = 'margin-top:32px;border-top:1px solid var(--border);padding-top:24px';
-    wcSection.innerHTML = `<div style="text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;font-size:12px;color:var(--muted)">불러오는 중...</div>`;
-    gc()?.appendChild(wcSection);
-    loadWordChallenge();
 
     // 캐시(fresh든 stale든)로 먼저 그린 경우에도 항상 백그라운드로 최신 데이터를
     // 재검증하고 화면까지 다시 그림 — 예전엔 fresh 캐시(20초 이내)면 재검증 자체를
@@ -2344,6 +2338,22 @@ let _wcVisibleCount = WC_PAGE_SIZE;
 // 가까워짐 — 이전엔 양수값이라 hero 카드 내부 상단 근처에서만 움직였음
 const WC_HISTORY_BTN_HTML = `<button onclick="openWordChallengeHistory()" style="position:absolute;top:-14px;right:12px;background:var(--card);border:none;border-radius:8px;padding:5px 10px;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer">역대 당선작 보기</button>`;
 
+// 오늘의 단어 챌린지 — 예전엔 "오늘의 이야기" 탭 스포트라이트 카드 3개 아래에
+// 이어붙여서 페이지 하나가 너무 길어지고 두 컨텐츠가 뒤섞여 보이는 문제가
+// 있었음(유저 지적, 2026-07-15) — 별도 페이지로 분리. 실제 로딩/렌더 로직
+// (loadWordChallenge/renderWordChallenge 등)은 #word-challenge-section을
+// id로만 찾아 그리므로 변경 없이 그대로 재사용됨.
+async function wordChallengePage() {
+  document.getElementById('app').innerHTML = `
+    <div style="display:flex;align-items:center;margin-bottom:20px">
+      <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="nav('spotlight')">← 오늘의 이야기로</button>
+    </div>
+    <div id="word-challenge-section">
+      <div style="text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;font-size:12px;color:var(--muted)">불러오는 중...</div>
+    </div>`;
+  loadWordChallenge();
+}
+
 async function loadWordChallenge() {
   const el = document.getElementById('word-challenge-section');
   // 캐시된 데이터가 있으면 즉시 그려서 매번 새 네트워크 왕복을 기다리지 않게 하고,
@@ -2917,6 +2927,14 @@ function renderSpotlight() {
       const _stepLabel = _curEp
         ? `${calcDisplayStep(slot, _curEp.step)}단계 · 제출 ${_curEp.sub_count}개`
         : `${(Number(slot.current_step) || 0) + 1}단계`;
+      // 오늘의 단어 챌린지가 별도 페이지로 분리되면서(2026-07-15) 이 슬롯(과거
+      // 챌린지 우승작으로 시작된 이야기)에서 진행 중인 챌린지로 바로 갈 수 있는
+      // 통로가 없어지지 않게 버튼을 붙여둠. 색+아이콘으로 "참여하기"(이 이야기 계속
+      // 쓰기)와 다른 액션임을 구분(시안 논의로 확정: 타이틀에 이미 🎲가 있어서
+      // 타이틀 줄에 나란히 두면 겹치니 여기 버튼에만 아이콘을 둠).
+      const wcLinkBtn = key === 'word'
+        ? `<button class="btn btn-sm" style="background:rgba(200,130,58,.12);color:var(--accent2);border:1px solid rgba(200,130,58,.35);border-radius:20px;display:inline-flex;align-items:center;gap:4px" onclick="nav('wordchallenge')">🎲 챌린지 가기</button>`
+        : '';
       bodyHtml = `
         <div class="story-prose" style="padding:28px 18px 28px 20px;margin:12px 0">
           <div class="prose-opening">${esc(slot.opening)}</div>
@@ -2924,7 +2942,7 @@ function renderSpotlight() {
         ${genrePanelHtml(slot.genre_probs)}
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <span class="step-pill"><span class="step-dot"></span>${_stepLabel} · 참여자 ${slot.participant_count || 0}명</span>
-          ${ctaHtml}
+          <div style="display:flex;gap:6px;flex-shrink:0">${wcLinkBtn}${ctaHtml}</div>
         </div>
         ${hasHistory ? `<div id="sp-hist-${key}" style="display:none;margin-top:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">${histHtml}</div>` : ''}`;
     } else if (key === 'sentence' && slot.state === 'proposing') {
@@ -6479,7 +6497,7 @@ function parseHash() {
   const h     = location.hash.slice(1) || 'seed';
   const parts = h.split('/');
   const route = parts[0];
-  currentRoute = ['home','seed','spotlight','free','popular','mine','done','story','episode','auth','profile','user','create','resetpw','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','admin-wordchallenge','patchnotes'].includes(route) ? route : 'seed';
+  currentRoute = ['home','seed','spotlight','free','popular','mine','done','story','episode','auth','profile','user','create','resetpw','wordchallenge','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','admin-wordchallenge','patchnotes'].includes(route) ? route : 'seed';
   currentParam = parts.slice(1).join('/') || null;
 }
 

@@ -6525,6 +6525,16 @@ window.onload = async () => {
       bar.querySelector('#_sw_dismiss').onclick = () => bar.remove();
     });
     navigator.serviceWorker.register('/bang/sw.js', { updateViaCache: 'none' }).then(async reg => {
+      // 브라우저는 기본적으로 "페이지 이동/재접속" 시점에만 새 서비스워커가
+      // 있는지 확인함 — 탭을 오래 켜두고 이동을 안 하면(자유 이야기 탭에 계속
+      // 머무는 등) 배포가 끝난 지 한참 지나도 업데이트 확인 자체가 안 일어나서
+      // 위 controllerchange 배너도 영영 안 뜸. 탭에 돌아올 때 + 주기적으로
+      // 직접 업데이트 확인을 걸어서 감지를 앞당김.
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) reg.update().catch(() => {});
+      });
+      setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
+
       if (!user || !('Notification' in window)) return;
       if (Notification.permission === 'denied') return;
 

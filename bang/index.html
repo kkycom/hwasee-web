@@ -2448,7 +2448,14 @@ function renderWordChallenge() {
       <div style="font-size:12px;font-weight:700;color:var(--accent2);letter-spacing:.5px;margin-bottom:16px">🏆 오늘의 장원${winners.length > 1 ? ` · ${winners.length}명 동률` : ''}</div>
       ${winners.map((w, i) => `
         <div style="font-size:18px;line-height:1.7;font-family:var(--serif);font-weight:600;text-wrap:balance;${i > 0 ? 'margin-top:14px' : ''}">${boldChallengeWords(w.text, challenge.words)}</div>
-        <div style="font-size:13px;color:var(--muted);margin-top:6px">👑 ${esc(w.nickname)} · +${w.points}p</div>`).join('')}
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px">
+          <span style="font-size:13px;color:var(--muted)">👑 ${esc(w.nickname)} · +${w.points}p</span>
+          <button onclick="event.stopPropagation();toggleWcComments('${w.submission_id}')" aria-label="댓글"
+            style="background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;flex-shrink:0;display:inline-flex;align-items:center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+          </button>
+        </div>
+        <div id="wc-comments-${w.submission_id}" style="display:none;margin-top:8px;text-align:left"></div>`).join('')}
       <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-top:14px">⏰ 다음 챌린지까지 <span id="wc-countdown"></span></div>
     </div>` : `
     <div style="position:relative;text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;margin-bottom:20px">
@@ -2532,6 +2539,93 @@ function _nextKstMidnightIso() {
   const kstNow = new Date(Date.now() + 9 * 3600 * 1000);
   const kstMidnightUtcMs = Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate() + 1, 0, 0, 0);
   return new Date(kstMidnightUtcMs - 9 * 3600 * 1000).toISOString();
+}
+
+// ── 오늘의 장원 댓글(칭찬) — sub-level 댓글(toggleComments 등, ~3080행)과 동일한
+// 지연로딩+캐시 패턴이지만 대상이 word_challenge_submissions라 별도 캐시/네임스페이스로 분리
+const wcCommentCache = {};
+
+async function toggleWcComments(wc_submission_id) {
+  const el = document.getElementById('wc-comments-' + wc_submission_id);
+  if (!el) return;
+  if (el.style.display !== 'none') { el.style.display = 'none'; return; }
+  if (!wcCommentCache[wc_submission_id]) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0">불러오는 중...</div>';
+    el.style.display = 'block';
+    try {
+      const res = await api('getWordChallengeComments', { wc_submission_id });
+      wcCommentCache[wc_submission_id] = res.ok ? res.comments : [];
+    } catch (e) { wcCommentCache[wc_submission_id] = []; }
+  }
+  el.innerHTML = renderWcCommentsInner(wc_submission_id, wcCommentCache[wc_submission_id] || []);
+  el.style.display = 'block';
+}
+
+function renderWcCommentsInner(wc_submission_id, comments) {
+  return `
+    <div class="comment-list">
+      ${comments.length === 0
+        ? '<div style="font-size:13px;color:var(--muted);padding:6px 0">첫 댓글로 칭찬해보세요.</div>'
+        : comments.map(c => c.deleted ? `
+            <div class="comment-item">
+              <span class="comment-body" style="color:var(--muted);font-style:italic">삭제된 댓글입니다.</span>
+            </div>` : `
+            <div class="comment-item">
+              <span class="comment-body"><span class="comment-author">${esc(c.author_nickname || '익명')}</span>${esc(c.content)}<span class="comment-time">${timeAgo(c.created_at)}</span></span>
+              ${user && (c.author_id === user.user_id) ? `<button class="comment-del-btn" onclick="event.stopPropagation();deleteWcComment('${c.comment_id}','${wc_submission_id}')">✕</button>` : ''}
+            </div>`).join('')}
+      ${user ? `
+        <div class="comment-input-row">
+          <input type="text" id="wci-${wc_submission_id}" maxlength="100" placeholder="댓글로 칭찬해보세요..."
+            onclick="event.stopPropagation()"
+            onkeydown="if(event.key==='Enter'){event.stopPropagation();addWcComment('${wc_submission_id}')}">
+          <button class="btn btn-primary btn-sm" ontouchend="event.preventDefault();event.stopPropagation();addWcComment('${wc_submission_id}', this)" onclick="event.stopPropagation();addWcComment('${wc_submission_id}', this)">등록</button>
+        </div>` : ''}
+    </div>`;
+}
+
+async function addWcComment(wc_submission_id, btn) {
+  if (!user) { toast('로그인이 필요합니다.', true); return; }
+  const input = document.getElementById('wci-' + wc_submission_id);
+  if (!input) return;
+  const content = input.value.trim();
+  if (!content) { toast('댓글 내용을 입력해주세요.', true); return; }
+  if (btn?.disabled) return; // 응답 오기 전 연타로 중복 등록되는 것 방지
+  if (btn) btn.disabled = true;
+  const res = await api('addWordChallengeComment', { wc_submission_id, content });
+  if (btn) btn.disabled = false;
+  if (!res.ok) { toast(res.error, true); return; }
+  input.value = '';
+  toast('댓글 등록!');
+  delete wcCommentCache[wc_submission_id];
+  const el = document.getElementById('wc-comments-' + wc_submission_id);
+  if (el && el.style.display !== 'none') {
+    const r2 = await api('getWordChallengeComments', { wc_submission_id });
+    wcCommentCache[wc_submission_id] = r2.ok ? r2.comments : [];
+    el.innerHTML = renderWcCommentsInner(wc_submission_id, wcCommentCache[wc_submission_id]);
+  }
+}
+
+function deleteWcComment(comment_id, wc_submission_id) {
+  const mid = 'delcomment-modal';
+  const existing = document.getElementById(mid);
+  if (existing) { existing.remove(); return; }
+  const icon = `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent2)"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
+  _modalCallbacks[mid] = async (m) => {
+    const btn = document.getElementById(`${m}-confirm-btn`);
+    if (btn) { btn.disabled = true; btn.textContent = '삭제 중...'; }
+    const res = await api('deleteComment', { comment_id });
+    document.getElementById(m)?.remove(); delete _modalCallbacks[m];
+    if (!res.ok) { toast(res.error, true); return; }
+    delete wcCommentCache[wc_submission_id];
+    const el = document.getElementById('wc-comments-' + wc_submission_id);
+    if (el && el.style.display !== 'none') {
+      const r2 = await api('getWordChallengeComments', { wc_submission_id });
+      wcCommentCache[wc_submission_id] = r2.ok ? r2.comments : [];
+      el.innerHTML = renderWcCommentsInner(wc_submission_id, wcCommentCache[wc_submission_id]);
+    }
+  };
+  showConfirmModal({ id: mid, icon, title: '댓글 삭제', desc: '이 댓글을 삭제할까요?', confirmLabel: '삭제하기' });
 }
 
 function _startWordChallengeCountdown(end_at) {

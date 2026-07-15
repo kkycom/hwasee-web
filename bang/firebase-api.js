@@ -1682,6 +1682,34 @@ async function fbGetStoryComments(story_id) {
   return { ok: true, comments };
 }
 
+// 오늘의 단어챌린지 장원 글 댓글 — 기존 comments 컬렉션 재사용하되, 대상이
+// submissions가 아니라 word_challenge_submissions라 sub_id/story_id 대신
+// wc_submission_id 필드로 구분(기존 스토리/제출 댓글 쿼리와 충돌 없음).
+async function fbAddWordChallengeComment(wc_submission_id, content, author_id) {
+  const text = (content || '').trim();
+  if (!text) return { ok: false, error: '댓글 내용을 입력해주세요.' };
+  if (text.length > 100) return { ok: false, error: '100자 이내로 작성해주세요.' };
+  const subSnap = await db.collection('word_challenge_submissions').doc(wc_submission_id).get();
+  if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
+  await db.collection('comments').doc(fbGenId()).set({
+    wc_submission_id, author_id, content: text, created_at: fbNow()
+  });
+  return { ok: true };
+}
+
+async function fbGetWordChallengeComments(wc_submission_id) {
+  const snap = await db.collection('comments').where('wc_submission_id','==',wc_submission_id).get();
+  const authorIds = [...new Set(snap.docs.map(d => d.data().author_id).filter(Boolean))];
+  const nickMap = {};
+  if (authorIds.length > 0) {
+    const userDocs = await Promise.all(authorIds.map(id => db.collection('users').doc(id).get()));
+    userDocs.forEach(d => { if (d.exists) nickMap[d.id] = d.data().display_name || d.data().nickname; });
+  }
+  const comments = snap.docs.map(d => ({ comment_id: d.id, ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }))
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  return { ok: true, comments };
+}
+
 // ─── 신고 ────────────────────────────────────────────────
 
 async function fbAddReport(sub_id, reason, reporter_id) {
@@ -2768,6 +2796,8 @@ async function firebaseApi(action, params = {}) {
     case 'addComment':         return fbAddComment(params.sub_id, params.content, await requireUid());
     case 'deleteComment':      return fbDeleteComment(params.comment_id, await requireUid());
     case 'getComments':        return fbGetComments(params.sub_id);
+    case 'addWordChallengeComment': return fbAddWordChallengeComment(params.wc_submission_id, params.content, await requireUid());
+    case 'getWordChallengeComments': return fbGetWordChallengeComments(params.wc_submission_id);
     case 'addStoryComment':    return fbAddStoryComment(params.story_id, params.content, await requireUid());
     case 'getStoryComments':   return fbGetStoryComments(params.story_id);
 

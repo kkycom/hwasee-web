@@ -2577,10 +2577,41 @@ function _myNewCount() {
 function newSummaryBannerHtml() {
   const n = _myNewCount();
   if (n <= 0) return '';
-  return `<div onclick="switchHomeTab('free')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12px;cursor:pointer">
+  return `<div onclick="openNewStoriesPopup()" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12px;cursor:pointer">
     <span>📖 참여하신 ${n}개 이야기에 새 소식이 있어요</span>
     <span style="color:var(--muted);flex-shrink:0">보러가기 →</span>
   </div>`;
+}
+
+// "보러가기" 클릭 시 자유 이야기 탭 전체로 보내던 걸(어디가 새로운지 다시
+// 찾아야 해서 배너의 의미가 퇴색됨), 새 소식 있는 이야기만 모은 목록 팝업으로
+// 개선(2026-07-15, 디버그방 설계+유저 승인, [[project_hwasee_bang_state]] 참고).
+// 카드는 myStoryCardHtml을 그대로 재사용(이미 클릭 시 nav('story',...)가 걸려
+// 있어 추가 작업 없이 바로 이동됨) — 단, 그 nav()는 #app만 다시 그리고 이
+// 모달(body 최상위)은 안 지워주므로, 카드 클릭이든 팝업 바깥 클릭이든 모달을
+// 명시적으로 닫아줌.
+function openNewStoriesPopup() {
+  const existing = document.getElementById('new-stories-modal');
+  if (existing) { existing.remove(); return; }
+  const cached = _lsc.getStale('free');
+  const stories = (cached?.myRes?.ok ? cached.myRes.stories : []).filter(s => s.status === 'active' && s.is_new);
+  if (!stories.length) return;
+  const modal = document.createElement('div');
+  modal.id = 'new-stories-modal';
+  modal.className = 'modal-overlay';
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:480px;padding:0;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--border);border-radius:var(--radius) var(--radius) 0 0;z-index:1;flex-shrink:0">
+        <div style="font-size:15px;font-weight:700">📖 새 소식이 있는 이야기</div>
+        <button onclick="document.getElementById('new-stories-modal').remove()"
+          style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1">✕</button>
+      </div>
+      <div onclick="document.getElementById('new-stories-modal')?.remove()" style="padding:16px 20px;overflow-y:auto">
+        ${stories.map(s => myStoryCardHtml(s)).join('')}
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
 }
 
 function renderSpotlight() {

@@ -2827,8 +2827,12 @@ function renderSpotlight() {
             </div>
           </div>
         </div>`).join('') : '';
-      // 기존 이야기 카드(stepPillsHtml)와 동일하게 "N단계 · 제출 N개 · 참여자 N명"
-      // 전부 보여줌 — open_eps가 비어있을 극히 드문 경우(마감 직후 등)만 제출수 생략
+      // 참여자 수는 뺌(2026-07-15) — 챌린지 가기 버튼까지 붙으니(특히 word
+      // 슬롯) 한 줄에 다 안 들어가서 두 줄로 밀렸음. 이 카드는 "참여하기" CTA로
+      // 보내는 미리보기라 단계·제출수만으로 충분하다고 판단(참여자 수는 이야기
+      // 안에 들어가면 다시 보임). 자유/완성 탭 카드(stepPillsHtml)는 줄바꿈 문제가
+      // 없어서 그대로 유지. open_eps가 비어있을 극히 드문 경우(마감 직후 등)만
+      // 제출수 생략.
       const _curEp = (slot.open_eps || []).slice().sort((a, b) => b.step - a.step)[0];
       const _stepLabel = _curEp
         ? `${calcDisplayStep(slot, _curEp.step)}단계 · 제출 ${_curEp.sub_count}개`
@@ -2847,7 +2851,7 @@ function renderSpotlight() {
         </div>
         ${genrePanelHtml(slot.genre_probs)}
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-          <span class="step-pill"><span class="step-dot"></span>${_stepLabel} · 참여자 ${slot.participant_count || 0}명</span>
+          <span class="step-pill"><span class="step-dot"></span>${_stepLabel}</span>
           <div style="display:flex;gap:6px;flex-shrink:0">${wcLinkBtn}${ctaHtml}</div>
         </div>
         ${hasHistory ? `<div id="sp-hist-${key}" style="display:none;margin-top:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">${histHtml}</div>` : ''}`;

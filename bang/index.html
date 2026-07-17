@@ -3933,7 +3933,10 @@ async function doGoogleAuth() {
 // 커스텀 토큰 발급 (3)그 커스텀 토큰으로 signInWithCustomToken, 3단계를 거쳐야
 // 구글의 signInWithPopup 한 번과 동등한 상태(검증된 Firebase 세션)가 됨.
 async function doKakaoAuth() {
-  if (!(window.Kakao && Kakao.isInitialized())) { toast('카카오 로그인을 사용할 수 없어요.', true); return; }
+  // 원인 진단용 — "사용할 수 없어요"만으로는 SDK 로드 실패인지 초기화 실패인지
+  // 구분이 안 돼서 콘솔에 남겨둠(다음에 같은 제보 오면 콘솔 확인 요청할 것)
+  if (!window.Kakao) { console.error('Kakao SDK not loaded (window.Kakao is undefined)'); toast('카카오 로그인을 사용할 수 없어요. (SDK 로드 실패)', true); return; }
+  if (!Kakao.isInitialized()) { console.error('Kakao SDK loaded but not initialized'); toast('카카오 로그인을 사용할 수 없어요. (초기화 실패)', true); return; }
   let kakaoAccessToken;
   try {
     const authResult = await Kakao.Auth.login({ scope: 'account_email' });

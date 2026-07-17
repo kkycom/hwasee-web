@@ -3932,11 +3932,26 @@ async function doGoogleAuth() {
 // (1)카카오 자체 로그인으로 액세스 토큰 획득 (2)서버가 그 토큰을 카카오 API로 검증하고
 // 커스텀 토큰 발급 (3)그 커스텀 토큰으로 signInWithCustomToken, 3단계를 거쳐야
 // 구글의 signInWithPopup 한 번과 동등한 상태(검증된 Firebase 세션)가 됨.
+// window.Kakao는 있는데 Kakao.isInitialized()가 한동안 false였던 제보(2026-07-17) —
+// Kakao.init()은 <head>에서 defer로 SDK 로드 직후 실행되지만, SDK 내부적으로 추가
+// 비동기 초기화가 있을 가능성을 배제 못 해서(공유하기 버튼은 되는데 로그인 버튼
+// 클릭 시점엔 아직이었을 수 있음) 즉시 실패 처리 대신 짧게 폴링하며 기다림.
+async function _waitKakaoReady(maxWaitMs) {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    if (window.Kakao && Kakao.isInitialized()) return true;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return false;
+}
+
 async function doKakaoAuth() {
-  // 원인 진단용 — "사용할 수 없어요"만으로는 SDK 로드 실패인지 초기화 실패인지
-  // 구분이 안 돼서 콘솔에 남겨둠(다음에 같은 제보 오면 콘솔 확인 요청할 것)
-  if (!window.Kakao) { console.error('Kakao SDK not loaded (window.Kakao is undefined)'); toast('카카오 로그인을 사용할 수 없어요. (SDK 로드 실패)', true); return; }
-  if (!Kakao.isInitialized()) { console.error('Kakao SDK loaded but not initialized'); toast('카카오 로그인을 사용할 수 없어요. (초기화 실패)', true); return; }
+  const ready = await _waitKakaoReady(3000);
+  if (!ready) {
+    console.error('Kakao SDK not ready:', { hasKakao: !!window.Kakao, initialized: !!(window.Kakao && Kakao.isInitialized()) });
+    toast('카카오 로그인을 사용할 수 없어요. 새로고침 후 다시 시도해주세요.', true);
+    return;
+  }
   let kakaoAccessToken;
   try {
     const authResult = await Kakao.Auth.login({ scope: 'account_email' });

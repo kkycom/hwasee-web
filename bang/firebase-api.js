@@ -328,13 +328,16 @@ async function fbResolveGoogleMerge(merge) {
   return res;
 }
 
-// 카카오는 구글과 달리 loginWithKakao 응답에 customToken이 함께 옴(signInWithCustomToken
-// 용) — 여기서는 그대로 통과시키기만 하고, 실제 로그인(firebase.auth() 세션 확보)은
-// 호출부(doKakaoAuth, index.html)가 함
-async function fbLoginWithKakao(kakaoAccessToken) {
+// 카카오 JS SDK는 팝업+토큰 직접반환 방식(Kakao.Auth.login())이 없고 인가코드+
+// 리다이렉트 방식(Kakao.Auth.authorize())만 지원 — 그래서 여기 넘어오는 건 액세스
+// 토큰이 아니라 인가코드(code)와 그때 쓴 redirectUri. 서버(loginWithKakao)가 그
+// 코드를 카카오 토큰 엔드포인트로 교환한 뒤 나머지는 구글과 동일하게 진행.
+// 응답엔 customToken이 함께 옴(signInWithCustomToken 용) — 여기서는 그대로
+// 통과시키기만 하고, 실제 로그인(firebase.auth() 세션 확보)은 호출부(index.html)가 함
+async function fbLoginWithKakao(code, redirectUri) {
   let res;
   try {
-    res = (await functionsRegion.httpsCallable('loginWithKakao')({ kakaoAccessToken })).data;
+    res = (await functionsRegion.httpsCallable('loginWithKakao')({ code, redirectUri })).data;
   } catch (e) { return { ok: false, error: e.message || '카카오 로그인에 실패했습니다.' }; }
   if (res.ok && (res.action === 'logged_in' || res.action === 'created')) {
     localStorage.setItem('hwasee_uid', res.user_id);
@@ -2534,6 +2537,12 @@ async function fbGetAIActivities(admin_id) {
     functionsRegion.httpsCallable('getEmailConfigStatus')({ user_id: admin_id, token: localStorage.getItem('hwasee_token') }).then(r => r.data),
     new Promise(resolve => setTimeout(() => resolve({ has_config: false, gmail_user: null }), 5000)),
   ]).catch(() => ({ has_config: false, gmail_user: null }));
+  // 카카오 REST API 키(인가코드→액세스토큰 교환용) — Claude/이메일 키와 동일 이유로
+  // 5초 자체 타임아웃 분리
+  const kakaoKeyStatusPromise = Promise.race([
+    functionsRegion.httpsCallable('getKakaoKeyStatus')({ user_id: admin_id, token: localStorage.getItem('hwasee_token') }).then(r => r.data),
+    new Promise(resolve => setTimeout(() => resolve({ has_key: false }), 5000)),
+  ]).catch(() => ({ has_key: false }));
   const [configSnap, notifSettingsSnap] = await Promise.all([
     db.collection('config').doc('ai_config').get(),
     db.collection('config').doc('notification_settings').get(),
@@ -2548,10 +2557,11 @@ async function fbGetAIActivities(admin_id) {
       db.collection('votes').where('voter_id', '==', FB_AI_ID).where('is_ai', '==', true).orderBy('created_at', 'desc').limit(300).get(),
     ]);
   } catch(e) {
-    const [keyStatus, emailConfig] = await Promise.all([keyStatusPromise, emailConfigPromise]);
+    const [keyStatus, emailConfig, kakaoKeyStatus] = await Promise.all([keyStatusPromise, emailConfigPromise, kakaoKeyStatusPromise]);
     return {
       ok: true, ai_config: aiConfig, has_key: !!keyStatus.has_key,
       has_email_config: !!emailConfig.has_config, gmail_user: emailConfig.gmail_user || null,
+      has_kakao_key: !!kakaoKeyStatus.has_key,
       submissions: [], votes: [], total_subs: 0, total_votes: 0,
     };
   }
@@ -2574,10 +2584,11 @@ async function fbGetAIActivities(admin_id) {
   if (voteStoryIds.length) {
     await Promise.all(voteStoryIds.map(id => db.collection('stories').doc(id).get().then(d => { if (d.exists) storyMap[d.id] = d.data().opening || ''; })));
   }
-  const [keyStatus, emailConfig] = await Promise.all([keyStatusPromise, emailConfigPromise]);
+  const [keyStatus, emailConfig, kakaoKeyStatus] = await Promise.all([keyStatusPromise, emailConfigPromise, kakaoKeyStatusPromise]);
   return {
     ok: true, ai_config: aiConfig, has_key: !!keyStatus.has_key,
     has_email_config: !!emailConfig.has_config, gmail_user: emailConfig.gmail_user || null,
+    has_kakao_key: !!kakaoKeyStatus.has_key,
     notification_batch_enabled: notificationBatchEnabled,
     submissions: subs.map(s => ({ ...s, story_opening: storyMap[s.story_id] || '' })),
     votes: votes.map(v => {
@@ -2609,6 +2620,17 @@ async function fbSetClaudeKey(admin_id, key) {
   if (!key || key.length < 20) return { ok: false, error: '유효한 Claude API 키를 입력해주세요.' };
   try {
     await functionsRegion.httpsCallable('setClaudeKey')({ user_id: admin_id, token: localStorage.getItem('hwasee_token'), key });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || '저장에 실패했습니다.' };
+  }
+}
+
+async function fbSetKakaoKey(admin_id, key) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  if (!key || key.length < 10) return { ok: false, error: '유효한 카카오 REST API 키를 입력해주세요.' };
+  try {
+    await functionsRegion.httpsCallable('setKakaoKey')({ user_id: admin_id, token: localStorage.getItem('hwasee_token'), key });
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message || '저장에 실패했습니다.' };
@@ -2790,7 +2812,7 @@ async function firebaseApi(action, params = {}) {
     case 'login':              return fbLogin(params.nickname, params.password);
     case 'loginWithGoogle':    return fbLoginWithGoogle();
     case 'resolveGoogleMerge': return fbResolveGoogleMerge(params.merge);
-    case 'loginWithKakao':     return fbLoginWithKakao(params.kakaoAccessToken);
+    case 'loginWithKakao':     return fbLoginWithKakao(params.code, params.redirectUri);
     case 'resolveKakaoMerge':  return fbResolveKakaoMerge(params.merge);
     case 'deleteAccount':      return fbDeleteAccount(await requireUid(), params.reason, params.detail);
     case 'changePassword':     return fbChangePassword(await requireUid(), params.current_password, params.new_password);
@@ -2867,6 +2889,7 @@ async function firebaseApi(action, params = {}) {
     case 'setAIConfig':           return fbSetAIConfig(await requireUid(), params);
     case 'setNotificationBatchEnabled': return fbSetNotificationBatchEnabled(await requireUid(), params.enabled);
     case 'setClaudeKey':          return fbSetClaudeKey(await requireUid(), params.key);
+    case 'setKakaoKey':           return fbSetKakaoKey(await requireUid(), params.key);
     case 'getEmailConfigStatus':  return fbGetEmailConfigStatus(await requireUid());
     case 'setEmailConfig':        return fbSetEmailConfig(await requireUid(), params.gmail_user, params.gmail_app_pass);
 

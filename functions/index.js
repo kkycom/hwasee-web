@@ -1175,6 +1175,31 @@ exports.setClaudeKey = functions
     return { ok: true };
   });
 
+// 카카오 로그인 인가코드→액세스토큰 교환(kauth.kakao.com/oauth/token)에 필요한
+// REST API 키 — Claude 키와 동일 패턴(config/secrets, 관리자 전용 콜러블로만 조회/저장)
+exports.getKakaoKeyStatus = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const secretsSnap = await db.collection('config').doc('secrets').get();
+    const hasKey = secretsSnap.exists && !!secretsSnap.data().kakao_rest_key;
+    return { ok: true, has_key: hasKey };
+  });
+
+exports.setKakaoKey = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const key = (data.key || '').trim();
+    if (!key || key.length < 10) {
+      throw new functions.https.HttpsError('invalid-argument', '유효한 카카오 REST API 키를 입력해주세요.');
+    }
+    const db = admin.firestore();
+    await db.collection('config').doc('secrets').set({ kakao_rest_key: key }, { merge: true });
+    return { ok: true };
+  });
+
 // ── 자격증명(user_secrets: token/pw_hash) 서버 이전 (Auth 마이그레이션 5단계) ──
 // user_secrets 컬렉션이 인증 없이 완전 공개 상태였음(curl로 임의 유저의 세션 토큰/
 // 비밀번호 해시를 그대로 읽을 수 있었고, 토큰을 훔쳐 localStorage에 심으면 비밀번호
@@ -1529,6 +1554,35 @@ exports.resolveGoogleMerge = functions
 // 실어서, 이후 resolveKakaoMerge에서 signInWithPopup 이후의 구글과 동일하게
 // context.auth.token.email로 꺼내 쓸 수 있게 함.
 
+// 카카오 JS SDK v2.8.1엔 팝업+프로미스로 액세스 토큰을 바로 주는 Kakao.Auth.login()이
+// 없음(실제 배포 후 "Kakao.Auth.login is not a function" 런타임 에러로 확인 —
+// 공식문서 재확인 결과 카카오는 인가코드+리다이렉트 방식(Kakao.Auth.authorize())만
+// 지원하고, 액세스 토큰 발급은 서버가 인가코드를 카카오 토큰 엔드포인트로 교환해야
+// 함). 그래서 클라이언트가 바로 액세스 토큰을 주는 게 아니라 인가코드(code)를 주고,
+// 여기서 그 코드를 액세스 토큰으로 먼저 교환한 뒤 기존 _verifyKakaoToken으로 넘김.
+async function _exchangeKakaoCode(code, redirectUri) {
+  if (!code || !redirectUri) return null;
+  const db = admin.firestore();
+  const secretsSnap = await db.collection('config').doc('secrets').get();
+  const restKey = secretsSnap.exists ? secretsSnap.data().kakao_rest_key : null;
+  if (!restKey) return null;
+  try {
+    const res = await fetch('https://kauth.kakao.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: restKey,
+        redirect_uri: redirectUri,
+        code,
+      }).toString(),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.access_token) { console.error('kakao token exchange error:', data); return null; }
+    return data.access_token;
+  } catch (e) { console.error('kakao token exchange fetch error:', e.message); return null; }
+}
+
 async function _verifyKakaoToken(kakaoAccessToken) {
   if (!kakaoAccessToken) return null;
   let res, data;
@@ -1587,7 +1641,9 @@ async function _createKakaoAccount(db, uid, email, kakaoNickname) {
 exports.loginWithKakao = functions
   .region('asia-northeast3')
   .https.onCall(async (data) => {
-    const verified = await _verifyKakaoToken(data.kakaoAccessToken);
+    const kakaoAccessToken = await _exchangeKakaoCode(data.code, data.redirectUri);
+    if (!kakaoAccessToken) return { ok: false, error: '카카오 인증 코드 확인에 실패했습니다.' };
+    const verified = await _verifyKakaoToken(kakaoAccessToken);
     if (!verified) return { ok: false, error: '카카오 로그인 확인에 실패했습니다.' };
     const uid = 'kakao:' + verified.kakao_id;
     const db = admin.firestore();

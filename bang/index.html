@@ -3929,42 +3929,30 @@ async function doGoogleAuth() {
   await _finishSocialAuth('google', res);
 }
 
-// 간편가입(카카오) — 구글과 달리 Firebase Auth가 카카오를 네이티브 지원하지 않아서
-// (1)카카오 자체 로그인으로 액세스 토큰 획득 (2)서버가 그 토큰을 카카오 API로 검증하고
-// 커스텀 토큰 발급 (3)그 커스텀 토큰으로 signInWithCustomToken, 3단계를 거쳐야
-// 구글의 signInWithPopup 한 번과 동등한 상태(검증된 Firebase 세션)가 됨.
-// window.Kakao는 있는데 Kakao.isInitialized()가 한동안 false였던 제보(2026-07-17) —
-// Kakao.init()은 <head>에서 defer로 SDK 로드 직후 실행되지만, SDK 내부적으로 추가
-// 비동기 초기화가 있을 가능성을 배제 못 해서(공유하기 버튼은 되는데 로그인 버튼
-// 클릭 시점엔 아직이었을 수 있음) 즉시 실패 처리 대신 짧게 폴링하며 기다림.
-async function _waitKakaoReady(maxWaitMs) {
-  const start = Date.now();
-  while (Date.now() - start < maxWaitMs) {
-    if (window.Kakao && Kakao.isInitialized()) return true;
-    await new Promise(r => setTimeout(r, 100));
-  }
-  return false;
+// 간편가입(카카오) — 구글과 달리 Firebase Auth가 카카오를 네이티브 지원하지 않고,
+// 카카오 JS SDK v2.8.1엔 팝업+토큰 직접반환 방식(Kakao.Auth.login())이 아예 없음
+// (실제 배포 후 "Kakao.Auth.login is not a function"으로 확인, 공식문서 재확인 결과
+// 카카오는 인가코드+리다이렉트 방식(Kakao.Auth.authorize())만 지원함, 2026-07-17).
+// 그래서 버튼을 누르면 이 페이지를 완전히 떠나 카카오 로그인 화면으로 이동했다가,
+// 로그인 후 redirectUri로 돌아옴(?code=... 쿼리스트링과 함께) — 돌아온 뒤 처리는
+// _handleKakaoRedirectIfPresent()(아래, window.onload에서 호출)가 담당.
+const KAKAO_REDIRECT_URI = 'https://hwasee.me/bang/';
+
+function doKakaoAuth() {
+  if (!(window.Kakao && Kakao.isInitialized())) { toast('카카오 로그인을 사용할 수 없어요. 새로고침 후 다시 시도해주세요.', true); return; }
+  Kakao.Auth.authorize({ redirectUri: KAKAO_REDIRECT_URI });
 }
 
-async function doKakaoAuth() {
-  const ready = await _waitKakaoReady(3000);
-  if (!ready) {
-    console.error('Kakao SDK not ready:', { hasKakao: !!window.Kakao, initialized: !!(window.Kakao && Kakao.isInitialized()) });
-    toast('카카오 로그인을 사용할 수 없어요. 새로고침 후 다시 시도해주세요.', true);
-    return;
-  }
-  let kakaoAccessToken;
-  try {
-    const authResult = await Kakao.Auth.login({ scope: 'account_email' });
-    kakaoAccessToken = authResult.access_token;
-  } catch (e) {
-    if (e && (e.error === 'access_denied' || e.error === 'user_cancel')) return;
-    console.error('Kakao.Auth.login failed:', e);
-    toast('카카오 로그인에 실패했습니다.', true);
-    return;
-  }
+// 카카오 로그인 후 이 페이지로 돌아왔을 때(location.search에 ?code=...가 있음) 처리.
+// 서버(loginWithKakao)가 그 인가코드를 액세스 토큰으로 교환한 뒤 나머지는 구글과
+// 동일하게 진행. 처리 후엔 URL에서 code를 지워서 새로고침해도 재실행 안 되게 함.
+async function _handleKakaoRedirectIfPresent() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code');
+  if (!code) return;
+  history.replaceState(null, '', location.pathname + location.hash);
   showBusy();
-  const res = await api('loginWithKakao', { kakaoAccessToken });
+  const res = await api('loginWithKakao', { code, redirectUri: KAKAO_REDIRECT_URI });
   if (!res.ok || !res.customToken) {
     hideBusy();
     console.error('loginWithKakao failed:', res);
@@ -5750,6 +5738,18 @@ function _renderAdminAI(tab, page) {
       </div>
       <div style="font-size:11px;color:var(--muted);margin-top:6px">Google 계정(2단계 인증 필요) → 보안 → 앱 비밀번호에서 발급한 16자리 값. 일반 로그인 비밀번호가 아님. 서버 경로로만 저장되며 클라이언트에 원문이 노출되지 않음.</div>
     </div>
+    <div class="card" style="padding:16px 18px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px">
+        카카오 REST API 키 (간편가입용)
+        <span style="font-size:11px;font-weight:400;margin-left:6px;color:${res.has_kakao_key ? 'var(--success)' : 'var(--accent2)'}">${res.has_kakao_key ? '✓ 설정됨' : '미설정 — 카카오 로그인 비활성'}</span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <input type="password" id="kakao-key-input" placeholder="REST API 키" autocomplete="off"
+          style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--bg);color:var(--text)">
+        <button class="btn btn-primary btn-sm" onclick="saveKakaoKey()">저장</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">카카오 개발자 콘솔 → 내 애플리케이션 → 앱 키 → REST API 키(JS 키 아님). 인가코드를 액세스 토큰으로 교환할 때만 서버에서 씀. 콘솔의 "카카오 로그인" 활성화 + Redirect URI(https://hwasee.me/bang/) 등록도 필요.</div>
+    </div>
     <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:12px">
       ${tabBtn('subs', `제출 내역 (${res.total_subs})`)}
       ${tabBtn('votes', `공감 내역 (${res.total_votes})`)}
@@ -5758,6 +5758,17 @@ function _renderAdminAI(tab, page) {
     ${pagNav}`;
 }
 
+
+async function saveKakaoKey() {
+  try {
+    const key = document.getElementById('kakao-key-input')?.value.trim();
+    if (!key) { toast('키를 입력해주세요.', true); return; }
+    const res = await api('setKakaoKey', { key });
+    if (!res.ok) { toast(res.error, true); return; }
+    toast('카카오 REST API 키가 저장됐습니다.');
+    nav('admin-ai');
+  } catch(e) { toast('오류: ' + e.message, true); }
+}
 
 async function saveClaudeKey() {
   try {
@@ -6649,6 +6660,7 @@ window.onload = async () => {
   parseHash();
   render();       // 캐시 데이터로 즉시 렌더
   renderNav();
+  _handleKakaoRedirectIfPresent(); // 카카오 로그인 후 돌아온 경우(?code=...) 처리
   if (user) setTimeout(checkPatchNoteAnnouncement, 1200);
 
   // Firestore 연결(WebChannel) 워밍업 — 캐시 적중 여부와 무관하게 항상 실행.

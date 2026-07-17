@@ -47,7 +47,7 @@ self.addEventListener('notificationclick', e => {
 
 // ── 캐시 전략 ───────────────────────────────────────────────
 
-const CACHE = 'hwasee-bang-v357';
+const CACHE = 'hwasee-bang-v358';
 const PRECACHE = [
   '/bang/',
   '/bang/index.html',
@@ -78,9 +78,15 @@ self.addEventListener('fetch', e => {
   // 나가고 있었음(156KB, 재방문 시에도 캐시 혜택 0) — 실제 외부 Firebase SDK 스크립트는
   // 전부 gstatic.com에서 로드되므로 그 도메인으로 조건을 좁혀서 우리 파일은 캐시를
   // 타게 하고 원래 의도(Firebase 서버 요청 제외)는 그대로 유지함
+  // kakaocdn.net(카카오 SDK)도 같은 이유로 제외 — cross-origin이라 이 핸들러의
+  // fetch()가 opaque 응답을 받거나 간헐적으로 실패할 수 있는데, 그때 .catch()가
+  // index.html의 HTML을 대신 돌려줘서 <script> 태그가 JS 대신 HTML을 받아 파싱
+  // 실패 → "Kakao is not defined"로 이어지는 버그가 있었음(2026-07-17 유저 제보,
+  // 카카오 로그인만 간헐적으로 초기화 실패했던 원인). 브라우저가 직접 받게 함.
   if (e.request.url.includes('firestore.googleapis.com') ||
       e.request.url.includes('gstatic.com') ||
       e.request.url.includes('googleapis.com') ||
+      e.request.url.includes('kakaocdn.net') ||
       e.request.url.includes('pagead2') ||
       e.request.method !== 'GET') return;
 

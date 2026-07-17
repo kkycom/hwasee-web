@@ -69,8 +69,9 @@
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<script defer src="https://t1.kakaocdn.net/kakao_js_sdk/2.8.1/kakao.min.js"></script>
-<script defer>Kakao.init('ff14936c489716ee8800abc48379201b');</script>
+<script defer src="https://t1.kakaocdn.net/kakao_js_sdk/2.8.1/kakao.min.js"
+  onload="Kakao.init('ff14936c489716ee8800abc48379201b')"
+  onerror="console.error('Kakao SDK 스크립트 로드 실패')"></script>
 <script defer src="firebase-api.js?v=3"></script>
 <style>
   :root {

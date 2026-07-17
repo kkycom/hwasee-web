@@ -3387,6 +3387,11 @@ async function episode() {
   let res;
   try {
     res = await api('getEpisode', { episode_id });
+    // story()와 동일한 이유(백그라운드 탭 복귀 직후 연결 재웜업 전 첫 요청만
+    // 실패하는 경우) — 읽기 전용이라 안전하게 1회 조용히 재시도
+    if (!res.ok && _renderEpoch === epoch && currentParam === episode_id) {
+      res = await api('getEpisode', { episode_id });
+    }
   } catch(e) {
     if (_renderEpoch !== epoch || currentParam !== episode_id) return;
     document.getElementById('app').innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="episode()">다시 시도</button></div>`;
@@ -3541,18 +3546,41 @@ async function episodeVotes() {
   if (!episode_id) { nav('seed'); return; }
   document.getElementById('app').innerHTML = `<div class="empty">불러오는 중...</div>`;
 
-  const epSnap = await firebase.firestore().collection('episodes').doc(episode_id).get();
-  if (_renderEpoch !== epoch || currentParam !== episode_id) return;
-  if (!epSnap.exists) { toast('에피소드를 찾을 수 없습니다.', true); nav('seed'); return; }
-  const ep = epSnap.data();
-  const story_id = ep.story_id;
-
-  const [subsSnap, stSnap, commSnap] = await Promise.all([
-    firebase.firestore().collection('submissions').where('episode_id', '==', episode_id).get(),
-    firebase.firestore().collection('stories').doc(story_id).get(),
-    firebase.firestore().collection('comments').where('story_id', '==', story_id).get(),
+  // 이 함수는 api()를 거치지 않는 직접 Firestore 조회라 원래 타임아웃/재시도가
+  // 전혀 없었음 — 백그라운드 탭 복귀 직후 연결이 끊겨있으면 "불러오는 중..."에
+  // 무기한 멈춰있을 수 있던 문제(story()/episode()와 같은 원인, 2026-07-17
+  // 유저 제보 계기로 전수 점검). api()와 동일한 15초 타임아웃 + 1회 재시도 추가.
+  const _fetchEpisodeVotes = () => Promise.race([
+    (async () => {
+      const epSnap = await firebase.firestore().collection('episodes').doc(episode_id).get();
+      if (!epSnap.exists) return { notFound: true };
+      const ep = epSnap.data();
+      const story_id = ep.story_id;
+      const [subsSnap, stSnap, commSnap] = await Promise.all([
+        firebase.firestore().collection('submissions').where('episode_id', '==', episode_id).get(),
+        firebase.firestore().collection('stories').doc(story_id).get(),
+        firebase.firestore().collection('comments').where('story_id', '==', story_id).get(),
+      ]);
+      return { ep, story_id, subsSnap, stSnap, commSnap };
+    })(),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('요청 시간이 초과됐습니다.')), 15000)),
   ]);
+
+  let data;
+  try {
+    data = await _fetchEpisodeVotes();
+  } catch (e) {
+    if (_renderEpoch !== epoch || currentParam !== episode_id) return;
+    try {
+      data = await _fetchEpisodeVotes();
+    } catch (e2) {
+      document.getElementById('app').innerHTML = `<div class="empty">불러오지 못했어요.<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="episodeVotes()">다시 시도</button></div>`;
+      return;
+    }
+  }
   if (_renderEpoch !== epoch || currentParam !== episode_id) return;
+  if (data.notFound) { toast('에피소드를 찾을 수 없습니다.', true); nav('seed'); return; }
+  const { ep, story_id, subsSnap, stSnap, commSnap } = data;
 
   const story = stSnap.data() || {};
   const subs = subsSnap.docs.map(d => ({ sub_id: d.id, ...d.data() }))

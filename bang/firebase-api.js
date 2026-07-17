@@ -328,6 +328,33 @@ async function fbResolveGoogleMerge(merge) {
   return res;
 }
 
+// 카카오는 구글과 달리 loginWithKakao 응답에 customToken이 함께 옴(signInWithCustomToken
+// 용) — 여기서는 그대로 통과시키기만 하고, 실제 로그인(firebase.auth() 세션 확보)은
+// 호출부(doKakaoAuth, index.html)가 함
+async function fbLoginWithKakao(kakaoAccessToken) {
+  let res;
+  try {
+    res = (await functionsRegion.httpsCallable('loginWithKakao')({ kakaoAccessToken })).data;
+  } catch (e) { return { ok: false, error: e.message || '카카오 로그인에 실패했습니다.' }; }
+  if (res.ok && (res.action === 'logged_in' || res.action === 'created')) {
+    localStorage.setItem('hwasee_uid', res.user_id);
+    _cacheVerifiedSession(res.user_id, res.token, res);
+  }
+  return res;
+}
+
+async function fbResolveKakaoMerge(merge) {
+  let res;
+  try {
+    res = (await functionsRegion.httpsCallable('resolveKakaoMerge')({ merge })).data;
+  } catch (e) { return { ok: false, error: e.message || '처리 중 오류가 발생했습니다.' }; }
+  if (res.ok && (res.action === 'logged_in' || res.action === 'created')) {
+    localStorage.setItem('hwasee_uid', res.user_id);
+    _cacheVerifiedSession(res.user_id, res.token, res);
+  }
+  return res;
+}
+
 // 5/10/20/30일 연속 출석 마일스톤 보너스 (총점, 매일 지급되는 10p와 별도)
 const LOGIN_STREAK_MILESTONES = { 5: 20, 10: 30, 20: 50, 30: 100 };
 
@@ -2763,6 +2790,8 @@ async function firebaseApi(action, params = {}) {
     case 'login':              return fbLogin(params.nickname, params.password);
     case 'loginWithGoogle':    return fbLoginWithGoogle();
     case 'resolveGoogleMerge': return fbResolveGoogleMerge(params.merge);
+    case 'loginWithKakao':     return fbLoginWithKakao(params.kakaoAccessToken);
+    case 'resolveKakaoMerge':  return fbResolveKakaoMerge(params.merge);
     case 'deleteAccount':      return fbDeleteAccount(await requireUid(), params.reason, params.detail);
     case 'changePassword':     return fbChangePassword(await requireUid(), params.current_password, params.new_password);
     case 'findAccount':        return fbFindAccount(params.name);

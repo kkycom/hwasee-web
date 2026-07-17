@@ -3770,6 +3770,10 @@ function auth() {
         </svg>
         구글로 계속하기
       </button>
+      <button class="btn" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:16px;background:#FEE500;color:#1c0e06;border:none" onclick="doKakaoAuth()">
+        <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#1c0e06" d="M12 3C6.48 3 2 6.48 2 10.8c0 2.76 1.84 5.19 4.62 6.59-.2.73-.73 2.66-.83 3.07-.13.51.19.5.4.37.16-.11 2.6-1.77 3.65-2.49.7.1 1.42.16 2.16.16 5.52 0 10-3.48 10-7.7C22 6.48 17.52 3 12 3z"/></svg>
+        카카오로 계속하기
+      </button>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;color:var(--muted);font-size:12px">
         <div style="flex:1;height:1px;background:var(--border)"></div>또는<div style="flex:1;height:1px;background:var(--border)"></div>
       </div>` : ''}
@@ -3920,17 +3924,48 @@ async function doGoogleAuth() {
   const res = await api('loginWithGoogle', {});
   hideBusy();
   if (!res.ok) { toast(res.error, true); return; }
-  if (res.action === 'needs_merge_decision') { _showGoogleMergeModal(res.existing_nickname); return; }
-  await _finishGoogleAuth(res);
+  if (res.action === 'needs_merge_decision') { _showSocialMergeModal('google', res.existing_nickname); return; }
+  await _finishSocialAuth('google', res);
 }
 
-// loginWithGoogle(신규/기존 판별 완료)과 resolveGoogleMerge(병합 여부 결정 후)
-// 둘 다 최종적으로 여기로 합류 — doLogin/doRegister의 성공 경로(saveUser→
-// 출석보너스/가입축하 토스트→이어쓰던 씨앗 재개→홈 이동→온보딩)를 그대로 재현
-async function _finishGoogleAuth(res) {
+// 간편가입(카카오) — 구글과 달리 Firebase Auth가 카카오를 네이티브 지원하지 않아서
+// (1)카카오 자체 로그인으로 액세스 토큰 획득 (2)서버가 그 토큰을 카카오 API로 검증하고
+// 커스텀 토큰 발급 (3)그 커스텀 토큰으로 signInWithCustomToken, 3단계를 거쳐야
+// 구글의 signInWithPopup 한 번과 동등한 상태(검증된 Firebase 세션)가 됨.
+async function doKakaoAuth() {
+  if (!(window.Kakao && Kakao.isInitialized())) { toast('카카오 로그인을 사용할 수 없어요.', true); return; }
+  let kakaoAccessToken;
+  try {
+    const authResult = await Kakao.Auth.login({ scope: 'account_email' });
+    kakaoAccessToken = authResult.access_token;
+  } catch (e) {
+    if (e && (e.error === 'access_denied' || e.error === 'user_cancel')) return;
+    toast('카카오 로그인에 실패했습니다.', true);
+    return;
+  }
+  showBusy();
+  const res = await api('loginWithKakao', { kakaoAccessToken });
+  if (!res.ok || !res.customToken) { hideBusy(); toast(res.error || '카카오 로그인에 실패했습니다.', true); return; }
+  try {
+    await firebase.auth().signInWithCustomToken(res.customToken);
+  } catch (e) {
+    hideBusy();
+    toast('로그인 세션 생성에 실패했습니다: ' + (e.message || ''), true);
+    return;
+  }
+  hideBusy();
+  if (res.action === 'needs_merge_decision') { _showSocialMergeModal('kakao', res.existing_nickname); return; }
+  await _finishSocialAuth('kakao', res);
+}
+
+// loginWithGoogle/loginWithKakao(신규/기존 판별 완료)과 resolveGoogleMerge/
+// resolveKakaoMerge(병합 여부 결정 후) 전부 최종적으로 여기로 합류 — doLogin/
+// doRegister의 성공 경로(saveUser→출석보너스/가입축하 토스트→이어쓰던 씨앗
+// 재개→홈 이동→온보딩)를 그대로 재현. provider는 gtag 가입경로 기록용으로만 씀.
+async function _finishSocialAuth(provider, res) {
   saveUser(res);
   if (res.action === 'created') {
-    if (typeof gtag === 'function') gtag('event', 'sign_up', { method: 'google' });
+    if (typeof gtag === 'function') gtag('event', 'sign_up', { method: provider });
     toast(`가입 완료! 환영합니다, ${res.display_name || res.nickname}님!`);
   } else {
     toast(`반갑습니다, ${res.display_name || res.nickname}님!`);
@@ -3950,8 +3985,9 @@ async function _finishGoogleAuth(res) {
 // 병합 여부 확인 — showConfirmModal(취소/확인 2버튼)은 "아무것도 안 함"이 취소의
 // 의미라 여기엔 안 맞음(합치기/따로 만들기 둘 다 실제 계정 생성으로 이어지는
 // 유효한 선택이라 "취소"라는 제3의 상태가 없음) — 그래서 전용 모달을 따로 만듦.
-function _showGoogleMergeModal(nickname) {
-  const mid = 'google-merge-modal';
+// provider별로 호출할 resolve API만 다르고 나머지는 동일해서 파라미터로 일반화.
+function _showSocialMergeModal(provider, nickname) {
+  const mid = 'social-merge-modal';
   document.getElementById(mid)?.remove();
   const modal = document.createElement('div');
   modal.id = mid;
@@ -3961,25 +3997,25 @@ function _showGoogleMergeModal(nickname) {
       <div style="font-size:16px;font-weight:700;margin-bottom:10px;font-family:var(--serif)">이미 가입된 계정이 있어요</div>
       <div style="font-size:13px;color:var(--muted);line-height:1.9;margin-bottom:20px">"${esc(nickname)}" 계정이 같은 이메일로 가입돼있어요.<br>합치시겠어요?</div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <button class="btn btn-primary btn-sm" id="${mid}-merge-btn" onclick="_resolveGoogleMerge(true)">합치기</button>
-        <button class="btn btn-ghost btn-sm" id="${mid}-separate-btn" onclick="_resolveGoogleMerge(false)">따로 만들기</button>
+        <button class="btn btn-primary btn-sm" id="${mid}-merge-btn" onclick="_resolveSocialMerge('${provider}', true)">합치기</button>
+        <button class="btn btn-ghost btn-sm" id="${mid}-separate-btn" onclick="_resolveSocialMerge('${provider}', false)">따로 만들기</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
 }
 
-async function _resolveGoogleMerge(merge) {
-  const mid = 'google-merge-modal';
+async function _resolveSocialMerge(provider, merge) {
+  const mid = 'social-merge-modal';
   const mergeBtn = document.getElementById(`${mid}-merge-btn`);
   const sepBtn = document.getElementById(`${mid}-separate-btn`);
   if (mergeBtn) mergeBtn.disabled = true;
   if (sepBtn) sepBtn.disabled = true;
   showBusy();
-  const res = await api('resolveGoogleMerge', { merge });
+  const res = await api(provider === 'kakao' ? 'resolveKakaoMerge' : 'resolveGoogleMerge', { merge });
   hideBusy();
   document.getElementById(mid)?.remove();
   if (!res.ok) { toast(res.error, true); return; }
-  await _finishGoogleAuth(res);
+  await _finishSocialAuth(provider, res);
 }
 
 // 서버(functions/index.js의 _isValidPassword/PW_RULE_MSG)와 반드시 동일하게

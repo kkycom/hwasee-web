@@ -1378,6 +1378,142 @@ exports.login = functions
     };
   });
 
+// ── 간편가입: 구글 로그인 (2026-07-17) ──
+// register/login과 동일하게 context.auth를 전제로 함 — 다만 여기선 익명인증이
+// 아니라 signInWithPopup(GoogleAuthProvider)로 브라우저의 Firebase Auth 세션 자체가
+// 구글 계정에 고정 매핑되는 uid로 교체된 상태. context.auth.uid/token은 Firebase가
+// 이미 검증해준 값이라(Callable Functions 프레임워크가 ID 토큰을 검증해서 채워줌)
+// register/login이 context.auth.uid를 그대로 신뢰하는 것과 동일한 전제 — _requireAdmin
+// 교훈(클라이언트가 "보낸" 값은 안 믿는다)과 모순되지 않음, 이건 클라이언트가 보낸 게
+// 아니라 프레임워크가 검증해서 채워준 값이기 때문.
+//
+// users.google_uid(신규 필드)로 계정을 조회 — auth_uid와 별개로 둔 이유: auth_uid는
+// "지금 이 계정 쓰기 권한을 가진 세션"이라는 기존 의미를 유지하고, google_uid는
+// "이 계정이 어떤 구글 계정에 링크됐는지"를 나타내는 별도 조회키로만 씀.
+
+function _genAutoNickname(rawName) {
+  const cleaned = (rawName || '').replace(/[^가-힣a-zA-Z0-9]/g, '').slice(0, 8);
+  return cleaned || '구글유저';
+}
+
+function _googleProfileResponse(action, token, u) {
+  return {
+    ok: true, action, token, user_id: u.user_id, nickname: u.nickname,
+    display_name: u.display_name || u.nickname, email: u.email || '',
+    total_points: u.total_points || 0, badge: u.badge || 'seed',
+    is_admin: u.user_id === FB_ADMIN_ID, adoption_count: u.adoption_count || 0,
+  };
+}
+
+// 신규 계정 생성 공통 헬퍼(최초 가입/병합 거부 두 경로에서 재사용) — 닉네임은
+// 구글 이름에서 한글·영문·숫자만 남기고 랜덤 4자리를 붙여 자동생성. 가입 중간에
+// 닉네임 입력창을 또 띄우면 "버튼 한 번으로 끝"이라는 간편가입 취지가 흐려지고,
+// 표시이름은 어차피 나중에 20p로 자유롭게 바꿀 수 있는 기존 기능이 있어 충분하다고
+// 판단(유저 확정 계획).
+async function _createGoogleAccount(db, context) {
+  const email = context.auth.token.email || '';
+  const base = _genAutoNickname(context.auth.token.name);
+  let nickname = null;
+  for (let i = 0; i < 20; i++) {
+    const suffix = String(Math.floor(1000 + Math.random() * 9000));
+    const candidate = `${base}${suffix}`.slice(0, 12);
+    const [dupId, dupDn] = await Promise.all([
+      db.collection('users').where('nickname', '==', candidate).limit(1).get(),
+      db.collection('users').where('display_name', '==', candidate).limit(1).get(),
+    ]);
+    if (dupId.empty && dupDn.empty) { nickname = candidate; break; }
+  }
+  if (!nickname) throw new functions.https.HttpsError('internal', '닉네임 생성에 실패했습니다. 다시 시도해주세요.');
+
+  const user_id = _genSecretId();
+  const token = _genSecretId();
+  const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  await Promise.all([
+    db.collection('users').doc(user_id).set({
+      user_id, nickname, display_name: nickname, email,
+      total_points: 0, adoption_count: 0, badge: 'seed', name: '', referral: '',
+      created_at: new Date().toISOString(), last_seen_patch_id: '',
+      auth_uid: context.auth.uid, google_uid: context.auth.uid,
+    }),
+    // pw_hash/salt 없이 token만 세팅 — _verifyPw(sec)는 salt/pw_hash 둘 다 없으면
+    // 항상 false를 반환하므로(functions/index.js _verifyPw), 이 계정으로 실수로
+    // 비밀번호 로그인 시도해도 크래시 없이 "틀렸습니다"로 안전하게 거부됨.
+    db.collection('user_secrets').doc(user_id).set({ token, token_exp }),
+  ]);
+
+  return _googleProfileResponse('created', token, {
+    user_id, nickname, display_name: nickname, email,
+    total_points: 0, badge: 'seed', adoption_count: 0,
+  });
+}
+
+exports.loginWithGoogle = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', '인증 정보가 없습니다.');
+    if (context.auth.token.firebase?.sign_in_provider !== 'google.com') {
+      throw new functions.https.HttpsError('failed-precondition', '구글 로그인 세션이 아닙니다.');
+    }
+    if (context.auth.token.email_verified !== true) {
+      return { ok: false, error: '구글 계정의 이메일이 확인되지 않았어요.' };
+    }
+    const db = admin.firestore();
+
+    const byGoogle = await db.collection('users').where('google_uid', '==', context.auth.uid).limit(1).get();
+    if (!byGoogle.empty) {
+      const doc = byGoogle.docs[0];
+      const u = doc.data();
+      const token = _genSecretId();
+      const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const writes = [db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true })];
+      if (u.auth_uid !== context.auth.uid) writes.push(doc.ref.update({ auth_uid: context.auth.uid }));
+      await Promise.all(writes);
+      return _googleProfileResponse('logged_in', token, u);
+    }
+
+    const email = context.auth.token.email || '';
+    const byEmail = email
+      ? await db.collection('users').where('email', '==', email).limit(1).get()
+      : { empty: true };
+    if (!byEmail.empty) {
+      const u = byEmail.docs[0].data();
+      return { ok: true, action: 'needs_merge_decision', existing_nickname: u.display_name || u.nickname };
+    }
+
+    return await _createGoogleAccount(db, context);
+  });
+
+exports.resolveGoogleMerge = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', '인증 정보가 없습니다.');
+    if (context.auth.token.firebase?.sign_in_provider !== 'google.com') {
+      throw new functions.https.HttpsError('failed-precondition', '구글 로그인 세션이 아닙니다.');
+    }
+    const db = admin.firestore();
+    const email = context.auth.token.email || '';
+
+    if (data.merge) {
+      // 클라이언트가 보낸 계정 식별자를 쓰지 않고, loginWithGoogle의 이메일 매치
+      // 조회를 서버가 다시 계산 — 레이스로 그 사이 사라졌으면 에러로 처리.
+      if (!email) throw new functions.https.HttpsError('failed-precondition', '이메일 정보가 없습니다.');
+      const byEmail = await db.collection('users').where('email', '==', email).limit(1).get();
+      if (byEmail.empty) throw new functions.https.HttpsError('failed-precondition', '합칠 계정을 찾을 수 없습니다.');
+      const doc = byEmail.docs[0];
+      const u = doc.data();
+      const token = _genSecretId();
+      const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      await Promise.all([
+        doc.ref.update({ google_uid: context.auth.uid, auth_uid: context.auth.uid }),
+        db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true }),
+      ]);
+      return _googleProfileResponse('logged_in', token, u);
+    }
+
+    return await _createGoogleAccount(db, context);
+  });
+
 exports.verifySession = functions
   .region('asia-northeast3')
   .https.onCall(async (data, context) => {

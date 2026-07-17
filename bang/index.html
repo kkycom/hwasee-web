@@ -3959,16 +3959,23 @@ async function doKakaoAuth() {
     kakaoAccessToken = authResult.access_token;
   } catch (e) {
     if (e && (e.error === 'access_denied' || e.error === 'user_cancel')) return;
+    console.error('Kakao.Auth.login failed:', e);
     toast('카카오 로그인에 실패했습니다.', true);
     return;
   }
   showBusy();
   const res = await api('loginWithKakao', { kakaoAccessToken });
-  if (!res.ok || !res.customToken) { hideBusy(); toast(res.error || '카카오 로그인에 실패했습니다.', true); return; }
+  if (!res.ok || !res.customToken) {
+    hideBusy();
+    console.error('loginWithKakao failed:', res);
+    toast(res.error || '카카오 로그인에 실패했습니다.', true);
+    return;
+  }
   try {
     await firebase.auth().signInWithCustomToken(res.customToken);
   } catch (e) {
     hideBusy();
+    console.error('signInWithCustomToken failed:', e);
     toast('로그인 세션 생성에 실패했습니다: ' + (e.message || ''), true);
     return;
   }

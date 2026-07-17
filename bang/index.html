@@ -3593,7 +3593,21 @@ async function episodeVotes() {
   const commentAuthorIds = [...new Set(rawComments.map(c => c.author_id).filter(Boolean))];
   const commNickMap = {};
   if (commentAuthorIds.length > 0) {
-    const uDocs = await Promise.all(commentAuthorIds.map(id => firebase.firestore().collection('users').doc(id).get()));
+    // 위와 같은 이유(탭복귀 직후 연결 끊김)로 이 조회도 무기한 멈출 수 있었음 —
+    // 동일한 타임아웃+1회 재시도 적용. 실패해도 댓글 작성자 닉네임은 부가 정보라
+    // "익명"으로만 표시되고 페이지 자체는 계속 진행되게 함(_fbGetUsersByIds로
+    // 개별조회 대신 배치조회도 같이 적용)
+    const _fetchCommentAuthors = () => Promise.race([
+      _fbGetUsersByIds(commentAuthorIds),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('요청 시간이 초과됐습니다.')), 15000)),
+    ]);
+    let uDocs;
+    try {
+      uDocs = await _fetchCommentAuthors();
+    } catch (e) {
+      if (_renderEpoch !== epoch || currentParam !== episode_id) return;
+      try { uDocs = await _fetchCommentAuthors(); } catch (e2) { uDocs = []; }
+    }
     if (_renderEpoch !== epoch || currentParam !== episode_id) return;
     uDocs.forEach(d => { if (d.exists) commNickMap[d.id] = d.data().display_name || d.data().nickname; });
   }

@@ -301,6 +301,33 @@ async function fbLogin(nickname, password) {
   return res;
 }
 
+// 간편가입(구글) — fbGetAuthUid()로 미리 익명 인증을 해두지 않음. signInWithPopup
+// 자체가 이 브라우저의 Firebase Auth 세션을 구글 계정 uid로 교체하는 인증 단계라,
+// 그게 끝난 뒤(doGoogleAuth(), index.html)에만 이 함수가 호출됨.
+async function fbLoginWithGoogle() {
+  let res;
+  try {
+    res = (await functionsRegion.httpsCallable('loginWithGoogle')({})).data;
+  } catch (e) { return { ok: false, error: e.message || '구글 로그인에 실패했습니다.' }; }
+  if (res.ok && (res.action === 'logged_in' || res.action === 'created')) {
+    localStorage.setItem('hwasee_uid', res.user_id);
+    _cacheVerifiedSession(res.user_id, res.token, res);
+  }
+  return res;
+}
+
+async function fbResolveGoogleMerge(merge) {
+  let res;
+  try {
+    res = (await functionsRegion.httpsCallable('resolveGoogleMerge')({ merge })).data;
+  } catch (e) { return { ok: false, error: e.message || '처리 중 오류가 발생했습니다.' }; }
+  if (res.ok && (res.action === 'logged_in' || res.action === 'created')) {
+    localStorage.setItem('hwasee_uid', res.user_id);
+    _cacheVerifiedSession(res.user_id, res.token, res);
+  }
+  return res;
+}
+
 // 5/10/20/30일 연속 출석 마일스톤 보너스 (총점, 매일 지급되는 10p와 별도)
 const LOGIN_STREAK_MILESTONES = { 5: 20, 10: 30, 20: 50, 30: 100 };
 
@@ -2734,6 +2761,8 @@ async function firebaseApi(action, params = {}) {
   switch (action) {
     case 'register':           return fbRegister(params.nickname, params.password, params.name, params.display_name, params.referral, params.referrer_nickname, params.email);
     case 'login':              return fbLogin(params.nickname, params.password);
+    case 'loginWithGoogle':    return fbLoginWithGoogle();
+    case 'resolveGoogleMerge': return fbResolveGoogleMerge(params.merge);
     case 'deleteAccount':      return fbDeleteAccount(await requireUid(), params.reason, params.detail);
     case 'changePassword':     return fbChangePassword(await requireUid(), params.current_password, params.new_password);
     case 'findAccount':        return fbFindAccount(params.name);

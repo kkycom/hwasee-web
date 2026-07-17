@@ -1428,12 +1428,16 @@ async function _createGoogleAccount(db, context) {
   const user_id = _genSecretId();
   const token = _genSecretId();
   const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  // register와 동일하게 가입 시점 최신 패치를 last_seen_patch_id로 세팅 —
+  // 안 하면 가입 이전 패치 내역이 신규 유저에게 안내로 뜸(v185 수정 사항, register:1272/1281 참고)
+  const latestPatchSnap = await db.collection('patch_notes').orderBy('created_at', 'desc').limit(1).get();
+  const initialSeenPatchId = latestPatchSnap.empty ? '' : latestPatchSnap.docs[0].data().patch_id;
 
   await Promise.all([
     db.collection('users').doc(user_id).set({
       user_id, nickname, display_name: nickname, email,
       total_points: 0, adoption_count: 0, badge: 'seed', name: '', referral: '',
-      created_at: new Date().toISOString(), last_seen_patch_id: '',
+      created_at: new Date().toISOString(), last_seen_patch_id: initialSeenPatchId,
       auth_uid: context.auth.uid, google_uid: context.auth.uid,
     }),
     // pw_hash/salt 없이 token만 세팅 — _verifyPw(sec)는 salt/pw_hash 둘 다 없으면

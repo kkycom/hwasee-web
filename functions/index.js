@@ -1391,12 +1391,12 @@ exports.login = functions
 // "지금 이 계정 쓰기 권한을 가진 세션"이라는 기존 의미를 유지하고, google_uid는
 // "이 계정이 어떤 구글 계정에 링크됐는지"를 나타내는 별도 조회키로만 씀.
 
-function _genAutoNickname(rawName) {
+function _genAutoNickname(rawName, fallback) {
   const cleaned = (rawName || '').replace(/[^가-힣a-zA-Z0-9]/g, '').slice(0, 8);
-  return cleaned || '구글유저';
+  return cleaned || fallback || '소셜유저';
 }
 
-function _googleProfileResponse(action, token, u) {
+function _socialProfileResponse(action, token, u) {
   return {
     ok: true, action, token, user_id: u.user_id, nickname: u.nickname,
     display_name: u.display_name || u.nickname, email: u.email || '',
@@ -1412,7 +1412,7 @@ function _googleProfileResponse(action, token, u) {
 // 판단(유저 확정 계획).
 async function _createGoogleAccount(db, context) {
   const email = context.auth.token.email || '';
-  const base = _genAutoNickname(context.auth.token.name);
+  const base = _genAutoNickname(context.auth.token.name, '구글유저');
   let nickname = null;
   for (let i = 0; i < 20; i++) {
     const suffix = String(Math.floor(1000 + Math.random() * 9000));
@@ -1446,7 +1446,7 @@ async function _createGoogleAccount(db, context) {
     db.collection('user_secrets').doc(user_id).set({ token, token_exp }),
   ]);
 
-  return _googleProfileResponse('created', token, {
+  return _socialProfileResponse('created', token, {
     user_id, nickname, display_name: nickname, email,
     total_points: 0, badge: 'seed', adoption_count: 0,
   });
@@ -1473,7 +1473,7 @@ exports.loginWithGoogle = functions
       const writes = [db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true })];
       if (u.auth_uid !== context.auth.uid) writes.push(doc.ref.update({ auth_uid: context.auth.uid }));
       await Promise.all(writes);
-      return _googleProfileResponse('logged_in', token, u);
+      return _socialProfileResponse('logged_in', token, u);
     }
 
     const email = context.auth.token.email || '';
@@ -1512,10 +1512,143 @@ exports.resolveGoogleMerge = functions
         doc.ref.update({ google_uid: context.auth.uid, auth_uid: context.auth.uid }),
         db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true }),
       ]);
-      return _googleProfileResponse('logged_in', token, u);
+      return _socialProfileResponse('logged_in', token, u);
     }
 
     return await _createGoogleAccount(db, context);
+  });
+
+// ── 간편가입: 카카오 로그인 (2026-07-17) ──
+// 구글과 다른 점: Firebase Auth가 카카오를 네이티브로 지원하지 않아서, 클라이언트가
+// 보낸 카카오 액세스 토큰을 서버가 직접 카카오 API로 검증해야 함(_verifyKakaoToken).
+// 검증 후엔 카카오 id에서 결정적으로 파생된 Firebase uid('kakao:'+id)로 커스텀
+// 토큰을 발급(admin.auth().createCustomToken) — 클라이언트가 signInWithCustomToken
+// 하면 그 뒤로는 context.auth.uid가 이 값으로 고정되어, 구글의 context.auth.uid(항상
+// 같은 구글 계정=같은 uid)와 동일한 안정성을 얻음(기기 바꿔도 재로그인 안정적).
+// email은 카카오가 검증해준 경우만(is_email_verified===true) 커스텀 토큰의 클레임에
+// 실어서, 이후 resolveKakaoMerge에서 signInWithPopup 이후의 구글과 동일하게
+// context.auth.token.email로 꺼내 쓸 수 있게 함.
+
+async function _verifyKakaoToken(kakaoAccessToken) {
+  if (!kakaoAccessToken) return null;
+  let res, data;
+  try {
+    res = await fetch('https://kapi.kakao.com/v2/user/me', {
+      headers: { Authorization: 'Bearer ' + kakaoAccessToken },
+    });
+    data = await res.json();
+  } catch (e) { console.error('kakao token verify error:', e.message); return null; }
+  if (!res.ok || !data || !data.id) return null;
+  const account = data.kakao_account || {};
+  const emailVerified = account.is_email_verified === true && account.is_email_valid === true;
+  return {
+    kakao_id: String(data.id),
+    email: emailVerified ? (account.email || '') : '',
+    nickname: (account.profile && account.profile.nickname) || '',
+  };
+}
+
+async function _createKakaoAccount(db, uid, email, kakaoNickname) {
+  const base = _genAutoNickname(kakaoNickname, '카카오유저');
+  let nickname = null;
+  for (let i = 0; i < 20; i++) {
+    const suffix = String(Math.floor(1000 + Math.random() * 9000));
+    const candidate = `${base}${suffix}`.slice(0, 12);
+    const [dupId, dupDn] = await Promise.all([
+      db.collection('users').where('nickname', '==', candidate).limit(1).get(),
+      db.collection('users').where('display_name', '==', candidate).limit(1).get(),
+    ]);
+    if (dupId.empty && dupDn.empty) { nickname = candidate; break; }
+  }
+  if (!nickname) throw new functions.https.HttpsError('internal', '닉네임 생성에 실패했습니다. 다시 시도해주세요.');
+
+  const user_id = _genSecretId();
+  const token = _genSecretId();
+  const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const latestPatchSnap = await db.collection('patch_notes').orderBy('created_at', 'desc').limit(1).get();
+  const initialSeenPatchId = latestPatchSnap.empty ? '' : latestPatchSnap.docs[0].data().patch_id;
+
+  await Promise.all([
+    db.collection('users').doc(user_id).set({
+      user_id, nickname, display_name: nickname, email,
+      total_points: 0, adoption_count: 0, badge: 'seed', name: '', referral: '',
+      created_at: new Date().toISOString(), last_seen_patch_id: initialSeenPatchId,
+      auth_uid: uid, kakao_uid: uid,
+    }),
+    db.collection('user_secrets').doc(user_id).set({ token, token_exp }),
+  ]);
+
+  return _socialProfileResponse('created', token, {
+    user_id, nickname, display_name: nickname, email,
+    total_points: 0, badge: 'seed', adoption_count: 0,
+  });
+}
+
+exports.loginWithKakao = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const verified = await _verifyKakaoToken(data.kakaoAccessToken);
+    if (!verified) return { ok: false, error: '카카오 로그인 확인에 실패했습니다.' };
+    const uid = 'kakao:' + verified.kakao_id;
+    const db = admin.firestore();
+
+    // 모든 분기(로그인/병합대기/신규가입)에서 커스텀 토큰을 발급 — 클라이언트가
+    // 다음 호출(resolveKakaoMerge) 전에 반드시 Firebase 세션을 가져야 하므로.
+    const customToken = await admin.auth().createCustomToken(uid, {
+      email: verified.email || null, nickname: verified.nickname || null,
+    });
+
+    const byKakao = await db.collection('users').where('kakao_uid', '==', uid).limit(1).get();
+    if (!byKakao.empty) {
+      const doc = byKakao.docs[0];
+      const u = doc.data();
+      const token = _genSecretId();
+      const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const writes = [db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true })];
+      if (u.auth_uid !== uid) writes.push(doc.ref.update({ auth_uid: uid }));
+      await Promise.all(writes);
+      return { ...(_socialProfileResponse('logged_in', token, u)), customToken };
+    }
+
+    if (verified.email) {
+      const byEmail = await db.collection('users').where('email', '==', verified.email).limit(1).get();
+      if (!byEmail.empty) {
+        const u = byEmail.docs[0].data();
+        return { ok: true, action: 'needs_merge_decision', existing_nickname: u.display_name || u.nickname, customToken };
+      }
+    }
+
+    const created = await _createKakaoAccount(db, uid, verified.email, verified.nickname);
+    return { ...created, customToken };
+  });
+
+exports.resolveKakaoMerge = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', '인증 정보가 없습니다.');
+    if (typeof context.auth.uid !== 'string' || !context.auth.uid.startsWith('kakao:')) {
+      throw new functions.https.HttpsError('failed-precondition', '카카오 로그인 세션이 아닙니다.');
+    }
+    const db = admin.firestore();
+    const email = context.auth.token.email || '';
+    const kakaoNickname = context.auth.token.nickname || '';
+
+    if (data.merge) {
+      if (!email) throw new functions.https.HttpsError('failed-precondition', '이메일 정보가 없습니다.');
+      const byEmail = await db.collection('users').where('email', '==', email).limit(1).get();
+      if (byEmail.empty) throw new functions.https.HttpsError('failed-precondition', '합칠 계정을 찾을 수 없습니다.');
+      const doc = byEmail.docs[0];
+      const u = doc.data();
+      const token = _genSecretId();
+      const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      await Promise.all([
+        doc.ref.update({ kakao_uid: context.auth.uid, auth_uid: context.auth.uid }),
+        db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true }),
+      ]);
+      return _socialProfileResponse('logged_in', token, u);
+    }
+
+    return await _createKakaoAccount(db, context.auth.uid, email, kakaoNickname);
   });
 
 exports.verifySession = functions

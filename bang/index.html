@@ -5684,7 +5684,12 @@ async function adminAI() {
   if (!isAdmin()) { nav('seed'); return; }
   const epoch = _renderEpoch;
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
-  const res = await api('getAIActivities', {});
+  let res = await api('getAIActivities', {});
+  // 다른 어드민 페이지들과 동일하게 탭복귀 직후 연결 재웜업 전 첫 요청만
+  // 실패하는 경우 1회 자동 재시도
+  if (!res.ok && _renderEpoch === epoch && currentRoute === 'admin-ai') {
+    res = await api('getAIActivities', {});
+  }
   if (_renderEpoch !== epoch || currentRoute !== 'admin-ai') return;
   _aiCache = res;
   _renderAdminAI('subs', 0);
@@ -5913,7 +5918,10 @@ async function adminEdits() {
   if (!isAdmin()) { nav('seed'); return; }
   const epoch = _renderEpoch;
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
-  const res = await api('getAdminEdits', {});
+  let res = await api('getAdminEdits', {});
+  if (!res.ok && _renderEpoch === epoch && currentRoute === 'admin-edits') {
+    res = await api('getAdminEdits', {});
+  }
   if (_renderEpoch !== epoch || currentRoute !== 'admin-edits') return;
   if (!res.ok) { document.getElementById('app').innerHTML = _adminNav('edits') + `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="adminEdits()">다시 시도</button></div>`; return; }
   const edits = res.edits;
@@ -5940,7 +5948,10 @@ async function adminReports() {
   if (!isAdmin()) { nav('seed'); return; }
   const epoch = _renderEpoch;
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
-  const res = await api('getReports', {});
+  let res = await api('getReports', {});
+  if (!res.ok && _renderEpoch === epoch && currentRoute === 'admin-reports') {
+    res = await api('getReports', {});
+  }
   if (_renderEpoch !== epoch || currentRoute !== 'admin-reports') return;
   if (!res.ok) { document.getElementById('app').innerHTML = _adminNav('reports') + `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="adminReports()">다시 시도</button></div>`; return; }
   const reports = res.reports;
@@ -5974,7 +5985,10 @@ async function adminBugs() {
   if (!isAdmin()) { nav('seed'); return; }
   const epoch = _renderEpoch;
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
-  const res = await api('getBugReports', {});
+  let res = await api('getBugReports', {});
+  if (!res.ok && _renderEpoch === epoch && currentRoute === 'admin-bugs') {
+    res = await api('getBugReports', {});
+  }
   if (_renderEpoch !== epoch || currentRoute !== 'admin-bugs') return;
   if (!res.ok) { document.getElementById('app').innerHTML = _adminNav('bugs') + `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="adminBugs()">다시 시도</button></div>`; return; }
   const bugs = res.reports || [];
@@ -6034,7 +6048,10 @@ async function adminPatchNotes() {
   if (!isAdmin()) { nav('seed'); return; }
   const epoch = _renderEpoch;
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
-  const res = await api('getPatchNotes', {});
+  let res = await api('getPatchNotes', {});
+  if (!res.ok && _renderEpoch === epoch && currentRoute === 'admin-patchnotes') {
+    res = await api('getPatchNotes', {});
+  }
   if (_renderEpoch !== epoch || currentRoute !== 'admin-patchnotes') return;
   if (!res.ok) { document.getElementById('app').innerHTML = _adminNav('patchnotes') + `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="adminPatchNotes()">다시 시도</button></div>`; return; }
   const notes = res.notes || [];
@@ -6071,7 +6088,10 @@ async function adminWordChallenge() {
   if (!isAdmin()) { nav('seed'); return; }
   const epoch = _renderEpoch;
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
-  const res = await api('adminGetWordChallengeQueue', {});
+  let res = await api('adminGetWordChallengeQueue', {});
+  if (!res.ok && _renderEpoch === epoch && currentRoute === 'admin-wordchallenge') {
+    res = await api('adminGetWordChallengeQueue', {});
+  }
   if (_renderEpoch !== epoch || currentRoute !== 'admin-wordchallenge') return;
   if (!res.ok) { document.getElementById('app').innerHTML = _adminNav('wordchallenge') + `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="adminWordChallenge()">다시 시도</button></div>`; return; }
   document.getElementById('app').innerHTML = `

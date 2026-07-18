@@ -661,6 +661,10 @@
   /* ── 분기 이야기 잠금 산문 */
   .prose-inherited { opacity:0.65; pointer-events:none; }
   .prose-inherited .branch-side-indicator { pointer-events:auto; }
+  /* 연장 이야기는 분기와 달리 경쟁하는 다른 갈래가 없는 하나로 이어지는 이야기라,
+     원작 부분을 옅게 죽여두면 오히려 "다른 이야기"처럼 느껴짐(2026-07-19 유저
+     지적) — 분기(.prose-inherited 기본값)만 옅게 두고 연장은 동일한 색으로 유지 */
+  .prose-inherited.prose-inherited-continuation { opacity:1; }
   /* 공감현황(읽기전용) 모드일 땐 상속된 산문도 클릭해서 볼 수 있어야 함 */
   .story-prose.viewvotes-active .prose-inherited { pointer-events:auto; }
   .prose-branch-tag { display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--accent2); font-weight:700; border:1px solid rgba(128,151,140,.4); border-radius:12px; padding:3px 10px; margin-bottom:10px; }
@@ -1851,9 +1855,13 @@ function _applyStoryData(res, story_id) {
       const tieHtml = tieTree ? renderEpisodeTreeHtml(tieTree, _pChoices, undefined, undefined, undefined, true, _branchEpId) : '';
       inheritedHtml = `<div class="prose-inherited">${beforeHtml}${tieHtml ? _divider + tieHtml : ''}</div>`;
     } else {
-      // 연장 이야기: 이전 전체가 공통이므로 맨 끝에 점선
+      // 연장 이야기: 이전 전체가 공통이므로 맨 끝에 점선. 분기는 왼쪽 A/B 갈래
+      // 탭으로 이미 "여기서 갈린다"는 게 보이지만 연장은 그런 탭이 없어서
+      // 점선만 있으면 무슨 뜻인지 알기 어려움 — "〜 연장" 라벨을 넣어 구분
+      // (2026-07-19 유저 지적)
+      const _contDivider = `<div style="height:29px;display:flex;align-items:center;gap:10px;margin-bottom:-29px"><div style="flex:1;border-top:1px dashed var(--accent2)"></div><span style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;flex-shrink:0">〜 연장</span><div style="flex:1;border-top:1px dashed var(--accent2)"></div></div>`;
       const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
-      inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, _pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_divider}` : '';
+      inheritedHtml = pTree ? `<div class="prose-inherited prose-inherited-continuation">${renderEpisodeTreeHtml(pTree, _pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_contDivider}` : '';
     }
   }
 
@@ -5310,8 +5318,10 @@ function chooseBranch(episode_id, sub_id) {
         const tieHtml = tieTree ? renderEpisodeTreeHtml(tieTree, pChoices, undefined, undefined, undefined, true, _branchEpId) : '';
         inheritedHtml = `<div class="prose-inherited">${beforeHtml}${tieHtml ? _divider + tieHtml : ''}</div>`;
       } else {
+        // _applyStoryData의 연장 전용 라벨 점선과 동일(주석 참고)
+        const _contDivider = `<div style="height:29px;display:flex;align-items:center;gap:10px;margin-bottom:-29px"><div style="flex:1;border-top:1px dashed var(--accent2)"></div><span style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;flex-shrink:0">〜 연장</span><div style="flex:1;border-top:1px dashed var(--accent2)"></div></div>`;
         const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
-        inheritedHtml = pTree ? `<div class="prose-inherited">${renderEpisodeTreeHtml(pTree, pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_divider}` : '';
+        inheritedHtml = pTree ? `<div class="prose-inherited prose-inherited-continuation">${renderEpisodeTreeHtml(pTree, pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_contDivider}` : '';
       }
     }
     const tree = getEpisodeTree(episodes.filter(e => e.status === 'closed'), submissions);

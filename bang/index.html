@@ -2045,7 +2045,7 @@ function toggleHistory() {
 // 완결 여부와 무관하게(진행 중에도) 보여줘야 해서 "만들어진 과정 보기"와 달리
 // isFinished 게이트 없음. genre_history는 fbGetStory가 story_genre_probs에서
 // 내려주는 단계별 이력({step, probs:{장르:%}} 배열).
-function genreChartSectionHtml(genre_history, story) {
+function genreChartSectionHtml(genre_history, story, startOpen) {
   if (!genre_history || !genre_history.length) return '';
   const history = genre_history.slice().sort((a, b) => a.step - b.step);
   const last = history[history.length - 1];
@@ -2092,8 +2092,8 @@ function genreChartSectionHtml(genre_history, story) {
 
   return `
     <div style="margin-top:8px">
-      <button class="genre-chart-toggle" onclick="toggleGenreChart(this)">장르 확률 추이 보기 ▾</button>
-      <div id="genre-chart-body" style="display:none">
+      <button class="genre-chart-toggle" onclick="toggleGenreChart(this)">장르 확률 추이 ${startOpen ? '접기 ▴' : '보기 ▾'}</button>
+      <div id="genre-chart-body" style="display:${startOpen ? 'block' : 'none'}">
         <div class="genre-chart-wrap">
           <div class="genre-chart-title">단계별 등락 — ${calcDisplayStep(story, last.step)}단계까지 진행됨</div>
           <svg viewBox="0 0 ${W} ${H}" width="100%" height="auto" role="img" aria-label="장르 확률 추이 차트">
@@ -2151,6 +2151,58 @@ function renderHistoryPanel(episodes, submissions, opening) {
         }).join('')}
       </div>`;
   }).join('');
+}
+
+// 스포트라이트 카드에서 상세 페이지로 안 들어가고도 진행 상황/장르 추이를 바로
+// 볼 수 있게 하는 미리보기 팝업(유저 요청, 2026-07-18) — getStory 응답을
+// story() 페이지와 동일한 캐시 키(_lsc)로 공유해서, 이미 들어가본 적 있는
+// 이야기면 네트워크 요청 없이 즉시 뜸.
+function _storyPreviewModalShell(title, id) {
+  const existing = document.getElementById(id);
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = id;
+  modal.className = 'modal-overlay';
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:600px;padding:0;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--border);border-radius:var(--radius) var(--radius) 0 0;z-index:1;flex-shrink:0">
+        <div style="font-size:15px;font-weight:700">${esc(title)}</div>
+        <button onclick="document.getElementById('${id}').remove()"
+          style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1">✕</button>
+      </div>
+      <div id="${id}-body" style="padding:20px;overflow-y:auto"><div class="loading"></div></div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function _fetchStoryForPreview(story_id) {
+  const cached = _lsc.get('story_' + story_id);
+  if (cached) return cached;
+  const res = await api('getStory', { story_id });
+  if (res.ok) _lsc.set('story_' + story_id, res, 600);
+  return res;
+}
+
+async function openStoryProseModal(story_id) {
+  _storyPreviewModalShell('📖 지금까지의 이야기', 'story-prose-modal');
+  const res = await _fetchStoryForPreview(story_id);
+  const el = document.getElementById('story-prose-modal-body');
+  if (!el) return; // 그 사이 모달을 닫았으면 무시
+  if (!res.ok) { el.innerHTML = '<div class="empty">불러오지 못했어요.</div>'; return; }
+  el.innerHTML = renderHistoryPanel(res.episodes, res.submissions, res.story.opening);
+}
+
+async function openStoryGenreModal(story_id) {
+  _storyPreviewModalShell('🎭 장르 확률 추이', 'story-genre-modal');
+  const res = await _fetchStoryForPreview(story_id);
+  const el = document.getElementById('story-genre-modal-body');
+  if (!el) return;
+  if (!res.ok || !res.genre_history || !res.genre_history.length) {
+    el.innerHTML = '<div class="empty">아직 추이 데이터가 없어요.</div>';
+    return;
+  }
+  el.innerHTML = genreChartSectionHtml(res.genre_history, res.story, true);
 }
 
 async function loadStoryComments(story_id) {
@@ -2376,9 +2428,7 @@ async function wordChallengePage() {
     <div style="display:flex;align-items:center;margin-bottom:20px">
       <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="nav('spotlight')">← 오늘의 이야기로</button>
     </div>
-    <div id="word-challenge-section">
-      <div style="text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;font-size:12px;color:var(--muted)">불러오는 중...</div>
-    </div>`;
+    <div id="word-challenge-section"><div class="loading"></div></div>`;
   loadWordChallenge();
 }
 
@@ -2742,13 +2792,16 @@ const GENRE_META = {
 // genre_probs: [{genre,pct}, ...] 최대 3개(fbGetSpotlight/fbGetStory가 내려줌) —
 // 1등만 알약 배지+문장, 2~3등은 우측에 칩으로. 첫 에피소드 마감 전(genre_probs
 // 없음)엔 패널 자체를 숨김 — vote_threshold만으로 카드를 미리 보여줄 근거가 없음.
-function genrePanelHtml(genre_probs) {
+// story_id를 주면 패널 클릭 시 장르 확률 추이 차트를 팝업으로 바로 보여줌(굳이
+// 이야기 상세로 들어가지 않아도 스포트라이트 카드에서 바로 확인 가능하게, 유저 요청).
+function genrePanelHtml(genre_probs, story_id) {
   if (!genre_probs || !genre_probs.length) return '';
   const [top, ...rest] = genre_probs;
   const suffix = GENRE_META[top.genre] || 'mystery';
   const chips = rest.map(g => `<span class="genre-chip">${esc(g.genre)} <span class="n">${g.pct}%</span></span>`).join('');
+  const clickAttr = story_id ? ` onclick="openStoryGenreModal('${esc(story_id)}')" role="button" tabindex="0" style="--g:var(--g-${suffix});--wash:var(--g-${suffix}-wash);cursor:pointer"` : ` style="--g:var(--g-${suffix});--wash:var(--g-${suffix}-wash)"`;
   return `
-    <div class="genre-panel" style="--g:var(--g-${suffix});--wash:var(--g-${suffix}-wash)">
+    <div class="genre-panel"${clickAttr}>
       <div class="genre-row">
         <div class="genre-headline">이 이야기, <span class="genre-pill-primary">${esc(top.genre)}</span>로 끝날 확률 <span class="n">${top.pct}%</span></div>
         <div class="genre-chips">${chips}</div>
@@ -2867,10 +2920,10 @@ function renderSpotlight() {
         ? `<button class="btn btn-sm" style="background:rgba(200,130,58,.12);color:var(--accent2);border:1px solid rgba(200,130,58,.35);border-radius:20px;display:inline-flex;align-items:center;gap:4px" onclick="nav('wordchallenge')">🎲 챌린지 가기</button>`
         : '';
       bodyHtml = `
-        <div class="story-prose" style="padding:28px 18px 28px 20px;margin:12px 0">
+        <div class="story-prose" style="padding:28px 18px 28px 20px;margin:12px 0;cursor:pointer" onclick="openStoryProseModal('${esc(slot.story_id)}')" role="button" aria-label="지금까지의 이야기 보기">
           <div class="prose-opening">${esc(slot.opening)}</div>
         </div>
-        ${genrePanelHtml(slot.genre_probs)}
+        ${genrePanelHtml(slot.genre_probs, slot.story_id)}
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <span class="step-pill"><span class="step-dot"></span>${_stepLabel}</span>
           <div style="display:flex;gap:6px;flex-shrink:0">${wcLinkBtn}${ctaHtml}</div>
@@ -3571,7 +3624,7 @@ async function episodeVotes() {
   const episode_id = currentParam;
   const epoch = _renderEpoch;
   if (!episode_id) { nav('seed'); return; }
-  document.getElementById('app').innerHTML = `<div class="empty">불러오는 중...</div>`;
+  document.getElementById('app').innerHTML = `<div class="loading"></div>`;
 
   // 이 함수는 api()를 거치지 않는 직접 Firestore 조회라 원래 타임아웃/재시도가
   // 전혀 없었음 — 백그라운드 탭 복귀 직후 연결이 끊겨있으면 "불러오는 중..."에

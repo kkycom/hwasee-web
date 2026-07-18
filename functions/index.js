@@ -708,6 +708,133 @@ ${text}
   });
 }
 
+// story_id에 속한 전체 에피소드/제출을 episode_id/sub_id로 빠르게 찾을 수 있는
+// 맵으로 만듦 — _serverSpinOffOrphan의 조상 체인 추적에 필요.
+async function _serverBuildEpisodeMaps(db, story_id) {
+  const [allEpsSnap, allSubsSnap] = await Promise.all([
+    db.collection('episodes').where('story_id', '==', story_id).get(),
+    db.collection('submissions').where('story_id', '==', story_id).get(),
+  ]);
+  const epById = new Map(allEpsSnap.docs.map(d => [d.id, { episode_id: d.id, ...d.data() }]));
+  const subsByEp = new Map();
+  allSubsSnap.docs.forEach(d => {
+    const s = { sub_id: d.id, ...d.data() };
+    if (!subsByEp.has(s.episode_id)) subsByEp.set(s.episode_id, []);
+    subsByEp.get(s.episode_id).push(s);
+  });
+  const subById = new Map(allSubsSnap.docs.map(d => [d.id, { sub_id: d.id, ...d.data() }]));
+  return { epById, subsByEp, subById };
+}
+
+// 특정 스토리에서 "버려진 갈래" 에피소드 하나를 독립 스토리로 분리하는 공용 헬퍼.
+// 두 가지 시점에서 호출됨:
+//  1) 스토리가 완결될 때, 그 시점까지 아직 안 닫힌 형제 갈래(orphanEp가 아직
+//     'open')를 정리할 때 — resolvedWinners 없이 호출.
+//  2) 형제 갈래가 스토리 완결 전에 먼저 자기 투표 임계값을 채워 따로(뒤늦게)
+//     마감된 경우 — orphanEp는 이미 closed 처리됐고, resolvedWinners에 그
+//     갈래 자신의 마감 결과(winners/anyClose)를 담아 호출. 이 2번 케이스가
+//     기존에 아예 빠져있던 부분(2026-07-19 유저 제보로 실제 데이터에서 발견 —
+//     current_step이 실제 진행 단계보다 부풀려지는 원인이었음: 이 뒤늦은 마감을
+//     _serverCloseEpisode가 그냥 정경 진행으로 취급해서 원 스토리의
+//     current_step을 그대로 또 올려버리고 있었음. 아래 참고).
+async function _serverSpinOffOrphan(db, orphanEp, story, epById, subsByEp, subById, resolvedWinners) {
+  const newStoryId = db.collection('stories').doc().id;
+
+  // orphan의 조상 체인을 거슬러 올라가며 두 지점을 구분해서 기록
+  let branch_episode_id = null, branch_sub_id = null;
+  let branch_leaf_episode_id = null, branch_leaf_sub_id = null;
+  let curSubId = orphanEp.parent_sub_id || null;
+  let isFirst = true;
+  while (curSubId) {
+    const curSub = subById.get(curSubId);
+    if (!curSub) break;
+    const curEp = epById.get(curSub.episode_id);
+    if (!curEp) break;
+    if (isFirst) {
+      branch_leaf_episode_id = curEp.episode_id;
+      branch_leaf_sub_id = curSubId;
+      isFirst = false;
+    }
+    const adoptedCount = (subsByEp.get(curEp.episode_id) || [])
+      .filter(s => s.is_adopted === true || s.is_adopted === 'TRUE').length;
+    if (adoptedCount > 1) { branch_episode_id = curEp.episode_id; branch_sub_id = curSubId; }
+    curSubId = curEp.parent_sub_id || null;
+  }
+
+  // 카드/산문뷰 단계 표시용: 원본 스토리 기준 진짜 이어지는 단계 번호를 정확히 계산
+  let branch_display_offset = null;
+  if (branch_leaf_episode_id) {
+    const leafEp = epById.get(branch_leaf_episode_id);
+    const leafDisplayStep = _calcDisplayStepBackend(story, Number(leafEp.step));
+    branch_display_offset = leafDisplayStep - Number(orphanEp.step) + 1;
+  }
+
+  // resolvedWinners 없으면(1번 케이스) orphan 자신이 아직 열려있는 채로 새
+  // 스토리에 그대로 물려짐 — current_step은 orphan 단계 직전까지만.
+  // 있으면(2번 케이스) orphan은 이미 결론이 난 상태로 물려지고, current_step은
+  // orphan 단계까지 포함해서 잡음(아래에서 결과 에피소드를 따로 만듦).
+  const openSteps = {};
+  if (!resolvedWinners) {
+    openSteps[orphanEp.episode_id] = { step: Number(orphanEp.step), sub_count: (subsByEp.get(orphanEp.episode_id) || []).length };
+  }
+
+  const spinBatch = db.batch();
+  spinBatch.set(db.collection('stories').doc(newStoryId), {
+    story_id: newStoryId, parent_story_id: orphanEp.story_id,
+    branch_from_step: Number(orphanEp.step) + 1,
+    branch_episode_id, branch_sub_id,
+    branch_leaf_episode_id, branch_leaf_sub_id,
+    branch_display_offset,
+    opening: story.opening, max_steps: story.max_steps || 10,
+    current_step: resolvedWinners ? Number(orphanEp.step) : Number(orphanEp.step) - 1,
+    status: (resolvedWinners && resolvedWinners.anyClose) ? 'completed' : 'active',
+    creator_id: story.creator_id,
+    creator_nickname: story.creator_nickname || '익명',
+    creator_badge: story.creator_badge || '',
+    // 분기(고아 에피소드) 시점의 참여자 수는 여기서 새로 세지 않고 부모
+    // 스토리의 누적 participant_count를 그대로 물려받음 — branch_display_offset이
+    // 단계 번호를 부모+분기 합산 기준으로 보여주는 것과 일관되게, 참여자 수도
+    // "분기 이후 새로 온 사람만" 세면 실제보다 훨씬 적게 표시되는 문제가 있었음
+    // (2026-07-08 유저 리포트: 표시상 6단계인데 참여자 4명 — 실제로는 분기 전
+    // 부모 쪽에만 15명이 더 있었음). 이후 이 분기에 새 작성자가 오면 기존처럼
+    // fbCreateSubmission의 increment(1)로 계속 누적됨.
+    participant_count: Number(story.participant_count) || 0, like_count: 0, adoption_count: 0,
+    has_branch: false, created_at: new Date().toISOString(), batch: '',
+    // 자유 이야기 탭 정렬/카드 표시용 — 새로 분리된 스토리는 방금 연 에피소드가
+    // vote_total 0으로 시작하므로 hot_score 0 (firebase-api.js fbCreateStory 참고).
+    hot_score: 0,
+    open_steps: openSteps,
+  });
+  spinBatch.update(db.collection('episodes').doc(orphanEp.episode_id), { story_id: newStoryId });
+  await spinBatch.commit();
+
+  const subSnap = await db.collection('submissions').where('episode_id', '==', orphanEp.episode_id).get();
+  if (!subSnap.empty) {
+    const subBatch = db.batch();
+    subSnap.docs.forEach(d => subBatch.update(d.ref, { story_id: newStoryId }));
+    await subBatch.commit();
+  }
+
+  // 2번 케이스면서 완결이 아니면(anyClose===false) — 이미 결론난 이 갈래의
+  // 다음 에피소드(들)를 새로 분리된 스토리 밑에 생성
+  if (resolvedWinners && !resolvedWinners.anyClose) {
+    const nextEpBatch = db.batch();
+    const nextOpenSteps = {};
+    resolvedWinners.winners.forEach(w => {
+      const newEpId = db.collection('episodes').doc().id;
+      nextEpBatch.set(db.collection('episodes').doc(newEpId), {
+        episode_id: newEpId, story_id: newStoryId,
+        step: Number(orphanEp.step) + 1, parent_sub_id: w.id,
+        status: 'open', vote_total: 0,
+        created_at: new Date().toISOString(), closed_at: '', pending_at: '',
+      });
+      nextOpenSteps[`open_steps.${newEpId}`] = { step: Number(orphanEp.step) + 1, sub_count: 0 };
+    });
+    await nextEpBatch.commit();
+    await db.collection('stories').doc(newStoryId).update(nextOpenSteps);
+  }
+}
+
 async function _serverCloseEpisode(db, episode_id, ep) {
   const epRef = db.collection('episodes').doc(episode_id);
   const storyRef = db.collection('stories').doc(ep.story_id);
@@ -769,8 +896,29 @@ async function _serverCloseEpisode(db, episode_id, ep) {
   if (!storySnap.exists) return;
 
   const st = storySnap.data();
-  const nextStep = (Number(st.current_step) || 0) + 1;
   const anyClose = winners.some(w => w.is_closing === true);
+
+  // ⚠️ 이 에피소드가 스토리의 "다음 정경(canonical) 단계"가 맞는지 확인.
+  // 동률로 갈린 두 갈래 중 하나가 먼저 닫혀서 이미 다음 단계로 진행된 뒤,
+  // 나머지(버려진) 갈래가 뒤늦게 자기 투표 임계값을 채워 따로 마감되는 경우가
+  // 있음 — 원래는 이 경우도 무조건 current_step을 그대로 또 +1 해버려서, 실제
+  // 정경 진행은 7단계까지인 이야기의 current_step이 8, 9로 계속 부풀려지는
+  // 버그가 있었음(2026-07-19 유저 제보로 실제 라이브 데이터에서 확인 — 동률 후
+  // 버려진 갈래가 4시간 넘게 지나서야 따로 마감되며 재현됨. 그 부풀려진
+  // current_step이 "이야기 연장하기"의 branch_from_step 계산에도 그대로
+  // 흘러들어가 연장 이야기의 시작 단계 표기까지 틀리게 만들었음).
+  // 이 에피소드의 step이 스토리의 "다음 정경 단계"(current_step+1)와 다르면
+  // 뒤늦게 마감된 버려진 갈래로 보고, 원 스토리는 전혀 안 건드린 채 이 갈래를
+  // 독립 스토리로 즉시 분리함(기존 "스토리 완결 시 남은 open 에피소드 분리"와
+  // 동일한 헬퍼(_serverSpinOffOrphan)를 재사용, 호출 시점만 다름).
+  if (Number(ep.step) !== (Number(st.current_step) || 0) + 1) {
+    const { epById, subsByEp, subById } = await _serverBuildEpisodeMaps(db, ep.story_id);
+    await _serverSpinOffOrphan(db, ep, st, epById, subsByEp, subById, { winners, anyClose });
+    console.log(`serverCloseEpisode: ${episode_id}는 이미 지나간 단계(step ${ep.step}, story current_step ${st.current_step})라 독립 스토리로 분리함`);
+    return;
+  }
+
+  const nextStep = (Number(st.current_step) || 0) + 1;
 
   // 스포트라이트 슬롯 이야기(vote_threshold 있음)는 매 단계 마감마다 장르 확률을
   // 갱신 — 완결 전에도 카드/상세페이지에서 등락을 보여줘야 하므로 여기서 호출.
@@ -817,88 +965,9 @@ async function _serverCloseEpisode(db, episode_id, ep) {
     const orphanSnap = await db.collection('episodes')
       .where('story_id', '==', ep.story_id).where('status', '==', 'open').get();
     if (!orphanSnap.empty) {
-      const [allEpsSnap, allSubsSnap] = await Promise.all([
-        db.collection('episodes').where('story_id', '==', ep.story_id).get(),
-        db.collection('submissions').where('story_id', '==', ep.story_id).get(),
-      ]);
-      const epById = new Map(allEpsSnap.docs.map(d => [d.id, { episode_id: d.id, ...d.data() }]));
-      const subsByEp = new Map();
-      allSubsSnap.docs.forEach(d => {
-        const s = { sub_id: d.id, ...d.data() };
-        if (!subsByEp.has(s.episode_id)) subsByEp.set(s.episode_id, []);
-        subsByEp.get(s.episode_id).push(s);
-      });
-      const subById = new Map(allSubsSnap.docs.map(d => [d.id, { sub_id: d.id, ...d.data() }]));
-
+      const { epById, subsByEp, subById } = await _serverBuildEpisodeMaps(db, ep.story_id);
       for (const orphanDoc of orphanSnap.docs) {
-        const orphan = orphanDoc.data();
-        const newStoryId = db.collection('stories').doc().id;
-        const subSnap = await db.collection('submissions')
-          .where('episode_id', '==', orphan.episode_id).get();
-
-        // orphan의 조상 체인을 거슬러 올라가며 두 지점을 구분해서 기록
-        let branch_episode_id = null, branch_sub_id = null;
-        let branch_leaf_episode_id = null, branch_leaf_sub_id = null;
-        let curSubId = orphan.parent_sub_id || null;
-        let isFirst = true;
-        while (curSubId) {
-          const curSub = subById.get(curSubId);
-          if (!curSub) break;
-          const curEp = epById.get(curSub.episode_id);
-          if (!curEp) break;
-          if (isFirst) {
-            branch_leaf_episode_id = curEp.episode_id;
-            branch_leaf_sub_id = curSubId;
-            isFirst = false;
-          }
-          const adoptedCount = (subsByEp.get(curEp.episode_id) || [])
-            .filter(s => s.is_adopted === true || s.is_adopted === 'TRUE').length;
-          if (adoptedCount > 1) { branch_episode_id = curEp.episode_id; branch_sub_id = curSubId; }
-          curSubId = curEp.parent_sub_id || null;
-        }
-
-        // 카드/산문뷰 단계 표시용: 원본 스토리 기준 진짜 이어지는 단계 번호를 정확히 계산
-        let branch_display_offset = null;
-        if (branch_leaf_episode_id) {
-          const leafEp = epById.get(branch_leaf_episode_id);
-          const leafDisplayStep = _calcDisplayStepBackend(st, Number(leafEp.step));
-          branch_display_offset = leafDisplayStep - Number(orphan.step) + 1;
-        }
-
-        const spinBatch = db.batch();
-        spinBatch.set(db.collection('stories').doc(newStoryId), {
-          story_id: newStoryId, parent_story_id: ep.story_id,
-          branch_from_step: Number(orphan.step) + 1,
-          branch_episode_id, branch_sub_id,
-          branch_leaf_episode_id, branch_leaf_sub_id,
-          branch_display_offset,
-          opening: st.opening, max_steps: st.max_steps || 10,
-          current_step: Number(orphan.step) - 1, status: 'active',
-          creator_id: st.creator_id,
-          creator_nickname: st.creator_nickname || '익명',
-          creator_badge: st.creator_badge || '',
-          // 분기(고아 에피소드) 시점의 참여자 수는 여기서 새로 세지 않고 부모
-          // 스토리의 누적 participant_count를 그대로 물려받음 — branch_display_offset이
-          // 단계 번호를 부모+분기 합산 기준으로 보여주는 것과 일관되게, 참여자 수도
-          // "분기 이후 새로 온 사람만" 세면 실제보다 훨씬 적게 표시되는 문제가 있었음
-          // (2026-07-08 유저 리포트: 표시상 6단계인데 참여자 4명 — 실제로는 분기 전
-          // 부모 쪽에만 15명이 더 있었음). 이후 이 분기에 새 작성자가 오면 기존처럼
-          // fbCreateSubmission의 increment(1)로 계속 누적됨.
-          participant_count: Number(st.participant_count) || 0, like_count: 0, adoption_count: 0,
-          has_branch: false, created_at: new Date().toISOString(), batch: '',
-          // 자유 이야기 탭 정렬/카드 표시용 — 새로 분리된 스토리는 방금 연 에피소드가
-          // vote_total 0으로 시작하므로 hot_score 0 (firebase-api.js fbCreateStory 참고).
-          // open_steps은 orphan 에피소드를 그대로 물려받으므로 이미 있던 제출 개수 유지.
-          hot_score: 0,
-          open_steps: { [orphan.episode_id]: { step: Number(orphan.step), sub_count: (subsByEp.get(orphan.episode_id) || []).length } },
-        });
-        spinBatch.update(orphanDoc.ref, { story_id: newStoryId });
-        await spinBatch.commit();
-        if (!subSnap.empty) {
-          const subBatch = db.batch();
-          subSnap.docs.forEach(d => subBatch.update(d.ref, { story_id: newStoryId }));
-          await subBatch.commit();
-        }
+        await _serverSpinOffOrphan(db, { episode_id: orphanDoc.id, ...orphanDoc.data() }, st, epById, subsByEp, subById, null);
       }
     }
   } else {

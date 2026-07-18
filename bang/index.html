@@ -6780,7 +6780,17 @@ window.onload = async () => {
     // 유저 제보 — 캐시를 지우면 해결됐던 것도 이 이유). 자동 새로고침은 하필
     // 그 순간 글을 쓰고 있던 유저의 작성 내용을 날릴 수 있어서, 대신 안내
     // 배너로 원할 때 누르게 함.
+    // controllerchange는 "옛 서비스워커 → 새 서비스워커로 교체"뿐 아니라,
+    // 이 페이지가 처음부터 아무 서비스워커의 컨트롤도 안 받고 있다가(시크릿탭,
+    // 첫 방문 등 — 이 경우 지금 로드된 JS가 이미 최신임) clients.claim()으로
+    // 처음 컨트롤을 잡을 때도 똑같이 fire됨. 이 구분 없이 무조건 배너를
+    // 띄우면 시크릿탭 등 실제로는 갱신할 게 없는 상황에서도 "새 버전이
+    // 나왔어요"가 잘못 뜸(2026-07-16 유저 제보로 발견). 페이지 로드 시점에
+    // 이미 컨트롤러가 있었을 때만 "진짜 교체"로 보고, 최초 컨트롤 획득은
+    // 한 번은 무시하되 이후엔 정상적으로 진짜 업데이트로 인식하게 함.
+    let _swHadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!_swHadController) { _swHadController = true; return; }
       if (document.getElementById('sw-update-banner')) return;
       const bar = document.createElement('div');
       bar.id = 'sw-update-banner';

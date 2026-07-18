@@ -3940,9 +3940,11 @@ const KAKAO_REDIRECT_URI = 'https://hwasee.me/bang/';
 
 function doKakaoAuth() {
   if (!(window.Kakao && Kakao.isInitialized())) { toast('카카오 로그인을 사용할 수 없어요. 새로고침 후 다시 시도해주세요.', true); return; }
-  // scope 생략 시 콘솔에서 "선택 동의"로 설정된 항목(닉네임 등)은 자동으로 요청되지
-  // 않고 넘어가버림 — 명시적으로 요청해서 동의창에 뜨게 함
-  Kakao.Auth.authorize({ redirectUri: KAKAO_REDIRECT_URI, scope: 'profile_nickname,account_email' });
+  // scope 생략 시 콘솔에서 "선택 동의"로 설정된 항목(닉네임)은 자동으로 요청되지
+  // 않고 넘어가버림 — 명시적으로 요청해서 동의창에 뜨게 함. account_email은 이 앱에
+  // "권한 없음"(비즈 앱 인증 필요) 상태라 스코프에 넣으면 KOE205로 아예 거부되므로
+  // 제외 — 이메일 없이 카카오 로그인만 되는 상태로 우선 감(원래 계획에서도 예상한 리스크)
+  Kakao.Auth.authorize({ redirectUri: KAKAO_REDIRECT_URI, scope: 'profile_nickname' });
 }
 
 // 카카오 로그인 후 이 페이지로 돌아왔을 때(location.search에 ?code=...가 있음) 처리.

@@ -710,12 +710,17 @@ ${text}
 
 async function _serverCloseEpisode(db, episode_id, ep) {
   const epRef = db.collection('episodes').doc(episode_id);
+  const storyRef = db.collection('stories').doc(ep.story_id);
   const alreadyClosed = await db.runTransaction(async tx => {
     const snap = await tx.get(epRef);
     if (!snap.exists) return true;
     const st = snap.data().status;
     if (st !== 'open' && st !== 'pending') return true;
     tx.update(epRef, { status: 'closed', closed_at: new Date().toISOString() });
+    // 자유 이야기 탭 카드용 open_steps에서도 제거 — 안 지우면 닫힌 에피소드가
+    // 카드에 계속 "열려있는 것"처럼 남음(2026-07-18 성능개선용 비정규화 필드,
+    // firebase-api.js fbCreateStory 참고)
+    tx.update(storyRef, { [`open_steps.${episode_id}`]: admin.firestore.FieldValue.delete() });
     return false;
   });
   if (alreadyClosed) return;
@@ -881,6 +886,11 @@ async function _serverCloseEpisode(db, episode_id, ep) {
           // fbCreateSubmission의 increment(1)로 계속 누적됨.
           participant_count: Number(st.participant_count) || 0, like_count: 0, adoption_count: 0,
           has_branch: false, created_at: new Date().toISOString(), batch: '',
+          // 자유 이야기 탭 정렬/카드 표시용 — 새로 분리된 스토리는 방금 연 에피소드가
+          // vote_total 0으로 시작하므로 hot_score 0 (firebase-api.js fbCreateStory 참고).
+          // open_steps은 orphan 에피소드를 그대로 물려받으므로 이미 있던 제출 개수 유지.
+          hot_score: 0,
+          open_steps: { [orphan.episode_id]: { step: Number(orphan.step), sub_count: (subsByEp.get(orphan.episode_id) || []).length } },
         });
         spinBatch.update(orphanDoc.ref, { story_id: newStoryId });
         await spinBatch.commit();
@@ -892,19 +902,26 @@ async function _serverCloseEpisode(db, episode_id, ep) {
       }
     }
   } else {
-    const storyUpdate = { current_step: nextStep };
+    // 새로 열리는 다음 단계 에피소드는 vote_total 0에서 시작하므로, 자유 이야기 탭
+    // 정렬용 hot_score도 같이 0으로 리셋(안 하면 이전 단계의 표가 그대로 남아
+    // 정렬이 실제 활성도와 어긋남). open_steps엔 새로 여는 에피소드(들)를 추가 —
+    // 방금 닫힌 에피소드 항목은 위 초기 트랜잭션에서 이미 제거됐음.
+    const newEpIds = winners.map(() => db.collection('episodes').doc().id);
+    const storyUpdate = { current_step: nextStep, hot_score: 0 };
     if (winners.length > 1) storyUpdate.has_branch = true;
+    newEpIds.forEach(newEpId => {
+      storyUpdate[`open_steps.${newEpId}`] = { step: nextStep + 1, sub_count: 0 };
+    });
     await storySnap.ref.update(storyUpdate);
     const epBatch = db.batch();
-    for (const w of winners) {
-      const newEpId = db.collection('episodes').doc().id;
-      epBatch.set(db.collection('episodes').doc(newEpId), {
-        episode_id: newEpId, story_id: ep.story_id,
+    winners.forEach((w, i) => {
+      epBatch.set(db.collection('episodes').doc(newEpIds[i]), {
+        episode_id: newEpIds[i], story_id: ep.story_id,
         step: nextStep + 1, parent_sub_id: w.id,
         status: 'open', vote_total: 0,
         created_at: new Date().toISOString(), closed_at: '', pending_at: '',
       });
-    }
+    });
     await epBatch.commit();
   }
   console.log(`serverCloseEpisode: ${episode_id} → ${anyClose ? 'completed' : `step ${nextStep + 1}`} (winners: ${winners.length})`);
@@ -2454,6 +2471,9 @@ function _serverCreateSeedStory(db, writer, opening) {
     status: 'active', creator_id: FB_AI_ID, creator_nickname: '익명', creator_badge: '',
     created_at: new Date().toISOString(), batch: '', participant_count: 0, like_count: 0,
     is_ai_seed: true, vote_threshold: 5,
+    // 자유 이야기 탭 정렬/카드 표시용 (firebase-api.js fbCreateStory 참고)
+    hot_score: 0,
+    open_steps: { [episode_id]: { step: 1, sub_count: 0 } },
   });
   writer.set(db.collection('episodes').doc(episode_id), {
     episode_id, story_id, step: 1, parent_sub_id: '',

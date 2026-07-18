@@ -499,56 +499,40 @@ async function fbGetStories(page) {
   const p = Number(page) || 1;
 
   if (p === 1) {
-    const [storiesSnap, episodesSnap, boostsSnap] = await Promise.all([
+    // 예전엔 매번 episodes(열린 것 전체)+submissions(10개씩 청크 병렬조회)까지
+    // 조인해서 카드용 "N단계 · 제출 N개"를 계산했음 — 이야기가 많아질수록(2026-07
+    // 기준 활성 이야기 220여개, 열린 에피소드 270여개) 자유 이야기 탭 진입 자체가
+    // 눈에 띄게 느려지는 원인이었음. 각 스토리 문서에 미리 계산해둔 open_steps
+    // 맵(fbCreateSubmission/_serverCloseEpisode 등에서 실시간 갱신)을 그대로
+    // 읽기만 하도록 바꿔서 episodes/submissions 조회 자체를 없앰.
+    const [storiesSnap, boostsSnap] = await Promise.all([
       db.collection('stories').where('status', '==', 'active').get(),
-      db.collection('episodes').where('status', '==', 'open').get(),
       db.collection('boosts').where('expires_at', '>', fbNow()).get(),
     ]);
-
-    const openVoteMap = {}, openEpsByStory = {};
-    episodesSnap.docs.forEach(d => {
-      const e = d.data();
-      const cur = openVoteMap[e.story_id] || 0;
-      if ((e.vote_total || 0) > cur) openVoteMap[e.story_id] = e.vote_total || 0;
-      (openEpsByStory[e.story_id] = openEpsByStory[e.story_id] || []).push({ episode_id: d.id, step: Number(e.step) });
-    });
     const boostSet = new Set(boostsSnap.docs.map(d => d.data().story_id));
-
-    // 현재 열린 단계(들)에 제출된 글 개수 (카드에 분기별 "N개" 표시용) — 열린 에피소드 전체 기준
-    const subCountMap = {};
-    const openEpIds = episodesSnap.docs.map(d => d.id);
-    if (openEpIds.length) {
-      const _chunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
-      const subChunkSnaps = await Promise.all(
-        _chunks(openEpIds).map(ch => db.collection('submissions').where('episode_id', 'in', ch).get())
-      );
-      subChunkSnaps.forEach(snap => snap.docs.forEach(d => {
-        // AI(익명) 제출도 실제로 투표 카드에 표시되므로 카운트에 포함 — 빼면 카드 숫자와
-        // 실제 들어가서 보는 제출 카드 개수가 안 맞아서 혼란을 줌
-        const epId = d.data().episode_id;
-        subCountMap[epId] = (subCountMap[epId] || 0) + 1;
-      }));
-    }
 
     // 방치된 AI 씨앗 자동정리는 여기(클라이언트, 자유 이야기 탭 로딩 시점)에서
     // 하지 않음 — 오래된(캐시된) 클라이언트 JS가 이 로직을 들고 있으면 서버 코드를
     // 아무리 고쳐도 스포트라이트 슬롯 이야기가 잘못 청소되는 사고가 반복됐음
     // (2026-07-12, 07-13 두 번 발생). 서버 스케줄러(cleanupAbandonedSeeds,
     // functions/index.js)로 이관해서 클라이언트 캐시 버전과 무관하게 동작하게 함.
-    const stories = storiesSnap.docs.map(d => ({
-      ...d.data(),
-      is_boosted:        boostSet.has(d.id),
-      activity_count:    d.data().participant_count || 0,
-      creator_nickname:  d.data().creator_nickname || '익명',
-      creator_badge:     d.data().creator_badge    || '',
-      open_eps: (openEpsByStory[d.id] || [])
-        .sort((a, b) => a.step - b.step)
-        .map(e => ({ step: e.step, sub_count: subCountMap[e.episode_id] || 0 })),
-    }));
+    const stories = storiesSnap.docs.map(d => {
+      const data = d.data();
+      return {
+        ...data,
+        is_boosted:        boostSet.has(d.id),
+        activity_count:    data.participant_count || 0,
+        creator_nickname:  data.creator_nickname || '익명',
+        creator_badge:     data.creator_badge    || '',
+        open_eps: Object.values(data.open_steps || {})
+          .map(e => ({ step: Number(e.step) || 0, sub_count: Number(e.sub_count) || 0 }))
+          .sort((a, b) => a.step - b.step),
+      };
+    });
 
     stories.sort((a, b) => {
       if (a.is_boosted !== b.is_boosted) return a.is_boosted ? -1 : 1;
-      const vDiff = (openVoteMap[b.story_id] || 0) - (openVoteMap[a.story_id] || 0);
+      const vDiff = (Number(b.hot_score) || 0) - (Number(a.hot_score) || 0);
       if (vDiff !== 0) return vDiff;
       return new Date(a.created_at) - new Date(b.created_at);
     });
@@ -894,6 +878,17 @@ async function fbCreateStory(opening, creator_id, is_ai_seed) {
     status: 'active', creator_id, creator_nickname, creator_badge,
     created_at: fbNow(), batch: '', participant_count: 0, like_count: 0,
     is_ai_seed: !!is_ai_seed,
+    // 자유 이야기 탭 정렬용 — 현재 열린 에피소드의 vote_total을 그대로 미러링
+    // (fbVote에서 갱신), 새 에피소드가 열릴 때마다 0으로 리셋됨.
+    hot_score: 0,
+    // 자유 이야기 탭 카드에 "N단계 · 제출 N개"를 보여주기 위해 예전엔 매번
+    // episodes/submissions 전체를 조인해서 계산했음 — 이야기가 많아질수록
+    // 자유 이야기 탭 진입 자체가 느려지는 원인이었음(2026-07-18). 열린
+    // 에피소드별 단계/제출개수를 이 맵에 미리 계산해 저장해두고 그대로 읽기만
+    // 하도록 전환. 키는 episode_id, 값은 {step, sub_count} — 에피소드가 열릴
+    // 때 항목 추가, 닫힐 때 제거(_serverCloseEpisode), 제출 생성/삭제 시
+    // sub_count만 증감(fbCreateSubmission/fbDeleteMySubmission 등).
+    open_steps: { [episode_id]: { step: 1, sub_count: 0 } },
   });
   batch.set(db.collection('episodes').doc(episode_id), {
     episode_id, story_id, step: 1, parent_sub_id: '',
@@ -1120,7 +1115,13 @@ async function _fbFinishStuckAdvance(story_id, ep, winner) {
 
     const nextStep = (Number(st.current_step) || 0) + 1;
     const newEpId  = fbGenId();
-    await storySnap.ref.update({ current_step: nextStep });
+    // hot_score/open_steps 갱신도 _serverCloseEpisode의 다음 단계 진행과 동일하게
+    // 처리(새로 여는 에피소드는 vote_total 0에서 시작). open_steps는 레거시
+    // 복구 경로라 부분갱신 대신 통째로 교체(오래된 잔여 항목이 있을 수 있음).
+    await storySnap.ref.update({
+      current_step: nextStep, hot_score: 0,
+      open_steps: { [newEpId]: { step: nextStep + 1, sub_count: 0 } },
+    });
     await db.collection('episodes').doc(newEpId).set({
       episode_id: newEpId, story_id, step: nextStep + 1,
       parent_sub_id: winner.sub_id, status: 'open', vote_total: 0,
@@ -1182,12 +1183,23 @@ async function fbCreateSubmission(episode_id, content, author_id, derived_from, 
   const is_closing = closing === true && Number(ep.step) >= 2;
   const uDoc = await db.collection('users').doc(author_id).get();
   const uData = uDoc.exists ? uDoc.data() : {};
-  await db.collection('submissions').doc(sub_id).set({
-    sub_id, episode_id, story_id: ep.story_id, content: text,
-    author_id, author_nickname: uData.display_name || uData.nickname || '익명',
-    author_badge: uData.badge || 'seed',
-    derived_from: derived_from || '', vote_count: 0,
-    is_adopted: false, created_at: fbNow(), is_closing
+  // 자유 이야기 탭 카드용 open_steps.<episode_id>.sub_count도 같이 갱신 —
+  // 트랜잭션으로 묶어서 항목이 아직 없는(마이그레이션 이전) 스토리여도
+  // step은 이미 알고 있는 ep.step으로 채워 안전하게 자가치유되게 함
+  const storyRef = db.collection('stories').doc(ep.story_id);
+  await db.runTransaction(async tx => {
+    const storySnapTx = await tx.get(storyRef);
+    tx.set(db.collection('submissions').doc(sub_id), {
+      sub_id, episode_id, story_id: ep.story_id, content: text,
+      author_id, author_nickname: uData.display_name || uData.nickname || '익명',
+      author_badge: uData.badge || 'seed',
+      derived_from: derived_from || '', vote_count: 0,
+      is_adopted: false, created_at: fbNow(), is_closing
+    });
+    if (storySnapTx.exists) {
+      const cur = (storySnapTx.data().open_steps || {})[episode_id] || { step: Number(ep.step) || 0, sub_count: 0 };
+      tx.update(storyRef, { [`open_steps.${episode_id}`]: { step: cur.step, sub_count: (Number(cur.sub_count) || 0) + 1 } });
+    }
   });
   await _fbAddPoints(author_id, 10, 'submit', sub_id);
   // 카운터 증가 + 업적 체크는 제출 응답을 기다리게 하지 않고 백그라운드로 미룸
@@ -1242,7 +1254,8 @@ async function fbVote(episode_id, sub_ids, voter_id) {
 
   // 스포트라이트 슬롯 이야기는 vote_threshold(5)가 지정돼있음 — 없으면 기본 3표
   const storySnap = await db.collection('stories').doc(ep.story_id).get();
-  const voteThreshold = (storySnap.exists && storySnap.data().vote_threshold) || FB_VOTE_THRESHOLD;
+  const storyData = storySnap.exists ? storySnap.data() : {};
+  const voteThreshold = storyData.vote_threshold || FB_VOTE_THRESHOLD;
 
   const isRevote = !prevVoteSnap.empty;
   const prevVotedSubIds = prevVoteSnap.docs.map(d => d.data().sub_id);
@@ -1273,6 +1286,15 @@ async function fbVote(episode_id, sub_ids, voter_id) {
 
   const newTotal = isRevote ? (Number(ep.vote_total) || 0) : (Number(ep.vote_total) || 0) + 1;
   batch.update(epSnap.ref, { vote_total: newTotal });
+
+  // 자유 이야기 탭 정렬/페이지네이션용 hot_score — 이 스토리의 (분기 포함) 열린
+  // 에피소드들 중 가장 높은 vote_total을 반영. 한 스토리에 동시에 열린 에피소드가
+  // 여럿(분기)일 수 있어 다른 갈래 투표로 낮아지면 안 되므로 기존 값과 비교해
+  // 더 큰 쪽으로만 갱신 — 리셋은 새 에피소드가 열릴 때 서버(_serverCloseEpisode)가 처리
+  const newHotScore = Math.max(Number(storyData.hot_score) || 0, newTotal);
+  if (newHotScore !== (Number(storyData.hot_score) || 0)) {
+    batch.update(db.collection('stories').doc(ep.story_id), { hot_score: newHotScore });
+  }
 
   // 로컬에서 최고 득표 계산 (Firestore 재조회 불필요)
   const maxSubVotes = subsSnap.docs.reduce((m, d) => {
@@ -2012,6 +2034,12 @@ async function fbCreateBranch(story_id, branch_from_step, user_id) {
     // 번호를 부모+분기 합산 기준으로 보여주는 것과 일관되게 맞춤(2026-07-08,
     // 표시 단계 수 대비 참여자 수가 훨씬 적게 보이던 문제 수정)
     participant_count: Number(st.participant_count) || 0, batch: '',
+    // 자유 이야기 탭 정렬/페이지네이션은 hot_score가 없는 문서를 아예 조회에서
+    // 빠뜨리므로(orderBy 특성), 새로 만드는 스토리는 항상 명시적으로 넣어야 함
+    hot_score: 0,
+    // 새 에피소드에 미채택 제출물(nonAdopted)이 그대로 복사되므로 sub_count도
+    // 그 개수로 맞춤(0으로 두면 카드에 "제출 0개"로 잘못 표시됨)
+    open_steps: { [new_ep_id]: { step: step - 1, sub_count: nonAdopted.length } },
   });
   batch.set(db.collection('episodes').doc(new_ep_id), {
     episode_id: new_ep_id, story_id: new_story_id, step: step - 1,
@@ -2080,6 +2108,10 @@ async function fbExtendStory(story_id, user_id) {
     created_at: fbNow(),
     participant_count: 0, like_count: 0, adoption_count: 0,
     has_branch: false, batch: '',
+    // 자유 이야기 탭 정렬/페이지네이션은 hot_score가 없는 문서를 조회에서
+    // 빠뜨리므로(orderBy 특성), 새로 만드는 스토리는 항상 명시적으로 넣어야 함
+    hot_score: 0,
+    open_steps: { [new_ep_id]: { step: 1, sub_count: 0 } },
   });
   batch.set(db.collection('episodes').doc(new_ep_id), {
     episode_id: new_ep_id, story_id: new_story_id,
@@ -2433,6 +2465,11 @@ async function fbDeleteMySubmission(sub_id, user_id) {
   if ((Number(sub.vote_count) || 0) > 0) return { ok: false, error: '공감을 받은 글은 삭제할 수 없습니다.' };
   if (sub.is_adopted === true || sub.is_adopted === 'TRUE') return { ok: false, error: '채택된 글은 삭제할 수 없습니다.' };
   await db.collection('submissions').doc(sub_id).delete();
+  // 자유 이야기 탭 카드용 sub_count도 같이 감소 — 카드 표시용 부가 정보라
+  // 삭제 자체를 기다리게 하지 않고 백그라운드로 처리
+  db.collection('stories').doc(sub.story_id).update({
+    [`open_steps.${sub.episode_id}.sub_count`]: firebase.firestore.FieldValue.increment(-1),
+  }).catch(() => {});
   const cSnap = await db.collection('comments').where('sub_id', '==', sub_id).get();
   if (!cSnap.empty) {
     const batch = db.batch();
@@ -2480,7 +2517,15 @@ async function fbAdminForceAdopt(sub_id, admin_id) {
 
 async function fbAdminDeleteSubmission(sub_id, admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  const subSnap = await db.collection('submissions').doc(sub_id).get();
   await db.collection('submissions').doc(sub_id).delete();
+  // 자유 이야기 탭 카드용 sub_count도 같이 감소(부가 정보라 백그라운드로 처리)
+  if (subSnap.exists) {
+    const sub = subSnap.data();
+    db.collection('stories').doc(sub.story_id).update({
+      [`open_steps.${sub.episode_id}.sub_count`]: firebase.firestore.FieldValue.increment(-1),
+    }).catch(() => {});
+  }
   const [vSnap, cSnap, rSnap] = await Promise.all([
     db.collection('votes').where('sub_id','==',sub_id).get(),
     db.collection('comments').where('sub_id','==',sub_id).get(),

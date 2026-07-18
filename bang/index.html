@@ -2045,7 +2045,9 @@ function toggleHistory() {
 // 완결 여부와 무관하게(진행 중에도) 보여줘야 해서 "만들어진 과정 보기"와 달리
 // isFinished 게이트 없음. genre_history는 fbGetStory가 story_genre_probs에서
 // 내려주는 단계별 이력({step, probs:{장르:%}} 배열).
-function genreChartSectionHtml(genre_history, story, startOpen) {
+// 차트 자체(svg+범례)만 만드는 부분 — 상세페이지의 접기/펼치기 토글 섹션과
+// 미리보기 팝업(토글 없이 차트만 바로 보여줌, 유저 요청 2026-07-18) 둘 다 재사용.
+function _genreChartBodyHtml(genre_history, story) {
   if (!genre_history || !genre_history.length) return '';
   const history = genre_history.slice().sort((a, b) => a.step - b.step);
   const last = history[history.length - 1];
@@ -2091,19 +2093,24 @@ function genreChartSectionHtml(genre_history, story, startOpen) {
   }).join('');
 
   return `
+    <div class="genre-chart-wrap">
+      <div class="genre-chart-title">단계별 등락 — ${calcDisplayStep(story, last.step)}단계까지 진행됨</div>
+      <svg viewBox="0 0 ${W} ${H}" width="100%" height="auto" role="img" aria-label="장르 확률 추이 차트">
+        ${gridHtml}
+        ${linesHtml}
+        ${xLabelsHtml}
+      </svg>
+      <div class="genre-chart-legend">${legendHtml}</div>
+    </div>`;
+}
+
+function genreChartSectionHtml(genre_history, story) {
+  const body = _genreChartBodyHtml(genre_history, story);
+  if (!body) return '';
+  return `
     <div style="margin-top:8px">
-      <button class="genre-chart-toggle" onclick="toggleGenreChart(this)">장르 확률 추이 ${startOpen ? '접기 ▴' : '보기 ▾'}</button>
-      <div id="genre-chart-body" style="display:${startOpen ? 'block' : 'none'}">
-        <div class="genre-chart-wrap">
-          <div class="genre-chart-title">단계별 등락 — ${calcDisplayStep(story, last.step)}단계까지 진행됨</div>
-          <svg viewBox="0 0 ${W} ${H}" width="100%" height="auto" role="img" aria-label="장르 확률 추이 차트">
-            ${gridHtml}
-            ${linesHtml}
-            ${xLabelsHtml}
-          </svg>
-          <div class="genre-chart-legend">${legendHtml}</div>
-        </div>
-      </div>
+      <button class="genre-chart-toggle" onclick="toggleGenreChart(this)">장르 확률 추이 보기 ▾</button>
+      <div id="genre-chart-body" style="display:none">${body}</div>
     </div>`;
 }
 
@@ -2190,7 +2197,19 @@ async function openStoryProseModal(story_id) {
   const el = document.getElementById('story-prose-modal-body');
   if (!el) return; // 그 사이 모달을 닫았으면 무시
   if (!res.ok) { el.innerHTML = '<div class="empty">불러오지 못했어요.</div>'; return; }
-  el.innerHTML = renderHistoryPanel(res.episodes, res.submissions, res.story.opening);
+  const s = res.story;
+  // renderHistoryPanel(경쟁 후보/득표 보여주는 목록뷰)이 아니라, 채택된 문장들만
+  // story() 상세페이지와 똑같은 방식(getEpisodeTree+renderEpisodeTreeHtml)으로
+  // 한 편의 흐르는 산문으로 이어붙여서 보여줌(유저 요청 2026-07-18) — hideTabs=true라
+  // 분기 있어도 정경 경로로 자동 이어짐(선택 UI 없이 읽기 전용 미리보기).
+  const tree = getEpisodeTree(res.episodes.filter(e => e.status === 'closed'), res.submissions);
+  const treeHtml = tree ? renderEpisodeTreeHtml(tree, {}, res.mvp_map, res.branches, res.my_mvp_episode_id, true) : '';
+  el.innerHTML = `
+    <div class="story-prose" style="padding:4px">
+      <div class="prose-opening">${esc(s.opening)}</div>
+      <span class="prose-author">— ${s.creator_badge ? `<span class="badge badge-${s.creator_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(s.creator_badge)}</span>` : ''}${esc(s.creator_nickname || '익명')}</span>
+      ${treeHtml}
+    </div>`;
 }
 
 async function openStoryGenreModal(story_id) {
@@ -2198,11 +2217,10 @@ async function openStoryGenreModal(story_id) {
   const res = await _fetchStoryForPreview(story_id);
   const el = document.getElementById('story-genre-modal-body');
   if (!el) return;
-  if (!res.ok || !res.genre_history || !res.genre_history.length) {
-    el.innerHTML = '<div class="empty">아직 추이 데이터가 없어요.</div>';
-    return;
-  }
-  el.innerHTML = genreChartSectionHtml(res.genre_history, res.story, true);
+  const chartHtml = res.ok ? _genreChartBodyHtml(res.genre_history, res.story) : '';
+  // 접기/펼치기 토글이 딸린 genreChartSectionHtml 대신 차트 부분만 바로 보여줌 —
+  // 이 팝업엔 어차피 차트 하나뿐이라 토글이 불필요하다는 유저 지적(2026-07-18)
+  el.innerHTML = chartHtml || '<div class="empty">아직 추이 데이터가 없어요.</div>';
 }
 
 async function loadStoryComments(story_id) {

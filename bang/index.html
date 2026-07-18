@@ -3913,6 +3913,10 @@ async function doLogin() {
 // 구글 계정에 고정 매핑되는 uid로 교체하는 인증 단계라, fbGetAuthUid() 같은
 // 별도 워밍업이 필요 없음. 팝업 취소는 에러로 취급 안 함(사용자가 그냥 닫은 것).
 async function doGoogleAuth() {
+  // loginWithGoogle도 콜드스타트 가능한 Cloud Function이라, 유저가 팝업에서
+  // 계정을 고르는 몇 초 동안 미리 한 번 호출해 인스턴스를 깨워둠 — 이 시점의
+  // 인증 컨텍스트(아직 구글 로그인 전)로는 항상 실패하지만 부작용은 없음
+  functionsRegion.httpsCallable('loginWithGoogle')({}).catch(() => {});
   try {
     await firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
   } catch (e) {
@@ -3940,6 +3944,11 @@ const KAKAO_REDIRECT_URI = 'https://hwasee.me/bang/';
 
 function doKakaoAuth() {
   if (!(window.Kakao && Kakao.isInitialized())) { toast('카카오 로그인을 사용할 수 없어요. 새로고침 후 다시 시도해주세요.', true); return; }
+  // loginWithKakao도 콜드스타트 가능한 Cloud Function — 카카오 로그인 화면으로
+  // 완전히 페이지를 떠났다가 돌아오는 방식이라 복귀 직후엔 워밍업할 틈이 없음.
+  // 떠나기 직전인 지금 미리 한 번 호출해둠(더미 code라 즉시 실패하지만, 요청
+  // 자체는 이미 서버로 전송된 뒤라 페이지 이동과 무관하게 인스턴스는 깨어남)
+  functionsRegion.httpsCallable('loginWithKakao')({ code: '', redirectUri: KAKAO_REDIRECT_URI }).catch(() => {});
   // scope 생략 시 콘솔에서 "선택 동의"로 설정된 항목(닉네임)은 자동으로 요청되지
   // 않고 넘어가버림 — 명시적으로 요청해서 동의창에 뜨게 함. account_email은 이 앱에
   // "권한 없음"(비즈 앱 인증 필요) 상태라 스코프에 넣으면 KOE205로 아예 거부되므로

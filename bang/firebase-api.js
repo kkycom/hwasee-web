@@ -657,6 +657,18 @@ async function fbGetStory(story_id, user_id) {
   // 않고 단순 "단독 승자 → 다음 단계 진행" 케이스만 처리함.
   if (story.status !== 'completed' && story.status !== 'inactive') {
     episodes.filter(e => e.status === 'closed').forEach(ce => {
+      // _serverCloseEpisode(서버)는 에피소드를 'closed'로 먼저 커밋한 뒤에야
+      // 채택/포인트분배/업적체크/장르분류를 거쳐 마지막에 다음 에피소드를 만듦 —
+      // 그 사이 짧은 틈에(보통 1초 안쪽이지만 콜드스타트 등으로 길어질 수 있음)
+      // 누가 이 스토리 페이지를 열면 "닫혔는데 다음 단계가 아직 없다"는 이
+      // 복구 조건에 그대로 걸려서, 서버가 만들 예정이던 것과는 별개로 여기서
+      // 또 하나를 만들어버림 — 다음 단계 에피소드가 두 개(하나는 서버가 만든
+      // 진짜, 하나는 이 복구가 잘못 만든 빈 것) 생기는 사고로 이어짐(2026-07-19
+      // 실제 라이브 데이터에서 발견, story 3ab72851...). 방금 닫힌 것(레이스
+      // 구간)과 정말 오래 멈춰있는 레거시 데이터를 구분하기 위해, 닫힌 지
+      // 2분 넘게 지난 것만 복구 대상으로 좁힘 — 서버의 마감 후처리가 2분 넘게
+      // 걸리는 일은 사실상 없으므로 진짜 레거시 안전망 용도는 그대로 유지됨.
+      if (!ce.closed_at || Date.now() - new Date(ce.closed_at).getTime() < 120000) return;
       const epSubs = subsSnap.docs.filter(d => d.data().episode_id === ce.episode_id).map(d => d.data());
       const winners = epSubs.filter(s => s.is_adopted === true);
       if (winners.length !== 1) return;

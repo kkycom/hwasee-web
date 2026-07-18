@@ -5630,7 +5630,13 @@ async function adminStats() {
   if (!isAdmin()) { nav('seed'); return; }
   const epoch = _renderEpoch;
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
-  const stats = await api('getAdminStats', {});
+  let stats = await api('getAdminStats', {});
+  // story()/episode() 등과 동일한 이유(탭 복귀 직후 연결 재웜업 전 첫 요청만
+  // 실패) — 어드민 페이지라 트래픽이 적어서 그동안 이 보강에서 빠져있었는데,
+  // 관리자 본인은 오히려 자주 안 켜서 더 자주 겪는 증상이라 동일하게 보강함
+  if (!stats.ok && _renderEpoch === epoch && currentRoute === 'admin-stats') {
+    stats = await api('getAdminStats', {});
+  }
   if (_renderEpoch !== epoch || currentRoute !== 'admin-stats') return;
   const referralHtml = (stats.ok && stats.referral_stats?.length) ? `
     <div class="card" style="padding:14px 18px;margin-bottom:20px">

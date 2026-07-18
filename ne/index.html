@@ -414,7 +414,157 @@ footer .contact { font-size: 13px; color: var(--text-sub); }
 </div>
 
 <!-- GRID -->
-<div class="grid-wrap" id="grid"></div>
+<!-- 아래 카드들은 WORKS 배열(약 730행)과 동일한 내용을 정적으로 미리 그려둔 것 —
+     JS가 안 돌거나(크롤러) 로딩이 끝나기 전에도 실제 작품 소개가 그대로 보이게
+     하기 위함(2026-07-19, 애드센스 반려 대응). 페이지 로드 시 renderGrid('all')이
+     이 내용을 그대로 다시 그려서 덮어쓰므로 실제 유저 경험/필터·모달 동작은
+     기존과 동일함 — 안전망일 뿐 데이터 원본은 여전히 WORKS 배열임. -->
+<div class="grid-wrap" id="grid">
+      <div class="card" onclick="openModal(0)">
+        <div class="card-meta">
+          <span class="tag tag-format">단편</span>
+          <span class="badge-festival">영화제 출품</span>
+        </div>
+        <div>
+          <div class="card-title-ko">그 남자가 죽임을 당하는 법</div>
+          <div class="card-title-en">How to Get Killed</div>
+        </div>
+        <div class="card-synopsis">20년 만의 재회 끝에 완벽한 복수를 꿈꾸는 남자. 복수의 칼날이 목을 겨눈다.</div>
+        <div class="card-genre">심리 스릴러 / Psychological Thriller</div>
+      </div>
+      <div class="card" onclick="openModal(1)">
+        <div class="card-meta">
+          <span class="tag tag-format">단편</span>
+
+        </div>
+        <div>
+          <div class="card-title-ko">모두 잊은 것처럼 아무 일 없던 것처럼</div>
+          <div class="card-title-en">As If I Had Forgotten Everything</div>
+        </div>
+        <div class="card-synopsis">야근 후 화물 엘리베이터에 갇힌 디자이너와 인기 가수. 방귀, 기침, 폐소공포증이 가득한 밀폐 공간에서 갑자기 노래가 울려퍼지고, 눈물이 흐른다.</div>
+        <div class="card-genre">로맨틱 코미디 / Romantic Comedy</div>
+      </div>
+      <div class="card" onclick="openModal(2)">
+        <div class="card-meta">
+          <span class="tag tag-format">단편</span>
+
+        </div>
+        <div>
+          <div class="card-title-ko">미친 거 아냐</div>
+          <div class="card-title-en">Are You Crazy</div>
+        </div>
+        <div class="card-synopsis">중고거래로 엮인 두 이웃이 서로를 사기꾼으로 오해하며 겪는 연쇄 소동. 시점이 바뀔 때마다 제목이 가리키는 인물이 달라진다.</div>
+        <div class="card-genre">슬랩스틱 코미디 / Slapstick Comedy</div>
+      </div>
+      <div class="card" onclick="openModal(3)">
+        <div class="card-meta">
+          <span class="tag tag-format">장편</span>
+
+        </div>
+        <div>
+          <div class="card-title-ko">88 신혼여행</div>
+          <div class="card-title-en">88 Honeymoon</div>
+        </div>
+        <div class="card-synopsis">1988년 속초로 신혼여행을 떠난 서툰 부부와, 그들을 태운 택시기사. 행복한 하루가 지나갈수록, 그의 조용한 시간이 두 사람의 기억 속에 천천히 스며든다.</div>
+        <div class="card-genre">로맨스 드라마 / Romance Drama</div>
+      </div>
+      <div class="card" onclick="openModal(4)">
+        <div class="card-meta">
+          <span class="tag tag-format">장편</span>
+
+        </div>
+        <div>
+          <div class="card-title-ko">볕뜰 날</div>
+          <div class="card-title-en">Apricity</div>
+        </div>
+        <div class="card-synopsis">퇴직 백수와 전국 행사장을 도는 구두 행상이 함께하는 전국 일주. 두 사람의 길이 쌓일수록, 그 오래된 구두 한 켤레에 담긴 시간이 천천히 드러난다.</div>
+        <div class="card-genre">로드무비 / Road Movie</div>
+      </div>
+      <div class="card" onclick="openModal(5)">
+        <div class="card-meta">
+          <span class="tag tag-format">장편</span>
+
+        </div>
+        <div>
+          <div class="card-title-ko">섬 약초꾼</div>
+          <div class="card-title-en">Island Herb Picker</div>
+        </div>
+        <div class="card-synopsis">전설의 꽃을 찾아 무인도로 들어간 두 남자. 세상에서 코인만 좇던 욕망이 섬 안에서 다른 얼굴을 드러내기 시작한다.</div>
+        <div class="card-genre">범죄 스릴러 / Crime Thriller</div>
+      </div>
+      <div class="card" onclick="openModal(6)">
+        <div class="card-meta">
+          <span class="tag tag-format">장편</span>
+
+        </div>
+        <div>
+          <div class="card-title-ko">옆집 부부</div>
+          <div class="card-title-en">The Couple Next Door</div>
+        </div>
+        <div class="card-synopsis">방음 불량 아파트에서 이웃의 싸움 소리에 집착하던 남자. 어느 날 밤 욕조에서 벽에 귀를 댔다가 수도관 소리가 아닌 무언가를 듣는다.</div>
+        <div class="card-genre">서스펜스 미스터리 / Suspense Mystery</div>
+      </div>
+      <div class="card" onclick="openModal(7)">
+        <div class="card-meta">
+          <span class="tag tag-format">장편</span>
+          <span class="badge-wip">집필 중</span>
+        </div>
+        <div>
+          <div class="card-title-ko">이번 역은</div>
+          <div class="card-title-en">This Stop Is</div>
+        </div>
+        <div class="card-synopsis">말 못하는 지하철 택배 노인이 암 투병 중인 여자의 마지막 부탁을 받는다. 인천공항 E구역 두 번째 의자 아래에 편지를 붙여달라는 것.</div>
+        <div class="card-genre">드라마 / Drama</div>
+      </div>
+      <div class="card" onclick="openModal(8)">
+        <div class="card-meta">
+          <span class="tag tag-format">장편</span>
+
+        </div>
+        <div>
+          <div class="card-title-ko">자살게임</div>
+          <div class="card-title-en">Suicide Game</div>
+        </div>
+        <div class="card-synopsis">6명이 알 수 없는 공간에 갇혀, 자신이 타인에게 저질렀던 것과 동일한 방식으로 죽음을 강요당한다. 고통은 실재하고, 죽음은 반복된다.</div>
+        <div class="card-genre">공포 / 철학극 / Horror · Philosophical Drama</div>
+      </div>
+      <div class="card" onclick="openModal(9)">
+        <div class="card-meta">
+          <span class="tag tag-format">장편</span>
+          <span class="badge-wip">집필 중</span>
+        </div>
+        <div>
+          <div class="card-title-ko">삼종회수특공대</div>
+          <div class="card-title-en">Three-Herb Recovery Force</div>
+        </div>
+        <div class="card-synopsis">6.25 전쟁 직후. 대한민국 최대 외화 수입원이었던 인삼을 지키기 위해 전매청 직원들이 전쟁 속을 누빈다.</div>
+        <div class="card-genre">시대극 코미디 / Period Comedy</div>
+      </div>
+      <div class="card" onclick="openModal(10)">
+        <div class="card-meta">
+          <span class="tag tag-format">시리즈</span>
+          <span class="badge-wip">집필 중</span>
+        </div>
+        <div>
+          <div class="card-title-ko">황천 익스프레스</div>
+          <div class="card-title-en">Hwangcheon Express</div>
+        </div>
+        <div class="card-synopsis">이삿짐센터로 위장한 퇴마 팀과 저출산으로 저승을 탈출한 변종 악귀의 전쟁. 죽은 자와 산 자가 뒤섞인 버디물. 108개의 영혼을 향한 카운트다운.</div>
+        <div class="card-genre">오컬트 / 버디물 / Occult · Buddy Drama</div>
+      </div>
+      <div class="card" onclick="openModal(11)">
+        <div class="card-meta">
+          <span class="tag tag-format">단막극</span>
+
+        </div>
+        <div>
+          <div class="card-title-ko">마, 니 또!</div>
+          <div class="card-title-en">Ma, Nitto!</div>
+        </div>
+        <div class="card-synopsis">경상남도 시골 마을 어르신 5명이 마을회관 리모델링 기금을 위해 마니또 리얼리티에 참여한다. 마지막 선물 공개 날, 수십 년의 기억들이 열린다.</div>
+        <div class="card-genre">모큐멘터리 / Mockumentary</div>
+      </div>
+</div>
 
 <!-- MODAL -->
 <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">

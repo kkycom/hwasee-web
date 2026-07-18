@@ -5749,6 +5749,16 @@ function _renderAdminAI(tab, page) {
         <button class="btn btn-primary btn-sm" onclick="saveKakaoKey()">저장</button>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-top:6px">카카오 개발자 콘솔 → 내 애플리케이션 → 앱 키 → REST API 키(JS 키 아님). 인가코드를 액세스 토큰으로 교환할 때만 서버에서 씀. 콘솔의 "카카오 로그인" 활성화 + Redirect URI(https://hwasee.me/bang/) 등록도 필요.</div>
+      <div style="font-size:12px;font-weight:700;margin:14px 0 8px">
+        Client Secret
+        <span style="font-size:11px;font-weight:400;margin-left:6px;color:${res.has_kakao_secret ? 'var(--success)' : 'var(--muted)'}">${res.has_kakao_secret ? '✓ 설정됨' : '미설정'}</span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <input type="password" id="kakao-secret-input" placeholder="Client Secret" autocomplete="off"
+          style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--bg);color:var(--text)">
+        <button class="btn btn-primary btn-sm" onclick="saveKakaoKey()">저장</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">콘솔의 카카오 로그인 → 보안 탭에서 Client Secret을 "사용함"으로 켠 경우에만 필요. REST API 키와 함께 저장 버튼 아무거나 눌러도 같이 저장됨.</div>
     </div>
     <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:12px">
       ${tabBtn('subs', `제출 내역 (${res.total_subs})`)}
@@ -5762,10 +5772,11 @@ function _renderAdminAI(tab, page) {
 async function saveKakaoKey() {
   try {
     const key = document.getElementById('kakao-key-input')?.value.trim();
-    if (!key) { toast('키를 입력해주세요.', true); return; }
-    const res = await api('setKakaoKey', { key });
+    const secret = document.getElementById('kakao-secret-input')?.value.trim();
+    if (!key) { toast('REST API 키를 입력해주세요(Client Secret만 갱신할 때도 키를 같이 입력해야 함).', true); return; }
+    const res = await api('setKakaoKey', { key, secret });
     if (!res.ok) { toast(res.error, true); return; }
-    toast('카카오 REST API 키가 저장됐습니다.');
+    toast('카카오 키가 저장됐습니다.');
     nav('admin-ai');
   } catch(e) { toast('오류: ' + e.message, true); }
 }

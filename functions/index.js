@@ -1183,8 +1183,8 @@ exports.getKakaoKeyStatus = functions
     await _requireAdmin(data.user_id, data.token);
     const db = admin.firestore();
     const secretsSnap = await db.collection('config').doc('secrets').get();
-    const hasKey = secretsSnap.exists && !!secretsSnap.data().kakao_rest_key;
-    return { ok: true, has_key: hasKey };
+    const d = secretsSnap.exists ? secretsSnap.data() : {};
+    return { ok: true, has_key: !!d.kakao_rest_key, has_secret: !!d.kakao_client_secret };
   });
 
 exports.setKakaoKey = functions
@@ -1195,8 +1195,13 @@ exports.setKakaoKey = functions
     if (!key || key.length < 10) {
       throw new functions.https.HttpsError('invalid-argument', '유효한 카카오 REST API 키를 입력해주세요.');
     }
+    const update = { kakao_rest_key: key };
+    // Client Secret은 콘솔 카카오로그인→보안에서 "사용함"으로 켠 앱만 필요 — 켠 경우
+    // 토큰 교환 시 이 값이 없으면 카카오가 KOE010(Bad client credentials)로 거부함
+    const secret = (data.secret || '').trim();
+    if (secret) update.kakao_client_secret = secret;
     const db = admin.firestore();
-    await db.collection('config').doc('secrets').set({ kakao_rest_key: key }, { merge: true });
+    await db.collection('config').doc('secrets').set(update, { merge: true });
     return { ok: true };
   });
 
@@ -1564,18 +1569,22 @@ async function _exchangeKakaoCode(code, redirectUri) {
   if (!code || !redirectUri) return null;
   const db = admin.firestore();
   const secretsSnap = await db.collection('config').doc('secrets').get();
-  const restKey = secretsSnap.exists ? secretsSnap.data().kakao_rest_key : null;
+  const secretsData = secretsSnap.exists ? secretsSnap.data() : {};
+  const restKey = secretsData.kakao_rest_key;
   if (!restKey) return null;
   try {
+    const params = {
+      grant_type: 'authorization_code',
+      client_id: restKey,
+      redirect_uri: redirectUri,
+      code,
+    };
+    // 콘솔에서 Client Secret을 "사용함"으로 켠 앱은 이 값이 없으면 KOE010으로 거부됨
+    if (secretsData.kakao_client_secret) params.client_secret = secretsData.kakao_client_secret;
     const res = await fetch('https://kauth.kakao.com/oauth/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        client_id: restKey,
-        redirect_uri: redirectUri,
-        code,
-      }).toString(),
+      body: new URLSearchParams(params).toString(),
     });
     const data = await res.json();
     if (!res.ok || !data.access_token) { console.error('kakao token exchange error:', data); return null; }

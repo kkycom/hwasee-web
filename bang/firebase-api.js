@@ -2561,7 +2561,7 @@ async function fbGetAIActivities(admin_id) {
     return {
       ok: true, ai_config: aiConfig, has_key: !!keyStatus.has_key,
       has_email_config: !!emailConfig.has_config, gmail_user: emailConfig.gmail_user || null,
-      has_kakao_key: !!kakaoKeyStatus.has_key,
+      has_kakao_key: !!kakaoKeyStatus.has_key, has_kakao_secret: !!kakaoKeyStatus.has_secret,
       submissions: [], votes: [], total_subs: 0, total_votes: 0,
     };
   }
@@ -2588,7 +2588,7 @@ async function fbGetAIActivities(admin_id) {
   return {
     ok: true, ai_config: aiConfig, has_key: !!keyStatus.has_key,
     has_email_config: !!emailConfig.has_config, gmail_user: emailConfig.gmail_user || null,
-    has_kakao_key: !!kakaoKeyStatus.has_key,
+    has_kakao_key: !!kakaoKeyStatus.has_key, has_kakao_secret: !!kakaoKeyStatus.has_secret,
     notification_batch_enabled: notificationBatchEnabled,
     submissions: subs.map(s => ({ ...s, story_opening: storyMap[s.story_id] || '' })),
     votes: votes.map(v => {
@@ -2626,11 +2626,11 @@ async function fbSetClaudeKey(admin_id, key) {
   }
 }
 
-async function fbSetKakaoKey(admin_id, key) {
+async function fbSetKakaoKey(admin_id, key, secret) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   if (!key || key.length < 10) return { ok: false, error: '유효한 카카오 REST API 키를 입력해주세요.' };
   try {
-    await functionsRegion.httpsCallable('setKakaoKey')({ user_id: admin_id, token: localStorage.getItem('hwasee_token'), key });
+    await functionsRegion.httpsCallable('setKakaoKey')({ user_id: admin_id, token: localStorage.getItem('hwasee_token'), key, secret });
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message || '저장에 실패했습니다.' };
@@ -2889,7 +2889,7 @@ async function firebaseApi(action, params = {}) {
     case 'setAIConfig':           return fbSetAIConfig(await requireUid(), params);
     case 'setNotificationBatchEnabled': return fbSetNotificationBatchEnabled(await requireUid(), params.enabled);
     case 'setClaudeKey':          return fbSetClaudeKey(await requireUid(), params.key);
-    case 'setKakaoKey':           return fbSetKakaoKey(await requireUid(), params.key);
+    case 'setKakaoKey':           return fbSetKakaoKey(await requireUid(), params.key, params.secret);
     case 'getEmailConfigStatus':  return fbGetEmailConfigStatus(await requireUid());
     case 'setEmailConfig':        return fbSetEmailConfig(await requireUid(), params.gmail_user, params.gmail_app_pass);
 

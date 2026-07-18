@@ -1602,7 +1602,6 @@ async function _verifyKakaoToken(kakaoAccessToken) {
     data = await res.json();
   } catch (e) { console.error('kakao token verify error:', e.message); return null; }
   if (!res.ok || !data || !data.id) return null;
-  console.log('kakao user/me debug:', JSON.stringify(data.kakao_account || {}));
   const account = data.kakao_account || {};
   const emailVerified = account.is_email_verified === true && account.is_email_valid === true;
   return {

@@ -888,7 +888,8 @@ let _submitSubInStoryInFlight = false;
 let _bmIds     = new Set();
 async function _loadBmIds() {
   if (!user) { _bmIds = new Set(); return; }
-  const res = await api('getBookmarkIds');
+  let res = await api('getBookmarkIds');
+  if (!res.ok) res = await api('getBookmarkIds');
   if (res.ok) _bmIds = new Set(res.ids);
 }
 
@@ -2279,7 +2280,13 @@ async function loadStoryComments(story_id) {
   const el = document.getElementById('story-comment-list');
   if (!el) return;
   try {
-    const res = await api('getStoryComments', { story_id });
+    let res = await api('getStoryComments', { story_id });
+    // 다른 조회들과 동일한 이유(탭복귀 직후 연결 재웜업 전 첫 요청만 실패)로
+    // 1회 자동 재시도 — 이 섹션엔 그동안 재시도가 전혀 없었음
+    if (!res.ok && document.getElementById('story-comment-list')) {
+      res = await api('getStoryComments', { story_id });
+    }
+    if (!document.getElementById('story-comment-list')) return;
     const comments = res.ok ? res.comments : [];
     el.innerHTML = renderStoryCommentList(comments, story_id);
   } catch(e) {
@@ -3197,7 +3204,8 @@ function _startSentenceRoundCountdown(end_at) {
 }
 
 async function loadSpotlightSlot() {
-  const res = await api('getSpotlight');
+  let res = await api('getSpotlight');
+  if (!res.ok) res = await api('getSpotlight');
   if (!res.ok || !res.initialized) return;
   _lsc.set('spotlight', res, 20);
   window._spotlightData = res;
@@ -3491,9 +3499,14 @@ function deleteComment(comment_id, sub_id) {
     delete commentCache[sub_id];
     const el = document.getElementById('comments-' + sub_id);
     if (el && el.style.display !== 'none') {
-      const r2 = await api('getComments', { sub_id });
-      commentCache[sub_id] = r2.ok ? r2.comments : [];
-      el.innerHTML = renderCommentsInner(sub_id, commentCache[sub_id]);
+      let r2 = await api('getComments', { sub_id });
+      if (!r2.ok) r2 = await api('getComments', { sub_id });
+      // 삭제 자체는 이미 성공했으니, 새로고침만 실패해도 "댓글 없음"으로 잘못
+      // 덮어쓰지 않고 그대로 둠(다음 진입 때 정상 반영됨)
+      if (r2.ok) {
+        commentCache[sub_id] = r2.comments;
+        el.innerHTML = renderCommentsInner(sub_id, commentCache[sub_id]);
+      }
     }
   };
   showConfirmModal({ id: mid, icon, title: '댓글 삭제', desc: '이 댓글을 삭제할까요?', confirmLabel: '삭제하기' });
@@ -3517,9 +3530,14 @@ async function addComment(sub_id, btn) {
   const el = document.getElementById('comments-' + sub_id);
   if (el && el.style.display !== 'none') {
     try {
-      const r2 = await api('getComments', { sub_id });
-      commentCache[sub_id] = r2.ok ? r2.comments : [];
-      el.innerHTML = renderCommentsInner(sub_id, commentCache[sub_id]);
+      let r2 = await api('getComments', { sub_id });
+      if (!r2.ok) r2 = await api('getComments', { sub_id });
+      // 등록 자체는 이미 성공했으니, 새로고침만 실패해도 "댓글 없음"으로 잘못
+      // 덮어쓰지 않고 그대로 둠(다음 진입 때 정상 반영됨)
+      if (r2.ok) {
+        commentCache[sub_id] = r2.comments;
+        el.innerHTML = renderCommentsInner(sub_id, commentCache[sub_id]);
+      }
     } catch(e) {}
   }
 }
@@ -6314,9 +6332,12 @@ async function userPatchNotes() {
   if (!user) { nav('auth', 'login'); return; }
   const epoch = _renderEpoch;
   document.getElementById('app').innerHTML = `<div class="loading"></div>`;
-  const res = await api('getPatchNotesFeed', {});
+  let res = await api('getPatchNotesFeed', {});
+  if (!res.ok && _renderEpoch === epoch && currentRoute === 'patchnotes') {
+    res = await api('getPatchNotesFeed', {});
+  }
   if (_renderEpoch !== epoch || currentRoute !== 'patchnotes') return;
-  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}</div>`; return; }
+  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="userPatchNotes()">다시 시도</button></div>`; return; }
   const notes = res.notes || [];
   document.getElementById('app').innerHTML = `
     <button class="btn btn-ghost btn-sm" style="margin-bottom:20px;border:none;font-weight:600" onclick="nav('seed')">← 메인</button>
@@ -6546,10 +6567,13 @@ async function doSetMyEmail() {
 }
 
 async function loadBugReportList() {
-  const res = await api('getBugReports');
+  let res = await api('getBugReports');
+  if (!res.ok && document.getElementById('bug-report-list')) {
+    res = await api('getBugReports');
+  }
   const el = document.getElementById('bug-report-list');
   if (!el) return;
-  if (!res.ok) { el.innerHTML = `<div class="empty">${res.error}</div>`; return; }
+  if (!res.ok) { el.innerHTML = `<div class="empty">${res.error}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="loadBugReportList()">다시 시도</button></div>`; return; }
   if (!res.reports.length) { el.innerHTML = `<div class="empty">접수된 버그 제보가 없습니다.</div>`; return; }
   el.innerHTML = res.reports.map(r => `
     <div style="padding:14px 16px;margin-bottom:8px;border:1px solid ${r.status==='resolved'?'var(--border)':'var(--accent2)'};border-radius:10px;background:var(--card)">

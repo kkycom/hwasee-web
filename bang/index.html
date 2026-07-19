@@ -3322,10 +3322,27 @@ async function submitSubInStory(episode_id, closing = false) {
   if (!content) { toast('문장을 입력해주세요.', true); return; }
   if (content.length > 50) { toast('조금 더 짧게 써주세요.', true); return; }
   _submitSubInStoryInFlight = true;
+  // 응답이 느릴 때(콜드스타트 등) 눌렀는지 안 눌렸는지 알 길이 없어서 여러 번
+  // 누르다가 "이미 제출하셨습니다" 오류를 보는 혼란이 있었음(2026-07-19 유저
+  // 제보) — 재진입 가드는 이미 있었지만 버튼에 아무 시각적 반응이 없었던 게
+  // 진짜 원인이라 눈에 보이는 "제출 중..." 상태를 추가함
+  const actionsEl = document.getElementById('sub-submit-actions');
+  const btns = actionsEl ? [...actionsEl.querySelectorAll('button')] : [];
+  const prevTexts = btns.map(b => b.textContent);
+  btns.forEach(b => { b.disabled = true; b.textContent = '제출 중...'; });
   try {
     const derived_from = window._polishFrom || '';
     const res = await api('createSubmission', { episode_id, content, derived_from, closing });
-    if (!res.ok) { toast(res.error, true); return; }
+    if (!res.ok) {
+      // "이미 제출하셨습니다" — 앞선 시도가 응답만 늦게 왔을 뿐 실제로는 이미
+      // 성공했던 경우. 오류 토스트만 띄우고 그대로 두면 화면은 여전히 옛
+      // 제출 폼인 채로 남아있어서(나갔다 들어와야만 반영되던 것도 이 때문)
+      // 실제 최신 상태로 바로 새로고침함.
+      if (res.error === '이미 제출하셨습니다.') { toast(res.error, true); story(); return; }
+      toast(res.error, true);
+      btns.forEach((b, i) => { b.disabled = false; b.textContent = prevTexts[i]; });
+      return;
+    }
     window._polishFrom = null;
     _lsc.expire('free', 'done');
     _lsc.del('story_' + currentParam);
@@ -3576,7 +3593,7 @@ async function episode() {
       ${mySubId ? `<div style="color:var(--muted);font-size:14px">이미 제출하셨습니다.</div>` : `
         <input type="text" id="sub-input" maxlength="50" placeholder="한 문장으로 이어가세요" oninput="updateCount('sub-input','sub-cc')" style="margin-bottom:6px">
         <div class="char-count" id="sub-cc" style="margin-bottom:10px">0자</div>
-        <button class="btn btn-primary btn-sm" ontouchend="event.preventDefault();submitSub('${esc(episode_id)}')" onclick="submitSub('${esc(episode_id)}')">제출</button>`}
+        <button id="sub-submit-btn" class="btn btn-primary btn-sm" ontouchend="event.preventDefault();submitSub('${esc(episode_id)}')" onclick="submitSub('${esc(episode_id)}')">제출</button>`}
     </div>` : `
     <div class="card" style="margin-bottom:24px;text-align:center">
       <span style="color:var(--muted)">참여하려면 </span>
@@ -3649,9 +3666,25 @@ async function submitSub(episode_id) {
   if (!content) { toast('문장을 입력해주세요.', true); return; }
   if (content.length > 50) { toast('조금 더 짧게 써주세요.', true); return; }
   _submitSubInFlight = true;
+  // 응답이 느릴 때(콜드스타트 등) 눌렀는지 안 눌렸는지 알 길이 없어서 여러 번
+  // 누르다가 "이미 제출하셨습니다" 오류를 보는 혼란이 있었음(2026-07-19 유저
+  // 제보) — 재진입 가드는 이미 있었지만 버튼에 아무 시각적 반응이 없었던 게
+  // 진짜 원인이라 눈에 보이는 "제출 중..." 상태를 추가함
+  const btn = document.getElementById('sub-submit-btn');
+  const prevText = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = '제출 중...'; }
   try {
     const res = await api('createSubmission', { episode_id, content, derived_from: '' });
-    if (!res.ok) { toast(res.error, true); return; }
+    if (!res.ok) {
+      // "이미 제출하셨습니다" — 앞선 시도가 응답만 늦게 왔을 뿐 실제로는 이미
+      // 성공했던 경우. 오류 토스트만 띄우고 그대로 두면 화면은 여전히 옛
+      // 제출 폼인 채로 남아있어서(나갔다 들어와야만 반영되던 것도 이 때문)
+      // 실제 최신 상태로 바로 새로고침함.
+      if (res.error === '이미 제출하셨습니다.') { toast(res.error, true); episode(); return; }
+      toast(res.error, true);
+      if (btn) { btn.disabled = false; btn.textContent = prevText; }
+      return;
+    }
     _lsc.expire('free', 'done');
     toast('제출 완료!');
     episode();
@@ -4929,7 +4962,7 @@ function buildStoryActionHtml(openEp) {
         <div id="polish-indicator" style="display:none;font-size:12px;color:var(--accent2);margin-bottom:8px;padding:6px 10px;background:var(--surface);border-radius:6px;border-left:2px solid var(--accent2)"></div>
         <input type="text" id="sub-input" maxlength="50" placeholder="한 문장으로 이어가세요" oninput="updateCount('sub-input','sub-cc')">
         <div class="char-count" id="sub-cc" style="margin-bottom:10px">0자</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div id="sub-submit-actions" style="display:flex;gap:8px;flex-wrap:wrap">
           ${effectiveClosedCount >= 1
             ? `<button class="btn btn-primary btn-sm" ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', false)" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">연재하기</button>
                <button class="btn btn-sm" style="background:var(--accent2);color:#fff;border:none;font-weight:700" ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', true)" onclick="submitSubInStory('${esc(openEp.episode_id)}', true)">완결하기</button>`

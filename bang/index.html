@@ -1446,6 +1446,14 @@ async function loadHomeTab(tab, epoch) {
         const p = [api('getStories', { page: 1 })];
         if (user) p.push(api('getMyStories'));
         [storiesRes, myRes] = await Promise.all(p);
+        // 탭 복귀 직후 등 연결이 잠깐 끊겨있을 때 첫 요청만 실패하는 경우가 있어
+        // (story()/spotlight 등과 동일 패턴) 읽기 전용이라 안전하게 한 번만
+        // 조용히 재시도 — 예전엔 이게 없어서 유저가 탭을 직접 다시 눌러야 했음
+        if (!storiesRes?.ok && ok()) {
+          const p2 = [api('getStories', { page: 1 })];
+          if (user) p2.push(api('getMyStories'));
+          [storiesRes, myRes] = await Promise.all(p2);
+        }
       } catch(e) {
         if (!_staleFree && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('free')">다시 시도</button></div>`;
         return;
@@ -1479,7 +1487,11 @@ async function loadHomeTab(tab, epoch) {
       if (_doneFetching) return;
       _doneFetching = true;
       let res;
-      try { res = await api('getStories', { page: 2 }); } catch(e) {
+      try {
+        res = await api('getStories', { page: 2 });
+        // free 탭과 동일한 이유로 1회 자동 재시도
+        if (!res?.ok && ok()) res = await api('getStories', { page: 2 });
+      } catch(e) {
         if (!_staleDone && ok()) gc().innerHTML = `<div class="empty">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="switchHomeTab('done')">다시 시도</button></div>`;
         return;
       } finally { _doneFetching = false; }
@@ -2223,7 +2235,10 @@ function _storyPreviewModalShell(title, id) {
 async function _fetchStoryForPreview(story_id) {
   const cached = _lsc.get('story_' + story_id);
   if (cached) return cached;
-  const res = await api('getStory', { story_id });
+  let res = await api('getStory', { story_id });
+  // story() 등과 동일한 이유(탭 복귀 직후 연결 재웜업 전 첫 요청만 실패)로
+  // 1회 자동 재시도 — 이 미리보기 모달엔 그동안 재시도가 전혀 없었음
+  if (!res.ok) res = await api('getStory', { story_id });
   if (res.ok) _lsc.set('story_' + story_id, res, 600);
   return res;
 }
@@ -2498,7 +2513,12 @@ async function loadWordChallenge() {
     _wcVisibleCount = WC_PAGE_SIZE;
     renderWordChallenge();
   }
-  const res = await api('getWordChallenge', {});
+  let res = await api('getWordChallenge', {});
+  // 탭 복귀 직후 등 연결이 잠깐 끊겨있을 때 첫 요청만 실패하는 경우가 있어
+  // (story()/자유 이야기 탭 등과 동일 패턴) 1회 자동 재시도
+  if (!res.ok && document.getElementById('word-challenge-section')) {
+    res = await api('getWordChallenge', {});
+  }
   const el2 = document.getElementById('word-challenge-section');
   if (!el2) return; // 그 사이 탭이 바뀌었으면 무시
   if (!res.ok) {

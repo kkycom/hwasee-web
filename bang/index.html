@@ -695,7 +695,6 @@
   .prose-inherited.prose-inherited-continuation { opacity:1; }
   /* 공감현황(읽기전용) 모드일 땐 상속된 산문도 클릭해서 볼 수 있어야 함 */
   .story-prose.viewvotes-active .prose-inherited { pointer-events:auto; }
-  .prose-branch-tag { display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--accent2); font-weight:700; border:1px solid rgba(128,151,140,.4); border-radius:12px; padding:3px 10px; margin-bottom:10px; }
   /* ── 외부 분기 포크 */
   .ext-branch-fork { border:1px dashed rgba(128,151,140,.4); border-radius:10px; padding:12px; margin:10px 0; }
   .ext-branch-fork-label { font-size:10px; color:var(--muted); text-align:center; letter-spacing:1px; margin-bottom:10px; }
@@ -2015,7 +2014,6 @@ function _applyStoryData(res, story_id) {
   document.getElementById('app').innerHTML = `
     <div style="display:flex;align-items:center;gap:0;margin-bottom:24px;flex-wrap:wrap;row-gap:6px">
       <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="nav(window._prevRoute || 'home')">← 목록으로</button>
-      ${isFinished && s.is_continuation ? `<span class="prose-branch-tag" style="margin-left:6px">〜 연장 이야기</span>` : isFinished && s.branch_from_step ? `<span class="prose-branch-tag" style="margin-left:6px">⑂ 분기</span>` : ''}
       <div style="margin-left:auto;display:inline-flex;align-items:center;gap:0">
         ${user ? `
           <button id="bm-btn" class="btn btn-ghost btn-sm" data-bm="${is_bookmarked?'1':''}" style="border:none;color:${is_bookmarked?'var(--accent2)':'var(--muted)'};display:inline-flex;align-items:center;gap:4px"

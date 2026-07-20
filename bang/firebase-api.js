@@ -783,7 +783,16 @@ async function fbGetStory(story_id, user_id) {
   // 분기 이야기: fork 에피소드 ID + B갈래 sub_id 서버에서 직접 계산
   let branch_sub_id = story.branch_sub_id || null;
   let branch_episode_id = story.branch_episode_id || null;
-  if (story.parent_story_id && story.branch_from_step) {
+  // is_continuation(연장) 이야기는 동률로 갈린 게 아니라 완결된 이야기 전체를
+  // 그대로 이어받는 것이라 애초에 "fork 지점"이라는 개념 자체가 없는데, 이
+  // 조건이 parent_story_id+branch_from_step만 보고 판단해서 연장 이야기에도
+  // 똑같이 fork 지점 역산을 시도하고 있었음. 아래 "2순위" 역산(branch_from_step
+  // -2 단계 에피소드를 찾음)이 하필 부모 이야기에 동률로 같은 단계가 두 개
+  // 있던 경우(오늘 다른 건으로 고친 그 사고) 그중 하나를 "fork 에피소드"로
+  // 잘못 집어버려서, 연장 이야기인데도 branch_episode_id가 채워지고, 그 결과
+  // 클라이언트가 "분기"로 오판해서 점선 안 "〜 연장" 문구가 안 뜨는 원인이었음
+  // (2026-07-19 유저가 시크릿탭으로 캐시 문제 아님을 직접 확인해줘서 발견).
+  if (story.parent_story_id && story.branch_from_step && !story.is_continuation) {
     // 1순위: B sub의 episode_id로 fork ep 역산 (bSubSnap / pSubsSnap)
     if (!branch_episode_id && branch_sub_id && bSubSnap && bSubSnap.exists && bSubSnap.data().episode_id)
       branch_episode_id = bSubSnap.data().episode_id;

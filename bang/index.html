@@ -111,7 +111,7 @@
      전부(헤더 포함) 죽어있었음(2026-07-13 발견) — clip은 hidden과 동일하게
      가로 넘침을 잘라내지만 스크롤 컨테이너를 만들지 않아 sticky가 정상 동작함 */
   html { overflow-x: clip; }
-  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; overflow-x: clip; max-width: 100vw; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; overscroll-behavior-y: contain; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; overflow-x: clip; max-width: 100vw; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   button, a { touch-action: manipulation; }
   @media (max-width: 768px) { input, textarea, select { font-size: 16px !important; } }
 
@@ -564,25 +564,6 @@
   .loading::before { content: '✍️'; display: inline-block; font-size: 20px; animation: writing 5s ease-in-out infinite; filter: saturate(0.55) brightness(1.1); }
   .loading::after  { content: '불러오는 중입니다'; display: block; font-size: 13px; color: var(--muted); margin-top: 10px; letter-spacing: .3px; }
 
-  /* ── 당겨서 새로고침 커스텀 인디케이터 — ✍️ 펜은 "쓰기" 기능으로 오해될 여지가
-     있어(유저 지적) 이미 다른 곳(연장 이야기 태그 등)에 쓰는 〜 물결로 대체.
-     로딩 시간이 짧아서 .loading의 5초짜리 writing 키프레임 대신 더 짧은 전용
-     스윙 애니메이션 사용. initPullToRefresh()가 붙였다 뗐다 함 */
-  #ptr-indicator {
-    position: fixed; top: 10px; left: 50%; transform: translate(-50%, -60px);
-    width: 38px; height: 38px; border-radius: 50%; background: var(--card);
-    border: 1px solid var(--border); box-shadow: 0 2px 10px rgba(0,0,0,.16);
-    display: flex; align-items: center; justify-content: center; font-size: 20px;
-    font-weight: 700; color: var(--accent2); z-index: 400; pointer-events: none;
-    opacity: 0; transition: opacity .15s;
-  }
-  #ptr-indicator span { display: inline-block; }
-  #ptr-indicator.refreshing span { animation: ptrSway .7s ease-in-out infinite; }
-  @keyframes ptrSway {
-    0%, 100% { transform: translateX(-3px) rotate(-6deg); }
-    50%      { transform: translateX(3px) rotate(6deg); }
-  }
-
   /* ── 채택 문장 잉크 번짐 등장(진행 중 이야기의 최신 문장, 볼 때마다 재생) ── */
   .prose-line.ink-in { animation: inkIn .9s ease-out; }
   @keyframes inkIn {
@@ -603,7 +584,6 @@
   @media (prefers-reduced-motion: reduce) {
     .prose-line.ink-in { animation: none; }
     .theend-fx.play .theend-text { animation: none; clip-path: none; }
-    #ptr-indicator.refreshing span { animation: none; }
   }
 
   /* ── 로그인/정보변경 등 짧은 저장 구간용 반투명 오버레이(위 .loading은 화면
@@ -7049,71 +7029,8 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// 당겨서 새로고침(pull-to-refresh) — 브라우저 기본 제스처(overscroll-behavior-y:
-// contain으로 위에서 막아둠) 대신, ✍️ 모티브 인디케이터로 직접 구현. 스크롤이
-// 맨 위일 때만 아래로 당기면 인디케이터가 나타나고, 문턱을 넘겨 놓으면 현재
-// 화면(currentRoute/currentParam)을 다시 불러옴 — 라우트별 로드 함수가 이미
-// 캐시-우선-그린 뒤 새 데이터로 갱신하는 구조라 그대로 재사용됨.
-function initPullToRefresh() {
-  if (!('ontouchstart' in window)) return; // 터치 없는 환경(데스크톱)은 스킵
-  const THRESH = 64, MAX = 96;
-  let startY = null, dist = 0, refreshing = false;
-  const el = document.createElement('div');
-  el.id = 'ptr-indicator';
-  el.innerHTML = '<span>〜</span>';
-  document.body.appendChild(el);
-
-  function setPos(px, opacity) {
-    el.style.transform = `translate(-50%, ${px}px)`;
-    el.style.opacity = String(opacity);
-  }
-  function reset() {
-    dist = 0; startY = null;
-    el.style.transition = 'transform .25s ease, opacity .25s ease';
-    setPos(-60, 0);
-    el.classList.remove('refreshing');
-  }
-  reset();
-
-  document.addEventListener('touchstart', e => {
-    // 모달/오버레이 안에서 당기는 제스처는 그 안 스크롤이지 새로고침 의도가
-    // 아니므로 제외(모달은 body 직속이라 #app 새로고침과 무관한 영역)
-    if (refreshing || document.scrollingElement.scrollTop > 0 || e.target.closest('.modal-overlay,.notif-panel')) {
-      startY = null; return;
-    }
-    startY = e.touches[0].clientY;
-    el.style.transition = 'none';
-  }, { passive: true });
-
-  document.addEventListener('touchmove', e => {
-    if (startY === null || refreshing) return;
-    const raw = e.touches[0].clientY - startY;
-    if (raw <= 0) { dist = 0; setPos(-60, 0); return; }
-    dist = Math.min(raw * 0.5, MAX);
-    setPos(dist - 60, Math.min(1, dist / THRESH));
-  }, { passive: true });
-
-  document.addEventListener('touchend', () => {
-    if (startY === null) return;
-    if (dist >= THRESH && !refreshing) {
-      refreshing = true;
-      el.style.transition = 'transform .2s ease';
-      setPos(10, 1);
-      el.classList.add('refreshing');
-      setTimeout(() => {
-        nav(currentRoute, currentParam);
-        setTimeout(() => { refreshing = false; reset(); }, 500);
-      }, 250);
-    } else {
-      reset();
-    }
-    startY = null;
-  }, { passive: true });
-}
-
 window.onload = async () => {
   loadUser();
-  initPullToRefresh();
   // 세션 검증(verifySession, 콜드스타트면 최대 12초까지 걸릴 수 있음)을 최대한
   // 일찍 미리 시작 — 아래 출석 보너스 체크가 이 흐름 한참 뒤(프리페치 등 거친
   // 후)에야 세션 검증을 시작해서, 완료+토스트가 뜰 때쯤엔 유저가 이미 다른

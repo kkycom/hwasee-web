@@ -116,5 +116,8 @@ service cloud.firestore {
     // 스포트라이트 이야기 장르 확률 이력 — Cloud Function(_classifyStoryGenre,
     // Admin SDK)만 씀. 클라이언트는 카드/상세페이지 표시용으로 읽기만 함.
     match /story_genre_probs/{docId} { allow read: if true; allow write: if false; }
+    // 공동집필 실시간 "쓰는 중" 표시용 — 8초 TTL(클라이언트가 최근 ping만
+    // 신뢰) 방식이라 story_visits 등과 동일하게 민감정보 없음, 열어둠.
+    match /episode_typing/{docId} { allow read, write: if true; }
   }
 }

@@ -63,6 +63,12 @@
   font-weight: 400; font-style: normal; font-display: swap;
   unicode-range: U+2E,U+bc29,U+d654,U+c528; /* 화씨.방 */
 }
+@font-face {
+  font-family: 'DancingScript';
+  src: url('/bang/fonts/DancingScript-Bold.woff2') format('woff2');
+  font-weight: 700; font-style: normal; font-display: swap;
+  unicode-range: U+20-7E; /* 완결 연출 "The End" 문구 전용, 영문/기본기호만 */
+}
 </style>
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -105,7 +111,7 @@
      전부(헤더 포함) 죽어있었음(2026-07-13 발견) — clip은 hidden과 동일하게
      가로 넘침을 잘라내지만 스크롤 컨테이너를 만들지 않아 sticky가 정상 동작함 */
   html { overflow-x: clip; }
-  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; overflow-x: clip; max-width: 100vw; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; overflow-x: clip; max-width: 100vw; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; overscroll-behavior-y: contain; }
   button, a { touch-action: manipulation; }
   @media (max-width: 768px) { input, textarea, select { font-size: 16px !important; } }
 
@@ -557,6 +563,48 @@
   .loading { text-align: center; padding: 40px; color: var(--muted); }
   .loading::before { content: '✍️'; display: inline-block; font-size: 20px; animation: writing 5s ease-in-out infinite; filter: saturate(0.55) brightness(1.1); }
   .loading::after  { content: '불러오는 중입니다'; display: block; font-size: 13px; color: var(--muted); margin-top: 10px; letter-spacing: .3px; }
+
+  /* ── 당겨서 새로고침 커스텀 인디케이터 — ✍️ 펜은 "쓰기" 기능으로 오해될 여지가
+     있어(유저 지적) 이미 다른 곳(연장 이야기 태그 등)에 쓰는 〜 물결로 대체.
+     로딩 시간이 짧아서 .loading의 5초짜리 writing 키프레임 대신 더 짧은 전용
+     스윙 애니메이션 사용. initPullToRefresh()가 붙였다 뗐다 함 */
+  #ptr-indicator {
+    position: fixed; top: 10px; left: 50%; transform: translate(-50%, -60px);
+    width: 38px; height: 38px; border-radius: 50%; background: var(--card);
+    border: 1px solid var(--border); box-shadow: 0 2px 10px rgba(0,0,0,.16);
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+    font-weight: 700; color: var(--accent2); z-index: 400; pointer-events: none;
+    opacity: 0; transition: opacity .15s;
+  }
+  #ptr-indicator span { display: inline-block; }
+  #ptr-indicator.refreshing span { animation: ptrSway .7s ease-in-out infinite; }
+  @keyframes ptrSway {
+    0%, 100% { transform: translateX(-3px) rotate(-6deg); }
+    50%      { transform: translateX(3px) rotate(6deg); }
+  }
+
+  /* ── 채택 문장 잉크 번짐 등장(투표로 방금 마감시킨 그 자리에서만 1회 재생) ── */
+  .prose-line.ink-in { animation: inkIn .9s ease-out; }
+  @keyframes inkIn {
+    0%   { filter: blur(5px); opacity: 0; }
+    45%  { filter: blur(2px); opacity: .7; }
+    100% { filter: blur(0);   opacity: 1; }
+  }
+
+  /* ── 완결 축하: 필기체 "The End" ── */
+  .theend-fx { margin-top: 18px; display: flex; justify-content: center; }
+  .theend-text {
+    font-family: 'DancingScript', var(--serif); font-size: 34px; font-weight: 700;
+    color: var(--accent2); white-space: nowrap; line-height: 1; display: inline-block;
+  }
+  .theend-fx.play .theend-text { clip-path: inset(0 100% 0 -8px); animation: theendReveal 1.5s steps(36,end) forwards; }
+  @keyframes theendReveal { to { clip-path: inset(0 0% 0 -8px); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .prose-line.ink-in { animation: none; }
+    .theend-fx.play .theend-text { animation: none; clip-path: none; }
+    #ptr-indicator.refreshing span { animation: none; }
+  }
 
   /* ── 로그인/정보변경 등 짧은 저장 구간용 반투명 오버레이(위 .loading은 화면
      전체를 대체하는 긴 로딩 구간용이라, 버튼 누르고 잠깐 기다리는 정도에는
@@ -1825,6 +1873,26 @@ let selectedSubs = [];
 const commentCache = {};
 let _epUnsubscribe = null; // 에피소드 실시간 리스너 정리용
 
+// 공동집필 실시간 "쓰는 중" 표시 — episode_typing/{episode_id}_{user_id}에
+// 8초마다(그 이상 자주 쓸 필요 없음, 스로틀) ping을 남기고, 보는 쪽은 8초
+// 이내 ping만 "지금 쓰는 중"으로 간주함(브라우저를 그냥 닫아버려 delete가
+// 못 불려도 자연히 사라지는 TTL 방식이라 별도 정리 Cloud Function 불필요).
+let _lastTypingPing = 0;
+function _pingTyping(episode_id) {
+  if (!user || !episode_id) return;
+  const now = Date.now();
+  if (now - _lastTypingPing < 4000) return;
+  _lastTypingPing = now;
+  firebase.firestore().collection('episode_typing').doc(episode_id + '_' + user.user_id).set({
+    episode_id, user_id: user.user_id, nickname: user.display_name || user.nickname,
+    updated_at: new Date().toISOString(),
+  }).catch(() => {});
+}
+function _clearTypingPresence(episode_id) {
+  if (!user || !episode_id) return;
+  firebase.firestore().collection('episode_typing').doc(episode_id + '_' + user.user_id).delete().catch(() => {});
+}
+
 function _applyStoryData(res, story_id) {
   // 다른 이야기로 이동 시 _branchChoice 리셋 (이전 이야기 자동경로가 오염 방지)
   if (window._branchChoiceStoryId !== story_id) {
@@ -1989,6 +2057,7 @@ function _applyStoryData(res, story_id) {
       <div class="prose-opening">${esc(s.opening)}</div>
       <span class="prose-author">— ${s.creator_badge ? `<span class="badge badge-${s.creator_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(s.creator_badge)}</span>` : ''}${esc(s.creator_nickname || '익명')}</span>
       ${confirmedHtml || ''}
+      ${isFinished ? `<div class="theend-fx" id="story-ending-fx"><span class="theend-text">The End</span></div>` : ''}
     </div>
     ${isAdmin() && s.status === 'active' && !s.vote_threshold ? `
     <div style="display:flex;justify-content:flex-end;margin:6px 0 2px">
@@ -2038,6 +2107,45 @@ function _applyStoryData(res, story_id) {
     requestAnimationFrame(() => {
       document.querySelector('.branch-chooser')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
+  }
+
+  // 방금 이 세션 안에서 투표로 마감시킨 직후 재렌더면(submitVoteInStory가 남긴
+  // 신호) 새로 채택된 문장 한 줄에만 잉크 번짐 등장 애니메이션을 1회 재생 —
+  // 그냥 재방문/새로고침으로 들어온 경우엔 안 뜸(신호가 없으므로).
+  if (window._pendingInkReveal && window._pendingInkReveal.story_id === story_id) {
+    const step = window._pendingInkReveal.step;
+    window._pendingInkReveal = null;
+    const closedEp = episodes.find(e => e.status === 'closed' && Number(e.step) === step);
+    if (closedEp) {
+      const line = document.querySelector(`.prose-line[data-episode-id="${closedEp.episode_id}"]`);
+      if (line) requestAnimationFrame(() => line.classList.add('ink-in'));
+    }
+  }
+  // 같은 신호로, 그 마감이 이야기 전체의 마지막 단계였다면(방금 막 완결됨)
+  // "The End" 필기체가 정적으로 바로 보이는 대신 써지는 연출로 1회 재생.
+  if (isFinished && window._pendingCompletionCelebrate === story_id) {
+    window._pendingCompletionCelebrate = null;
+    const endEl = document.getElementById('story-ending-fx');
+    if (endEl) requestAnimationFrame(() => endEl.classList.add('play'));
+  }
+
+  // 지금 열린 단계에 다른 사람이 쓰는 중이면 알려줌 — episode()의 _epUnsubscribe
+  // 정리 인프라를 그대로 재사용(라우트가 다르면 동시에 살아있을 일이 없어 안전)
+  if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; }
+  if (!isFinished && openEp) {
+    _epUnsubscribe = firebase.firestore()
+      .collection('episode_typing')
+      .where('episode_id', '==', openEp.episode_id)
+      .onSnapshot(snap => {
+        const el = document.getElementById('typing-indicator');
+        if (!el) return;
+        const now = Date.now();
+        const names = snap.docs.map(d => d.data())
+          .filter(t => (!user || t.user_id !== user.user_id) && (now - new Date(t.updated_at).getTime()) < 8000)
+          .map(t => t.nickname);
+        el.textContent = !names.length ? '' :
+          names.length === 1 ? `✎ ${names[0]}님이 쓰는 중...` : `✎ ${names[0]}님 외 ${names.length - 1}명이 쓰는 중...`;
+      }, () => {});
   }
 
 }
@@ -3374,6 +3482,7 @@ async function submitSubInStory(episode_id, closing = false) {
     window._polishFrom = null;
     _lsc.expire('free', 'done');
     _lsc.del('story_' + currentParam);
+    _clearTypingPresence(episode_id);
     toast(closing ? '제출 완료! 이야기 마무리 공감이 시작됩니다.' : '제출 완료!');
     story();
   } finally { _submitSubInStoryInFlight = false; }
@@ -3478,7 +3587,14 @@ async function submitVoteInStory(episode_id) {
   if (res.max_votes >= (res.vote_threshold || FB_VOTE_THRESHOLD)) {
     if (btn) btn.textContent = '다음 단계로 넘어가는 중...';
     const _story = window._storyData?.story;
-    if (_story) await _waitForStoryProgress(_story.story_id, Number(_story.current_step) || 0);
+    if (_story) {
+      // 방금 이 투표로 마감된 단계를 기록해뒀다가, story(true) 재렌더 시 그
+      // 문장에만 잉크 번짐 등장을 걸고(혹시 이야기 전체가 끝났으면 "The End"도
+      // 써지는 연출로) — 재방문 시엔 이 신호가 없어서 정적으로만 보임
+      window._pendingInkReveal = { story_id: _story.story_id, step: Number(_story.current_step) || 0 };
+      window._pendingCompletionCelebrate = _story.story_id;
+      await _waitForStoryProgress(_story.story_id, Number(_story.current_step) || 0);
+    }
   }
   story(true); // 갈래 선택 유지
 }
@@ -4998,7 +5114,8 @@ function buildStoryActionHtml(openEp) {
       <div class="card" style="margin-bottom:20px">
         <div style="font-size:13px;font-weight:700;margin-bottom:10px">✏️ 이어 쓰기</div>
         <div id="polish-indicator" style="display:none;font-size:12px;color:var(--accent2);margin-bottom:8px;padding:6px 10px;background:var(--surface);border-radius:6px;border-left:2px solid var(--accent2)"></div>
-        <input type="text" id="sub-input" maxlength="50" placeholder="한 문장으로 이어가세요" oninput="updateCount('sub-input','sub-cc')">
+        <div id="typing-indicator" style="font-size:12px;color:var(--muted);margin-bottom:6px;min-height:16px"></div>
+        <input type="text" id="sub-input" maxlength="50" placeholder="한 문장으로 이어가세요" oninput="updateCount('sub-input','sub-cc');_pingTyping('${esc(openEp.episode_id)}')">
         <div class="char-count" id="sub-cc" style="margin-bottom:10px">0자</div>
         <div id="sub-submit-actions" style="display:flex;gap:8px;flex-wrap:wrap">
           ${effectiveClosedCount >= 1
@@ -6941,8 +7058,71 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+// 당겨서 새로고침(pull-to-refresh) — 브라우저 기본 제스처(overscroll-behavior-y:
+// contain으로 위에서 막아둠) 대신, ✍️ 모티브 인디케이터로 직접 구현. 스크롤이
+// 맨 위일 때만 아래로 당기면 인디케이터가 나타나고, 문턱을 넘겨 놓으면 현재
+// 화면(currentRoute/currentParam)을 다시 불러옴 — 라우트별 로드 함수가 이미
+// 캐시-우선-그린 뒤 새 데이터로 갱신하는 구조라 그대로 재사용됨.
+function initPullToRefresh() {
+  if (!('ontouchstart' in window)) return; // 터치 없는 환경(데스크톱)은 스킵
+  const THRESH = 64, MAX = 96;
+  let startY = null, dist = 0, refreshing = false;
+  const el = document.createElement('div');
+  el.id = 'ptr-indicator';
+  el.innerHTML = '<span>〜</span>';
+  document.body.appendChild(el);
+
+  function setPos(px, opacity) {
+    el.style.transform = `translate(-50%, ${px}px)`;
+    el.style.opacity = String(opacity);
+  }
+  function reset() {
+    dist = 0; startY = null;
+    el.style.transition = 'transform .25s ease, opacity .25s ease';
+    setPos(-60, 0);
+    el.classList.remove('refreshing');
+  }
+  reset();
+
+  document.addEventListener('touchstart', e => {
+    // 모달/오버레이 안에서 당기는 제스처는 그 안 스크롤이지 새로고침 의도가
+    // 아니므로 제외(모달은 body 직속이라 #app 새로고침과 무관한 영역)
+    if (refreshing || document.scrollingElement.scrollTop > 0 || e.target.closest('.modal-overlay,.notif-panel')) {
+      startY = null; return;
+    }
+    startY = e.touches[0].clientY;
+    el.style.transition = 'none';
+  }, { passive: true });
+
+  document.addEventListener('touchmove', e => {
+    if (startY === null || refreshing) return;
+    const raw = e.touches[0].clientY - startY;
+    if (raw <= 0) { dist = 0; setPos(-60, 0); return; }
+    dist = Math.min(raw * 0.5, MAX);
+    setPos(dist - 60, Math.min(1, dist / THRESH));
+  }, { passive: true });
+
+  document.addEventListener('touchend', () => {
+    if (startY === null) return;
+    if (dist >= THRESH && !refreshing) {
+      refreshing = true;
+      el.style.transition = 'transform .2s ease';
+      setPos(10, 1);
+      el.classList.add('refreshing');
+      setTimeout(() => {
+        nav(currentRoute, currentParam);
+        setTimeout(() => { refreshing = false; reset(); }, 500);
+      }, 250);
+    } else {
+      reset();
+    }
+    startY = null;
+  }, { passive: true });
+}
+
 window.onload = async () => {
   loadUser();
+  initPullToRefresh();
   // 세션 검증(verifySession, 콜드스타트면 최대 12초까지 걸릴 수 있음)을 최대한
   // 일찍 미리 시작 — 아래 출석 보너스 체크가 이 흐름 한참 뒤(프리페치 등 거친
   // 후)에야 세션 검증을 시작해서, 완료+토스트가 뜰 때쯤엔 유저가 이미 다른

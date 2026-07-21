@@ -2974,7 +2974,11 @@ function _renderWordChallengeHistory(history) {
 // 처리함 — 여기는 조회 결과를 그리고, 슬롯2가 제안+투표 라운드 중일 때만
 // renderWordChallenge()와 동일한 패턴으로 폼/투표 UI를 보여줌.
 const SPOTLIGHT_META = {
-  word:     { icon: '🎲', title: '오늘의 단어 챌린지 우승작', info: '매일 열리는 단어 챌린지에서 사람들이 가장 좋아한 문장으로 새 이야기가 시작돼요.' },
+  // titleHtml: 카드 상단 제목 전용(색 강조 포함) — "세 단어"라는 챌린지 방식이
+  // "챌린지 가기" 버튼만 봐서는 안 와닿아 참여율이 떨어졌다는 판단(유저 제보,
+  // 2026-07-21)으로 "세"를 색으로 강조해 한눈에 "3단어짜리 챌린지구나"가
+  // 캐치되게 함. title(플레인 텍스트)은 정보 모달(openSlotInfo)에서 그대로 사용.
+  word:     { icon: '🎲', title: '오늘의 세 단어 챌린지 우승작', titleHtml: '오늘의 <span style="color:var(--accent2);font-weight:800">세</span> 단어 챌린지 우승작', info: '매일 열리는 단어 챌린지에서 사람들이 가장 좋아한 문장으로 새 이야기가 시작돼요.' },
   sentence: { icon: '✍️', title: '사람들이 뽑은 시작 문장',   info: '사람들이 직접 제안하고 투표해서 뽑은 문장으로 이야기가 시작돼요. (1~3등에게 각 50p)' },
   ai:       { icon: '🤖', title: 'AI가 고른 뜻밖의 시작',     info: 'AI가 골라준 첫 문장으로 이야기가 시작돼요.' },
 };
@@ -3135,7 +3139,7 @@ function renderSpotlight() {
       <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;position:relative">
         ${slot.state === 'story' ? cardStickersHtml(slot, false) : ''}
         <div style="display:flex;align-items:center;gap:4px">
-          <span style="font-size:14px;font-weight:700">${meta.icon} ${esc(meta.title)}</span>
+          <span style="font-size:14px;font-weight:700">${meta.icon} ${meta.titleHtml || esc(meta.title)}</span>
           <button onclick="openSlotInfo('${key}')" aria-label="설명 보기" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 2px">ⓘ</button>
         </div>
         ${bodyHtml}

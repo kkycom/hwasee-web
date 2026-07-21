@@ -1161,8 +1161,6 @@ async function checkPatchNoteAnnouncement() {
 let currentRoute = 'home';
 let currentParam = null;
 
-let _skipHashChange = false;
-
 function nav(route, param) {
   if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; }
   Object.keys(commentCache).forEach(k => delete commentCache[k]);
@@ -1171,8 +1169,7 @@ function nav(route, param) {
   }
   currentRoute = route;
   currentParam = param || null;
-  _skipHashChange = true;
-  location.hash = param ? `${route}/${param}` : route;
+  history.pushState({ route, param }, '', routeToPath(route, param));
   window.scrollTo(0, 0);
   render();
 }
@@ -1404,8 +1401,7 @@ async function switchHomeTab(tab) {
   _renderEpoch++;
   const epoch = _renderEpoch;
   currentRoute = tab;
-  _skipHashChange = true;
-  location.hash = tab;
+  history.pushState({ route: tab }, '', routeToPath(tab));
   // 다른 탭으로 벗어나면 "더보기"로 늘려뒀던 개수를 초기화 — 안 그러면 탭을
   // 나갔다 들어올 때마다 카드가 몇 개 보일지 이전 방문 기록에 따라 들쭉날쭉해짐
   if (tab !== 'free') _freeLimit = 20;
@@ -6288,7 +6284,7 @@ async function adminEdits() {
         <div style="font-size:11px;color:var(--muted);margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span style="font-weight:700;color:var(--accent2)">${editTypeLabel(e.edit_type)}</span>
           <span>${timeAgo(e.edited_at)}</span>
-          ${e.story_opening ? `<a href="#story/${esc(e.story_id)}" onclick="nav('story','${esc(e.story_id)}');return false" style="color:var(--accent);text-decoration:underline;font-size:11px">이야기 보기</a>` : ''}
+          ${e.story_opening ? `<a href="${BASE}story/${esc(e.story_id)}/" onclick="nav('story','${esc(e.story_id)}');return false" style="color:var(--accent);text-decoration:underline;font-size:11px">이야기 보기</a>` : ''}
         </div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:4px">수정 전</div>
         <div style="font-size:13px;line-height:1.6;color:var(--muted);background:var(--bg);padding:7px 10px;border-radius:6px;margin-bottom:6px">${esc(e.old_content)}</div>
@@ -7109,19 +7105,34 @@ function timeAgo(dateStr) {
 
 // ─── 라우터 ───────────────────────────────────────────────
 
-function parseHash() {
-  const h     = location.hash.slice(1) || 'seed';
+// 애드센스 저가치콘텐츠 반려 대응(2026-07-21, 디버그방 진단+기능개발방 구현) —
+// 해시 라우팅(location.hash)은 크롤러에 전송되지 않아 개별 이야기가 서버 경로
+// URL로 존재할 수 없었음. history.pushState 기반 경로 라우팅으로 전환.
+const BASE = '/bang/';
+const _ROUTE_WHITELIST = ['home','seed','spotlight','free','popular','mine','done','story','episode','auth','profile','user','create','resetpw','wordchallenge','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','admin-wordchallenge','patchnotes'];
+// story는 완결작 정적 발행(SSG, 후속 단계) 파일 경로(/bang/story/{id}/index.html)와
+// canonical URL을 통일하기 위해 트레일링 슬래시를 씀 — 다른 라우트는 불필요.
+const _SLASH_ROUTES = new Set(['story']);
+
+function routeToPath(route, param) {
+  const suffix = _SLASH_ROUTES.has(route) ? '/' : '';
+  return param ? `${BASE}${route}/${param}${suffix}` : `${BASE}${route}${suffix}`;
+}
+
+function parsePath() {
+  let path = location.pathname.startsWith(BASE) ? location.pathname.slice(BASE.length) : location.pathname;
+  path = path.replace(/^\/+|\/+$/g, ''); // 트레일링/leading 슬래시 정리
+  const h     = path || 'seed';
   const parts = h.split('/');
   const route = parts[0];
-  currentRoute = ['home','seed','spotlight','free','popular','mine','done','story','episode','auth','profile','user','create','resetpw','wordchallenge','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','admin-wordchallenge','patchnotes'].includes(route) ? route : 'seed';
+  currentRoute = _ROUTE_WHITELIST.includes(route) ? route : 'seed';
   currentParam = parts.slice(1).join('/') || null;
 }
 
-window.addEventListener('hashchange', () => {
-  if (_skipHashChange) { _skipHashChange = false; return; }
+window.addEventListener('popstate', () => {
   if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; }
   Object.keys(commentCache).forEach(k => delete commentCache[k]);
-  parseHash(); render(); renderNav();
+  parsePath(); render(); renderNav();
 });
 
 // 잠금화면 복귀 시 30초 이상 숨겨졌으면 재렌더 + Firestore 연결 재웜업
@@ -7149,7 +7160,24 @@ window.onload = async () => {
   // (uid,token) 쌍으로 메모이즈되므로, 아래 fbGetSession/checkDailyBonus는
   // 이미 끝나있거나 훨씬 덜 기다린 상태에서 이 결과를 그대로 재사용함.
   if (user) _ensureSessionVerified();
-  parseHash();
+  // GitHub Pages엔 서브디렉토리 커스텀 404가 안 되므로(루트 404.html만 가능),
+  // /bang/ 하위 딥링크·새로고침은 404.html이 받아서 sessionStorage에 원래
+  // 경로를 남겨두고 /bang/으로 리다이렉트함 — 여기서 복원. 레거시 해시
+  // 링크(#story/xyz 등, 이미 퍼진 북마크/공유링크)보다 먼저 처리해야 함.
+  const _spaRedirectPath = sessionStorage.getItem('spa-redirect-path');
+  if (_spaRedirectPath) {
+    sessionStorage.removeItem('spa-redirect-path');
+    history.replaceState(null, '', _spaRedirectPath);
+  }
+  // 해시 라우팅 시절 퍼진 링크(#story/xyz 등)를 새 경로로 자동 전환
+  if (location.hash) {
+    const _legacyParts = location.hash.slice(1).split('/');
+    const _legacyRoute = _legacyParts[0];
+    if (_ROUTE_WHITELIST.includes(_legacyRoute)) {
+      history.replaceState(null, '', routeToPath(_legacyRoute, _legacyParts.slice(1).join('/') || null));
+    }
+  }
+  parsePath();
   render();       // 캐시 데이터로 즉시 렌더
   renderNav();
   _handleKakaoRedirectIfPresent(); // 카카오 로그인 후 돌아온 경우(?code=...) 처리

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>페이지를 찾을 수 없어요 — 화씨</title>
+<script>
+// GitHub Pages는 저장소 최상위 404.html만 커스텀 404로 씀(서브디렉토리 불가) —
+// /bang/(SPA) 하위 딥링크·새로고침·경로기반 라우팅 링크는 여기서 받아서 원래
+// 경로를 sessionStorage에 남겨두고 /bang/으로 돌려보냄. bang/index.html의
+// window.onload 부트스트랩이 그 경로를 다시 복원해 정상 렌더함(2026-07-21,
+// 해시→경로 라우팅 전환의 짝 — bang/index.html 주석 참고).
+if (location.pathname.indexOf('/bang/') === 0) {
+  sessionStorage.setItem('spa-redirect-path', location.pathname + location.search + location.hash);
+  location.replace('/bang/');
+}
+</script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #0d0d0d; color: #e8d5b0;
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    line-height: 1.7;
+  }
+  main { max-width: 520px; margin: 0 auto; padding: 96px 20px 80px; text-align: center; }
+  .logo { font-size: 15px; letter-spacing: 4px; color: #e8d5b0; opacity: .85; margin-bottom: 28px; }
+  h1 { font-size: 24px; margin: 0 0 14px; color: #f3e7cf; }
+  p { font-size: 14px; color: #9a8a6c; margin: 0 0 32px; }
+  a.home { color: #e8d5b0; border: 1px solid #4a4030; border-radius: 10px; padding: 10px 20px; text-decoration: none; font-size: 14px; }
+  a.home:hover { border-color: #e8d5b0; background: #141210; }
+</style>
+</head>
+<body>
+<main>
+  <div class="logo">화씨 HWASEE</div>
+  <h1>페이지를 찾을 수 없어요</h1>
+  <p>주소가 바뀌었거나 존재하지 않는 페이지예요.</p>
+  <a class="home" href="/">화씨 홈으로</a>
+</main>
+</body>
+</html>

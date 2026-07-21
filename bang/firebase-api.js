@@ -885,6 +885,10 @@ async function fbGetStory(story_id, user_id) {
 
 async function fbCreateStory(opening, creator_id, is_ai_seed) {
   if (!opening || !opening.trim()) return { ok: false, error: '시작 문장을 입력해주세요.' };
+  // 이어쓰기 문장은 50자로 막혀있는데 정작 이야기를 시작하는 첫 문장만
+  // 무제한이었음(기능개발방 2026-07-20 감사 지적) — 클라이언트 maxlength와
+  // 동일한 100자로 서버에서도 강제
+  if (!is_ai_seed && opening.trim().length > 100) return { ok: false, error: '100자 이내로 작성해주세요.' };
   const story_id = fbGenId(), episode_id = fbGenId();
   let creator_nickname = '익명', creator_badge = '', uData = {};
   if (!is_ai_seed) {

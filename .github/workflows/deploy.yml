@@ -23,6 +23,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      # 완결된 이야기를 정적 페이지(bang/story/{id}/index.html)로 미리 생성 —
+      # 애드센스 저가치콘텐츠 반려 대응. 신규 기능이라 이 스텝이 실패해도
+      # (예: 시크릿 미등록) 사이트 전체 배포까지 막지 않게 continue-on-error.
+      - name: Build static story pages
+        run: node scripts/build-static-stories.js
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        continue-on-error: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .

@@ -1,0 +1,12 @@
+{
+  "name": "hwasee-web-build",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GitHub Actions 빌드 시점 스크립트(완결작 정적 발행 등) 전용 — 사이트 자체는 순수 정적 파일",
+  "scripts": {
+    "build:stories": "node scripts/build-static-stories.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^11.11.0"
+  }
+}

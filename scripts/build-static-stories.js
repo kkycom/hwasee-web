@@ -188,13 +188,105 @@ function renderStoryPage(indexHtmlSrc, { id, title, description, url, bodyHtml, 
 }
 
 function renderSitemap(entries) {
+  const staticPages = [
+    { loc: `${SITE_ORIGIN}/bang/`, changefreq: 'daily', priority: '1.0' },
+    { loc: `${SITE_ORIGIN}/bang/story/`, changefreq: 'daily', priority: '0.8' },
+    { loc: `${SITE_ORIGIN}/bang/about.html`, changefreq: 'monthly', priority: '0.5' },
+    { loc: `${SITE_ORIGIN}/bang/guidelines.html`, changefreq: 'monthly', priority: '0.5' },
+    { loc: `${SITE_ORIGIN}/bang/contact.html`, changefreq: 'monthly', priority: '0.5' },
+    { loc: `${SITE_ORIGIN}/bang/privacy.html`, changefreq: 'yearly', priority: '0.3' },
+  ];
   const urls = [
-    `  <url><loc>${SITE_ORIGIN}/bang/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>`,
+    ...staticPages.map(p => `  <url><loc>${p.loc}</loc><changefreq>${p.changefreq}</changefreq><priority>${p.priority}</priority></url>`),
     ...entries.map(e =>
       `  <url><loc>${SITE_ORIGIN}/bang/story/${e.id}/</loc>${e.lastmod ? `<lastmod>${e.lastmod.slice(0, 10)}</lastmod>` : ''}<changefreq>monthly</changefreq><priority>0.6</priority></url>`
     ),
   ].join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
+}
+
+// 완결작 아카이브 목록 — 별도로 대응하는 SPA 라우트가 없는 순수 정적 허브
+// 페이지라 index.html 복제 방식이 아니라 contact.html/privacy.html과 같은
+// 가벼운 자체 템플릿 사용. 개별 이야기 정적 페이지로 가는 실제 <a> 링크를
+// 모아둬서, sitemap 없이도 크롤러가 내부 링크를 따라 전부 발견할 수 있게 함.
+function renderArchiveIndex(entries) {
+  const items = entries.map(e => `
+    <a class="story-card" href="/bang/story/${e.id}/">
+      <div class="story-title">${esc(e.title)}</div>
+      <div class="story-desc">${esc(e.description)}</div>
+      ${e.lastmod ? `<div class="story-date">완결 ${esc(e.lastmod.slice(0, 10))}</div>` : ''}
+    </a>`).join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>완결된 이야기 모음 — 화씨.방</title>
+<meta name="description" content="화씨.방에서 여러 사람이 함께 써서 완성한 이야기들을 모아봤어요. 지금까지 완결된 ${entries.length}편의 이야기를 읽어보세요.">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="${SITE_ORIGIN}/bang/story/">
+<link rel="icon" type="image/png" href="/bang/hwaseebang_sum.png">
+<meta name="theme-color" content="#f0ead8">
+<meta property="og:type"        content="website">
+<meta property="og:url"         content="${SITE_ORIGIN}/bang/story/">
+<meta property="og:title"       content="완결된 이야기 모음 — 화씨.방">
+<meta property="og:description" content="화씨.방에서 여러 사람이 함께 써서 완성한 이야기들을 모아봤어요.">
+<meta property="og:image"       content="https://hwasee.me/bang/hwaseebang_og.png">
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7828331174769963" crossorigin="anonymous"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f0ead8; --surface: #e6dac8; --card: #ddd0b8; --border: #c4b090;
+    --accent: #80978c; --accent2: #c8823a; --text: #1c0e06; --muted: #7a5c40;
+    --radius: 12px; --font: 'Noto Sans KR', system-ui, sans-serif; --serif: 'Gowun Batang', Georgia, serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.7; }
+  header {
+    position: sticky; top: 0; z-index: 10; background: rgba(240,234,216,.92); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border); padding: 0 24px; height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo { font-size: 20px; font-weight: 400; letter-spacing: .5px; font-family: var(--serif); color: var(--text); text-decoration: none; }
+  .back { font-size: 13px; color: var(--muted); text-decoration: none; }
+  main { max-width: 720px; margin: 0 auto; padding: 48px 20px 80px; }
+  h1 { font-family: var(--serif); font-size: 26px; font-weight: 700; margin-bottom: 8px; }
+  .lead { font-size: 14px; color: var(--muted); margin-bottom: 32px; }
+  .story-card {
+    display: block; text-decoration: none; color: inherit; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 12px;
+    transition: border-color .15s, background .15s;
+  }
+  .story-card:hover { border-color: var(--accent2); background: var(--card); }
+  .story-title { font-family: var(--serif); font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .story-desc { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .story-date { font-size: 11px; color: var(--accent2); }
+  .empty { font-size: 14px; color: var(--muted); padding: 32px 0; text-align: center; }
+  footer { text-align: center; font-size: 12px; color: var(--muted); padding: 24px; border-top: 1px solid var(--border); }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <a class="logo" href="/bang/">화씨.방</a>
+  <a class="back" href="/bang/">← 화씨.방으로 돌아가기</a>
+</header>
+<main>
+  <h1>완결된 이야기 모음</h1>
+  <p class="lead">여러 사람이 한 문장씩 이어 써서 완성한 이야기 ${entries.length}편이에요.</p>
+  ${entries.length ? items : '<div class="empty">아직 완결된 이야기가 없어요.</div>'}
+</main>
+<footer>
+  <a href="https://hwasee.me/" style="color:var(--muted)">화씨 홈</a> &nbsp;·&nbsp;
+  <a href="/bang/" style="color:var(--muted)">화씨.방</a> &nbsp;·&nbsp;
+  <a href="/bang/about.html" style="color:var(--muted)">소개</a>
+  <p style="margin-top:8px">&copy; 2026 화씨 (Hwasee). All rights reserved.</p>
+</footer>
+</body>
+</html>
+`;
 }
 
 // ── 메인 ──
@@ -242,18 +334,22 @@ async function main() {
       const dir = path.join(OUT_DIR, story.story_id);
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, 'index.html'), html);
-      sitemapEntries.push({ id: story.story_id, lastmod });
+      sitemapEntries.push({ id: story.story_id, lastmod, title, description });
       ok++;
     } catch (e) {
       console.error(`이야기 처리 실패(${story.story_id}):`, e.message);
     }
   }
 
+  // 최신순으로 정렬해서 아카이브 목록에 최근 완결작이 먼저 보이게
+  sitemapEntries.sort((a, b) => (b.lastmod || '').localeCompare(a.lastmod || ''));
+
   fs.writeFileSync(SITEMAP_PATH, renderSitemap(sitemapEntries));
-  console.log(`정적 페이지 ${ok}/${stories.length}건 생성 완료, sitemap.xml 갱신됨`);
+  fs.writeFileSync(path.join(OUT_DIR, 'index.html'), renderArchiveIndex(sitemapEntries));
+  console.log(`정적 페이지 ${ok}/${stories.length}건 생성 완료, 아카이브 목록·sitemap.xml 갱신됨`);
 }
 
-module.exports = { getEpisodeTree, buildCanonicalPath, collectLines, proseHtml, renderStoryPage, renderSitemap, esc };
+module.exports = { getEpisodeTree, buildCanonicalPath, collectLines, proseHtml, renderStoryPage, renderSitemap, renderArchiveIndex, esc };
 
 if (require.main === module) {
   main().catch(e => {

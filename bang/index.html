@@ -55,18 +55,25 @@
 <meta name="theme-color" content="#1c2320">
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7828331174769963" crossorigin="anonymous"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- 자체 호스팅 폰트는 로고/"The End" 문구처럼 노출 영역이 작아 preload로
+     첫 페인트 전에 받아두기 쉬움 — 아래 font-display:optional과 짝을 이뤄
+     "제때 왔으면 바로 그 폰트로, 늦으면 스왑 없이 대체 폰트 그대로" 유지함으로써
+     로딩 중 폰트 교체로 레이아웃이 한 번 흔들리는 현상(FOUT)을 없앰 -->
+<link rel="preload" href="/bang/fonts/GyelonggiBatang-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/bang/fonts/DancingScript-Bold.woff2" as="font" type="font/woff2" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;600;700&display=optional" rel="stylesheet">
 <style>
 @font-face {
   font-family: 'GyelonggiBatang';
   src: url('/bang/fonts/GyelonggiBatang-Regular.woff2') format('woff2');
-  font-weight: 400; font-style: normal; font-display: swap;
+  font-weight: 400; font-style: normal; font-display: optional;
   unicode-range: U+2E,U+bc29,U+d654,U+c528; /* 화씨.방 */
 }
 @font-face {
   font-family: 'DancingScript';
   src: url('/bang/fonts/DancingScript-Bold.woff2') format('woff2');
-  font-weight: 700; font-style: normal; font-display: swap;
+  font-weight: 700; font-style: normal; font-display: optional;
   unicode-range: U+20-7E; /* 완결 연출 "The End" 문구 전용, 영문/기본기호만 */
 }
 </style>

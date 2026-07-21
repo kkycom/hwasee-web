@@ -2,6 +2,13 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<!-- 해시→경로 라우팅 전환(history.pushState) 이후 실제 URL 경로가 /bang/story/{id}/
+     처럼 바뀌면서, 문서 안의 상대경로(뱃지 이미지 badges/*.webp, 심지어
+     firebase-api.js 스크립트 자체)가 현재 경로 기준으로 잘못 풀려 404가 나는
+     회귀가 있었음(완결작 정적페이지에 직접 진입 시 앱 스크립트 자체가 로드 안
+     되는 것까지 확인, 디버그방 2026-07-21) — 모든 상대경로를 항상 /bang/ 기준으로
+     고정해 해결. -->
+<base href="/bang/">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-G7M4WPYHQK"></script>

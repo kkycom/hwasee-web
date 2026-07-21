@@ -580,11 +580,14 @@
   .loading::after  { content: '불러오는 중입니다'; display: block; font-size: 13px; color: var(--muted); margin-top: 10px; letter-spacing: .3px; }
 
   /* ── 채택 문장 잉크 번짐 등장(진행 중 이야기의 최신 문장, 볼 때마다 재생) ── */
-  .prose-line.ink-in { animation: inkIn .9s ease-out; }
+  .prose-line.ink-in .prose-sentence {
+    clip-path: inset(0 100% 0 -4px); filter: blur(3px);
+    animation: inkIn 1.2s steps(40,end) forwards;
+  }
   @keyframes inkIn {
-    0%   { filter: blur(5px); opacity: 0; }
-    45%  { filter: blur(2px); opacity: .7; }
-    100% { filter: blur(0);   opacity: 1; }
+    0%   { clip-path: inset(0 100% 0 -4px); filter: blur(3px); }
+    70%  { filter: blur(1px); }
+    100% { clip-path: inset(0 0% 0 -4px); filter: blur(0); }
   }
 
   /* ── 완결 축하: 필기체 "The End" ── */
@@ -1945,7 +1948,7 @@ function _applyStoryData(res, story_id) {
     // 하나 더 끼어든 것처럼 보였음(2026-07-19 유저 제보). margin-bottom:-29px로
     // 뒤따르는 줄의 margin-top을 상쇄해서 점선이 정확히 격자 한 칸만 차지하게 함
     // — 이 스타일 문자열은 다른 3곳(4곳 중)에도 동일하게 복제돼있어 같이 수정함.
-    const _divider = `<div style="height:29px;display:flex;align-items:center;margin-bottom:-29px"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>`;
+    const _divider = `<div class="prose-fork-divider" style="height:29px;display:flex;align-items:center;margin-bottom:-29px"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>`;
     if (_branchEpId) {
       // 분기(동률) 이야기: 갈린 지점(tie 단계) 자체가 이미 이 갈래만의 내용이므로,
       // 점선은 그 직전(마지막 완전 공통 단계)과 tie 단계 사이에 둠
@@ -1961,7 +1964,7 @@ function _applyStoryData(res, story_id) {
       // 탭으로 이미 "여기서 갈린다"는 게 보이지만 연장은 그런 탭이 없어서
       // 점선만 있으면 무슨 뜻인지 알기 어려움 — "〜 연장" 라벨을 넣어 구분
       // (2026-07-19 유저 지적)
-      const _contDivider = `<div style="height:29px;display:flex;align-items:center;gap:10px;margin-bottom:-29px"><div style="flex:1;border-top:1px dashed var(--accent2)"></div><span style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;flex-shrink:0">〜 연장</span><div style="flex:1;border-top:1px dashed var(--accent2)"></div></div>`;
+      const _contDivider = `<div class="prose-fork-divider" style="height:29px;display:flex;align-items:center;gap:10px;margin-bottom:-29px"><div style="flex:1;border-top:1px dashed var(--accent2)"></div><span style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;flex-shrink:0">〜 연장</span><div style="flex:1;border-top:1px dashed var(--accent2)"></div></div>`;
       const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
       inheritedHtml = pTree ? `<div class="prose-inherited prose-inherited-continuation">${renderEpisodeTreeHtml(pTree, _pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_contDivider}` : '';
     }
@@ -5256,7 +5259,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
     // 이 갈래가 동률(tie)에서 시작된 거면 점선은 이미 그 tie 지점에서 표시됐으므로
     // 여기선 생략 — tie 없이(생성형 분기) 이 줄까지 순수 공통이던 경우에만 여기서 표시
     const forkHtml = (extBranch && !hideTabs)
-      ? `${extBranch.branch_episode_id ? '' : `<div style="height:29px;display:flex;align-items:center;margin-bottom:-29px"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>`}${renderExtBranchInline(extBranch)}`
+      ? `${extBranch.branch_episode_id ? '' : `<div class="prose-fork-divider" style="height:29px;display:flex;align-items:center;margin-bottom:-29px"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>`}${renderExtBranchInline(extBranch)}`
       : '';
     const editBtnHtml = isAdmin() ? `<button class="prose-edit-btn" data-sub="${sub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : '';
     return `
@@ -5288,7 +5291,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
     // 감지가 안 되므로 branch_episode_id 기준의 tieBranch로 판정
     const isTieDiverge = tieBranch && chosenSub && chosenSub.sub_id === tieBranch.branch_sub_id;
     const _forkDivider = (isTieDiverge && !hideTabs)
-      ? `<div style="height:29px;display:flex;align-items:center;margin-bottom:-29px"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>` : '';
+      ? `<div class="prose-fork-divider" style="height:29px;display:flex;align-items:center;margin-bottom:-29px"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>` : '';
     return `
       ${_forkDivider}
       <div class="branch-prose-row">
@@ -5393,7 +5396,9 @@ function openImmersiveProse() {
   overlay.id = 'immersive-prose-overlay';
   overlay.className = 'immersive-prose-overlay';
   overlay.innerHTML = `<div class="story-prose immersive-prose-inner">${wrap.innerHTML}</div>`;
-  overlay.querySelectorAll('.branch-side-indicator, .ext-branch-fork').forEach(el => el.remove());
+  // 집중모드는 글 자체에만 몰입하자는 취지라, 분기/연장 점선 구분선과 "The End"
+  // 연출까지 걷어냄(유저 요청 2026-07-20) — 둘 다 일반 상세페이지에선 그대로 유지.
+  overlay.querySelectorAll('.branch-side-indicator, .ext-branch-fork, .prose-fork-divider, #story-ending-fx').forEach(el => el.remove());
   overlay.onclick = closeImmersiveProse;
   document.body.appendChild(overlay);
   document.body.style.overflow = 'hidden';
@@ -5571,7 +5576,7 @@ function chooseBranch(episode_id, sub_id) {
       const pChoices = { ...basePChoices, ...window._branchChoice };
       const _branchEpId = _s.branch_episode_id;
       _isBActive = !_branchEpId || !_s.branch_sub_id || pChoices[_branchEpId] === _s.branch_sub_id;
-      const _divider = `<div style="height:29px;display:flex;align-items:center;margin-bottom:-29px"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>`;
+      const _divider = `<div class="prose-fork-divider" style="height:29px;display:flex;align-items:center;margin-bottom:-29px"><div style="width:100%;border-top:1px dashed var(--accent2)"></div></div>`;
       if (_branchEpId) {
         const _beforeEps = parent_chain.episodes.filter(e => e.episode_id !== _branchEpId);
         const _tieEp = parent_chain.episodes.find(e => e.episode_id === _branchEpId);
@@ -5582,7 +5587,7 @@ function chooseBranch(episode_id, sub_id) {
         inheritedHtml = `<div class="prose-inherited">${beforeHtml}${tieHtml ? _divider + tieHtml : ''}</div>`;
       } else {
         // _applyStoryData의 연장 전용 라벨 점선과 동일(주석 참고)
-        const _contDivider = `<div style="height:29px;display:flex;align-items:center;gap:10px;margin-bottom:-29px"><div style="flex:1;border-top:1px dashed var(--accent2)"></div><span style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;flex-shrink:0">〜 연장</span><div style="flex:1;border-top:1px dashed var(--accent2)"></div></div>`;
+        const _contDivider = `<div class="prose-fork-divider" style="height:29px;display:flex;align-items:center;gap:10px;margin-bottom:-29px"><div style="flex:1;border-top:1px dashed var(--accent2)"></div><span style="font-size:10px;color:var(--accent2);font-weight:700;letter-spacing:1px;flex-shrink:0">〜 연장</span><div style="flex:1;border-top:1px dashed var(--accent2)"></div></div>`;
         const pTree = getEpisodeTree(parent_chain.episodes, parent_chain.submissions, basePChoices);
         inheritedHtml = pTree ? `<div class="prose-inherited prose-inherited-continuation">${renderEpisodeTreeHtml(pTree, pChoices, undefined, undefined, undefined, true, _branchEpId)}</div>${_contDivider}` : '';
       }

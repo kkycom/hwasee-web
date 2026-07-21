@@ -3216,13 +3216,15 @@ async function fbGetSpotlight(viewer_id) {
       const mySubsForStory = mySubsAll.filter(sub => sub.story_id === s.story_id);
       const epIds = mySubsForStory.length ? [...new Set(mySubsForStory.map(sub => sub.episode_id))] : [];
 
-      // 서로 독립적인 조회 4가지(내 제출 단계 조회용 에피소드들/열린 에피소드
-      // 목록/NEW 배지용 방문기록/장르 확률)를 순차로 하나씩 기다리지 않고 병렬 처리
-      const [epSnaps, openEpsSnap, visitSnap, genreSnap] = await Promise.all([
+      // 서로 독립적인 조회 3가지(내 제출 단계 조회용 에피소드들/NEW 배지용
+      // 방문기록/장르 확률)를 순차로 하나씩 기다리지 않고 병렬 처리. 열린
+      // 에피소드 목록+제출개수는 예전엔 매번 episodes/submissions를 조인해서
+      // 계산했는데(자유 이야기 탭과 동일한 문제, "최초 로그인 후 오늘의 이야기
+      // 로딩 3~4초" 유저 제보로 확인, 2026-07-22) — 자유 이야기 탭 고칠 때
+      // story 문서에 이미 만들어둔 open_steps 필드를 이 함수는 못 쓰고 있었음.
+      // story는 위에서 이미 읽어뒀으니 바로 재사용.
+      const [epSnaps, visitSnap, genreSnap] = await Promise.all([
         epIds.length ? Promise.all(epIds.map(id => db.collection('episodes').doc(id).get())) : Promise.resolve([]),
-        // 다른 카드(popularCardHtml 등)와 동일하게 stepPillsHtml로 "N단계 · 제출 N개"를
-        // 보여주기 위한 open_eps 규격 — fbGetStories의 open_eps 계산과 동일한 방식
-        db.collection('episodes').where('story_id', '==', s.story_id).where('status', '==', 'open').get(),
         // NEW 배지 — fbGetMyStories와 동일한 story_visits 대조. 슬롯당 스토리가
         // 하나뿐이라 단건 조회로 충분.
         viewer_id ? db.collection('story_visits').doc(`${viewer_id}_${s.story_id}`).get() : Promise.resolve(null),
@@ -3246,20 +3248,8 @@ async function fbGetSpotlight(viewer_id) {
           .sort((a, b) => a.step - b.step);
       }
 
-      const openEpIds = openEpsSnap.docs.map(d => d.id);
-      const subCountMap = {};
-      if (openEpIds.length) {
-        const _chunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
-        const subChunkSnaps = await Promise.all(
-          _chunks(openEpIds).map(ch => db.collection('submissions').where('episode_id', 'in', ch).get())
-        );
-        subChunkSnaps.forEach(snap => snap.docs.forEach(d => {
-          const epId = d.data().episode_id;
-          subCountMap[epId] = (subCountMap[epId] || 0) + 1;
-        }));
-      }
-      const open_eps = openEpsSnap.docs
-        .map(d => ({ step: Number(d.data().step), sub_count: subCountMap[d.id] || 0 }))
+      const open_eps = Object.values(story.open_steps || {})
+        .map(e => ({ step: Number(e.step) || 0, sub_count: Number(e.sub_count) || 0 }))
         .sort((a, b) => a.step - b.step);
 
       let is_new = false;

@@ -2707,6 +2707,18 @@ async function fbSetKakaoKey(admin_id, key, secret) {
   }
 }
 
+// 1회성 관리자 콜러블 — UI 없이 관리자 콘솔에서 api('adminBackfillWordSlotChallengeWords',{})
+// 로 직접 호출(adminFixSpotlightBootstrap과 동일한 노출 방식, 2026-07-21).
+async function fbAdminBackfillWordSlotChallengeWords(admin_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  try {
+    const res = await functionsRegion.httpsCallable('adminBackfillWordSlotChallengeWords')({ user_id: admin_id, token: localStorage.getItem('hwasee_token') });
+    return res.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
+  }
+}
+
 async function fbGetBugReports(user_id) {
   const uSnap = await db.collection('users').doc(user_id).get();
   if (!uSnap.exists || uSnap.data().badge !== 'treeguard') return { ok: false, error: '권한이 없습니다.' };
@@ -2960,6 +2972,7 @@ async function firebaseApi(action, params = {}) {
     case 'setNotificationBatchEnabled': return fbSetNotificationBatchEnabled(await requireUid(), params.enabled);
     case 'setClaudeKey':          return fbSetClaudeKey(await requireUid(), params.key);
     case 'setKakaoKey':           return fbSetKakaoKey(await requireUid(), params.key, params.secret);
+    case 'adminBackfillWordSlotChallengeWords': return fbAdminBackfillWordSlotChallengeWords(await requireUid());
     case 'getEmailConfigStatus':  return fbGetEmailConfigStatus(await requireUid());
     case 'setEmailConfig':        return fbSetEmailConfig(await requireUid(), params.gmail_user, params.gmail_app_pass);
 
@@ -3264,6 +3277,7 @@ async function fbGetSpotlight(viewer_id) {
         branch_display_offset: story.branch_display_offset ?? null,
         participant_count: story.participant_count || 0,
         open_eps, is_new, genre_probs,
+        challenge_words: story.challenge_words || null,
         my_submissions,
       };
     } else if (key === 'sentence' && s.state === 'proposing' && s.round_id) {

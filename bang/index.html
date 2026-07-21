@@ -3122,7 +3122,7 @@ function renderSpotlight() {
         : '';
       bodyHtml = `
         <div class="story-prose" style="padding:28px 18px 28px 20px;margin:12px 0;cursor:pointer" onclick="openStoryProseModal('${esc(slot.story_id)}')" role="button" aria-label="지금까지의 이야기 보기">
-          <div class="prose-opening">${esc(slot.opening)}</div>
+          <div class="prose-opening">${slot.challenge_words && slot.challenge_words.length ? boldChallengeWords(slot.opening, slot.challenge_words) : esc(slot.opening)}</div>
         </div>
         ${genrePanelHtml(slot.genre_probs, slot.story_id)}
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">

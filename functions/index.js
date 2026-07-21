@@ -2532,7 +2532,7 @@ const SPOTLIGHT_AI_OPENINGS = [
 // adminInitSpotlight) — 그래서 vote_threshold:5를 고정으로 넣어도 안전함.
 // 관심이 몰려 표가 너무 빨리 차서 한 단계가 순식간에 지나가버리는 걸 막기
 // 위해 일반 이야기(기본 3표, FB_VOTE_THRESHOLD/AI_VOTE_THRESHOLD)보다 높게 잡음.
-function _serverCreateSeedStory(db, writer, opening) {
+function _serverCreateSeedStory(db, writer, opening, extraFields) {
   const story_id = db.collection('stories').doc().id;
   const episode_id = db.collection('episodes').doc().id;
   writer.set(db.collection('stories').doc(story_id), {
@@ -2543,6 +2543,10 @@ function _serverCreateSeedStory(db, writer, opening) {
     // 자유 이야기 탭 정렬/카드 표시용 (firebase-api.js fbCreateStory 참고)
     hot_score: 0,
     open_steps: { [episode_id]: { step: 1, sub_count: 0 } },
+    // 단어챌린지 우승작으로 만들어진 씨앗이면 그 3단어를 같이 저장(challenge_words) —
+    // 스포트라이트 카드 오프닝 문장에서 boldChallengeWords()로 강조 표시하기 위함
+    // (유저 요청, 2026-07-21). 다른 슬롯(문장 제안/AI)은 extraFields 없이 호출됨.
+    ...(extraFields || {}),
   });
   writer.set(db.collection('episodes').doc(episode_id), {
     episode_id, story_id, step: 1, parent_sub_id: '',
@@ -2602,8 +2606,17 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
       return;
     }
 
+    // 단어챌린지 우승작이면 그 3단어를 같이 넘겨서 스토리에 저장(challenge_words) —
+    // 쓰기(tx.update) 전에 읽어야 하는 Firestore 트랜잭션 규칙 때문에 여기서 먼저 조회
+    let extraFields = {};
+    if (slotKey === 'word' && nextEntry.data().source_challenge_id) {
+      const challengeSnap = await tx.get(db.collection('word_challenges').doc(nextEntry.data().source_challenge_id));
+      if (challengeSnap.exists && Array.isArray(challengeSnap.data().words)) {
+        extraFields.challenge_words = challengeSnap.data().words;
+      }
+    }
     tx.update(nextEntry.ref, { used: true });
-    const newStoryId = _serverCreateSeedStory(db, tx, nextEntry.data().text);
+    const newStoryId = _serverCreateSeedStory(db, tx, nextEntry.data().text, extraFields);
     newlyCreatedStoryId = newStoryId;
     if (slotKey === 'word') {
       tx.update(ptrRef, { 'word.story_id': newStoryId });
@@ -2658,8 +2671,17 @@ async function _serverRefillSlotFromPoolIfEmpty(db, slotKey) {
       return;
     }
 
+    // 단어챌린지 우승작이면 그 3단어를 같이 넘겨서 스토리에 저장(challenge_words) —
+    // 쓰기(tx.update) 전에 읽어야 하는 Firestore 트랜잭션 규칙 때문에 여기서 먼저 조회
+    let extraFields = {};
+    if (slotKey === 'word' && nextEntry.data().source_challenge_id) {
+      const challengeSnap = await tx.get(db.collection('word_challenges').doc(nextEntry.data().source_challenge_id));
+      if (challengeSnap.exists && Array.isArray(challengeSnap.data().words)) {
+        extraFields.challenge_words = challengeSnap.data().words;
+      }
+    }
     tx.update(nextEntry.ref, { used: true });
-    const newStoryId = _serverCreateSeedStory(db, tx, nextEntry.data().text);
+    const newStoryId = _serverCreateSeedStory(db, tx, nextEntry.data().text, extraFields);
     newlyCreatedStoryId = newStoryId;
     if (slotKey === 'word') {
       tx.update(ptrRef, { 'word.story_id': newStoryId });
@@ -2896,6 +2918,38 @@ exports.adminFixSpotlightBootstrap = functions
     await _serverRefillSlotFromPoolIfEmpty(db, 'sentence');
 
     return { ok: true, backfilled_rounds: rounds.length };
+  });
+
+// 지금 이미 스포트라이트 슬롯1(🎲)을 차지하고 있는 스토리는 challenge_words 저장
+// 로직이 생기기 전에 만들어져서 이 필드가 없음 — 1회성으로 채워넣음. spotlight_word_pool
+// 에서 이미 used:true이고 text가 현재 스토리의 opening과 같은 항목을 찾아
+// source_challenge_id → word_challenges.words를 그대로 복사.
+exports.adminBackfillWordSlotChallengeWords = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const ptrSnap = await db.collection('config').doc('spotlight_slots').get();
+    const wordStoryId = ptrSnap.exists ? ptrSnap.data().word?.story_id : null;
+    if (!wordStoryId) return { ok: false, error: '슬롯1에 진행 중인 스토리가 없습니다.' };
+
+    const storySnap = await db.collection('stories').doc(wordStoryId).get();
+    if (!storySnap.exists) return { ok: false, error: '스토리를 찾을 수 없습니다.' };
+    if (storySnap.data().challenge_words) return { ok: true, already: true };
+
+    const opening = storySnap.data().opening;
+    const poolSnap = await db.collection('spotlight_word_pool').where('text', '==', opening).limit(1).get();
+    if (poolSnap.empty) return { ok: false, error: '일치하는 단어챌린지 풀 항목을 못 찾았습니다(수동 생성된 씨앗일 수 있음).' };
+
+    const challengeId = poolSnap.docs[0].data().source_challenge_id;
+    if (!challengeId) return { ok: false, error: '풀 항목에 source_challenge_id가 없습니다.' };
+
+    const challengeSnap = await db.collection('word_challenges').doc(challengeId).get();
+    const words = challengeSnap.exists ? challengeSnap.data().words : null;
+    if (!Array.isArray(words)) return { ok: false, error: '챌린지 단어 목록을 찾을 수 없습니다.' };
+
+    await db.collection('stories').doc(wordStoryId).update({ challenge_words: words });
+    return { ok: true, story_id: wordStoryId, challenge_words: words };
   });
 
 // ── 업적 시스템 도입 이전 활동 소급 반영 (1회성 관리자 콜러블) ──

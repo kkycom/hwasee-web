@@ -120,6 +120,12 @@ function proseHtml(opening, lines) {
 }
 
 function renderStoryPage(indexHtmlSrc, { id, title, description, url, bodyHtml, lastmod, creatorNickname }) {
+  // title/description은 유저가 쓴 오프닝·채택문장에서 옴(글자수만 제한되고
+  // 문자 종류 제한은 없음) — JSON.stringify는 '<'나 '/'를 이스케이프하지
+  // 않으므로 "</script><script>...</script>"를 심으면 이 JSON-LD 블록 자체가
+  // 조기 종료되고 뒤의 스크립트가 실행되는 저장형 XSS가 됨. '<'를 유니코드
+  // 이스케이프로 치환해 스크립트 태그로 절대 해석될 수 없게 함(JSON 값으로는
+  // <도 '<'로 동일하게 파싱되므로 데이터 손실 없음).
   const jsonLd = JSON.stringify({
     '@context': 'https://schema.org',
     '@type': 'CreativeWork',
@@ -130,7 +136,7 @@ function renderStoryPage(indexHtmlSrc, { id, title, description, url, bodyHtml, 
     publisher: { '@type': 'Organization', name: '화씨 (Hwasee)', url: SITE_ORIGIN },
     url,
     inLanguage: 'ko',
-  }, null, 2);
+  }, null, 2).replace(/</g, '\\u003c');
 
   // bang/index.html은 Windows(CRLF) 체크아웃일 수 있음 — 아래 리터럴 블록/치환은
   // 전부 LF 기준이라 먼저 정규화(출력 파일이 LF가 돼도 브라우저/크롤러엔 무해함)

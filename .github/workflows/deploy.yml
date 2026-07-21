@@ -35,6 +35,13 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         continue-on-error: true
+      # upload-pages-artifact는 .gitignore를 안 보고 이 시점의 디스크 내용을
+      # 그대로 올림 — npm ci로 생긴 node_modules(빌드 전용, firebase-admin
+      # 의존성 트리)가 그대로 라이브 사이트에 배포되고 있었음(디버그방 발견,
+      # curl로 https://hwasee.me/node_modules/... 200 확인). 빌드 산출물이
+      # 아닌 빌드 도구 자체는 배포 전에 제거.
+      - name: Remove build-only files before deploy
+        run: rm -rf node_modules package.json package-lock.json scripts
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .

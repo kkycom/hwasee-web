@@ -973,14 +973,13 @@ async function fbGetMyStories(user_id) {
   const epMap = {};
   epSnaps.forEach(s => s.docs.forEach(d => { epMap[d.id] = d.data(); }));
 
-  const openEpMap = {}, openEpMaxMap = {}, openEpsByStoryId = {};
+  // has_voted_current(현재 열린 단계에 내가 투표했는지) 판단용 — epMap은 어차피
+  // mySubsArr를 위해 이미 조회한 것이라 이 파생 자체는 추가 비용 없음
+  const openEpMap = {};
   Object.entries(epMap).forEach(([epId, ep]) => {
     if (ep.status === 'open') {
-      const prev    = openEpMap[ep.story_id];
-      const prevMax = openEpMaxMap[ep.story_id];
-      if (!prev    || ep.step < (epMap[prev]?.step    ?? Infinity))  openEpMap[ep.story_id]    = epId;
-      if (!prevMax || ep.step > (epMap[prevMax]?.step ?? -Infinity)) openEpMaxMap[ep.story_id] = epId;
-      (openEpsByStoryId[ep.story_id] = openEpsByStoryId[ep.story_id] || []).push(epId);
+      const prev = openEpMap[ep.story_id];
+      if (!prev || ep.step < (epMap[prev]?.step ?? Infinity)) openEpMap[ep.story_id] = epId;
     }
   });
 
@@ -989,21 +988,6 @@ async function fbGetMyStories(user_id) {
     const epId = d.data().episode_id;
     if (epId) myVoteCountMap[epId] = (myVoteCountMap[epId] || 0) + 1;
   });
-
-  // 현재 열린 단계(들)에 제출된 글 개수 (카드에 분기별 "N개" 표시용) — 열린 에피소드 전체 기준
-  const subCountMap = {};
-  const openEpIds = [...new Set(Object.values(openEpsByStoryId).flat())];
-  if (openEpIds.length) {
-    const _chunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
-    const subChunkSnaps = await Promise.all(
-      _chunks(openEpIds).map(ch => db.collection('submissions').where('episode_id', 'in', ch).get())
-    );
-    subChunkSnaps.forEach(snap => snap.docs.forEach(d => {
-      // AI(익명) 제출도 실제로 투표 카드에 표시되므로 카운트에 포함
-      const epId = d.data().episode_id;
-      subCountMap[epId] = (subCountMap[epId] || 0) + 1;
-    }));
-  }
 
   const mySubsArr = mySubsSnap.docs.map(d => ({
     ...d.data(),
@@ -1021,8 +1005,12 @@ async function fbGetMyStories(user_id) {
       mySubmissions:     mySubsArr.filter(sub => sub.story_id === s.story_id).sort((a,b) => a.step - b.step),
       activity_count:    s.participant_count || 0,
       has_voted_current: openEpId != null ? (myVoteCountMap[openEpId] || 0) : null,
-      open_eps: (openEpsByStoryId[s.story_id] || [])
-        .map(id => ({ step: Number(epMap[id].step), sub_count: subCountMap[id] || 0 }))
+      // 카드에 분기별 "N단계 · 제출 N개"를 보여주기 위한 open_eps — 예전엔 매번
+      // 열린 에피소드의 제출 개수를 청크 단위로 집계했음(2026-07-22, "오늘의
+      // 이야기 로딩 느림"과 같은 원인의 자유/참여중 탭 버전). story 문서에
+      // 이미 있는 open_steps를 그대로 읽음(fbGetStories/fbGetSpotlight와 동일 패턴)
+      open_eps: Object.values(s.open_steps || {})
+        .map(e => ({ step: Number(e.step) || 0, sub_count: Number(e.sub_count) || 0 }))
         .sort((a, b) => a.step - b.step),
     });
   }));
@@ -1714,11 +1702,18 @@ async function fbGetBookmarkIds(user_id) {
 
 async function fbGetBookmarks(user_id) {
   if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
-  const snap   = await db.collection('bookmarks').where('user_id','==',user_id).get();
-  const ids    = snap.docs.map(d => d.data().story_id).filter(Boolean);
+  const snap = await db.collection('bookmarks').where('user_id','==',user_id).get();
+  const ids  = snap.docs.map(d => d.data().story_id).filter(Boolean);
   if (!ids.length) return { ok: true, stories: [] };
-  const stSnap = await Promise.all(ids.map(id => db.collection('stories').doc(id).get()));
-  const stories = stSnap.filter(d => d.exists && d.data().status !== 'deleted' && d.data().status !== 'inactive').map(d => d.data());
+  // 개별 .doc(id).get() N번 대신 documentId() 'in' 청크 배치 조회로 통일
+  // (fbGetStory 등에서 이미 쓰던 패턴)
+  const _chunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
+  const snaps = await Promise.all(
+    _chunks(ids).map(ch => db.collection('stories').where(firebase.firestore.FieldPath.documentId(), 'in', ch).get())
+  );
+  const stories = snaps.flatMap(s => s.docs)
+    .filter(d => d.data().status !== 'deleted' && d.data().status !== 'inactive')
+    .map(d => d.data());
   return { ok: true, stories };
 }
 
@@ -1741,7 +1736,7 @@ async function fbGetComments(sub_id) {
   const authorIds = [...new Set(snap.docs.map(d => d.data().author_id).filter(Boolean))];
   const nickMap = {};
   if (authorIds.length > 0) {
-    const userDocs = await Promise.all(authorIds.map(id => db.collection('users').doc(id).get()));
+    const userDocs = await _fbGetUsersByIds(authorIds);
     userDocs.forEach(d => { if (d.exists) nickMap[d.id] = d.data().display_name || d.data().nickname; });
   }
   const comments = snap.docs.map(d => ({ comment_id: d.id, ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }))
@@ -1778,7 +1773,7 @@ async function fbGetStoryComments(story_id) {
   const authorIds = [...new Set(snap.docs.map(d => d.data().author_id).filter(Boolean))];
   const nickMap = {};
   if (authorIds.length > 0) {
-    const userDocs = await Promise.all(authorIds.map(id => db.collection('users').doc(id).get()));
+    const userDocs = await _fbGetUsersByIds(authorIds);
     userDocs.forEach(d => { if (d.exists) nickMap[d.id] = d.data().display_name || d.data().nickname; });
   }
   const comments = snap.docs.map(d => ({ comment_id: d.id, ...d.data(), author_nickname: nickMap[d.data().author_id] || '익명' }))
@@ -1811,16 +1806,20 @@ async function fbGetReports(admin_id) {
   const subIds     = [...new Set(rSnap.docs.map(d => d.data().sub_id).filter(Boolean))];
   const reporterIds = [...new Set(rSnap.docs.map(d => d.data().reporter_id).filter(Boolean))];
 
+  // 개별 .doc(id).get() N번 대신 documentId() 'in' 청크 배치 조회('in'은 최대 30개)
+  const _chunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
   const subMap = {}, nickMap = {};
   const subDocs = subIds.length > 0
-    ? await Promise.all(subIds.map(id => db.collection('submissions').doc(id).get()))
+    ? (await Promise.all(_chunks(subIds).map(ch =>
+        db.collection('submissions').where(firebase.firestore.FieldPath.documentId(), 'in', ch).get()
+      ))).flatMap(s => s.docs)
     : [];
   const authorIds = [];
-  subDocs.forEach(d => { if (d.exists) { subMap[d.id] = d.data(); if (d.data().author_id) authorIds.push(d.data().author_id); } });
+  subDocs.forEach(d => { subMap[d.id] = d.data(); if (d.data().author_id) authorIds.push(d.data().author_id); });
 
   const allUserIds = [...new Set([...reporterIds, ...authorIds])];
   if (allUserIds.length > 0) {
-    const userDocs = await Promise.all(allUserIds.map(id => db.collection('users').doc(id).get()));
+    const userDocs = await _fbGetUsersByIds(allUserIds);
     userDocs.forEach(d => { if (d.exists) nickMap[d.id] = d.data().display_name || d.data().nickname; });
   }
 
@@ -2000,7 +1999,7 @@ async function fbGetMvpVotes(story_id, voter_id) {
   const nickMap = {}, badgeMap = {};
   const uids = Object.keys(countMap).filter(Boolean);
   if (uids.length > 0) {
-    const userDocs = await Promise.all(uids.map(id => db.collection('users').doc(id).get()));
+    const userDocs = await _fbGetUsersByIds(uids);
     userDocs.forEach(d => { if (d.exists) { nickMap[d.id] = d.data().display_name || d.data().nickname; badgeMap[d.id] = d.data().badge; } });
   }
   const votes = Object.entries(countMap)
@@ -2726,7 +2725,7 @@ async function fbGetBugReports(user_id) {
   const reporterIds = [...new Set(snap.docs.map(d => d.data().user_id).filter(Boolean))];
   const nickMap = {};
   if (reporterIds.length > 0) {
-    const userDocs = await Promise.all(reporterIds.map(id => db.collection('users').doc(id).get()));
+    const userDocs = await _fbGetUsersByIds(reporterIds);
     userDocs.forEach(d => { if (d.exists) nickMap[d.id] = d.data().display_name || d.data().nickname; });
   }
   const reports = snap.docs.map(d => ({ id: d.id, ...d.data(), reporter_nickname: nickMap[d.data().user_id] || '알 수 없음' }));
@@ -2829,8 +2828,11 @@ async function fbGetAdminEdits(admin_id) {
   const storyIds = [...new Set(snap.docs.map(d => d.data().story_id).filter(Boolean))];
   const storyMap = {};
   if (storyIds.length) {
-    const sDocs = await Promise.all(storyIds.map(id => db.collection('stories').doc(id).get()));
-    sDocs.forEach(d => { if (d.exists) storyMap[d.id] = d.data().opening || ''; });
+    const _chunks = arr => { const c = []; for (let i = 0; i < arr.length; i += 30) c.push(arr.slice(i, i+30)); return c; };
+    const sDocs = (await Promise.all(_chunks(storyIds).map(ch =>
+      db.collection('stories').where(firebase.firestore.FieldPath.documentId(), 'in', ch).get()
+    ))).flatMap(s => s.docs);
+    sDocs.forEach(d => { storyMap[d.id] = d.data().opening || ''; });
   }
   const toIso = v => v?.toDate ? v.toDate().toISOString() : (v || '');
   return {
@@ -3026,7 +3028,7 @@ async function fbGetWordChallenge(viewer_id) {
   const authorIds = [...new Set(subsSnap.docs.map(d => d.data().user_id))];
   const nickMap = {};
   if (authorIds.length) {
-    const userDocs = await Promise.all(authorIds.map(id => db.collection('users').doc(id).get()));
+    const userDocs = await _fbGetUsersByIds(authorIds);
     userDocs.forEach(d => { if (d.exists) nickMap[d.id] = d.data().display_name || d.data().nickname; });
   }
   // 진행 중일 땐 득표순으로 보여주면 먼저 앞선 문장에 표가 계속 몰리는 쏠림이

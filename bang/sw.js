@@ -47,7 +47,7 @@ self.addEventListener('notificationclick', e => {
 
 // ── 캐시 전략 ───────────────────────────────────────────────
 
-const CACHE = 'hwasee-bang-v399';
+const CACHE = 'hwasee-bang-v400';
 const PRECACHE = [
   '/bang/',
   '/bang/index.html',

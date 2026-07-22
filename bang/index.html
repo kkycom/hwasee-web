@@ -587,29 +587,15 @@
   .loading::after  { content: '불러오는 중입니다'; display: block; font-size: 13px; color: var(--muted); margin-top: 10px; letter-spacing: .3px; }
 
   /* ── 채택 문장 잉크 번짐 등장(진행 중 이야기의 최신 문장, 볼 때마다 재생) ──
-     줄바꿈된 문장은 _playInkReveal()이 실제 줄 단위로 쪼개 .ink-line-part로
-     감싸고 줄마다 순차 지연(--ink-delay)을 걸어 "쓰여지는(clip-path)" 동작만
-     순서대로 진행시킴 — 첫 줄이 다 써진 뒤 둘째 줄이 이어써짐. 흐림(잉크
-     번짐) 자체는 줄마다 따로 풀지 않고, 모든 줄이 다 써진 뒤 문장 전체가
-     한 번에 또렷해짐(.ink-settling, 유저 요청 2026-07-22 — "잉크 풀리는 거
-     따로 구분하지 말고"). .prose-sentence 자체에 거는 규칙은 만약을 대비한
-     폴백(줄 분리가 실패했을 때만 씀). */
+     줄 단위 순차 리빌은 모바일 실기기에서 폰트 로딩 타이밍/커닝 때문에
+     Range 측정이 계속 틀어져(줄이 잘못 갈라지거나 한 글자만 튐, 유저 재제보
+     2026-07-22 x2) 안정화가 안 돼 포기 — 문장 전체(여러 줄 포함)가 한꺼번에
+     왼쪽부터 써지고 그와 동시에 흐림도 풀리는 단순한 방식으로 되돌림
+     (유저 요청: "정안되겠으면 그냥 두줄 한꺼번에 나오는걸로 원복"). */
   .prose-line.ink-in .prose-sentence {
     clip-path: inset(0 100% 0 -4px); filter: blur(3px);
     animation: inkIn 1.2s steps(40,end) forwards;
   }
-  .ink-line-part {
-    display: block; clip-path: inset(0 100% 0 -4px);
-    animation: inkWrite .7s steps(24,end) forwards;
-    animation-delay: var(--ink-delay, 0s);
-  }
-  @keyframes inkWrite { to { clip-path: inset(0 0% 0 -4px); } }
-  .prose-sentence.ink-settling {
-    filter: blur(3px);
-    animation: inkSettle .5s ease-out forwards;
-    animation-delay: var(--ink-settle-delay, 0s);
-  }
-  @keyframes inkSettle { to { filter: blur(0); } }
   @keyframes inkIn {
     0%   { clip-path: inset(0 100% 0 -4px); filter: blur(3px); }
     70%  { filter: blur(1px); }
@@ -627,8 +613,6 @@
 
   @media (prefers-reduced-motion: reduce) {
     .prose-line.ink-in { animation: none; }
-    .ink-line-part { animation: none; clip-path: none; }
-    .prose-sentence.ink-settling { animation: none; filter: none; }
     .theend-fx.play .theend-text { animation: none; clip-path: none; }
   }
 
@@ -1917,63 +1901,6 @@ function _clearTypingPresence(episode_id) {
   firebase.firestore().collection('episode_typing').doc(episode_id + '_' + user.user_id).delete().catch(() => {});
 }
 
-// 줄바꿈된 문장이 한 가로선 기준으로 모든 줄이 동시에 써지지 않고, 첫 줄부터
-// 순서대로 이어써지게 함(2026-07-22 유저 요청) — 이미 렌더된 텍스트를 단어
-// 단위로 쪼개 실제 offsetTop으로 줄을 재구성한 뒤, 줄마다 순차 지연을 건
-// .ink-line-part로 다시 조립. 측정에 실패하면(구조가 예상과 다르면) 기존
-// 방식(.ink-in 클래스, 전체 동시 리빌)으로 조용히 폴백.
-function _playInkReveal(lineEl) {
-  const sentenceEl = lineEl.querySelector('.prose-sentence');
-  if (!sentenceEl) { lineEl.classList.add('ink-in'); return; }
-  try {
-    const textNode = sentenceEl.firstChild;
-    const text = sentenceEl.textContent;
-    // 1차 시도(문자 단위 Range 측정)는 공백 문자 자체를 측정할 때 문제가 있었음:
-    // 줄바꿈 지점의 공백은 브라우저가 실제로 그리지 않고 접어버리므로, 그 공백
-    // 하나만 감싼 Range의 rect가 앞줄/뒷줄 어디에도 안 맞게 불안정하게 나와서
-    // 줄이 엉뚱하게 갈라졌다 합쳐졌다 했음(유저 재제보, 2026-07-22 — 한 글자만
-    // 다음줄로 튀거나 줄이 3개로 쪼개졌다 2개로 되돌아옴). 공백은 아예 측정하지
-    // 않고 단어(공백 아닌 덩어리) 단위로만 위치를 재는 방식으로 교체.
-    if (!text || !textNode || textNode.nodeType !== Node.TEXT_NODE) { lineEl.classList.add('ink-in'); return; }
-    const words = [];
-    const wordRe = /\S+/g;
-    let m;
-    while ((m = wordRe.exec(text))) words.push({ start: m.index, end: m.index + m[0].length, text: m[0] });
-    if (words.length <= 1) { lineEl.classList.add('ink-in'); return; }
-
-    const range = document.createRange();
-    const lineGroups = [];
-    let lastTop = null;
-    for (const w of words) {
-      range.setStart(textNode, w.start);
-      range.setEnd(textNode, w.end);
-      const rect = range.getClientRects()[0];
-      if (!rect) continue;
-      if (lastTop === null || rect.top - lastTop > 2) {
-        lineGroups.push([]);
-        lastTop = rect.top;
-      }
-      lineGroups[lineGroups.length - 1].push(w.text);
-    }
-    const lineTexts = lineGroups.map(g => g.join(' '));
-    if (lineTexts.length <= 1) { lineEl.classList.add('ink-in'); return; } // 한 줄이면 기존 방식 그대로
-
-    sentenceEl.textContent = '';
-    const DUR = 0.7;
-    lineTexts.forEach((lineText, i) => {
-      const lineSpan = document.createElement('span');
-      lineSpan.className = 'ink-line-part';
-      lineSpan.style.setProperty('--ink-delay', `${i * DUR}s`);
-      lineSpan.textContent = lineText;
-      sentenceEl.appendChild(lineSpan);
-    });
-    // 모든 줄이 다 써진 뒤(마지막 줄 지연만큼 기다렸다가) 문장 전체가 한 번에
-    // 또렷해짐 — 줄마다 따로 흐림 풀지 않음(유저 요청, 2026-07-22)
-    sentenceEl.style.setProperty('--ink-settle-delay', `${lineTexts.length * DUR}s`);
-    sentenceEl.classList.add('ink-settling');
-  } catch (e) { lineEl.classList.add('ink-in'); }
-}
-
 function _applyStoryData(res, story_id) {
   // 다른 이야기로 이동 시 _branchChoice 리셋 (이전 이야기 자동경로가 오염 방지)
   if (window._branchChoiceStoryId !== story_id) {
@@ -2207,7 +2134,7 @@ function _applyStoryData(res, story_id) {
       if (window._inkPlayedKey !== inkKey) {
         window._inkPlayedKey = inkKey;
         const line = document.querySelector(`.prose-line[data-episode-id="${latestEp.episode_id}"]`);
-        if (line) requestAnimationFrame(() => _playInkReveal(line));
+        if (line) requestAnimationFrame(() => line.classList.add('ink-in'));
       }
     }
   }

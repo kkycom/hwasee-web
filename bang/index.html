@@ -1926,35 +1926,40 @@ function _playInkReveal(lineEl) {
   const sentenceEl = lineEl.querySelector('.prose-sentence');
   if (!sentenceEl) { lineEl.classList.add('ink-in'); return; }
   try {
-    const words = sentenceEl.textContent.split(/(\s+)/).filter(w => w !== '');
-    if (!words.length) { lineEl.classList.add('ink-in'); return; }
-    sentenceEl.textContent = '';
-    const wordSpans = words.map(w => {
-      const span = document.createElement('span');
-      span.textContent = w;
-      span.style.display = 'inline-block';
-      sentenceEl.appendChild(span);
-      return span;
-    });
-    const lines = [];
+    const textNode = sentenceEl.firstChild;
+    const text = sentenceEl.textContent;
+    // 예전 버전은 단어마다 inline-block span으로 감싸서 offsetTop을 측정했는데,
+    // 공백만 있는 span이 레이아웃에 끼어들면서 단어마다 줄이 갈라지는 버그가
+    // 있었음(유저 제보, 2026-07-22). DOM을 건드리지 않고 Range.getClientRects()로
+    // 원본 텍스트노드를 그대로 측정하는 방식으로 교체 — 공백/inline-block
+    // 부작용이 아예 없음.
+    if (!text || !textNode || textNode.nodeType !== Node.TEXT_NODE) { lineEl.classList.add('ink-in'); return; }
+    const range = document.createRange();
+    const breaks = [0];
     let lastTop = null;
-    wordSpans.forEach(span => {
-      const top = span.offsetTop;
-      if (lastTop === null || Math.abs(top - lastTop) > 2) { lines.push([]); lastTop = top; }
-      lines[lines.length - 1].push(span);
-    });
+    for (let i = 0; i < text.length; i++) {
+      range.setStart(textNode, i);
+      range.setEnd(textNode, i + 1);
+      const rect = range.getClientRects()[0];
+      if (!rect) continue;
+      if (lastTop === null) { lastTop = rect.top; continue; }
+      if (rect.top - lastTop > 2) { breaks.push(i); lastTop = rect.top; }
+    }
+    const lineTexts = breaks.map((start, idx) => text.slice(start, breaks[idx + 1] ?? text.length).trim());
+    if (lineTexts.length <= 1) { lineEl.classList.add('ink-in'); return; } // 한 줄이면 기존 방식 그대로
+
     sentenceEl.textContent = '';
     const DUR = 0.7;
-    lines.forEach((lineWords, i) => {
+    lineTexts.forEach((lineText, i) => {
       const lineSpan = document.createElement('span');
       lineSpan.className = 'ink-line-part';
       lineSpan.style.setProperty('--ink-delay', `${i * DUR}s`);
-      lineSpan.textContent = lineWords.map(s => s.textContent).join('');
+      lineSpan.textContent = lineText;
       sentenceEl.appendChild(lineSpan);
     });
     // 모든 줄이 다 써진 뒤(마지막 줄 지연만큼 기다렸다가) 문장 전체가 한 번에
     // 또렷해짐 — 줄마다 따로 흐림 풀지 않음(유저 요청, 2026-07-22)
-    sentenceEl.style.setProperty('--ink-settle-delay', `${lines.length * DUR}s`);
+    sentenceEl.style.setProperty('--ink-settle-delay', `${lineTexts.length * DUR}s`);
     sentenceEl.classList.add('ink-settling');
   } catch (e) { lineEl.classList.add('ink-in'); }
 }

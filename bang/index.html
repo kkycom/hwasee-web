@@ -1928,24 +1928,34 @@ function _playInkReveal(lineEl) {
   try {
     const textNode = sentenceEl.firstChild;
     const text = sentenceEl.textContent;
-    // 예전 버전은 단어마다 inline-block span으로 감싸서 offsetTop을 측정했는데,
-    // 공백만 있는 span이 레이아웃에 끼어들면서 단어마다 줄이 갈라지는 버그가
-    // 있었음(유저 제보, 2026-07-22). DOM을 건드리지 않고 Range.getClientRects()로
-    // 원본 텍스트노드를 그대로 측정하는 방식으로 교체 — 공백/inline-block
-    // 부작용이 아예 없음.
+    // 1차 시도(문자 단위 Range 측정)는 공백 문자 자체를 측정할 때 문제가 있었음:
+    // 줄바꿈 지점의 공백은 브라우저가 실제로 그리지 않고 접어버리므로, 그 공백
+    // 하나만 감싼 Range의 rect가 앞줄/뒷줄 어디에도 안 맞게 불안정하게 나와서
+    // 줄이 엉뚱하게 갈라졌다 합쳐졌다 했음(유저 재제보, 2026-07-22 — 한 글자만
+    // 다음줄로 튀거나 줄이 3개로 쪼개졌다 2개로 되돌아옴). 공백은 아예 측정하지
+    // 않고 단어(공백 아닌 덩어리) 단위로만 위치를 재는 방식으로 교체.
     if (!text || !textNode || textNode.nodeType !== Node.TEXT_NODE) { lineEl.classList.add('ink-in'); return; }
+    const words = [];
+    const wordRe = /\S+/g;
+    let m;
+    while ((m = wordRe.exec(text))) words.push({ start: m.index, end: m.index + m[0].length, text: m[0] });
+    if (words.length <= 1) { lineEl.classList.add('ink-in'); return; }
+
     const range = document.createRange();
-    const breaks = [0];
+    const lineGroups = [];
     let lastTop = null;
-    for (let i = 0; i < text.length; i++) {
-      range.setStart(textNode, i);
-      range.setEnd(textNode, i + 1);
+    for (const w of words) {
+      range.setStart(textNode, w.start);
+      range.setEnd(textNode, w.end);
       const rect = range.getClientRects()[0];
       if (!rect) continue;
-      if (lastTop === null) { lastTop = rect.top; continue; }
-      if (rect.top - lastTop > 2) { breaks.push(i); lastTop = rect.top; }
+      if (lastTop === null || rect.top - lastTop > 2) {
+        lineGroups.push([]);
+        lastTop = rect.top;
+      }
+      lineGroups[lineGroups.length - 1].push(w.text);
     }
-    const lineTexts = breaks.map((start, idx) => text.slice(start, breaks[idx + 1] ?? text.length).trim());
+    const lineTexts = lineGroups.map(g => g.join(' '));
     if (lineTexts.length <= 1) { lineEl.classList.add('ink-in'); return; } // 한 줄이면 기존 방식 그대로
 
     sentenceEl.textContent = '';

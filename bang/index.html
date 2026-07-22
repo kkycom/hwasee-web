@@ -63,24 +63,29 @@
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7828331174769963" crossorigin="anonymous"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- 자체 호스팅 폰트는 로고/"The End" 문구처럼 노출 영역이 작아 preload로
-     첫 페인트 전에 받아두기 쉬움 — 아래 font-display:optional과 짝을 이뤄
-     "제때 왔으면 바로 그 폰트로, 늦으면 스왑 없이 대체 폰트 그대로" 유지함으로써
-     로딩 중 폰트 교체로 레이아웃이 한 번 흔들리는 현상(FOUT)을 없앰 -->
+<!-- font-display:optional은 폰트별로 "제때 로딩되면 그 폰트, 늦으면 폴백 유지,
+     이후 다시 안 바꿈"을 각 요소가 자기 페인트 시점 기준으로 개별 결정함 —
+     이 앱처럼 카드/문장이 시차를 두고 계속 새로 그려지는 SPA에서는 어떤 글자는
+     이미 폰트가 준비돼 로딩된 폰트로, 어떤 글자는 그 전에 페인트돼 폴백으로
+     굳어버려서 한 화면 안에 폰트가 뒤섞여 보이는 문제가 있었음(2026-07-21 유저
+     제보 — "글자마다 폰트가 뒤죽박죽"). CSS 스펙에서도 이 현상을 "ransom note"
+     현상으로 명시함. swap으로 되돌려 모든 요소가 폰트 로딩 완료 시 다같이
+     일괄 교체되도록 해서 전체 일관성을 보장 — preload는 그대로 둬서 교체가
+     최대한 빨리(눈에 덜 띄게) 일어나게 함 -->
 <link rel="preload" href="/bang/fonts/GyelonggiBatang-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/bang/fonts/DancingScript-Bold.woff2" as="font" type="font/woff2" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;600;700&display=optional" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 @font-face {
   font-family: 'GyelonggiBatang';
   src: url('/bang/fonts/GyelonggiBatang-Regular.woff2') format('woff2');
-  font-weight: 400; font-style: normal; font-display: optional;
+  font-weight: 400; font-style: normal; font-display: swap;
   unicode-range: U+2E,U+bc29,U+d654,U+c528; /* 화씨.방 */
 }
 @font-face {
   font-family: 'DancingScript';
   src: url('/bang/fonts/DancingScript-Bold.woff2') format('woff2');
-  font-weight: 700; font-style: normal; font-display: optional;
+  font-weight: 700; font-style: normal; font-display: swap;
   unicode-range: U+20-7E; /* 완결 연출 "The End" 문구 전용, 영문/기본기호만 */
 }
 </style>

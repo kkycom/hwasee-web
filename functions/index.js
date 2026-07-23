@@ -2243,21 +2243,22 @@ function _isoWeekStartKst(dateStr) {
 // 활동"이 아니므로 신규가입/글쓴유저/DAU 집계에서 전부 제외.
 async function _computeAndStoreAnalyticsForDate(db, kstDateStr) {
   const { startIso, endIso } = _kstDayRangeUtc(kstDateStr);
+  const isReal = id => !!id && id !== FB_ADMIN_ID && id !== FB_AI_ID;
 
   const visitDoc = await db.collection('visits').doc(kstDateStr).get();
   const visitors_unique = visitDoc.exists ? (visitDoc.data().count || 0) : 0;
   const visitors_total  = visitDoc.exists ? (visitDoc.data().raw_count || 0) : 0;
 
-  const [usersSnap, subsSnap, ledgerSnap] = await Promise.all([
+  const [usersSnap, subsSnap, ledgerSnap, votesSnap, wcSubsSnap] = await Promise.all([
     db.collection('users').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
     db.collection('submissions').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
-    // reason은 쿼리 등호필터에 안 넣고(복합 인덱스 필요해지는 걸 회피) 메모리에서 필터
+    // reason/is_ai는 쿼리 등호필터에 안 넣고(복합 인덱스 필요해지는 걸 회피) 메모리에서 필터
     db.collection('point_ledger').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
+    db.collection('votes').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
+    db.collection('word_challenge_submissions').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
   ]);
 
-  const new_user_ids = usersSnap.docs
-    .map(d => d.id)
-    .filter(id => id !== FB_ADMIN_ID && id !== FB_AI_ID);
+  const new_user_ids = usersSnap.docs.map(d => d.id).filter(isReal);
 
   const writerIds = new Set();
   let submission_count = 0;
@@ -2265,15 +2266,28 @@ async function _computeAndStoreAnalyticsForDate(db, kstDateStr) {
     const s = d.data();
     if (s.is_ai) return;
     submission_count++;
-    if (s.author_id && s.author_id !== FB_ADMIN_ID && s.author_id !== FB_AI_ID) writerIds.add(s.author_id);
+    if (isReal(s.author_id)) writerIds.add(s.author_id);
   });
 
   const activeIds = new Set();
   ledgerSnap.docs.forEach(d => {
     const p = d.data();
-    if (p.reason === 'daily_login' && p.user_id && p.user_id !== FB_ADMIN_ID && p.user_id !== FB_AI_ID) {
-      activeIds.add(p.user_id);
-    }
+    if (p.reason === 'daily_login' && isReal(p.user_id)) activeIds.add(p.user_id);
+  });
+
+  const voterIds = new Set();
+  let vote_count = 0;
+  votesSnap.docs.forEach(d => {
+    const v = d.data();
+    if (v.is_ai) return;
+    vote_count++;
+    if (isReal(v.voter_id)) voterIds.add(v.voter_id);
+  });
+
+  const wcWriterIds = new Set();
+  wcSubsSnap.docs.forEach(d => {
+    const w = d.data();
+    if (isReal(w.user_id)) wcWriterIds.add(w.user_id);
   });
 
   await db.collection('analytics_daily').doc(kstDateStr).set({
@@ -2283,8 +2297,19 @@ async function _computeAndStoreAnalyticsForDate(db, kstDateStr) {
     writer_count: writerIds.size, writer_ids: [...writerIds],
     submission_count,
     active_user_count: activeIds.size, active_user_ids: [...activeIds],
+    vote_count, voter_count: voterIds.size, voter_ids: [...voterIds],
+    wc_writer_count: wcWriterIds.size, wc_writer_ids: [...wcWriterIds],
     computed_at: new Date().toISOString(),
   });
+
+  // 누적("역대") 글쓴 유저 집합 — 가입자 대비 "글을 써본 적 있는 유저 비율" 계산용.
+  // arrayUnion은 자동 중복제거+멱등이라 백필로 같은 날짜를 다시 계산해도 안전함.
+  if (writerIds.size) {
+    await db.collection('analytics_daily').doc('_lifetime').set({
+      writer_ids: admin.firestore.FieldValue.arrayUnion(...writerIds),
+      updated_at: new Date().toISOString(),
+    }, { merge: true });
+  }
 }
 
 // 매일 KST 00:15에 "방금 끝난" KST 하루치를 집계. streakReminderPush 등과
@@ -2361,14 +2386,14 @@ function _computeSignupCohorts(byDate, visibleDates, todayKst) {
 }
 
 // 대시보드 조회(관리자 전용). days 또는 start_date/end_date로 조회 범위를 정하고,
-// WAU(주간 활성유저) 계산에 필요한 직전 13일치를 여유분으로 더 가져와서
-// 잘라냄 — series/retention에는 요청한 구간만 노출.
+// MAU(월간 활성유저, stickiness 계산용) 산출에 필요한 직전 30일치를 여유분으로
+// 더 가져와서 잘라냄 — series/retention/stickiness에는 요청한 구간만 노출.
 exports.getAnalyticsDashboard = functions
   .region('asia-northeast3')
   .https.onCall(async (data) => {
     await _requireAdmin(data.user_id, data.token);
     const db = admin.firestore();
-    const LOOKBACK = 13;
+    const LOOKBACK = 30; // MAU(30일 윈도우) 계산에 필요한 최대 여유분
     const todayKst = _kstDateStr(new Date().toISOString());
     let dates;
     if (data.start_date && data.end_date) {
@@ -2385,7 +2410,11 @@ exports.getAnalyticsDashboard = functions
     }
 
     const refs = dates.map(d => db.collection('analytics_daily').doc(d));
-    const snaps = await db.getAll(...refs);
+    const [snaps, lifetimeSnap, usersCountSnap] = await Promise.all([
+      db.getAll(...refs),
+      db.collection('analytics_daily').doc('_lifetime').get(),
+      db.collection('users').count().get(),
+    ]);
     const byDate = {};
     snaps.forEach((s, i) => { byDate[dates[i]] = s.exists ? s.data() : null; });
 
@@ -2397,20 +2426,23 @@ exports.getAnalyticsDashboard = functions
         visitors_unique: v.visitors_unique || 0, visitors_total: v.visitors_total || 0,
         new_users_count: v.new_users_count || 0, writer_count: v.writer_count || 0,
         submission_count: v.submission_count || 0, active_user_count: v.active_user_count || 0,
+        vote_count: v.vote_count || 0, voter_count: v.voter_count || 0,
+        wc_writer_count: v.wc_writer_count || 0,
         has_data: !!byDate[d],
       };
     });
 
-    const wauSet = d => {
+    // 트레일링 N일 활성유저(daily_login 기준) 합집합 — WAU/MAU/코호트가 전부 이걸 공유.
+    const activeSetTrailing = (d, windowDays) => {
       const ids = new Set();
-      for (let i = 0; i < 7; i++) {
+      for (let i = 0; i < windowDays; i++) {
         const day = byDate[_addDaysKst(d, -i)];
         (day && day.active_user_ids || []).forEach(id => ids.add(id));
       }
       return ids;
     };
     const retention = visibleDates.map(d => {
-      const thisW = wauSet(d), prevW = wauSet(_addDaysKst(d, -7));
+      const thisW = activeSetTrailing(d, 7), prevW = activeSetTrailing(_addDaysKst(d, -7), 7);
       const retained = [...prevW].filter(id => thisW.has(id));
       return {
         date: d, wau: thisW.size, prev_wau: prevW.size,
@@ -2418,9 +2450,111 @@ exports.getAnalyticsDashboard = functions
       };
     });
 
+    // 재방문 빈도(Stickiness) — "활성 유저 중 얼마나 자주 돌아오는가"를 DAU 대비
+    // WAU/MAU 비율로 근사. 100%에 가까울수록 활성유저 대부분이 거의 매일 옴,
+    // 낮을수록 어쩌다 한 번씩만 들르는 유저 비중이 큼(신규 데이터 수집 없이
+    // 이미 저장해둔 daily_login 기반 active_user_ids만으로 계산 가능).
+    const stickiness = visibleDates.map(d => {
+      const day = byDate[d];
+      const dau = (day && day.active_user_count) || 0;
+      const wau = activeSetTrailing(d, 7).size;
+      const mau = activeSetTrailing(d, 30).size;
+      return {
+        date: d, dau, wau, mau,
+        dau_wau_pct: wau ? +(dau / wau * 100).toFixed(1) : null,
+        dau_mau_pct: mau ? +(dau / mau * 100).toFixed(1) : null,
+      };
+    });
+
     const cohorts = _computeSignupCohorts(byDate, visibleDates, todayKst);
 
-    return { ok: true, series, retention, cohorts, generated_at: new Date().toISOString() };
+    const lifetimeWriterCount = lifetimeSnap.exists ? (lifetimeSnap.data().writer_ids || []).length : 0;
+    const totalUsers = usersCountSnap.data().count || 0;
+    const lifetime = {
+      total_users: totalUsers,
+      writer_count: lifetimeWriterCount,
+      writer_pct: totalUsers ? +(lifetimeWriterCount / totalUsers * 100).toFixed(1) : null,
+    };
+
+    return { ok: true, series, retention, stickiness, cohorts, lifetime, generated_at: new Date().toISOString() };
+  });
+
+// 시계열 배열 하나를 "최근값/기간평균/전반부 대비 후반부 증감률/최고점" 요약으로
+// 압축 — AI 분석 프롬프트에 일별 원본 배열을 통째로 넣으면 토큰 낭비라 요약만 전달.
+function _trendSummary(dates, values) {
+  const n = values.length;
+  if (!n) return null;
+  const half = Math.max(1, Math.floor(n / 2));
+  const firstHalf = values.slice(0, half);
+  const secondHalf = values.slice(half).length ? values.slice(half) : firstHalf;
+  const avg = arr => arr.reduce((a, b) => a + (b || 0), 0) / arr.length;
+  const avgFirst = avg(firstHalf), avgSecond = avg(secondHalf);
+  const peakIdx = values.reduce((mi, v, i) => ((v || 0) > (values[mi] || 0) ? i : mi), 0);
+  return {
+    latest: values[n - 1], period_avg: +avg(values).toFixed(1),
+    change_pct: avgFirst ? +((avgSecond - avgFirst) / avgFirst * 100).toFixed(1) : null,
+    peak: values[peakIdx], peak_date: dates[peakIdx],
+  };
+}
+
+// 차트별 AI 분석 의견(관리자 전용, 온디맨드). 대시보드 로드마다 자동 호출하면
+// 매번 Claude 비용+지연이 붙으므로, 클라이언트가 버튼을 눌렀을 때만 이미
+// getAnalyticsDashboard로 받아둔 시계열을 그대로 넘겨받아 호출함 — 서버가
+// 다시 집계하지 않고 요약 통계만 뽑아 Claude에 넘김.
+exports.getAnalyticsInsights = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const secretsSnap = await db.collection('config').doc('secrets').get();
+    const claudeKey = secretsSnap.exists ? secretsSnap.data().claude_key : null;
+    if (!claudeKey) return { ok: false, error: 'Claude API 키가 설정되지 않았어요. admin-ai 페이지에서 먼저 등록해주세요.' };
+
+    const series = Array.isArray(data.series) ? data.series : [];
+    const retention = Array.isArray(data.retention) ? data.retention : [];
+    const stickiness = Array.isArray(data.stickiness) ? data.stickiness : [];
+    const cohorts = Array.isArray(data.cohorts) ? data.cohorts : [];
+    const lifetime = data.lifetime || {};
+    if (!series.length) return { ok: false, error: '분석할 데이터가 없어요.' };
+
+    const dates = series.map(d => d.date);
+    const summary = {
+      기간: `${dates[0]} ~ ${dates[dates.length - 1]} (${dates.length}일)`,
+      방문자_순: _trendSummary(dates, series.map(d => d.visitors_unique)),
+      방문자_총: _trendSummary(dates, series.map(d => d.visitors_total)),
+      신규가입: _trendSummary(dates, series.map(d => d.new_users_count)),
+      글쓴유저: _trendSummary(dates, series.map(d => d.writer_count)),
+      제출글: _trendSummary(dates, series.map(d => d.submission_count)),
+      투표유저: _trendSummary(dates, series.map(d => d.voter_count)),
+      총투표수: _trendSummary(dates, series.map(d => d.vote_count)),
+      단어챌린지작성유저: _trendSummary(dates, series.map(d => d.wc_writer_count)),
+      DAU: _trendSummary(dates, series.map(d => d.active_user_count)),
+      주간잔존율_퍼센트: _trendSummary(retention.map(d => d.date), retention.map(d => d.retention_pct || 0)),
+      스티키니스_DAU_WAU_퍼센트: _trendSummary(stickiness.map(d => d.date), stickiness.map(d => d.dau_wau_pct || 0)),
+      스티키니스_DAU_MAU_퍼센트: _trendSummary(stickiness.map(d => d.date), stickiness.map(d => d.dau_mau_pct || 0)),
+      최근_신규가입_코호트: cohorts.slice(-4),
+      누적_가입자_대비_글쓴유저: lifetime,
+    };
+
+    const prompt = `다음은 협업 릴레이소설 서비스 "화씨.방" 관리자 애널리틱스 대시보드의 최근 추이 요약(JSON)입니다. 운영자가 참고할 수 있도록 지표별로 간결한 한국어 분석 의견을 1~2문장씩 작성해주세요. 숫자를 그대로 반복하지 말고, 증가/감소 흐름과 그 의미, 주목할 점, 필요하면 짧은 제안을 담아주세요. change_pct가 null이거나 표본(n)이 작은 지표는 그 한계도 짧게 언급하세요.
+
+${JSON.stringify(summary)}
+
+다른 설명 없이 아래 키를 가진 JSON 객체 하나만 출력하세요:
+{"overall":"...", "visitors":"...", "writers":"...", "votes":"...", "word_challenge":"...", "dau":"...", "stickiness":"...", "retention":"...", "cohorts":"..."}`;
+
+    let raw;
+    try { raw = await _callClaude(claudeKey, prompt, 1400); }
+    catch (e) { return { ok: false, error: 'AI 분석 호출에 실패했어요: ' + e.message }; }
+    if (!raw) return { ok: false, error: 'AI 분석 응답이 비어있어요.' };
+
+    let insights;
+    try {
+      const jsonText = raw.match(/\{[\s\S]*\}/)?.[0];
+      insights = JSON.parse(jsonText);
+    } catch (e) { return { ok: false, error: 'AI 분석 응답을 해석하지 못했어요.' }; }
+
+    return { ok: true, insights, generated_at: new Date().toISOString() };
   });
 
 // ── 오늘의 단어 챌린지: 안 어울리는 단어 3개를 매일 던져주고 그걸로 문장을

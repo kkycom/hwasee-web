@@ -2,10 +2,11 @@
 // bang/index.html(SPA)과 완전히 분리된 관리자 전용 정적 페이지의 로직.
 // firebase-api.js를 그대로 재사용해 FB_CONFIG/db/functionsRegion/
 // _ensureSessionVerified/FB_ADMIN_ID를 그대로 얻고, 여기서는 인증게이트 +
-// getAnalyticsDashboard 조회 + SVG 차트 렌더링만 담당한다.
+// getAnalyticsDashboard/getAnalyticsInsights 조회 + SVG 차트 렌더링만 담당한다.
 
 let _rangeDays = 30;
 let _customRange = null; // { start_date, end_date } | null
+let _lastDashboardRes = null; // AI 분석 버튼이 재사용할, 가장 최근에 받은 대시보드 응답
 
 function _esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -53,6 +54,7 @@ async function _refresh() {
     return;
   }
   if (!res || !res.ok) { _renderMessage('불러오지 못했습니다.'); return; }
+  _lastDashboardRes = res;
   _renderDashboard(res);
 }
 
@@ -103,12 +105,23 @@ function _svgLineChart(series, dates) {
     </svg>${legendHtml}`;
 }
 
+// 차트 카드 하나(제목 + AI 분석 자리 + SVG)를 공통 마크업으로 생성.
+// insightKey가 있으면 "AI 분석 보기" 클릭 시 #insight-{key} 자리에 문장이 채워짐.
+function _chartCardHtml(title, insightKey, bodyHtml) {
+  return `
+    <div class="card">
+      <div class="chart-title">${_esc(title)}</div>
+      ${insightKey ? `<div class="insight" id="insight-${insightKey}" style="display:none"></div>` : ''}
+      ${bodyHtml}
+    </div>`;
+}
+
 // ── KPI 카드 ──────────────────────────────────────────────
 function _kpiCardsHtml(series) {
   const withData = series.filter(d => d.has_data);
   const last = withData[withData.length - 1];
   const prev = withData[withData.length - 2];
-  if (!last) return '<div class="card empty">아직 집계된 데이터가 없습니다. 스케줄 함수가 매일 KST 00:15에 자동 집계하거나, 아래 "과거 이력 전체 백필"로 직접 계산할 수 있어요.</div>';
+  if (!last) return '<div class="card empty">아직 집계된 데이터가 없습니다. 스케줄 함수가 매일 KST 00:15에 자동 집계하거나, 아래 "과거 이력 백필"로 직접 계산할 수 있어요.</div>';
 
   const delta = (a, b) => {
     if (a == null || b == null) return '';
@@ -121,6 +134,9 @@ function _kpiCardsHtml(series) {
     ['신규가입', last.new_users_count, prev && prev.new_users_count],
     ['글쓴 유저', last.writer_count, prev && prev.writer_count],
     ['제출글', last.submission_count, prev && prev.submission_count],
+    ['투표 유저', last.voter_count, prev && prev.voter_count],
+    ['총 투표수', last.vote_count, prev && prev.vote_count],
+    ['단어챌린지 작성', last.wc_writer_count, prev && prev.wc_writer_count],
     ['활성 유저(DAU)', last.active_user_count, prev && prev.active_user_count],
   ];
   return `
@@ -135,6 +151,20 @@ function _kpiCardsHtml(series) {
           <div style="font-size:11px;color:var(--muted)">${delta(val, prevVal)}</div>
         </div>`).join('')}
     </div>`;
+}
+
+// ── 누적 글쓴 유저 비율 ───────────────────────────────────
+function _lifetimeCardHtml(lifetime) {
+  if (!lifetime || !lifetime.total_users) return '';
+  const pct = lifetime.writer_pct ?? 0;
+  return _chartCardHtml('📚 누적 글쓴 유저 비율 (서비스 시작부터 지금까지)', 'lifetime', `
+    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px">
+      <div style="font-size:26px;font-weight:700">${lifetime.writer_count}<span style="font-size:14px;color:var(--muted)">명</span></div>
+      <div style="font-size:13px;color:var(--muted)">/ 전체 가입자 ${lifetime.total_users}명 중 ${pct}%가 글을 써봤어요</div>
+    </div>
+    <div style="height:10px;border-radius:6px;background:var(--surface);overflow:hidden">
+      <div style="height:100%;width:${Math.min(100, pct)}%;background:var(--accent2)"></div>
+    </div>`);
 }
 
 // ── 코호트 표 ─────────────────────────────────────────────
@@ -223,6 +253,7 @@ function _rangeControlsHtml() {
       <input type="date" id="range-end" value="${_customRange ? _esc(_customRange.end_date) : ''}">
       <button class="btn btn-ghost btn-sm" onclick="_setCustomRange()">기간 조회</button>
       <button class="btn btn-ghost btn-sm" onclick="_openBackfillPrompt()" title="지정한 날짜부터 오늘까지 전부 다시 계산">과거 이력 백필</button>
+      <button class="btn btn-ghost btn-sm" id="insight-btn" onclick="_loadInsights()">🤖 AI 분석 보기</button>
     </div>`;
 }
 function _setRangeDays(days) { _rangeDays = days; _customRange = null; _refresh(); }
@@ -233,6 +264,47 @@ function _setCustomRange() {
   _refresh();
 }
 
+// ── AI 분석 (온디맨드 — 자동 호출 안 함, 버튼 클릭 시에만) ──
+async function _loadInsights() {
+  const auth = window._analyticsAuth;
+  const res = _lastDashboardRes;
+  if (!auth || !res) return;
+  const btn = document.getElementById('insight-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '분석 중...'; }
+  try {
+    const fn = functionsRegion.httpsCallable('getAnalyticsInsights');
+    const r = await fn({
+      user_id: auth.user_id, token: auth.token,
+      series: res.series, retention: res.retention, stickiness: res.stickiness,
+      cohorts: res.cohorts, lifetime: res.lifetime,
+    });
+    const data = r.data;
+    if (!data || !data.ok) {
+      alert('AI 분석 실패: ' + (data && data.error ? data.error : '알 수 없는 오류'));
+      return;
+    }
+    _applyInsights(data.insights);
+  } catch (e) {
+    alert('AI 분석 호출 실패: ' + (e.message || '알 수 없는 오류'));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🤖 AI 분석 보기'; }
+  }
+}
+
+function _applyInsights(insights) {
+  if (!insights) return;
+  const overallEl = document.getElementById('insight-overall-block');
+  if (overallEl && insights.overall) {
+    overallEl.style.display = 'block';
+    overallEl.querySelector('.insight-text').textContent = insights.overall;
+  }
+  Object.entries(insights).forEach(([key, text]) => {
+    if (key === 'overall' || !text) return;
+    const el = document.getElementById(`insight-${key}`);
+    if (el) { el.style.display = 'block'; el.textContent = `🤖 ${text}`; }
+  });
+}
+
 // ── 전체 렌더 ─────────────────────────────────────────────
 function _renderDashboard(res) {
   const dates = res.series.map(d => d.date);
@@ -240,21 +312,49 @@ function _renderDashboard(res) {
     { label: '순방문', color: 'var(--accent)', values: res.series.map(d => d.visitors_unique) },
     { label: '총접속', color: 'var(--accent2)', values: res.series.map(d => d.visitors_total) },
   ], dates);
-  const writerChart = _svgLineChart([{ label: '글쓴 유저', color: 'var(--accent2)', values: res.series.map(d => d.writer_count) }], dates);
-  const dauChart = _svgLineChart([{ label: 'DAU', color: 'var(--success)', values: res.series.map(d => d.active_user_count) }], dates);
+  const writerChart = _svgLineChart([
+    { label: '글쓴 유저', color: 'var(--accent2)', values: res.series.map(d => d.writer_count) },
+    { label: '제출글 수', color: 'var(--accent)', values: res.series.map(d => d.submission_count) },
+  ], dates);
+  const voteChart = _svgLineChart([
+    { label: '투표 유저', color: 'var(--accent2)', values: res.series.map(d => d.voter_count) },
+    { label: '총 투표수', color: 'var(--accent)', values: res.series.map(d => d.vote_count) },
+  ], dates);
+  const wcChart = _svgLineChart([
+    { label: '단어챌린지 작성 유저', color: 'var(--success)', values: res.series.map(d => d.wc_writer_count) },
+  ], dates);
+  const dauChart = _svgLineChart([
+    { label: 'DAU', color: 'var(--success)', values: res.series.map(d => d.active_user_count) },
+  ], dates);
+  const stickinessDates = res.stickiness.map(d => d.date);
+  const stickinessChart = _svgLineChart([
+    { label: 'DAU/WAU(%)', color: 'var(--accent2)', values: res.stickiness.map(d => d.dau_wau_pct) },
+    { label: 'DAU/MAU(%)', color: 'var(--accent)', values: res.stickiness.map(d => d.dau_mau_pct) },
+  ], stickinessDates);
   const retentionDates = res.retention.map(d => d.date);
-  const retentionChart = _svgLineChart([{ label: '주간 잔존율(%)', color: 'var(--accent2)', values: res.retention.map(d => d.retention_pct) }], retentionDates);
+  const retentionChart = _svgLineChart([
+    { label: '주간 잔존율(%)', color: 'var(--accent2)', values: res.retention.map(d => d.retention_pct) },
+  ], retentionDates);
 
   _app().innerHTML = `
     ${_rangeControlsHtml()}
+    <div class="card" id="insight-overall-block" style="display:none;border-color:var(--accent2)">
+      <div class="chart-title">🤖 AI 종합 분석</div>
+      <div class="insight-text" style="font-size:13.5px;line-height:1.6"></div>
+    </div>
     ${_kpiCardsHtml(res.series)}
     ${_missingRangeHtml(res.series)}
-    <div class="card"><div class="chart-title">일별 방문자 추이</div>${visitorsChart}</div>
-    <div class="card"><div class="chart-title">일별 글쓴 유저 수 (제출글 작성자 기준, AI 제외)</div>${writerChart}</div>
-    <div class="card"><div class="chart-title">일별 활성 유저 (DAU, 출석 기준)</div>${dauChart}</div>
-    <div class="card"><div class="chart-title">주간 잔존율 추이 (이번 주 WAU 중 저번 주에도 활성이던 비율)</div>${retentionChart}</div>
+    ${_chartCardHtml('📈 일별 방문자 추이 (순방문 · 총접속)', 'visitors', visitorsChart)}
+    ${_chartCardHtml('✍️ 일별 글 작성 현황 (작성 유저수 · 제출글 수, AI 제외)', 'writers', writerChart)}
+    ${_chartCardHtml('🗳️ 일별 투표 현황 (투표 유저수 · 총 투표수, AI 제외)', 'votes', voteChart)}
+    ${_chartCardHtml('🎲 오늘의 단어챌린지 작성 유저수 추이', 'word_challenge', wcChart)}
+    ${_chartCardHtml('🔥 일별 활성 유저 (DAU, 출석 기준)', 'dau', dauChart)}
+    ${_chartCardHtml('🔁 재방문 빈도 (Stickiness: DAU/WAU · DAU/MAU, %)', 'stickiness', stickinessChart)}
+    ${_chartCardHtml('📊 주간 잔존율 추이 (지난주 WAU 대비 이번주 잔존율, %)', 'retention', retentionChart)}
+    ${_lifetimeCardHtml(res.lifetime)}
     <div class="card">
-      <div class="chart-title">신규가입 코호트 D1/D7/D30 잔존율 (참고용, 표본 적을 수 있음)</div>
+      <div class="chart-title">🧮 신규가입 코호트 D1/D7/D30 잔존율 (참고용, 표본 적을 수 있음)</div>
+      <div class="insight" id="insight-cohorts" style="display:none"></div>
       ${_cohortTableHtml(res.cohorts)}
     </div>
     <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">

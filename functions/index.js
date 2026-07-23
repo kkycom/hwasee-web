@@ -2212,6 +2212,217 @@ exports.streakReminderPush = functions
     return null;
   });
 
+// ── 애널리틱스 대시보드: 일별 롤업 집계 (분리된 bang/analytics.html 전용) ──
+// users/submissions/point_ledger의 created_at은 fbNow()=UTC ISO 문자열인데,
+// visits/{date}와 다른 스케줄 함수들은 전부 KST(Asia/Seoul) 날짜 경계를 씀 —
+// 여기서 KST로 통일해서 집계하지 않으면 visits 수치와 날짜가 9시간씩 어긋남.
+function _kstDateStr(isoUtc, offsetDays = 0) {
+  const t = new Date(isoUtc).getTime() + (9 + offsetDays * 24) * 3600 * 1000;
+  return new Date(t).toISOString().slice(0, 10);
+}
+function _addDaysKst(dateStr, n) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function _kstDayRangeUtc(kstDateStr) {
+  const start = new Date(`${kstDateStr}T00:00:00+09:00`);
+  return { startIso: start.toISOString(), endIso: new Date(start.getTime() + 86400000).toISOString() };
+}
+function _isoWeekStartKst(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  const day = d.getUTCDay(); // 0=일 ~ 6=토
+  d.setUTCDate(d.getUTCDate() + (day === 0 ? -6 : 1 - day)); // 그 주의 월요일로
+  return d.toISOString().slice(0, 10);
+}
+
+// 해당 KST 하루치를 처음부터 다시 계산해 analytics_daily/{kstDateStr}에 전체
+// 덮어쓰기로 저장. 매번 완전 재계산이라 merge 불필요 — 스케줄 함수와 백필
+// onCall이 이 헬퍼 하나를 공유해서 집계 로직이 두 곳에서 갈라지지 않게 함.
+// 관리자/AI봇 계정(FB_ADMIN_ID/FB_AI_ID)과 AI 자동참여 제출(is_ai)은 "실유저
+// 활동"이 아니므로 신규가입/글쓴유저/DAU 집계에서 전부 제외.
+async function _computeAndStoreAnalyticsForDate(db, kstDateStr) {
+  const { startIso, endIso } = _kstDayRangeUtc(kstDateStr);
+
+  const visitDoc = await db.collection('visits').doc(kstDateStr).get();
+  const visitors_unique = visitDoc.exists ? (visitDoc.data().count || 0) : 0;
+  const visitors_total  = visitDoc.exists ? (visitDoc.data().raw_count || 0) : 0;
+
+  const [usersSnap, subsSnap, ledgerSnap] = await Promise.all([
+    db.collection('users').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
+    db.collection('submissions').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
+    // reason은 쿼리 등호필터에 안 넣고(복합 인덱스 필요해지는 걸 회피) 메모리에서 필터
+    db.collection('point_ledger').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
+  ]);
+
+  const new_user_ids = usersSnap.docs
+    .map(d => d.id)
+    .filter(id => id !== FB_ADMIN_ID && id !== FB_AI_ID);
+
+  const writerIds = new Set();
+  let submission_count = 0;
+  subsSnap.docs.forEach(d => {
+    const s = d.data();
+    if (s.is_ai) return;
+    submission_count++;
+    if (s.author_id && s.author_id !== FB_ADMIN_ID && s.author_id !== FB_AI_ID) writerIds.add(s.author_id);
+  });
+
+  const activeIds = new Set();
+  ledgerSnap.docs.forEach(d => {
+    const p = d.data();
+    if (p.reason === 'daily_login' && p.user_id && p.user_id !== FB_ADMIN_ID && p.user_id !== FB_AI_ID) {
+      activeIds.add(p.user_id);
+    }
+  });
+
+  await db.collection('analytics_daily').doc(kstDateStr).set({
+    date: kstDateStr,
+    visitors_unique, visitors_total,
+    new_users_count: new_user_ids.length, new_user_ids,
+    writer_count: writerIds.size, writer_ids: [...writerIds],
+    submission_count,
+    active_user_count: activeIds.size, active_user_ids: [...activeIds],
+    computed_at: new Date().toISOString(),
+  });
+}
+
+// 매일 KST 00:15에 "방금 끝난" KST 하루치를 집계. streakReminderPush 등과
+// 동일한 region+timeZone 패턴. 00:00이 아니라 00:15인 이유는 자정 직후 아직
+// 처리 중일 수 있는 막판 쓰기와의 경합을 피하기 위함.
+exports.computeAnalyticsDaily = functions
+  .region('asia-northeast3')
+  .pubsub.schedule('every day 00:15')
+  .timeZone('Asia/Seoul')
+  .onRun(async () => {
+    const db = admin.firestore();
+    const kstDate = _kstDateStr(new Date().toISOString(), -1);
+    await _computeAndStoreAnalyticsForDate(db, kstDate);
+    return null;
+  });
+
+// 과거 이력 소급 백필(관리자 전용, bang/analytics.js가 여러 날짜 구간을 나눠
+// 여러 번 호출). 한 번에 최대 31일로 제한해 onCall 기본 타임아웃(60초) 안에
+// 여유있게 끝나도록 함 — 서비스 시작일부터 전체 백필은 클라이언트가 31일
+// 단위로 반복 호출.
+exports.backfillAnalyticsDaily = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const start = data.start_date, end = data.end_date;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || start > end) {
+      throw new functions.https.HttpsError('invalid-argument', '날짜 형식이 올바르지 않습니다.');
+    }
+    const dates = [];
+    for (let d = start; d <= end; d = _addDaysKst(d, 1)) dates.push(d);
+    if (dates.length > 31) {
+      throw new functions.https.HttpsError('invalid-argument', '한 번에 최대 31일까지 백필할 수 있습니다.');
+    }
+    const db = admin.firestore();
+    for (const d of dates) await _computeAndStoreAnalyticsForDate(db, d);
+    return { ok: true, backfilled: dates.length };
+  });
+
+// 주간 신규가입 코호트별 D1/D7/D30 잔존율 — 표본이 작을 수 있어(신규가입
+// 코호트가 한 자릿수인 주도 흔함) 참고용 보조 표. byDate에 target 날짜의
+// 롤업이 아직 없거나(백필 안 됨) target이 미래면 그 유저는 분모에서 제외
+// (모르는 걸 0%로 잘못 집계하지 않기 위함).
+function _computeSignupCohorts(byDate, visibleDates, todayKst) {
+  const WINDOWS = [1, 7, 30];
+  const cohortMap = {};
+  visibleDates.forEach(d => {
+    const day = byDate[d];
+    if (!day || !day.new_user_ids || !day.new_user_ids.length) return;
+    const week = _isoWeekStartKst(d);
+    if (!cohortMap[week]) cohortMap[week] = { cohort_week: week, signup_count: 0, retained: { 1: 0, 7: 0, 30: 0 }, eligible: { 1: 0, 7: 0, 30: 0 } };
+    const c = cohortMap[week];
+    day.new_user_ids.forEach(uid => {
+      c.signup_count++;
+      WINDOWS.forEach(w => {
+        const target = _addDaysKst(d, w);
+        if (target > todayKst) return;
+        const targetDay = byDate[target];
+        if (!targetDay) return;
+        c.eligible[w]++;
+        if ((targetDay.active_user_ids || []).includes(uid)) c.retained[w]++;
+      });
+    });
+  });
+  return Object.values(cohortMap)
+    .sort((a, b) => (a.cohort_week < b.cohort_week ? -1 : 1))
+    .map(c => ({
+      cohort_week: c.cohort_week,
+      signup_count: c.signup_count,
+      d1_pct: c.eligible[1] ? +(c.retained[1] / c.eligible[1] * 100).toFixed(1) : null, d1_n: c.eligible[1],
+      d7_pct: c.eligible[7] ? +(c.retained[7] / c.eligible[7] * 100).toFixed(1) : null, d7_n: c.eligible[7],
+      d30_pct: c.eligible[30] ? +(c.retained[30] / c.eligible[30] * 100).toFixed(1) : null, d30_n: c.eligible[30],
+      low_confidence: c.signup_count < 5,
+    }));
+}
+
+// 대시보드 조회(관리자 전용). days 또는 start_date/end_date로 조회 범위를 정하고,
+// WAU(주간 활성유저) 계산에 필요한 직전 13일치를 여유분으로 더 가져와서
+// 잘라냄 — series/retention에는 요청한 구간만 노출.
+exports.getAnalyticsDashboard = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const LOOKBACK = 13;
+    const todayKst = _kstDateStr(new Date().toISOString());
+    let dates;
+    if (data.start_date && data.end_date) {
+      dates = [];
+      for (let d = _addDaysKst(data.start_date, -LOOKBACK); d <= data.end_date; d = _addDaysKst(d, 1)) dates.push(d);
+    } else {
+      // 오늘(KST)은 computeAnalyticsDaily가 아직 계산 안 한 게 정상(내일 새벽에야
+      // 채워짐)이라, 빠른선택 버튼(days만 지정)에선 매번 "오늘 누락" 배너가 뜨는 걸
+      // 막기 위해 조회 구간을 어제까지로 잡음. 명시적 start_date/end_date로 오늘을
+      // 직접 지정하는 건 그대로 허용(사용자가 의도한 선택이므로).
+      const days = Math.min(Math.max(Number(data.days) || 30, 1), 3650);
+      dates = [];
+      for (let i = days + LOOKBACK; i >= 1; i--) dates.push(_addDaysKst(todayKst, -i));
+    }
+
+    const refs = dates.map(d => db.collection('analytics_daily').doc(d));
+    const snaps = await db.getAll(...refs);
+    const byDate = {};
+    snaps.forEach((s, i) => { byDate[dates[i]] = s.exists ? s.data() : null; });
+
+    const visibleDates = dates.slice(LOOKBACK);
+    const series = visibleDates.map(d => {
+      const v = byDate[d] || {};
+      return {
+        date: d,
+        visitors_unique: v.visitors_unique || 0, visitors_total: v.visitors_total || 0,
+        new_users_count: v.new_users_count || 0, writer_count: v.writer_count || 0,
+        submission_count: v.submission_count || 0, active_user_count: v.active_user_count || 0,
+        has_data: !!byDate[d],
+      };
+    });
+
+    const wauSet = d => {
+      const ids = new Set();
+      for (let i = 0; i < 7; i++) {
+        const day = byDate[_addDaysKst(d, -i)];
+        (day && day.active_user_ids || []).forEach(id => ids.add(id));
+      }
+      return ids;
+    };
+    const retention = visibleDates.map(d => {
+      const thisW = wauSet(d), prevW = wauSet(_addDaysKst(d, -7));
+      const retained = [...prevW].filter(id => thisW.has(id));
+      return {
+        date: d, wau: thisW.size, prev_wau: prevW.size,
+        retention_pct: prevW.size ? +(retained.length / prevW.size * 100).toFixed(1) : null,
+      };
+    });
+
+    const cohorts = _computeSignupCohorts(byDate, visibleDates, todayKst);
+
+    return { ok: true, series, retention, cohorts, generated_at: new Date().toISOString() };
+  });
+
 // ── 오늘의 단어 챌린지: 안 어울리는 단어 3개를 매일 던져주고 그걸로 문장을
 //    지어 투표받는 이벤트. 씨앗 탭의 "명예의 전당" 자리를 대체함(2026-07-09).
 //    라운드는 매일 00:00(KST) 시작 ~ 21:00(KST) 마감, 우승자(최다 득표, 동점이면

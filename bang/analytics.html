@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>애널리틱스 — 화씨.방 관리자</title>
+<base href="/bang/">
+<script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script defer src="firebase-api.js?v=3"></script>
+<script defer src="analytics.js?v=1"></script>
+<style>
+  :root {
+    --bg:      #f0ead8;
+    --surface: #e6dac8;
+    --card:    #ddd0b8;
+    --border:  #c4b090;
+    --accent:  #80978c;
+    --accent2: #c8823a;
+    --text:    #1c0e06;
+    --muted:   #7a5c40;
+    --success: #5a7a3a;
+    --radius:  12px;
+    --font:    'Noto Sans KR', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { overflow-x: clip; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; max-width: 100vw; }
+  a { color: var(--accent2); }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 18px; margin-bottom: 18px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+  .chart-title { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 8px; text-align: center; }
+  .chart-legend { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; margin-top: 8px; font-size: 11.5px; }
+  .chart-legend .li { display: inline-flex; align-items: baseline; gap: 5px; }
+  .chart-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .btn { padding: 8px 18px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: .15s; }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--accent); }
+  .btn-ghost.active { background: var(--accent); color: #3a5548; border-color: var(--accent); }
+  .btn-sm { padding: 5px 12px; font-size: 13px; }
+  .loading { text-align: center; padding: 40px; color: var(--muted); }
+  .empty { text-align: center; padding: 48px 0; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+  thead th { color: var(--muted); font-size: 11px; font-weight: 600; }
+  input[type=date] { padding: 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: var(--font); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📊 애널리틱스 대시보드</h1>
+  <div id="app"><div class="loading">불러오는 중...</div></div>
+</div>
+</body>
+</html>

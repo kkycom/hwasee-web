@@ -103,6 +103,9 @@ service cloud.firestore {
     match /word_challenge_votes/{docId} { allow read, write: if true; }
     match /spotlight_word_pool/{docId} { allow read, write: if false; }
     match /spotlight_sentence_pool/{docId} { allow read, write: if false; }
+    // 분석 대시보드 일별 집계 — computeAnalyticsDaily/backfillAnalyticsDaily(Admin
+    // SDK)만 쓰고, getAnalyticsDashboard(_requireAdmin 게이트)를 통해서만 읽음.
+    match /analytics_daily/{docId} { allow read, write: if false; }
     match /sentence_rounds/{docId} { allow read, write: if true; }
     match /sentence_round_submissions/{docId} { allow read, write: if true; }
     match /sentence_round_votes/{docId} { allow read, write: if true; }

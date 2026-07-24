@@ -153,26 +153,38 @@ function _kpiCardsHtml(series) {
     </div>`;
 }
 
-// ── 누적 글쓴 유저 비율 ───────────────────────────────────
+// ── 누적 지표 (글쓴 유저 비율 · 이야기 완주율) ─────────────
 function _lifetimeCardHtml(lifetime) {
   if (!lifetime || !lifetime.total_users) return '';
-  const pct = lifetime.writer_pct ?? 0;
-  return _chartCardHtml('📚 누적 글쓴 유저 비율 (서비스 시작부터 지금까지)', 'lifetime', `
-    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px">
-      <div style="font-size:26px;font-weight:700">${lifetime.writer_count}<span style="font-size:14px;color:var(--muted)">명</span></div>
-      <div style="font-size:13px;color:var(--muted)">/ 전체 가입자 ${lifetime.total_users}명 중 ${pct}%가 글을 써봤어요</div>
+  const writerPct = lifetime.writer_pct ?? 0;
+  const completionPct = lifetime.stories_completion_pct ?? 0;
+  return _chartCardHtml('📚 누적 지표 (서비스 시작부터 지금까지)', 'lifetime', `
+    <div style="margin-bottom:14px">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+        <div style="font-size:22px;font-weight:700">${lifetime.writer_count}<span style="font-size:13px;color:var(--muted)">명</span></div>
+        <div style="font-size:13px;color:var(--muted)">/ 전체 가입자 ${lifetime.total_users}명 중 ${writerPct}%가 글을 써봤어요</div>
+      </div>
+      <div style="height:10px;border-radius:6px;background:var(--surface);overflow:hidden">
+        <div style="height:100%;width:${Math.min(100, writerPct)}%;background:var(--accent2)"></div>
+      </div>
     </div>
-    <div style="height:10px;border-radius:6px;background:var(--surface);overflow:hidden">
-      <div style="height:100%;width:${Math.min(100, pct)}%;background:var(--accent2)"></div>
+    <div>
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+        <div style="font-size:22px;font-weight:700">${lifetime.stories_completed ?? 0}<span style="font-size:13px;color:var(--muted)">편</span></div>
+        <div style="font-size:13px;color:var(--muted)">/ 시작된 이야기 ${lifetime.stories_started ?? 0}편 중 ${completionPct}%가 완결됐어요</div>
+      </div>
+      <div style="height:10px;border-radius:6px;background:var(--surface);overflow:hidden">
+        <div style="height:100%;width:${Math.min(100, completionPct)}%;background:var(--success)"></div>
+      </div>
     </div>`);
 }
 
-// ── 코호트 표 ─────────────────────────────────────────────
+// ── D1/D7/D30 형태 코호트 표 (신규가입 리텐션 · 가입후 첫활동 전환 공용) ──
 function _cohortCellHtml(pct, n) {
   if (pct == null) return '<span style="color:var(--muted)">-</span>';
   return `${pct}% <span style="color:var(--muted);font-size:11px">(n=${n})</span>`;
 }
-function _cohortTableHtml(cohorts) {
+function _cohortTableHtml(cohorts, valueLabel) {
   if (!cohorts || !cohorts.length) return '<div class="empty">코호트 데이터가 없습니다.</div>';
   const rows = cohorts.map(c => `
     <tr${c.low_confidence ? ' style="opacity:.55"' : ''}>
@@ -184,8 +196,44 @@ function _cohortTableHtml(cohorts) {
     </tr>`).join('');
   return `
     <table>
-      <thead><tr><th>가입 주(월요일 시작)</th><th>신규가입</th><th>D1</th><th>D7</th><th>D30</th></tr></thead>
+      <thead><tr><th>가입 주(월요일 시작)</th><th>신규가입</th><th>D1 ${_esc(valueLabel)}</th><th>D7 ${_esc(valueLabel)}</th><th>D30 ${_esc(valueLabel)}</th></tr></thead>
       <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── 이야기 완주율 코호트 표 ────────────────────────────────
+function _storyCohortTableHtml(cohorts) {
+  if (!cohorts || !cohorts.length) return '<div class="empty">데이터가 없습니다.</div>';
+  const rows = cohorts.map(c => `
+    <tr${c.low_confidence ? ' style="opacity:.55"' : ''}>
+      <td>${_esc(c.cohort_week)}${c.low_confidence ? ' <span title="표본이 적어 참고용">⚠︎</span>' : ''}</td>
+      <td>${c.started}</td>
+      <td>${c.completed}</td>
+      <td>${c.active}</td>
+      <td>${c.inactive}</td>
+      <td>${c.completion_pct == null ? '-' : c.completion_pct + '%'}</td>
+    </tr>`).join('');
+  return `
+    <table>
+      <thead><tr><th>시작 주(월요일 시작)</th><th>시작</th><th>완결</th><th>진행중</th><th>방치</th><th>완주율</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── 가입경로별 정착도 표 ───────────────────────────────────
+function _referralTableHtml(rows) {
+  if (!rows || !rows.length) return '<div class="empty">데이터가 없습니다.</div>';
+  const trs = rows.map(r => `
+    <tr>
+      <td>${_esc(r.referral)}</td>
+      <td>${r.total}</td>
+      <td>${r.writer_pct == null ? '-' : r.writer_pct + '%'} <span style="color:var(--muted);font-size:11px">(${r.writers}명)</span></td>
+      <td>${r.active_pct == null ? '-' : r.active_pct + '%'} <span style="color:var(--muted);font-size:11px">(${r.active_recent}명)</span></td>
+    </tr>`).join('');
+  return `
+    <table>
+      <thead><tr><th>가입 경로</th><th>가입자 수</th><th>글 써본 비율(누적)</th><th>최근 30일 활동 비율</th></tr></thead>
+      <tbody>${trs}</tbody>
     </table>`;
 }
 
@@ -276,7 +324,9 @@ async function _loadInsights() {
     const r = await fn({
       user_id: auth.user_id, token: auth.token,
       series: res.series, retention: res.retention, stickiness: res.stickiness,
-      cohorts: res.cohorts, lifetime: res.lifetime,
+      cohorts: res.cohorts, activation_cohorts: res.activation_cohorts,
+      story_cohorts: res.story_cohorts, referral_breakdown: res.referral_breakdown,
+      lifetime: res.lifetime,
     });
     const data = r.data;
     if (!data || !data.ok) {
@@ -308,6 +358,9 @@ function _applyInsights(insights) {
 // ── 전체 렌더 ─────────────────────────────────────────────
 function _renderDashboard(res) {
   const dates = res.series.map(d => d.date);
+  const cumulativeChart = _svgLineChart([
+    { label: '누적 가입자 수', color: 'var(--accent2)', values: res.series.map(d => d.cumulative_users) },
+  ], dates);
   const visitorsChart = _svgLineChart([
     { label: '순방문', color: 'var(--accent)', values: res.series.map(d => d.visitors_unique) },
     { label: '총접속', color: 'var(--accent2)', values: res.series.map(d => d.visitors_total) },
@@ -344,6 +397,7 @@ function _renderDashboard(res) {
     </div>
     ${_kpiCardsHtml(res.series)}
     ${_missingRangeHtml(res.series)}
+    ${_chartCardHtml('📈 누적 가입자 수 추이 (우상향 폭으로 성장 속도 확인)', 'cumulative_users', cumulativeChart)}
     ${_chartCardHtml('📈 일별 방문자 추이 (순방문 · 총접속)', 'visitors', visitorsChart)}
     ${_chartCardHtml('✍️ 일별 글 작성 현황 (작성 유저수 · 제출글 수, AI 제외)', 'writers', writerChart)}
     ${_chartCardHtml('🗳️ 일별 투표 현황 (투표 유저수 · 총 투표수, AI 제외)', 'votes', voteChart)}
@@ -355,7 +409,22 @@ function _renderDashboard(res) {
     <div class="card">
       <div class="chart-title">🧮 신규가입 코호트 D1/D7/D30 잔존율 (참고용, 표본 적을 수 있음)</div>
       <div class="insight" id="insight-cohorts" style="display:none"></div>
-      ${_cohortTableHtml(res.cohorts)}
+      ${_cohortTableHtml(res.cohorts, '잔존율')}
+    </div>
+    <div class="card">
+      <div class="chart-title">🚀 가입→첫 활동 전환율 (D1/D7/D30 안에 글쓰기 또는 투표를 해봤는지)</div>
+      <div class="insight" id="insight-activation" style="display:none"></div>
+      ${_cohortTableHtml(res.activation_cohorts, '전환율')}
+    </div>
+    <div class="card">
+      <div class="chart-title">🏁 이야기 시작 주 기준 완주율 (현재 상태 기준, 오래된 코호트일수록 안정적)</div>
+      <div class="insight" id="insight-story_completion" style="display:none"></div>
+      ${_storyCohortTableHtml(res.story_cohorts)}
+    </div>
+    <div class="card">
+      <div class="chart-title">📡 가입경로별 정착도 (유입량이 아니라 남아서 쓰는지)</div>
+      <div class="insight" id="insight-referral" style="display:none"></div>
+      ${_referralTableHtml(res.referral_breakdown)}
     </div>
     <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">
       생성: ${_esc(res.generated_at)} · <a href="/bang/">화씨.방으로</a>

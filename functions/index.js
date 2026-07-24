@@ -8,6 +8,8 @@ admin.initializeApp();
 
 const FB_ADMIN_ID = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
 const FB_AI_ID    = '578873e7-47b7-48d3-9cd8-894546196205'; // AI 자동참여 전용 봇 계정 (관리자 계정과 분리)
+// 애널리틱스 집계에서 "실유저 활동"만 세기 위한 공용 필터 — 관리자/AI봇 계정 제외.
+const _isRealUser = id => !!id && id !== FB_ADMIN_ID && id !== FB_AI_ID;
 
 // index.html의 calcDisplayStep과 동일한 규칙 — 분기 생성 시점에 정확한
 // branch_display_offset을 미리 계산해서 저장하기 위한 용도 (firebase-api.js와 동일하게 유지할 것)
@@ -2243,20 +2245,24 @@ function _isoWeekStartKst(dateStr) {
 // 활동"이 아니므로 신규가입/글쓴유저/DAU 집계에서 전부 제외.
 async function _computeAndStoreAnalyticsForDate(db, kstDateStr) {
   const { startIso, endIso } = _kstDayRangeUtc(kstDateStr);
-  const isReal = id => !!id && id !== FB_ADMIN_ID && id !== FB_AI_ID;
+  const isReal = _isRealUser;
 
   const visitDoc = await db.collection('visits').doc(kstDateStr).get();
   const visitors_unique = visitDoc.exists ? (visitDoc.data().count || 0) : 0;
   const visitors_total  = visitDoc.exists ? (visitDoc.data().raw_count || 0) : 0;
 
-  const [usersSnap, subsSnap, ledgerSnap, votesSnap, wcSubsSnap] = await Promise.all([
+  const [usersSnap, subsSnap, ledgerSnap, votesSnap, wcSubsSnap, cumulativeUsersSnap] = await Promise.all([
     db.collection('users').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
     db.collection('submissions').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
     // reason/is_ai는 쿼리 등호필터에 안 넣고(복합 인덱스 필요해지는 걸 회피) 메모리에서 필터
     db.collection('point_ledger').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
     db.collection('votes').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
     db.collection('word_challenge_submissions').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
+    // 누적 가입자 수(우상향 곡선용) — 해당 KST 하루가 끝난 시점까지 가입한 전체
+    // 유저 수. count() 집계 쿼리라 문서 전체를 안 읽어와 저렴함.
+    db.collection('users').where('created_at', '<', endIso).count().get(),
   ]);
+  const cumulative_users = cumulativeUsersSnap.data().count || 0;
 
   const new_user_ids = usersSnap.docs.map(d => d.id).filter(isReal);
 
@@ -2299,6 +2305,7 @@ async function _computeAndStoreAnalyticsForDate(db, kstDateStr) {
     active_user_count: activeIds.size, active_user_ids: [...activeIds],
     vote_count, voter_count: voterIds.size, voter_ids: [...voterIds],
     wc_writer_count: wcWriterIds.size, wc_writer_ids: [...wcWriterIds],
+    cumulative_users,
     computed_at: new Date().toISOString(),
   });
 
@@ -2385,6 +2392,71 @@ function _computeSignupCohorts(byDate, visibleDates, todayKst) {
     }));
 }
 
+// 주간 신규가입 코호트별 "가입→첫 활동(글쓰기 또는 투표) 전환율" — 리텐션(다시
+// 돌아오는지)과는 다른 질문: "애초에 한 번이라도 참여해봤는지"를 봄. D1/D7/D30
+// 윈도우 안에 하루라도 writer_ids/voter_ids에 등장하면 활성화된 것으로 봄
+// (리텐션처럼 정확히 그날 활동했는지가 아니라 그 기간 누적 여부) — 윈도우에
+// 포함된 모든 날짜의 롤업이 있어야 판정 가능(중간에 미백필 구간이 있으면 스킵).
+function _computeActivationCohorts(byDate, visibleDates, todayKst) {
+  const WINDOWS = [1, 7, 30];
+  const cohortMap = {};
+  visibleDates.forEach(d => {
+    const day = byDate[d];
+    if (!day || !day.new_user_ids || !day.new_user_ids.length) return;
+    const week = _isoWeekStartKst(d);
+    if (!cohortMap[week]) cohortMap[week] = { cohort_week: week, signup_count: 0, activated: { 1: 0, 7: 0, 30: 0 }, eligible: { 1: 0, 7: 0, 30: 0 } };
+    const c = cohortMap[week];
+    day.new_user_ids.forEach(uid => {
+      c.signup_count++;
+      WINDOWS.forEach(w => {
+        const windowEnd = _addDaysKst(d, w);
+        if (windowEnd > todayKst) return;
+        let dataComplete = true, activated = false;
+        for (let dt = d; dt <= windowEnd; dt = _addDaysKst(dt, 1)) {
+          const dayData = byDate[dt];
+          if (!dayData) { dataComplete = false; break; }
+          if ((dayData.writer_ids || []).includes(uid) || (dayData.voter_ids || []).includes(uid)) { activated = true; break; }
+        }
+        if (!dataComplete) return;
+        c.eligible[w]++;
+        if (activated) c.activated[w]++;
+      });
+    });
+  });
+  return Object.values(cohortMap)
+    .sort((a, b) => (a.cohort_week < b.cohort_week ? -1 : 1))
+    .map(c => ({
+      cohort_week: c.cohort_week,
+      signup_count: c.signup_count,
+      d1_pct: c.eligible[1] ? +(c.activated[1] / c.eligible[1] * 100).toFixed(1) : null, d1_n: c.eligible[1],
+      d7_pct: c.eligible[7] ? +(c.activated[7] / c.eligible[7] * 100).toFixed(1) : null, d7_n: c.eligible[7],
+      d30_pct: c.eligible[30] ? +(c.activated[30] / c.eligible[30] * 100).toFixed(1) : null, d30_n: c.eligible[30],
+      low_confidence: c.signup_count < 5,
+    }));
+}
+
+// 이야기 시작 주(created_at 기준) 코호트별 완주율 — "얼마나 자주 오는가"가 아니라
+// "시작한 이야기가 끝까지 가는가"를 봄. stories엔 완결 시각 필드가 없어서(status만
+// 'completed'로 바뀜) 날짜별 롤업으로는 못 만들고, 매 조회 시점 stories 전체를
+// 가볍게 스캔해 "현재 상태"를 코호트에 반영함(실시간 진실 — 오래된 코호트일수록
+// 자연히 완주율이 안정화됨).
+function _computeStoryCohorts(storiesDocs) {
+  const cohortMap = {};
+  storiesDocs.forEach(s => {
+    if (!s.created_at) return;
+    const week = _isoWeekStartKst(s.created_at.slice(0, 10));
+    if (!cohortMap[week]) cohortMap[week] = { cohort_week: week, started: 0, completed: 0, inactive: 0, active: 0 };
+    const c = cohortMap[week];
+    c.started++;
+    if (s.status === 'completed') c.completed++;
+    else if (s.status === 'inactive') c.inactive++;
+    else c.active++;
+  });
+  return Object.values(cohortMap)
+    .sort((a, b) => (a.cohort_week < b.cohort_week ? -1 : 1))
+    .map(c => ({ ...c, completion_pct: c.started ? +(c.completed / c.started * 100).toFixed(1) : null, low_confidence: c.started < 5 }));
+}
+
 // 대시보드 조회(관리자 전용). days 또는 start_date/end_date로 조회 범위를 정하고,
 // MAU(월간 활성유저, stickiness 계산용) 산출에 필요한 직전 30일치를 여유분으로
 // 더 가져와서 잘라냄 — series/retention/stickiness에는 요청한 구간만 노출.
@@ -2410,10 +2482,14 @@ exports.getAnalyticsDashboard = functions
     }
 
     const refs = dates.map(d => db.collection('analytics_daily').doc(d));
-    const [snaps, lifetimeSnap, usersCountSnap] = await Promise.all([
+    const [snaps, lifetimeSnap, usersCountSnap, storiesSnap, usersReferralSnap] = await Promise.all([
       db.getAll(...refs),
       db.collection('analytics_daily').doc('_lifetime').get(),
       db.collection('users').count().get(),
+      // 이야기 완주율 코호트용 — created_at/status만 필요해서 select()로 대역폭 절약.
+      db.collection('stories').select('created_at', 'status').get(),
+      // 가입경로별 교차표용 — referral만 필요.
+      db.collection('users').select('referral').get(),
     ]);
     const byDate = {};
     snaps.forEach((s, i) => { byDate[dates[i]] = s.exists ? s.data() : null; });
@@ -2428,6 +2504,7 @@ exports.getAnalyticsDashboard = functions
         submission_count: v.submission_count || 0, active_user_count: v.active_user_count || 0,
         vote_count: v.vote_count || 0, voter_count: v.voter_count || 0,
         wc_writer_count: v.wc_writer_count || 0,
+        cumulative_users: v.cumulative_users || 0,
         has_data: !!byDate[d],
       };
     });
@@ -2467,16 +2544,49 @@ exports.getAnalyticsDashboard = functions
     });
 
     const cohorts = _computeSignupCohorts(byDate, visibleDates, todayKst);
+    const activation_cohorts = _computeActivationCohorts(byDate, visibleDates, todayKst);
+    const story_cohorts = _computeStoryCohorts(storiesSnap.docs.map(d => d.data()));
 
-    const lifetimeWriterCount = lifetimeSnap.exists ? (lifetimeSnap.data().writer_ids || []).length : 0;
+    const lifetimeWriterIds = lifetimeSnap.exists ? (lifetimeSnap.data().writer_ids || []) : [];
+    const lifetimeWriterSet = new Set(lifetimeWriterIds);
     const totalUsers = usersCountSnap.data().count || 0;
+    const storiesCompleted = story_cohorts.reduce((sum, c) => sum + c.completed, 0);
+    const storiesStarted = story_cohorts.reduce((sum, c) => sum + c.started, 0);
     const lifetime = {
       total_users: totalUsers,
-      writer_count: lifetimeWriterCount,
-      writer_pct: totalUsers ? +(lifetimeWriterCount / totalUsers * 100).toFixed(1) : null,
+      writer_count: lifetimeWriterIds.length,
+      writer_pct: totalUsers ? +(lifetimeWriterIds.length / totalUsers * 100).toFixed(1) : null,
+      stories_started: storiesStarted,
+      stories_completed: storiesCompleted,
+      stories_completion_pct: storiesStarted ? +(storiesCompleted / storiesStarted * 100).toFixed(1) : null,
     };
 
-    return { ok: true, series, retention, stickiness, cohorts, lifetime, generated_at: new Date().toISOString() };
+    // 가입경로(referral)별 교차표 — 그 채널 유저들이 실제로 글을 써봤는지(누적)
+    // 및 최근 30일 안에 활동했는지(조회 구간 마지막 날 기준 MAU)를 함께 봄.
+    // "유입량"은 기존 이용통계 페이지에 이미 있으니 여기선 품질(정착도)만 다룸.
+    const recentMauSet = visibleDates.length ? activeSetTrailing(visibleDates[visibleDates.length - 1], 30) : new Set();
+    const referralMap = {};
+    usersReferralSnap.docs.forEach(d => {
+      if (!_isRealUser(d.id)) return;
+      const referral = (d.data().referral || '').trim() || '미입력';
+      if (!referralMap[referral]) referralMap[referral] = { referral, total: 0, writers: 0, active_recent: 0 };
+      const r = referralMap[referral];
+      r.total++;
+      if (lifetimeWriterSet.has(d.id)) r.writers++;
+      if (recentMauSet.has(d.id)) r.active_recent++;
+    });
+    const referral_breakdown = Object.values(referralMap)
+      .map(r => ({
+        ...r,
+        writer_pct: r.total ? +(r.writers / r.total * 100).toFixed(1) : null,
+        active_pct: r.total ? +(r.active_recent / r.total * 100).toFixed(1) : null,
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    return {
+      ok: true, series, retention, stickiness, cohorts, activation_cohorts, story_cohorts,
+      referral_breakdown, lifetime, generated_at: new Date().toISOString(),
+    };
   });
 
 // 시계열 배열 하나를 "최근값/기간평균/전반부 대비 후반부 증감률/최고점" 요약으로
@@ -2514,6 +2624,9 @@ exports.getAnalyticsInsights = functions
     const retention = Array.isArray(data.retention) ? data.retention : [];
     const stickiness = Array.isArray(data.stickiness) ? data.stickiness : [];
     const cohorts = Array.isArray(data.cohorts) ? data.cohorts : [];
+    const activationCohorts = Array.isArray(data.activation_cohorts) ? data.activation_cohorts : [];
+    const storyCohorts = Array.isArray(data.story_cohorts) ? data.story_cohorts : [];
+    const referralBreakdown = Array.isArray(data.referral_breakdown) ? data.referral_breakdown : [];
     const lifetime = data.lifetime || {};
     if (!series.length) return { ok: false, error: '분석할 데이터가 없어요.' };
 
@@ -2523,6 +2636,7 @@ exports.getAnalyticsInsights = functions
       방문자_순: _trendSummary(dates, series.map(d => d.visitors_unique)),
       방문자_총: _trendSummary(dates, series.map(d => d.visitors_total)),
       신규가입: _trendSummary(dates, series.map(d => d.new_users_count)),
+      누적가입자수: _trendSummary(dates, series.map(d => d.cumulative_users)),
       글쓴유저: _trendSummary(dates, series.map(d => d.writer_count)),
       제출글: _trendSummary(dates, series.map(d => d.submission_count)),
       투표유저: _trendSummary(dates, series.map(d => d.voter_count)),
@@ -2532,16 +2646,19 @@ exports.getAnalyticsInsights = functions
       주간잔존율_퍼센트: _trendSummary(retention.map(d => d.date), retention.map(d => d.retention_pct || 0)),
       스티키니스_DAU_WAU_퍼센트: _trendSummary(stickiness.map(d => d.date), stickiness.map(d => d.dau_wau_pct || 0)),
       스티키니스_DAU_MAU_퍼센트: _trendSummary(stickiness.map(d => d.date), stickiness.map(d => d.dau_mau_pct || 0)),
-      최근_신규가입_코호트: cohorts.slice(-4),
-      누적_가입자_대비_글쓴유저: lifetime,
+      최근_신규가입_리텐션_코호트: cohorts.slice(-4),
+      최근_가입후_첫활동_전환_코호트: activationCohorts.slice(-4),
+      최근_이야기_완주_코호트: storyCohorts.slice(-4),
+      가입경로별_정착도: referralBreakdown,
+      누적_가입자_대비_글쓴유저_및_완주율: lifetime,
     };
 
-    const prompt = `다음은 협업 릴레이소설 서비스 "화씨.방" 관리자 애널리틱스 대시보드의 최근 추이 요약(JSON)입니다. 운영자가 참고할 수 있도록 지표별로 간결한 한국어 분석 의견을 1~2문장씩 작성해주세요. 숫자를 그대로 반복하지 말고, 증가/감소 흐름과 그 의미, 주목할 점, 필요하면 짧은 제안을 담아주세요. change_pct가 null이거나 표본(n)이 작은 지표는 그 한계도 짧게 언급하세요.
+    const prompt = `다음은 협업 릴레이소설 서비스 "화씨.방" 관리자 애널리틱스 대시보드의 최근 추이 요약(JSON)입니다. 운영자가 참고할 수 있도록 지표별로 간결한 한국어 분석 의견을 1~2문장씩 작성해주세요. 숫자를 그대로 반복하지 말고, 증가/감소 흐름과 그 의미, 주목할 점, 필요하면 짧은 제안을 담아주세요. change_pct가 null이거나 표본(n)이 작은 지표는 그 한계도 짧게 언급하세요. "가입후_첫활동_전환"은 리텐션(다시 돌아오는지)과 다르게 "애초에 한 번이라도 참여해봤는지"를 뜻합니다.
 
 ${JSON.stringify(summary)}
 
 다른 설명 없이 아래 키를 가진 JSON 객체 하나만 출력하세요:
-{"overall":"...", "visitors":"...", "writers":"...", "votes":"...", "word_challenge":"...", "dau":"...", "stickiness":"...", "retention":"...", "cohorts":"..."}`;
+{"overall":"...", "visitors":"...", "cumulative_users":"...", "writers":"...", "votes":"...", "word_challenge":"...", "dau":"...", "stickiness":"...", "retention":"...", "cohorts":"...", "activation":"...", "story_completion":"...", "referral":"..."}`;
 
     let raw;
     try { raw = await _callClaude(claudeKey, prompt, 1400); }

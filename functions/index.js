@@ -2789,14 +2789,27 @@ exports.getGa4EngagementTrend = functions
         property: `properties/${s.ga4_property_id}`,
         dateRanges: [{ startDate: start_date, endDate: end_date }],
         dimensions: [{ name: 'date' }],
-        metrics: [{ name: 'averageSessionDuration' }],
+        // sessions/activeUsers을 같이 받아서 "그날 실제로 온 사람 기준 하루 평균
+        // 방문(세션) 횟수"를 계산 — 전체 가입자 대비로 나누면 대부분 0이라
+        // 의미가 흐려지므로, 그날 활성 유저(GA4 기준)만 분모로 씀.
+        metrics: [
+          { name: 'averageSessionDuration' },
+          { name: 'sessions' },
+          { name: 'activeUsers' },
+        ],
         orderBys: [{ dimension: { dimensionName: 'date' } }],
       });
       series = (reportResponse.rows || []).map(row => {
         const raw = row.dimensionValues[0].value; // 'YYYYMMDD'
         const dateStr = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
         const seconds = Number(row.metricValues[0].value) || 0;
-        return { date: dateStr, avg_engagement_seconds: +seconds.toFixed(1) };
+        const sessions = Number(row.metricValues[1].value) || 0;
+        const activeUsers = Number(row.metricValues[2].value) || 0;
+        return {
+          date: dateStr, avg_engagement_seconds: +seconds.toFixed(1),
+          sessions, active_users: activeUsers,
+          sessions_per_user: activeUsers ? +(sessions / activeUsers).toFixed(2) : null,
+        };
       });
     } catch (e) {
       return { ok: false, error: 'GA4 조회 실패: ' + e.message };

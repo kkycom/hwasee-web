@@ -464,6 +464,11 @@ function _renderDashboard(res) {
       <div class="insight" id="insight-dwell_time" style="display:none"></div>
       <div id="ga4-chart-body"><div class="loading" style="padding:16px 0">불러오는 중...</div></div>
     </div>
+    <div class="card">
+      <div class="chart-title">🔂 방문자 1인당 하루 평균 방문 횟수 (Google Analytics, 그날 온 사람 기준)</div>
+      <div class="insight" id="insight-visit_frequency" style="display:none"></div>
+      <div id="ga4-freq-chart-body"><div class="loading" style="padding:16px 0">불러오는 중...</div></div>
+    </div>
     <div id="ga4-setup-wrap"></div>
     ${_lifetimeCardHtml(res.lifetime)}
     <div class="card">
@@ -498,9 +503,10 @@ function _renderDashboard(res) {
   _loadGa4SetupCard();
 }
 
-// ── Google Analytics 4 연동 (체류시간) ────────────────────
+// ── Google Analytics 4 연동 (체류시간 + 1인당 방문횟수, 한 번의 호출로 같이 받음) ──
 async function _loadGa4Chart(startDate, endDate) {
   const el = document.getElementById('ga4-chart-body');
+  const freqEl = document.getElementById('ga4-freq-chart-body');
   const auth = window._analyticsAuth;
   if (!el || !auth) return;
   try {
@@ -508,15 +514,24 @@ async function _loadGa4Chart(startDate, endDate) {
     const r = await fn({ user_id: auth.user_id, token: auth.token, start_date: startDate, end_date: endDate });
     const data = r.data;
     if (!data || !data.ok) {
-      el.innerHTML = `<div class="empty" style="padding:16px 0">${_esc((data && data.error) || 'GA4 연동이 설정되지 않았어요.')} 아래 "Google Analytics 연동 설정"에서 등록할 수 있어요.</div>`;
+      const msg = `<div class="empty" style="padding:16px 0">${_esc((data && data.error) || 'GA4 연동이 설정되지 않았어요.')} 아래 "Google Analytics 연동 설정"에서 등록할 수 있어요.</div>`;
+      el.innerHTML = msg;
+      if (freqEl) freqEl.innerHTML = msg;
       return;
     }
     const gDates = data.series.map(d => d.date);
     el.innerHTML = _svgLineChart([
       { label: '평균 체류시간(초)', color: 'var(--success)', values: data.series.map(d => d.avg_engagement_seconds) },
     ], gDates);
+    if (freqEl) {
+      freqEl.innerHTML = _svgLineChart([
+        { label: '1인당 하루 평균 방문(세션) 횟수', color: 'var(--accent2)', values: data.series.map(d => d.sessions_per_user) },
+      ], gDates);
+    }
   } catch (e) {
-    el.innerHTML = `<div class="empty" style="padding:16px 0">불러오지 못했습니다: ${_esc(e.message || '알 수 없는 오류')}</div>`;
+    const msg = `<div class="empty" style="padding:16px 0">불러오지 못했습니다: ${_esc(e.message || '알 수 없는 오류')}</div>`;
+    el.innerHTML = msg;
+    if (freqEl) freqEl.innerHTML = msg;
   }
 }
 

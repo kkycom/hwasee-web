@@ -2,6 +2,11 @@ const functions   = require('firebase-functions');
 const admin       = require('firebase-admin');
 const crypto      = require('crypto');
 const nodemailer  = require('nodemailer');
+// @google-analytics/data는 여기서 top-level require 안 함 — 이 파일의 모든
+// Cloud Functions가 하나의 모듈을 공유해서 top-level require는 어떤 함수가
+// 호출되든 매 콜드스타트마다 실행됨. gRPC/protobuf를 끌고 오는 무거운 패키지를
+// 어쩌다 한 번 쓰는 관리자 전용 GA4 함수 때문에 로그인 등 나머지 함수 전체의
+// 콜드스타트가 느려지면 안 되므로, 실제로 쓰는 함수 안에서만 지연 require.
 admin.initializeApp();
 
 // (CI 자동배포 워크플로 동작 확인용 트리거 — 기능 변경 없음)
@@ -2275,6 +2280,35 @@ async function _computeAndStoreAnalyticsForDate(db, kstDateStr) {
     if (isReal(s.author_id)) writerIds.add(s.author_id);
   });
 
+  // 일별 부문 참여 — 이 제출(submission)이 어느 "오늘의 이야기" 슬롯 출신
+  // 스토리에 달린 건지 story_id로 역추적. challenge_words가 있으면 슬롯1(단어챌린지
+  // 선정작), vote_threshold만 있으면 슬롯2/3(문장제안 당첨작·AI픽 — 이 둘은 코드상
+  // 저장값이 완전히 같아서 구분 불가, "스포트라이트"로 합쳐서 봄), 둘 다 없으면
+  // 자유 이야기. 필요한 story만 documentId() in 청크(30개)로 select() 조회해서
+  // stories 전체를 훑지 않음.
+  const section = { word_challenge_story: 0, spotlight_other: 0, free: 0 };
+  {
+    const humanSubStoryIds = [...new Set(subsSnap.docs.map(d => d.data()).filter(s => !s.is_ai).map(s => s.story_id).filter(Boolean))];
+    const storyFlagMap = {};
+    if (humanSubStoryIds.length) {
+      const chunks = [];
+      for (let i = 0; i < humanSubStoryIds.length; i += 30) chunks.push(humanSubStoryIds.slice(i, i + 30));
+      const chunkSnaps = await Promise.all(chunks.map(c =>
+        db.collection('stories').where(admin.firestore.FieldPath.documentId(), 'in', c)
+          .select('vote_threshold', 'challenge_words').get()
+      ));
+      chunkSnaps.forEach(snap => snap.docs.forEach(d => { storyFlagMap[d.id] = d.data(); }));
+    }
+    subsSnap.docs.forEach(d => {
+      const s = d.data();
+      if (s.is_ai) return;
+      const flags = storyFlagMap[s.story_id] || {};
+      if (flags.challenge_words) section.word_challenge_story++;
+      else if (flags.vote_threshold) section.spotlight_other++;
+      else section.free++;
+    });
+  }
+
   const activeIds = new Set();
   ledgerSnap.docs.forEach(d => {
     const p = d.data();
@@ -2306,6 +2340,12 @@ async function _computeAndStoreAnalyticsForDate(db, kstDateStr) {
     vote_count, voter_count: voterIds.size, voter_ids: [...voterIds],
     wc_writer_count: wcWriterIds.size, wc_writer_ids: [...wcWriterIds],
     cumulative_users,
+    // 부문별 참여(제출 기준) — word_challenge는 story submissions가 아니라 별도
+    // word_challenge_submissions 건수(응모 자체), 나머지 3개는 section 변수 그대로.
+    section_word_challenge: wcSubsSnap.size,
+    section_word_challenge_story: section.word_challenge_story,
+    section_spotlight_other: section.spotlight_other,
+    section_free: section.free,
     computed_at: new Date().toISOString(),
   });
 
@@ -2505,6 +2545,10 @@ exports.getAnalyticsDashboard = functions
         vote_count: v.vote_count || 0, voter_count: v.voter_count || 0,
         wc_writer_count: v.wc_writer_count || 0,
         cumulative_users: v.cumulative_users || 0,
+        section_word_challenge: v.section_word_challenge || 0,
+        section_word_challenge_story: v.section_word_challenge_story || 0,
+        section_spotlight_other: v.section_spotlight_other || 0,
+        section_free: v.section_free || 0,
         has_data: !!byDate[d],
       };
     });
@@ -2646,6 +2690,10 @@ exports.getAnalyticsInsights = functions
       주간잔존율_퍼센트: _trendSummary(retention.map(d => d.date), retention.map(d => d.retention_pct || 0)),
       스티키니스_DAU_WAU_퍼센트: _trendSummary(stickiness.map(d => d.date), stickiness.map(d => d.dau_wau_pct || 0)),
       스티키니스_DAU_MAU_퍼센트: _trendSummary(stickiness.map(d => d.date), stickiness.map(d => d.dau_mau_pct || 0)),
+      부문별_참여_단어챌린지응모: _trendSummary(dates, series.map(d => d.section_word_challenge)),
+      부문별_참여_단어챌린지선정작이어쓰기: _trendSummary(dates, series.map(d => d.section_word_challenge_story)),
+      '부문별_참여_스포트라이트(문장제안+AI픽)': _trendSummary(dates, series.map(d => d.section_spotlight_other)),
+      부문별_참여_자유이야기: _trendSummary(dates, series.map(d => d.section_free)),
       최근_신규가입_리텐션_코호트: cohorts.slice(-4),
       최근_가입후_첫활동_전환_코호트: activationCohorts.slice(-4),
       최근_이야기_완주_코호트: storyCohorts.slice(-4),
@@ -2653,12 +2701,12 @@ exports.getAnalyticsInsights = functions
       누적_가입자_대비_글쓴유저_및_완주율: lifetime,
     };
 
-    const prompt = `다음은 협업 릴레이소설 서비스 "화씨.방" 관리자 애널리틱스 대시보드의 최근 추이 요약(JSON)입니다. 운영자가 참고할 수 있도록 지표별로 간결한 한국어 분석 의견을 1~2문장씩 작성해주세요. 숫자를 그대로 반복하지 말고, 증가/감소 흐름과 그 의미, 주목할 점, 필요하면 짧은 제안을 담아주세요. change_pct가 null이거나 표본(n)이 작은 지표는 그 한계도 짧게 언급하세요. "가입후_첫활동_전환"은 리텐션(다시 돌아오는지)과 다르게 "애초에 한 번이라도 참여해봤는지"를 뜻합니다.
+    const prompt = `다음은 협업 릴레이소설 서비스 "화씨.방" 관리자 애널리틱스 대시보드의 최근 추이 요약(JSON)입니다. 운영자가 참고할 수 있도록 지표별로 간결한 한국어 분석 의견을 1~2문장씩 작성해주세요. 숫자를 그대로 반복하지 말고, 증가/감소 흐름과 그 의미, 주목할 점, 필요하면 짧은 제안을 담아주세요. change_pct가 null이거나 표본(n)이 작은 지표는 그 한계도 짧게 언급하세요. "가입후_첫활동_전환"은 리텐션(다시 돌아오는지)과 다르게 "애초에 한 번이라도 참여해봤는지"를 뜻합니다. "부문별_참여"는 그날 글쓰기 참여가 단어챌린지/단어챌린지 선정작 이어쓰기/스포트라이트(문장제안+AI픽, 이 둘은 데이터상 구분이 안 돼 합쳐짐)/자유이야기 중 어디에 몰렸는지를 뜻합니다.
 
 ${JSON.stringify(summary)}
 
 다른 설명 없이 아래 키를 가진 JSON 객체 하나만 출력하세요:
-{"overall":"...", "visitors":"...", "cumulative_users":"...", "writers":"...", "votes":"...", "word_challenge":"...", "dau":"...", "stickiness":"...", "retention":"...", "cohorts":"...", "activation":"...", "story_completion":"...", "referral":"..."}`;
+{"overall":"...", "visitors":"...", "cumulative_users":"...", "writers":"...", "votes":"...", "word_challenge":"...", "dau":"...", "stickiness":"...", "retention":"...", "cohorts":"...", "activation":"...", "story_completion":"...", "referral":"...", "sections":"..."}`;
 
     let raw;
     try { raw = await _callClaude(claudeKey, prompt, 1400); }
@@ -2672,6 +2720,89 @@ ${JSON.stringify(summary)}
     } catch (e) { return { ok: false, error: 'AI 분석 응답을 해석하지 못했어요.' }; }
 
     return { ok: true, insights, generated_at: new Date().toISOString() };
+  });
+
+// ── Google Analytics 4 연동 (일별 평균 체류시간) — Claude/카카오 키와 동일하게
+// config/secrets에 저장, _requireAdmin 게이트로만 조회/설정. gtag.js가 이미
+// 앱에 붙어있어(bang/index.html) GA4가 세션 참여시간을 자동 수집 중이므로,
+// 새 클라이언트 계측을 만들지 않고 GA4 Data API로 이미 쌓인 값만 읽어옴.
+exports.getGa4KeyStatus = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const secretsSnap = await db.collection('config').doc('secrets').get();
+    const s = secretsSnap.exists ? secretsSnap.data() : {};
+    return { ok: true, has_key: !!s.ga4_service_account_json, property_id: s.ga4_property_id || null };
+  });
+
+exports.setGa4Key = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const propertyId = (data.property_id || '').trim();
+    const serviceAccountJson = data.service_account_json;
+    if (!propertyId || !/^\d+$/.test(propertyId)) {
+      throw new functions.https.HttpsError('invalid-argument', 'GA4 속성 ID는 숫자만 입력해주세요(측정 ID "G-..."가 아니라 GA4 관리 → 속성 세부정보의 속성 ID).');
+    }
+    if (!serviceAccountJson) {
+      throw new functions.https.HttpsError('invalid-argument', '서비스 계정 JSON 키를 입력해주세요.');
+    }
+    let parsed;
+    try { parsed = JSON.parse(serviceAccountJson); }
+    catch (e) { throw new functions.https.HttpsError('invalid-argument', 'JSON 형식이 올바르지 않습니다.'); }
+    if (!parsed.client_email || !parsed.private_key) {
+      throw new functions.https.HttpsError('invalid-argument', '서비스 계정 키 파일이 아닌 것 같아요(client_email/private_key 필드가 없음).');
+    }
+    const db = admin.firestore();
+    await db.collection('config').doc('secrets').set({
+      ga4_service_account_json: serviceAccountJson, ga4_property_id: propertyId,
+    }, { merge: true });
+    return { ok: true };
+  });
+
+exports.getGa4EngagementTrend = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const secretsSnap = await db.collection('config').doc('secrets').get();
+    const s = secretsSnap.exists ? secretsSnap.data() : {};
+    if (!s.ga4_service_account_json || !s.ga4_property_id) {
+      return { ok: false, error: 'GA4 연동이 아직 설정되지 않았어요.' };
+    }
+
+    const start_date = data.start_date, end_date = data.end_date;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start_date) || !/^\d{4}-\d{2}-\d{2}$/.test(end_date)) {
+      throw new functions.https.HttpsError('invalid-argument', '날짜 형식이 올바르지 않습니다.');
+    }
+
+    let credentials;
+    try { credentials = JSON.parse(s.ga4_service_account_json); }
+    catch (e) { return { ok: false, error: '저장된 GA4 서비스 계정 키가 손상됐어요. 애널리틱스 대시보드에서 다시 저장해주세요.' }; }
+
+    let series = [];
+    try {
+      const { BetaAnalyticsDataClient } = require('@google-analytics/data');
+      const client = new BetaAnalyticsDataClient({ credentials });
+      const [reportResponse] = await client.runReport({
+        property: `properties/${s.ga4_property_id}`,
+        dateRanges: [{ startDate: start_date, endDate: end_date }],
+        dimensions: [{ name: 'date' }],
+        metrics: [{ name: 'averageSessionDuration' }],
+        orderBys: [{ dimension: { dimensionName: 'date' } }],
+      });
+      series = (reportResponse.rows || []).map(row => {
+        const raw = row.dimensionValues[0].value; // 'YYYYMMDD'
+        const dateStr = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+        const seconds = Number(row.metricValues[0].value) || 0;
+        return { date: dateStr, avg_engagement_seconds: +seconds.toFixed(1) };
+      });
+    } catch (e) {
+      return { ok: false, error: 'GA4 조회 실패: ' + e.message };
+    }
+
+    return { ok: true, series, generated_at: new Date().toISOString() };
   });
 
 // ── 오늘의 단어 챌린지: 안 어울리는 단어 3개를 매일 던져주고 그걸로 문장을

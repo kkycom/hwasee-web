@@ -1198,6 +1198,13 @@ function render() {
 }
 
 function renderNav() {
+  // 알림 패널은 매번 새로 그려지며 항상 닫힌 상태(display:none)로 시작하므로,
+  // _notifOpen 플래그도 같이 리셋해둬야 함 — 안 그러면 알림 패널이 열려있는
+  // 도중 renderNav()가 호출됐을 때(예: 백그라운드에서 유저 정보 갱신) 화면은
+  // 이미 닫힌 새 패널로 바뀌었는데 플래그는 "열림"으로 남아있어서, 다음 종
+  // 클릭이 열기 대신 닫기로 처리돼 한 번 더 눌러야 하는 문제가 있었음
+  // (2026-07-26 유저 제보 — "알림창이 갑자기 꺼진다")
+  _notifOpen = false;
   const el = document.getElementById('nav-right');
   const trophySvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/></svg>`;
   const bellSvg   = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`;
@@ -5067,13 +5074,20 @@ async function toggleNotifPanel() {
     // 한 번만 조용히 재시도
     if (!res.ok && _notifOpen) res = await api('getNotifications', {});
     if (!_notifOpen) return;
+    // 기다리는 사이 renderNav()가 nav 전체를 다시 그렸으면 위에서 잡아둔 panel은
+    // 이미 화면에서 떨어져나간 옛 엘리먼트일 수 있음 — 매번 최신 엘리먼트를 다시
+    // 조회해서 반영해야 함(안 그러면 응답은 왔는데 화면엔 하나도 안 반영돼서
+    // "패널이 갑자기 꺼졌다"처럼 보였음, 2026-07-26 유저 제보)
+    const curPanel = document.getElementById('notif-panel');
+    if (!curPanel) return;
     if (!res.ok) {
-      if (!_notifCache) panel.innerHTML = '<div style="padding:14px;font-size:13px;color:var(--muted)">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="retryNotifPanel()">다시 시도</button></div>';
+      if (!_notifCache) curPanel.innerHTML = '<div style="padding:14px;font-size:13px;color:var(--muted)">불러오기 실패. <button class="btn btn-ghost btn-sm" onclick="retryNotifPanel()">다시 시도</button></div>';
       return;
     }
     const notifs = res.notifications;
     _notifCache = notifs;
-    _renderNotifPanel(panel, notifs);
+    curPanel.style.display = 'block'; // renderNav()로 새로 생겼으면 display:none 상태일 수 있어 재확인
+    _renderNotifPanel(curPanel, notifs);
     if (notifs.length > 0) {
       api('markNotificationsRead', {}).then(() => {
         const badge = document.getElementById('bell-badge');
@@ -5082,7 +5096,8 @@ async function toggleNotifPanel() {
       });
     }
   } catch(e) {
-    if (!_notifCache) panel.innerHTML = '<div style="padding:14px;font-size:13px;color:var(--muted)">불러오기 실패.</div>';
+    const curPanel = document.getElementById('notif-panel');
+    if (curPanel && !_notifCache) curPanel.innerHTML = '<div style="padding:14px;font-size:13px;color:var(--muted)">불러오기 실패.</div>';
   }
 }
 

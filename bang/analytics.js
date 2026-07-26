@@ -25,7 +25,14 @@ async function _authGate() {
   if (!uid || !token) { _renderMessage('로그인이 필요합니다.', true); return null; }
 
   let result = await _ensureSessionVerified();
-  if (result === undefined) result = await _ensureSessionVerified(); // 콜드스타트 대비 1회 재시도
+  // 콜드스타트 대비 1회 재시도 — _ensureSessionVerified는 같은 (uid,token) 쌍이면
+  // 실패했던 결과까지 그대로 캐시해서 재반환하므로(firebase-api.js), 그냥 다시
+  // 부르면 재시도가 아니라 같은 실패를 다시 받아오는 것뿐이었음. 관리자 전용
+  // 페이지라 트래픽이 적어 Cloud Functions 콜드스타트를 유독 자주 만나는데,
+  // 그때마다 이 무의미한 "재시도"가 실제로는 캐시만 읽고 끝나서 대시보드
+  // 자체가 뜨다 안 뜨다 했음(2026-07-26 유저 제보) — 재시도 전에 캐시를 지워
+  // 진짜 새 요청이 나가게 함.
+  if (result === undefined) { _resetSessionVerify(); result = await _ensureSessionVerified(); }
   if (result === undefined) { _renderMessage('세션 확인에 실패했습니다. 새로고침해 주세요.', true); return null; }
   if (!result.ok) { _renderMessage('로그인이 필요합니다.', true); return null; }
   if (result.user_id !== FB_ADMIN_ID) { _renderMessage('권한이 없습니다.', true); return null; }
@@ -232,7 +239,7 @@ function _cohortCellHtml(pct, n) {
   return `${pct}% <span style="color:var(--muted);font-size:11px">(n=${n})</span>`;
 }
 function _cohortTableHtml(cohorts, valueLabel) {
-  if (!cohorts || !cohorts.length) return '<div class="empty">코호트 데이터가 없습니다.</div>';
+  if (!cohorts || !cohorts.length) return '<div class="empty">가입 주차별 데이터가 없습니다.</div>';
   const rows = cohorts.map(c => `
     <tr${c.low_confidence ? ' style="opacity:.55"' : ''}>
       <td>${_esc(c.cohort_week)}${c.low_confidence ? ' <span title="표본이 적어 참고용">⚠︎</span>' : ''}</td>
@@ -343,10 +350,15 @@ function _rangeControlsHtml() {
   return `
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
       ${btn('7일', 7)}${btn('30일', 30)}${btn('90일', 90)}${btn('180일', 180)}
-      <input type="date" id="range-start" value="${_customRange ? _esc(_customRange.start_date) : ''}">
-      <span style="color:var(--muted)">~</span>
-      <input type="date" id="range-end" value="${_customRange ? _esc(_customRange.end_date) : ''}">
-      <button class="btn btn-ghost btn-sm" onclick="_setCustomRange()">기간 조회</button>
+      <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1px dashed var(--border);border-radius:8px">
+        <span style="font-size:11px;color:var(--muted)">직접 지정</span>
+        <span style="font-size:11px;color:var(--muted)">시작일</span>
+        <input type="date" id="range-start" aria-label="시작일" value="${_customRange ? _esc(_customRange.start_date) : ''}">
+        <span style="color:var(--muted)">~</span>
+        <span style="font-size:11px;color:var(--muted)">종료일</span>
+        <input type="date" id="range-end" aria-label="종료일" value="${_customRange ? _esc(_customRange.end_date) : ''}">
+        <button class="btn btn-ghost btn-sm" onclick="_setCustomRange()">기간 조회</button>
+      </span>
       <button class="btn btn-ghost btn-sm" onclick="_openBackfillPrompt()" title="지정한 날짜부터 오늘까지 전부 다시 계산">과거 이력 백필</button>
       <button class="btn btn-ghost btn-sm" id="insight-btn" onclick="_loadInsights()">🤖 AI 분석 보기</button>
     </div>`;
@@ -450,6 +462,7 @@ function _renderDashboard(res) {
     </div>
     ${_kpiCardsHtml(res.series)}
     ${_missingRangeHtml(res.series)}
+    <div id="ga4-setup-wrap"></div>
     ${_chartCardHtml('📈 누적 가입자 수 추이 (우상향 폭으로 성장 속도 확인)', 'cumulative_users', cumulativeChart)}
     ${_chartCardHtml('📈 일별 방문자 추이 (순방문 · 총접속)', 'visitors', visitorsChart)}
     ${_chartCardHtml('✍️ 일별 글 작성 현황 (작성 유저수 · 제출글 수, AI 제외)', 'writers', writerChart)}
@@ -469,10 +482,9 @@ function _renderDashboard(res) {
       <div class="insight" id="insight-visit_frequency" style="display:none"></div>
       <div id="ga4-freq-chart-body"><div class="loading" style="padding:16px 0">불러오는 중...</div></div>
     </div>
-    <div id="ga4-setup-wrap"></div>
     ${_lifetimeCardHtml(res.lifetime)}
     <div class="card">
-      <div class="chart-title">🧮 신규가입 코호트 D1/D7/D30 잔존율 (참고용, 표본 적을 수 있음)</div>
+      <div class="chart-title">🧮 신규가입 주차별 D1/D7/D30 잔존율 (참고용, 표본 적을 수 있음)</div>
       <div class="insight" id="insight-cohorts" style="display:none"></div>
       ${_cohortTableHtml(res.cohorts, '잔존율')}
     </div>
@@ -482,7 +494,7 @@ function _renderDashboard(res) {
       ${_cohortTableHtml(res.activation_cohorts, '전환율')}
     </div>
     <div class="card">
-      <div class="chart-title">🏁 이야기 시작 주 기준 완주율 (현재 상태 기준, 오래된 코호트일수록 안정적)</div>
+      <div class="chart-title">🏁 이야기 시작 주 기준 완주율 (현재 상태 기준, 오래된 주차일수록 안정적)</div>
       <div class="insight" id="insight-story_completion" style="display:none"></div>
       ${_storyCohortTableHtml(res.story_cohorts)}
     </div>

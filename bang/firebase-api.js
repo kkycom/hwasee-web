@@ -2509,7 +2509,12 @@ async function fbDeleteMySubmission(sub_id, user_id) {
 // 아예 막아뒀는데, 실제로 그런 사례가 거의 없어서(2026-07) 이 기준 안에서는
 // 열어주기로 함. 공감을 이미 받았거나 채택된 글은 사후 내용 변경으로 투표한
 // 사람들을 기만할 수 있어 delete와 동일하게 계속 막음.
-async function fbEditMySubmission(sub_id, user_id, content) {
+// closing(연재하기/완결하기 재선택)도 이 기준(공감 0개·미채택) 안에서는 안전하게
+// 같이 바꿀 수 있어서 열어줌(유저 의견, 2026-07-26) — 원래 제출 시점에도 같은
+// 기준으로 골랐던 것뿐이라 아직 투표/채택 전이면 다시 골라도 아무 영향 없음.
+// "완결하기"로 바꾸는 건 클라이언트가 보낸 값을 그대로 믿지 않고, 제출 폼과
+// 동일한 조건(이야기가 완결 가능한 길이)을 서버에서 다시 확인함.
+async function fbEditMySubmission(sub_id, user_id, content, closing) {
   const text = (content || '').trim();
   if (!text) return { ok: false, error: '문장을 입력해주세요.' };
   if (text.length > 50) return { ok: false, error: '50자 이내로 작성해주세요.' };
@@ -2519,7 +2524,22 @@ async function fbEditMySubmission(sub_id, user_id, content) {
   if (sub.author_id !== user_id) return { ok: false, error: '권한이 없습니다.' };
   if ((Number(sub.vote_count) || 0) > 0) return { ok: false, error: '공감을 받은 글은 수정할 수 없습니다.' };
   if (sub.is_adopted === true || sub.is_adopted === 'TRUE') return { ok: false, error: '채택된 글은 수정할 수 없습니다.' };
-  await db.collection('submissions').doc(sub_id).update({ content: text });
+  const update = { content: text };
+  if (typeof closing === 'boolean' && closing !== !!sub.is_closing) {
+    if (closing) {
+      const epSnap = await db.collection('episodes').doc(sub.episode_id).get();
+      if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
+      const ep = epSnap.data();
+      const storySnap = await db.collection('stories').doc(ep.story_id).get();
+      const story = storySnap.exists ? storySnap.data() : {};
+      const closedSnap = await db.collection('episodes')
+        .where('story_id', '==', ep.story_id).where('status', '==', 'closed').get();
+      const parentSteps = story.branch_from_step ? Number(story.branch_from_step) - 1 : 0;
+      if (closedSnap.size + parentSteps < 1) return { ok: false, error: '아직 완결로 제출할 수 없는 단계예요.' };
+    }
+    update.is_closing = closing;
+  }
+  await db.collection('submissions').doc(sub_id).update(update);
   return { ok: true };
 }
 
@@ -2817,6 +2837,25 @@ async function fbAdminEditSub(admin_id, sub_id, new_content, old_content, story_
   return { ok: true };
 }
 
+// 씨앗 문장(story.opening)은 submissions가 아니라 stories 문서 필드라 위
+// fbAdminEditSub(sub_id 기준)를 못 씀 — 다른 문장은 다 고칠 수 있는데 이야기를
+// 여는 첫 문장만 못 고치던 비대칭을 메움(디버그방 감사 지적, 2026-07-26).
+// admin_edits 로그는 sub_id를 비워두고 edit_type:'opening'으로 구분.
+async function fbAdminEditStoryOpening(admin_id, story_id, new_opening, old_content) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  const text = (new_opening || '').trim();
+  if (!text) return { ok: false, error: '내용을 입력해주세요.' };
+  if (text.length > 100) return { ok: false, error: '100자 이내로 작성해주세요.' };
+  const storySnap = await db.collection('stories').doc(story_id).get();
+  if (!storySnap.exists) return { ok: false, error: '이야기를 찾을 수 없습니다.' };
+  await storySnap.ref.update({ opening: text });
+  await db.collection('admin_edits').add({
+    sub_id: '', story_id, old_content: old_content || storySnap.data().opening || '',
+    new_content: text, edit_type: 'opening', admin_id, edited_at: fbNow(),
+  });
+  return { ok: true };
+}
+
 async function fbGetAdminEdits(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   // edited_at이 클라이언트(문자열)/서버(Timestamp 객체) 혼용이라 Firestore
@@ -2940,6 +2979,7 @@ async function firebaseApi(action, params = {}) {
     case 'dismissReport':      return fbDismissReport(params.report_id, await requireUid());
     case 'getAdminStats':      return fbGetAdminStats(await requireUid());
     case 'adminEditSub':       return fbAdminEditSub(await requireUid(), params.sub_id, params.new_content, params.old_content, params.story_id, params.edit_type);
+    case 'adminEditStoryOpening': return fbAdminEditStoryOpening(await requireUid(), params.story_id, params.new_opening, params.old_content);
     case 'getAdminEdits':      return fbGetAdminEdits(await requireUid());
     case 'markAiReviewed':     return fbMarkAiReviewed(await requireUid(), params.sub_ids);
 
@@ -2959,7 +2999,7 @@ async function firebaseApi(action, params = {}) {
     case 'extendStory':        return fbExtendStory(params.story_id, await requireUid());
 
     case 'deleteMySubmission': return fbDeleteMySubmission(params.sub_id, await requireUid());
-    case 'editMySubmission':   return fbEditMySubmission(params.sub_id, await requireUid(), params.content);
+    case 'editMySubmission':   return fbEditMySubmission(params.sub_id, await requireUid(), params.content, params.closing);
 
     case 'boostStory':         return fbBoostStory(params.story_id, await requireUid());
     case 'buyExtraSubmit':     return fbBuyExtraSubmit(params.episode_id, await requireUid());

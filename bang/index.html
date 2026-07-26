@@ -5928,13 +5928,35 @@ async function submitMvpVote(story_id) {
 }
 
 // ─── 공유 ──────────────────────────────────────────────
+// 예전엔 카카오 SDK가 초기화돼 있으면 무조건 카카오톡 공유창으로 보냈는데,
+// 그러면 카카오톡을 안 쓰거나 그 자리에서 인증하기 싫은 사람도 강제로
+// 카카오 흐름을 타야 했음(유저 제보, 2026-07-22 — "나조차도 거부감이
+// 들던데"). 링크 복사와 카카오톡 공유 중 고르게 선택지를 먼저 보여줌.
 function shareStory() {
   const d = window._storyData;
   if (!d) return;
+  const existing = document.getElementById('share-modal');
+  if (existing) { existing.remove(); return; }
+  const modal = document.createElement('div');
+  modal.id = 'share-modal';
+  modal.className = 'modal-overlay';
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  const kakaoAvailable = !!(window.Kakao && Kakao.isInitialized());
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:320px;text-align:center">
+      <div style="font-size:16px;font-weight:700;margin-bottom:16px;font-family:var(--serif)">이야기 공유</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-ghost" onclick="document.getElementById('share-modal').remove();_shareStoryCopyLink()">🔗 링크 복사</button>
+        ${kakaoAvailable ? `<button class="btn btn-ghost" onclick="document.getElementById('share-modal').remove();_shareStoryKakao()">💬 카카오톡 공유</button>` : ''}
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+function _shareStoryLines() {
+  const d = window._storyData;
   const { episodes, submissions, story } = d;
-
   const tree = getEpisodeTree(episodes.filter(e => e.status === 'closed'), submissions);
-
   function collectLines(node, choices) {
     if (!node || node.ep.status !== 'closed' || !node.adoptedSubs.length) return [];
     const chosenId = (choices || {})[node.ep.episode_id];
@@ -5943,26 +5965,14 @@ function shareStory() {
     const child = node.children.find(c => c.ep.parent_sub_id === sub.sub_id);
     return [sub.content, ...collectLines(child, choices)];
   }
-
   const lines = collectLines(tree, window._branchChoice || {});
   const opening = story ? story.opening : '';
+  return { lines, opening };
+}
+
+function _shareStoryCopyLink() {
+  const { lines, opening } = _shareStoryLines();
   const url = location.href;
-
-  if (window.Kakao && Kakao.isInitialized()) {
-    const snippet = lines.length ? lines[0] : '';
-    Kakao.Share.sendDefault({
-      objectType: 'feed',
-      content: {
-        title: opening.length > 40 ? opening.slice(0, 40) + '…' : opening,
-        description: snippet.length > 80 ? snippet.slice(0, 80) + '…' : (snippet || '화씨.방에서 함께 쓴 이야기'),
-        imageUrl: 'https://hwasee.me/bang/hwaseebang_og.png',
-        link: { mobileWebUrl: url, webUrl: url },
-      },
-      buttons: [{ title: '이야기 보러가기', link: { mobileWebUrl: url, webUrl: url } }],
-    });
-    return;
-  }
-
   const text = [
     '화씨.방에서 함께 쓴 이야기',
     '',
@@ -5975,6 +5985,22 @@ function shareStory() {
   navigator.clipboard.writeText(text)
     .then(() => toast('이야기가 클립보드에 복사됐습니다!'))
     .catch(() => toast('복사 실패 — 브라우저 권한을 확인해주세요.', true));
+}
+
+function _shareStoryKakao() {
+  const { lines, opening } = _shareStoryLines();
+  const url = location.href;
+  const snippet = lines.length ? lines[0] : '';
+  Kakao.Share.sendDefault({
+    objectType: 'feed',
+    content: {
+      title: opening.length > 40 ? opening.slice(0, 40) + '…' : opening,
+      description: snippet.length > 80 ? snippet.slice(0, 80) + '…' : (snippet || '화씨.방에서 함께 쓴 이야기'),
+      imageUrl: 'https://hwasee.me/bang/hwaseebang_landscape.png',
+      link: { mobileWebUrl: url, webUrl: url },
+    },
+    buttons: [{ title: '이야기 보러가기', link: { mobileWebUrl: url, webUrl: url } }],
+  });
 }
 
 // ─── 어드민 공통 ──────────────────────────────────────────

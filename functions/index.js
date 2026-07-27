@@ -2913,9 +2913,13 @@ async function _serverCloseWordChallenge(db) {
 
     const allSubs = subsSnap.docs.map(d => ({ submission_id: d.id, ...d.data() }));
     const maxVotes = allSubs.length ? Math.max(...allSubs.map(s => s.vote_count || 0)) : 0;
-    const tiedWinners = allSubs
+    // 최소 1표 이상 받아야 당선 — 전원 0표면(참여는 있었지만 아무도 투표를 못
+    // 받은 경우) maxVotes가 0이 되면서 "0표 전원 동률 당선"으로 처리돼 포인트가
+    // 나가고 아무 문장이나(가장 먼저 제출된 것) 스포트라이트 씨앗으로 채택되던
+    // 문제가 있었음(유저 지적, 2026-07-27). 1표 미만이면 당선작 없음으로 처리.
+    const tiedWinners = maxVotes >= 1 ? allSubs
       .filter(s => (s.vote_count || 0) === maxVotes)
-      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) : [];
     const share = tiedWinners.length ? Math.round(100 / tiedWinners.length) : 0;
 
     const patch = { status: 'closed', closed_at: new Date().toISOString(), submission_count: subsSnap.size, winners: [] };

@@ -2789,7 +2789,7 @@ function renderWordChallenge() {
     <div style="position:relative;text-align:center;background:var(--bg);border-radius:14px;padding:24px 16px;margin-bottom:20px">
       ${WC_HISTORY_BTN_HTML}
       <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:8px">🏆 오늘의 장원</div>
-      <div style="font-size:13px;color:var(--muted)">참여자가 없어 우승자가 없었어요</div>
+      <div style="font-size:13px;color:var(--muted)">당선작이 없었어요 (최소 1표 이상 받아야 당선돼요)</div>
       <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-top:10px">⏰ 다음 챌린지까지 <span id="wc-countdown"></span></div>
     </div>`);
 
@@ -3028,7 +3028,7 @@ function _renderWordChallengeHistory(history) {
         ? winners.map((w, i) => `
             <div style="font-size:14px;line-height:1.6;font-family:var(--serif);${i > 0 ? 'margin-top:10px' : ''}">${boldChallengeWords(w.text, c.words)}</div>
             <div style="font-size:12px;color:var(--accent2);font-weight:700;margin-top:6px">👑 ${esc(w.nickname)} · +${w.points}p</div>`).join('')
-        : `<div style="font-size:12px;color:var(--muted)">참여자가 없었어요</div>`}
+        : `<div style="font-size:12px;color:var(--muted)">당선작이 없었어요</div>`}
     </div>`;
   }).join('');
 }

@@ -7316,13 +7316,27 @@ window.addEventListener('popstate', () => {
 // 이후 유저가 실제로 이야기를 누를 때 그 협상 비용을 처음부터 다시 치르면서
 // 느려지거나 무한로딩처럼 보이는 문제 방지 — 복귀 즉시 미리 채널을 열어둠.
 let _hiddenAt = 0;
-document.addEventListener('visibilitychange', () => {
+document.addEventListener('visibilitychange', async () => {
   if (document.hidden) {
     _hiddenAt = Date.now();
   } else if (_hiddenAt && Date.now() - _hiddenAt > 30000) {
     _hiddenAt = 0;
     firebase.firestore().collection('config').doc('stats').get().catch(() => {});
     render(); renderNav();
+    // 백그라운드에 오래 있는 동안(예: 다른 기기에서 재로그인) 서버 토큰이
+    // 이미 무효화됐을 수 있음 — 여기서 안 챙기면 화면은 계속 로그인된 것처럼
+    // 보이다가, 나중에 아무 API 호출(예: 알림 열기)에 걸리는 순간에야 뜬금없이
+    // 로그아웃되는 것처럼 느껴짐(유저 제보, 2026-07-26). 복귀 즉시 확인해서
+    // 필요하면 바로 정리 — window.onload 부트스트랩과 동일한 null/undefined
+    // 계약(null=확실한 만료, undefined=네트워크 오류→그대로 둠).
+    if (user) {
+      const token = localStorage.getItem('hwasee_token');
+      const session = await fbGetSession(token);
+      if (session === null) {
+        saveUser(null); renderNav(); render();
+        toast('세션이 만료됐습니다. 다시 로그인해주세요.', true);
+      }
+    }
   }
 });
 

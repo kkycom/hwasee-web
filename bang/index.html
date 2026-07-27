@@ -1209,7 +1209,7 @@ function nav(route, param) {
 
 function render() {
   _renderEpoch++;
-  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, user: userProfile, create, resetpw: resetPasswordPage, wordchallenge: wordChallengePage, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI, 'admin-patchnotes': adminPatchNotes, 'admin-wordchallenge': adminWordChallenge, patchnotes: userPatchNotes };
+  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, user: userProfile, create, resetpw: resetPasswordPage, wordchallenge: wordChallengePage, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI, 'admin-patchnotes': adminPatchNotes, 'admin-wordchallenge': adminWordChallenge, 'admin-fairytale': adminFairytalePool, patchnotes: userPatchNotes };
   (routes[currentRoute] || home)();
 }
 
@@ -1243,6 +1243,7 @@ function renderNav() {
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-bugs')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9V6a3 3 0 0 1 6 0v3"/><path d="M5 13a7 7 0 0 0 14 0v-3H5v3z"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="5" y1="10" x2="2" y2="8"/><line x1="19" y1="10" x2="22" y2="8"/><line x1="5" y1="16" x2="2" y2="18"/><line x1="19" y1="16" x2="22" y2="18"/></svg> 버그 내역</button>
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-patchnotes')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> 패치 내역</button>
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-wordchallenge')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><circle cx="16" cy="16" r="1"/><circle cx="12" cy="12" r="1"/></svg> 단어 챌린지</button>
+          <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-fairytale')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> 동화 각색</button>
           <a class="admin-menu-item" href="/bang/analytics.html" target="_blank" rel="noopener" style="text-decoration:none" onclick="closeAdminMenu()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> 분석 대시보드</a>
         </div>
       </div>` : ''}
@@ -3045,6 +3046,7 @@ const SPOTLIGHT_META = {
   word:     { icon: '🎲', title: '오늘의 세 단어 챌린지 우승작', titleHtml: '오늘의 <span style="color:var(--accent2);font-weight:800">세</span> 단어 챌린지 우승작', info: '매일 열리는 단어 챌린지에서 사람들이 가장 좋아한 문장으로 새 이야기가 시작돼요.' },
   sentence: { icon: '✍️', title: '사람들이 뽑은 시작 문장',   info: '사람들이 직접 제안하고 투표해서 뽑은 문장으로 이야기가 시작돼요. (1~3등에게 각 50p)' },
   ai:       { icon: '🤖', title: 'AI가 고른 뜻밖의 시작',     info: 'AI가 골라준 첫 문장으로 이야기가 시작돼요.' },
+  fairytale: { icon: '📖', title: '동화를 각색한 이야기', info: '누구나 아는 동화의 첫 장면으로 시작해요. 여기서부턴 완전히 새로운 이야기로 자유롭게 이어써 보세요.' },
 };
 
 // 장르 확률 패널 색상 매핑 — functions/index.js의 SPOTLIGHT_GENRES와 이름이
@@ -3215,7 +3217,7 @@ function renderSpotlight() {
     <p style="font-family:var(--serif);font-size:16px;line-height:1.9;color:#9a8070;text-align:center;margin-bottom:20px">
       당신의 한 문장을 기다리는 이야기들이 있어요.
     </p>
-    ${cardHtml('word')}${cardHtml('sentence')}${cardHtml('ai')}`;
+    ${cardHtml('word')}${cardHtml('sentence')}${cardHtml('ai')}${cardHtml('fairytale')}`;
 
   if (slots.sentence?.state === 'proposing' && slots.sentence.round) {
     _startSentenceRoundCountdown(slots.sentence.round.end_at);
@@ -6062,6 +6064,7 @@ function _adminNav(current) {
     bugs: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9V6a3 3 0 0 1 6 0v3"/><path d="M5 13a7 7 0 0 0 14 0v-3H5v3z"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="5" y1="10" x2="2" y2="8"/><line x1="19" y1="10" x2="22" y2="8"/><line x1="5" y1="16" x2="2" y2="18"/><line x1="19" y1="16" x2="22" y2="18"/></svg>`,
     patchnotes: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
     wordchallenge: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><circle cx="16" cy="16" r="1"/><circle cx="12" cy="12" r="1"/></svg>`,
+    fairytale: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>`,
   };
   const btn = (label, key, route) => `
     <button onclick="nav('${route}')" style="background:none;border:none;cursor:pointer;font-size:13px;color:${current===key?'var(--text)':'var(--muted)'};font-weight:${current===key?'700':'400'};display:inline-flex;align-items:center;gap:5px;padding:5px 2px">
@@ -6077,7 +6080,8 @@ function _adminNav(current) {
         ${btn('신고 내역','reports','admin-reports')}${sep}
         ${btn('버그 내역','bugs','admin-bugs')}${sep}
         ${btn('패치 내역','patchnotes','admin-patchnotes')}${sep}
-        ${btn('단어 챌린지','wordchallenge','admin-wordchallenge')}
+        ${btn('단어 챌린지','wordchallenge','admin-wordchallenge')}${sep}
+        ${btn('동화 각색','fairytale','admin-fairytale')}
       </div>
     </div>`;
 }
@@ -6622,6 +6626,51 @@ async function _doForceStartWordChallenge() {
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+// ─── 동화 각색 씨앗 풀 관리 ─────────────────────────────────
+async function adminFairytalePool() {
+  if (!isAdmin()) { nav('seed'); return; }
+  const epoch = _renderEpoch;
+  document.getElementById('app').innerHTML = `<div class="loading"></div>`;
+  let res = await api('adminGetFairytalePoolQueue', {});
+  if (!res.ok && _renderEpoch === epoch && currentRoute === 'admin-fairytale') {
+    res = await api('adminGetFairytalePoolQueue', {});
+  }
+  if (_renderEpoch !== epoch || currentRoute !== 'admin-fairytale') return;
+  if (!res.ok) { document.getElementById('app').innerHTML = _adminNav('fairytale') + `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="adminFairytalePool()">다시 시도</button></div>`; return; }
+  document.getElementById('app').innerHTML = `
+    ${_adminNav('fairytale')}
+    <h2 style="margin:0 0 12px">📖 동화 각색 관리</h2>
+    <div class="card" style="margin-bottom:20px">
+      <div class="form-group">
+        <label>씨앗 문장 추가 (한 줄에 하나씩, 여러 줄 입력 가능 — 캐릭터 이름을 명시해서 정체성이 확실히 드러나게)</label>
+        <textarea id="ft-entries-input" rows="6" placeholder="신데렐라는 어려서 부모님을 잃었습니다.
+백설공주는 피부가 눈처럼 하얗습니다." style="width:100%;resize:vertical;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--text);font-family:inherit;line-height:1.6;box-sizing:border-box"></textarea>
+      </div>
+      <button class="btn btn-primary" style="width:100%" onclick="_doAddFairytalePoolEntries()">등록하기</button>
+    </div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:10px">대기 중 (${res.unused.length}개) · 사용됨 ${res.used_count}개</div>
+    ${res.unused.length === 0 ? `<div class="empty">대기 중인 씨앗 문장이 없어요.</div>` :
+      res.unused.map(s => `
+        <div class="card" style="padding:10px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:13px">${esc(s.text)}</div>
+          <button class="btn btn-ghost btn-sm" onclick="_doDeleteFairytalePoolEntry('${s.entry_id}')">삭제</button>
+        </div>`).join('')}`;
+}
+async function _doAddFairytalePoolEntries() {
+  const el = document.getElementById('ft-entries-input');
+  const raw = (el?.value || '').trim();
+  if (!raw) { toast('문장을 입력해주세요.', true); return; }
+  const res = await api('adminAddFairytalePoolEntries', { raw_text: raw });
+  if (!res.ok) { toast(res.error, true); return; }
+  toast(`${res.added}개 등록됐어요.`);
+  adminFairytalePool();
+}
+async function _doDeleteFairytalePoolEntry(entry_id) {
+  const res = await api('adminDeleteFairytalePoolEntry', { entry_id });
+  if (!res.ok) { toast(res.error, true); return; }
+  adminFairytalePool();
 }
 
 async function userPatchNotes() {
@@ -7341,7 +7390,7 @@ function timeAgo(dateStr) {
 // 해시 라우팅(location.hash)은 크롤러에 전송되지 않아 개별 이야기가 서버 경로
 // URL로 존재할 수 없었음. history.pushState 기반 경로 라우팅으로 전환.
 const BASE = '/bang/';
-const _ROUTE_WHITELIST = ['home','seed','spotlight','free','popular','mine','done','story','episode','auth','profile','user','create','resetpw','wordchallenge','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','admin-wordchallenge','patchnotes'];
+const _ROUTE_WHITELIST = ['home','seed','spotlight','free','popular','mine','done','story','episode','auth','profile','user','create','resetpw','wordchallenge','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','admin-wordchallenge','admin-fairytale','patchnotes'];
 // story는 완결작 정적 발행(SSG, 후속 단계) 파일 경로(/bang/story/{id}/index.html)와
 // canonical URL을 통일하기 위해 트레일링 슬래시를 씀 — 다른 라우트는 불필요.
 const _SLASH_ROUTES = new Set(['story']);

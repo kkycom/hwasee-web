@@ -2738,6 +2738,31 @@ async function fbAdminBackfillWordSlotChallengeWords(admin_id) {
   }
 }
 
+// 동화 각색 슬롯 씨앗 풀 관리 — spotlight_fairytale_pool은 firestore.rules에서
+// 클라이언트 접근이 막혀있어(저작권 큐레이션 목적) word_challenge_sets 관리
+// 함수들처럼 클라이언트 직접 write가 아니라 전부 Admin SDK 콜러블 경유.
+async function fbAdminAddFairytalePoolEntries(admin_id, rawText) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  try {
+    const r = await functionsRegion.httpsCallable('adminAddFairytalePoolEntries')({ user_id: admin_id, token: localStorage.getItem('hwasee_token'), raw_text: rawText });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '등록에 실패했습니다.' }; }
+}
+async function fbAdminGetFairytalePoolQueue(admin_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  try {
+    const r = await functionsRegion.httpsCallable('adminGetFairytalePoolQueue')({ user_id: admin_id, token: localStorage.getItem('hwasee_token') });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '조회에 실패했습니다.' }; }
+}
+async function fbAdminDeleteFairytalePoolEntry(admin_id, entry_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  try {
+    const r = await functionsRegion.httpsCallable('adminDeleteFairytalePoolEntry')({ user_id: admin_id, token: localStorage.getItem('hwasee_token'), entry_id });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '삭제에 실패했습니다.' }; }
+}
+
 async function fbGetBugReports(user_id) {
   const uSnap = await db.collection('users').doc(user_id).get();
   if (!uSnap.exists || uSnap.data().badge !== 'treeguard') return { ok: false, error: '권한이 없습니다.' };
@@ -3015,6 +3040,9 @@ async function firebaseApi(action, params = {}) {
     case 'setClaudeKey':          return fbSetClaudeKey(await requireUid(), params.key);
     case 'setKakaoKey':           return fbSetKakaoKey(await requireUid(), params.key, params.secret);
     case 'adminBackfillWordSlotChallengeWords': return fbAdminBackfillWordSlotChallengeWords(await requireUid());
+    case 'adminAddFairytalePoolEntries':  return fbAdminAddFairytalePoolEntries(await requireUid(), params.raw_text);
+    case 'adminGetFairytalePoolQueue':    return fbAdminGetFairytalePoolQueue(await requireUid());
+    case 'adminDeleteFairytalePoolEntry': return fbAdminDeleteFairytalePoolEntry(await requireUid(), params.entry_id);
     case 'getEmailConfigStatus':  return fbGetEmailConfigStatus(await requireUid());
     case 'setEmailConfig':        return fbSetEmailConfig(await requireUid(), params.gmail_user, params.gmail_app_pass);
 
@@ -3247,7 +3275,7 @@ async function fbGetSpotlight(viewer_id) {
 
   // 슬롯 3개를 순차로 하나씩 기다리지 않고 병렬로 조회 — 홈 첫 화면이라
   // 진입 빈도가 가장 높은 만큼 왕복 1번(가장 느린 슬롯 기준)으로 줄임
-  const keys = ['word', 'sentence', 'ai'];
+  const keys = ['word', 'sentence', 'ai', 'fairytale'];
   const slotResults = await Promise.all(keys.map(async key => {
     const s = ptr[key] || {};
     if (s.story_id) {

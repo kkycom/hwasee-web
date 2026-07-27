@@ -3000,7 +3000,7 @@ exports.adminForceCloseWordChallenge = functions
   });
 
 // ── 3슬롯 "오늘의 이야기" 스포트라이트 ────────────────────────
-// config/spotlight_slots = { word:{story_id}, sentence:{story_id,state,round_id}, ai:{story_id} }
+// config/spotlight_slots = { word:{story_id}, sentence:{story_id,state,round_id}, ai:{story_id}, fairytale:{story_id} }
 // 완결 훅(_serverCloseEpisode)이 슬롯 스토리 완결을 감지해 다음 이야기로 즉시 교체함.
 
 // firebase-api.js의 FB_AI_OPENINGS(1162행~)와 반드시 동일하게 유지할 것
@@ -3176,7 +3176,7 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
     const ptrSnap = await tx.get(ptrRef);
     if (!ptrSnap.exists) return; // adminInitSpotlight 실행 전 — 아직 스포트라이트 미도입
     const slots = ptrSnap.data();
-    const slotKey = ['word', 'sentence', 'ai'].find(k => slots[k] && slots[k].story_id === completed_story_id);
+    const slotKey = ['word', 'sentence', 'ai', 'fairytale'].find(k => slots[k] && slots[k].story_id === completed_story_id);
     if (!slotKey) return; // 스포트라이트 슬롯 스토리가 아님
 
     if (slotKey === 'ai') {
@@ -3192,14 +3192,13 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
       return;
     }
 
-    const poolName = slotKey === 'word' ? 'spotlight_word_pool' : 'spotlight_sentence_pool';
+    const poolName = slotKey === 'word' ? 'spotlight_word_pool'
+      : slotKey === 'sentence' ? 'spotlight_sentence_pool' : 'spotlight_fairytale_pool';
     const poolSnap = await tx.get(db.collection(poolName).orderBy('created_at', 'asc').limit(50));
     const nextEntry = poolSnap.docs.find(d => !d.data().used);
 
     if (!nextEntry) {
-      if (slotKey === 'word') {
-        tx.update(ptrRef, { 'word.story_id': null });
-      } else {
+      if (slotKey === 'sentence') {
         // 채택 풀이 비어있으면(아직 이만큼 라운드가 안 쌓였음) 24시간 제안+투표
         // 라운드를 새로 염 — round_id는 이 시점엔 항상 비어있는 상태에서 옴
         // (스토리 진행 중엔 round_id를 null로 유지하는 불변식이라 별도 상태
@@ -3212,6 +3211,10 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
           submission_count: 0, winners: [], closed_at: null,
         });
         tx.update(ptrRef, { 'sentence.story_id': null, 'sentence.state': 'proposing', 'sentence.round_id': roundRef.id });
+      } else {
+        // word/fairytale은 순수 FIFO 큐라 라운드 개념이 없음 — 그냥 비운 채로 둠
+        // (fairytale은 관리자가 다시 채워 넣을 때까지, word는 다음 챌린지 마감까지 대기)
+        tx.update(ptrRef, { [`${slotKey}.story_id`]: null });
       }
       return;
     }
@@ -3229,8 +3232,10 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
     // 단어챌린지 우승작/문장제안 채택작은 실제 작성자가 있는데도 스포트라이트
     // 씨앗은 전부 AI/익명으로 표시되고 있었음(유저 지적, 2026-07-27) — 실제
     // 작성자를 알 수 있으면(word는 winner_user_id, sentence는 proposer_id) 그
-    // 사람으로 귀속. 순수 AI 랜덤 씨앗(slotKey==='ai')은 그대로 익명 유지.
-    const creatorUserId = slotKey === 'word' ? entryData.winner_user_id : entryData.proposer_id;
+    // 사람으로 귀속. 순수 AI 랜덤 씨앗(slotKey==='ai')과 관리자 큐레이션
+    // 씨앗(slotKey==='fairytale')은 그대로 익명 유지.
+    const creatorUserId = slotKey === 'word' ? entryData.winner_user_id
+      : slotKey === 'sentence' ? entryData.proposer_id : null;
     if (creatorUserId) {
       const uSnap = await tx.get(db.collection('users').doc(creatorUserId));
       if (uSnap.exists) {
@@ -3243,10 +3248,10 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
     tx.update(nextEntry.ref, { used: true });
     const newStoryId = _serverCreateSeedStory(db, tx, entryData.text, extraFields);
     newlyCreatedStoryId = newStoryId;
-    if (slotKey === 'word') {
-      tx.update(ptrRef, { 'word.story_id': newStoryId });
-    } else {
+    if (slotKey === 'sentence') {
       tx.update(ptrRef, { 'sentence.story_id': newStoryId, 'sentence.state': 'story', 'sentence.round_id': null });
+    } else {
+      tx.update(ptrRef, { [`${slotKey}.story_id`]: newStoryId }); // word 또는 fairytale
     }
   });
 
@@ -3275,14 +3280,16 @@ async function _serverRefillSlotFromPoolIfEmpty(db, slotKey) {
     const slot = ptrSnap.data()[slotKey];
     if (!slot || slot.story_id) return; // 이미 진행 중인 스토리가 있으면 손대지 않음
 
-    const poolName = slotKey === 'word' ? 'spotlight_word_pool' : 'spotlight_sentence_pool';
+    const poolName = slotKey === 'word' ? 'spotlight_word_pool'
+      : slotKey === 'sentence' ? 'spotlight_sentence_pool' : 'spotlight_fairytale_pool';
     const poolSnap = await tx.get(db.collection(poolName).orderBy('created_at', 'asc').limit(50));
     const nextEntry = poolSnap.docs.find(d => !d.data().used);
 
     if (!nextEntry) {
       // 슬롯2는 라운드가 방금 닫혔는데(호출 시점상 항상 그러함) 제출이 하나도
       // 없어서 채택 풀도 비었을 수 있음 — 그대로 방치하면 영영 안 채워지므로
-      // 새 24시간 라운드를 다시 염.
+      // 새 24시간 라운드를 다시 염. word/fairytale은 순수 FIFO 큐라 이 fallback이
+      // 필요 없음(비어있으면 그냥 다음 공급까지 대기).
       if (slotKey === 'sentence') {
         const roundRef = db.collection('sentence_rounds').doc();
         const now = new Date();
@@ -3309,8 +3316,10 @@ async function _serverRefillSlotFromPoolIfEmpty(db, slotKey) {
     // 단어챌린지 우승작/문장제안 채택작은 실제 작성자가 있는데도 스포트라이트
     // 씨앗은 전부 AI/익명으로 표시되고 있었음(유저 지적, 2026-07-27) — 실제
     // 작성자를 알 수 있으면(word는 winner_user_id, sentence는 proposer_id) 그
-    // 사람으로 귀속. 순수 AI 랜덤 씨앗(slotKey==='ai')은 그대로 익명 유지.
-    const creatorUserId = slotKey === 'word' ? entryData.winner_user_id : entryData.proposer_id;
+    // 사람으로 귀속. 순수 AI 랜덤 씨앗(slotKey==='ai')과 관리자 큐레이션
+    // 씨앗(slotKey==='fairytale')은 그대로 익명 유지.
+    const creatorUserId = slotKey === 'word' ? entryData.winner_user_id
+      : slotKey === 'sentence' ? entryData.proposer_id : null;
     if (creatorUserId) {
       const uSnap = await tx.get(db.collection('users').doc(creatorUserId));
       if (uSnap.exists) {
@@ -3323,10 +3332,10 @@ async function _serverRefillSlotFromPoolIfEmpty(db, slotKey) {
     tx.update(nextEntry.ref, { used: true });
     const newStoryId = _serverCreateSeedStory(db, tx, entryData.text, extraFields);
     newlyCreatedStoryId = newStoryId;
-    if (slotKey === 'word') {
-      tx.update(ptrRef, { 'word.story_id': newStoryId });
-    } else {
+    if (slotKey === 'sentence') {
       tx.update(ptrRef, { 'sentence.story_id': newStoryId, 'sentence.state': 'story', 'sentence.round_id': null });
+    } else {
+      tx.update(ptrRef, { [`${slotKey}.story_id`]: newStoryId }); // word 또는 fairytale
     }
   });
 
@@ -3590,6 +3599,51 @@ exports.adminBackfillWordSlotChallengeWords = functions
 
     await db.collection('stories').doc(wordStoryId).update({ challenge_words: words });
     return { ok: true, story_id: wordStoryId, challenge_words: words };
+  });
+
+// ── 동화 각색 슬롯(fairytale) 씨앗 풀 관리 ──────────────────
+// spotlight_fairytale_pool은 firestore.rules에서 클라이언트 접근이 완전히
+// 막혀있음(저작권 큐레이션 목적 — word_challenge_sets처럼 열어두면 아무나
+// 임의 텍스트를 씨앗으로 주입할 수 있게 됨) — 그래서 word_challenge_sets와
+// 달리 추가/조회/삭제 전부 Admin SDK 콜러블로만 노출함.
+exports.adminAddFairytalePoolEntries = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const lines = (data.raw_text || '').split('\n').map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return { ok: false, error: '등록할 문장이 없어요.' };
+    const batch = db.batch();
+    lines.forEach(line => {
+      batch.set(db.collection('spotlight_fairytale_pool').doc(), { text: line, used: false, created_at: new Date().toISOString() });
+    });
+    await batch.commit();
+    // 최초 1회 호출 시 self-bootstrap — 슬롯 포인터 키가 없으면 생성(merge라
+    // 이미 있는 story_id는 안 건드림)
+    const ptrRef = db.collection('config').doc('spotlight_slots');
+    const ptrSnap = await ptrRef.get();
+    if (!ptrSnap.exists || !ptrSnap.data().fairytale) {
+      await ptrRef.set({ fairytale: { story_id: null } }, { merge: true });
+    }
+    await _serverRefillSlotFromPoolIfEmpty(db, 'fairytale').catch(e => console.error('fairytale slot refill error:', e.message));
+    return { ok: true, added: lines.length };
+  });
+
+exports.adminGetFairytalePoolQueue = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const snap = await admin.firestore().collection('spotlight_fairytale_pool').orderBy('created_at', 'asc').limit(500).get();
+    const all = snap.docs.map(d => ({ entry_id: d.id, ...d.data() }));
+    return { ok: true, unused: all.filter(s => !s.used), used_count: all.filter(s => s.used).length };
+  });
+
+exports.adminDeleteFairytalePoolEntry = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    await admin.firestore().collection('spotlight_fairytale_pool').doc(data.entry_id).delete();
+    return { ok: true };
   });
 
 // ── 업적 시스템 도입 이전 활동 소급 반영 (1회성 관리자 콜러블) ──

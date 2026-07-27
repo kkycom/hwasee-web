@@ -103,6 +103,11 @@ service cloud.firestore {
     match /word_challenge_votes/{docId} { allow read, write: if true; }
     match /spotlight_word_pool/{docId} { allow read, write: if false; }
     match /spotlight_sentence_pool/{docId} { allow read, write: if false; }
+    // 동화 각색 슬롯 씨앗 풀 — 관리자가 붙여넣는 텍스트가 곧바로 최종 큐가 되므로
+    // (word_challenge_sets처럼 상위 게임 루프가 걸러주는 원재료가 아님) 저작권
+    // 큐레이션 목적상 반드시 서버 전용(Admin SDK, adminAddFairytalePoolEntries 등)으로만
+    // 써야 함 — 클라이언트 직접 write를 열어두면 큐레이션 취지가 무너짐.
+    match /spotlight_fairytale_pool/{docId} { allow read, write: if false; }
     // 분석 대시보드 일별 집계 — computeAnalyticsDaily/backfillAnalyticsDaily(Admin
     // SDK)만 쓰고, getAnalyticsDashboard(_requireAdmin 게이트)를 통해서만 읽음.
     match /analytics_daily/{docId} { allow read, write: if false; }

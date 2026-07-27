@@ -2954,7 +2954,7 @@ async function _serverCloseWordChallenge(db) {
     if (tiedWinners.length) {
       await db.collection('spotlight_word_pool').doc().set({
         text: tiedWinners[0].text, source_challenge_id: challenge_id, used: false,
-        created_at: new Date().toISOString(),
+        created_at: new Date().toISOString(), winner_user_id: tiedWinners[0].user_id,
       });
       try { await _serverRefillSlotFromPoolIfEmpty(db, 'word'); } catch (e) {}
     }
@@ -3215,14 +3215,29 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
     // 단어챌린지 우승작이면 그 3단어를 같이 넘겨서 스토리에 저장(challenge_words) —
     // 쓰기(tx.update) 전에 읽어야 하는 Firestore 트랜잭션 규칙 때문에 여기서 먼저 조회
     let extraFields = {};
-    if (slotKey === 'word' && nextEntry.data().source_challenge_id) {
-      const challengeSnap = await tx.get(db.collection('word_challenges').doc(nextEntry.data().source_challenge_id));
+    const entryData = nextEntry.data();
+    if (slotKey === 'word' && entryData.source_challenge_id) {
+      const challengeSnap = await tx.get(db.collection('word_challenges').doc(entryData.source_challenge_id));
       if (challengeSnap.exists && Array.isArray(challengeSnap.data().words)) {
         extraFields.challenge_words = challengeSnap.data().words;
       }
     }
+    // 단어챌린지 우승작/문장제안 채택작은 실제 작성자가 있는데도 스포트라이트
+    // 씨앗은 전부 AI/익명으로 표시되고 있었음(유저 지적, 2026-07-27) — 실제
+    // 작성자를 알 수 있으면(word는 winner_user_id, sentence는 proposer_id) 그
+    // 사람으로 귀속. 순수 AI 랜덤 씨앗(slotKey==='ai')은 그대로 익명 유지.
+    const creatorUserId = slotKey === 'word' ? entryData.winner_user_id : entryData.proposer_id;
+    if (creatorUserId) {
+      const uSnap = await tx.get(db.collection('users').doc(creatorUserId));
+      if (uSnap.exists) {
+        const u = uSnap.data();
+        extraFields.creator_id = creatorUserId;
+        extraFields.creator_nickname = u.display_name || u.nickname || '익명';
+        extraFields.creator_badge = u.badge || '';
+      }
+    }
     tx.update(nextEntry.ref, { used: true });
-    const newStoryId = _serverCreateSeedStory(db, tx, nextEntry.data().text, extraFields);
+    const newStoryId = _serverCreateSeedStory(db, tx, entryData.text, extraFields);
     newlyCreatedStoryId = newStoryId;
     if (slotKey === 'word') {
       tx.update(ptrRef, { 'word.story_id': newStoryId });
@@ -3280,14 +3295,29 @@ async function _serverRefillSlotFromPoolIfEmpty(db, slotKey) {
     // 단어챌린지 우승작이면 그 3단어를 같이 넘겨서 스토리에 저장(challenge_words) —
     // 쓰기(tx.update) 전에 읽어야 하는 Firestore 트랜잭션 규칙 때문에 여기서 먼저 조회
     let extraFields = {};
-    if (slotKey === 'word' && nextEntry.data().source_challenge_id) {
-      const challengeSnap = await tx.get(db.collection('word_challenges').doc(nextEntry.data().source_challenge_id));
+    const entryData = nextEntry.data();
+    if (slotKey === 'word' && entryData.source_challenge_id) {
+      const challengeSnap = await tx.get(db.collection('word_challenges').doc(entryData.source_challenge_id));
       if (challengeSnap.exists && Array.isArray(challengeSnap.data().words)) {
         extraFields.challenge_words = challengeSnap.data().words;
       }
     }
+    // 단어챌린지 우승작/문장제안 채택작은 실제 작성자가 있는데도 스포트라이트
+    // 씨앗은 전부 AI/익명으로 표시되고 있었음(유저 지적, 2026-07-27) — 실제
+    // 작성자를 알 수 있으면(word는 winner_user_id, sentence는 proposer_id) 그
+    // 사람으로 귀속. 순수 AI 랜덤 씨앗(slotKey==='ai')은 그대로 익명 유지.
+    const creatorUserId = slotKey === 'word' ? entryData.winner_user_id : entryData.proposer_id;
+    if (creatorUserId) {
+      const uSnap = await tx.get(db.collection('users').doc(creatorUserId));
+      if (uSnap.exists) {
+        const u = uSnap.data();
+        extraFields.creator_id = creatorUserId;
+        extraFields.creator_nickname = u.display_name || u.nickname || '익명';
+        extraFields.creator_badge = u.badge || '';
+      }
+    }
     tx.update(nextEntry.ref, { used: true });
-    const newStoryId = _serverCreateSeedStory(db, tx, nextEntry.data().text, extraFields);
+    const newStoryId = _serverCreateSeedStory(db, tx, entryData.text, extraFields);
     newlyCreatedStoryId = newStoryId;
     if (slotKey === 'word') {
       tx.update(ptrRef, { 'word.story_id': newStoryId });

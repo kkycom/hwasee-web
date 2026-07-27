@@ -533,6 +533,9 @@
     -webkit-overflow-scrolling: touch;
   }
   .immersive-prose-inner { max-width: 640px; margin: 0 auto; }
+  /* 몰입 읽기 모드는 캡쳐해서 인스타 홍보물 등으로 쓰기도 하는 화면이라, 평소엔
+     떠있어도 되는 관리자 수정 버튼이 여기선 안 보이게 함(유저 의견, 2026-07-27) */
+  .immersive-prose-overlay .prose-edit-btn { display: none; }
 
   /* ── 탭 */
   .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }

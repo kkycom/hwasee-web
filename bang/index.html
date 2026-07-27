@@ -6012,7 +6012,12 @@ function _shareStoryKakao() {
     content: {
       title: opening.length > 40 ? opening.slice(0, 40) + '…' : opening,
       description: snippet.length > 80 ? snippet.slice(0, 80) + '…' : (snippet || '화씨.방에서 함께 쓴 이야기'),
-      imageUrl: 'https://hwasee.me/bang/hwaseebang_landscape.png',
+      // hwaseebang_landscape.png(여백 없이 로고가 가장자리까지 꽉 찬 구성)는
+      // 카카오 Feed 카드가 정사각형에 가깝게 중앙 크롭하면서 좌우 글자가 잘려나감
+      // (유저 제보, 2026-07-27) — 6/28 전체 일괄치환(d196dbd)의 흔적으로, 다른
+      // 모든 og:image/twitter:image 참조는 이미 og.png로 되돌아갔는데 이 줄만
+      // 놓쳤던 것. og.png(로고 주변 여백 넉넉)로 되돌려서 크롭돼도 안전하게 함.
+      imageUrl: 'https://hwasee.me/bang/hwaseebang_og.png',
       link: { mobileWebUrl: url, webUrl: url },
     },
     buttons: [{ title: '이야기 보러가기', link: { mobileWebUrl: url, webUrl: url } }],

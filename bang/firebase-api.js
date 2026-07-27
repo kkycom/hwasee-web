@@ -2763,6 +2763,24 @@ async function fbAdminDeleteFairytalePoolEntry(admin_id, entry_id) {
   } catch (e) { return { ok: false, error: e.message || '삭제에 실패했습니다.' }; }
 }
 
+// 초스피드 초장편 — 투표 없이 즉시 채택되는 콜러블. 클라이언트 트랜잭션(다른
+// submissions/episodes 쓰기처럼)이 아니라 Admin SDK 콜러블인 이유: "누가 먼저
+// 썼는지"가 메커니즘의 전부라 서버 권위 경로가 필요함(functions/index.js
+// speedrunSubmit 주석 참고). user_id뿐 아니라 token도 같이 보내야
+// _requireUser가 실제로 그 유저인지 검증함(안 그러면 사칭 가능).
+async function fbSpeedrunSubmit(episode_id, content, author_id) {
+  try {
+    const r = await functionsRegion.httpsCallable('speedrunSubmit')({ episode_id, content, user_id: author_id, token: localStorage.getItem('hwasee_token') });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '제출에 실패했습니다.' }; }
+}
+async function fbSpeedrunDownvote(sub_id, voter_id) {
+  try {
+    const r = await functionsRegion.httpsCallable('speedrunDownvote')({ sub_id, user_id: voter_id, token: localStorage.getItem('hwasee_token') });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '처리에 실패했습니다.' }; }
+}
+
 async function fbGetBugReports(user_id) {
   const uSnap = await db.collection('users').doc(user_id).get();
   if (!uSnap.exists || uSnap.data().badge !== 'treeguard') return { ok: false, error: '권한이 없습니다.' };
@@ -2980,6 +2998,8 @@ async function firebaseApi(action, params = {}) {
     case 'getEpisode':         return fbGetEpisode(params.episode_id);
     case 'createSubmission':   return fbCreateSubmission(params.episode_id, params.content, await requireUid(), params.derived_from, params.closing);
     case 'vote':               return fbVote(params.episode_id, params.sub_ids, await requireUid());
+    case 'speedrunSubmit':     return fbSpeedrunSubmit(params.episode_id, params.content, await requireUid());
+    case 'speedrunDownvote':   return fbSpeedrunDownvote(params.sub_id, await requireUid());
 
     case 'getSeeds':           return fbGetSeeds();
     case 'getAISuggestion':    return fbGetAISuggestion();
@@ -3275,7 +3295,7 @@ async function fbGetSpotlight(viewer_id) {
 
   // 슬롯 3개를 순차로 하나씩 기다리지 않고 병렬로 조회 — 홈 첫 화면이라
   // 진입 빈도가 가장 높은 만큼 왕복 1번(가장 느린 슬롯 기준)으로 줄임
-  const keys = ['word', 'sentence', 'ai', 'fairytale'];
+  const keys = ['word', 'sentence', 'ai', 'fairytale', 'speedrun'];
   const slotResults = await Promise.all(keys.map(async key => {
     const s = ptr[key] || {};
     if (s.story_id) {
@@ -3331,6 +3351,23 @@ async function fbGetSpotlight(viewer_id) {
 
       const genre_probs = genreSnap.exists ? genreSnap.data().top : null;
 
+      // 초스피드 카드는 오프닝이 아니라 최근 채택된 문장을 보여줌(오프닝은
+      // 100단계 진행되는 사이 낡은 정보가 됨, 2026-07-22 논의) — 지금 열린
+      // 에피소드의 parent_sub_id(직전 채택 문장)를 따라가서 가져옴. 별도 쿼리
+      // 없이 open_steps에 이미 있는 episode_id로 단건 조회 2번(에피소드→제출)만.
+      let speedrun_latest_line = null;
+      if (story.mode === 'speedrun') {
+        const openEpId = Object.keys(story.open_steps || {})[0];
+        if (openEpId) {
+          const openEpSnap = await db.collection('episodes').doc(openEpId).get();
+          const parentSubId = openEpSnap.exists ? openEpSnap.data().parent_sub_id : '';
+          if (parentSubId) {
+            const parentSubSnap = await db.collection('submissions').doc(parentSubId).get();
+            if (parentSubSnap.exists) speedrun_latest_line = parentSubSnap.data().content;
+          }
+        }
+      }
+
       return {
         state: 'story', story_id: s.story_id, opening: story.opening, current_step: story.current_step || 0,
         has_branch: !!story.has_branch, branch_from_step: story.branch_from_step || null,
@@ -3339,6 +3376,7 @@ async function fbGetSpotlight(viewer_id) {
         open_eps, is_new, genre_probs,
         challenge_words: story.challenge_words || null,
         my_submissions,
+        mode: story.mode || null, max_steps: story.max_steps || null, speedrun_latest_line,
       };
     } else if (key === 'sentence' && s.state === 'proposing' && s.round_id) {
       const roundData = await _fbGetSentenceRoundData(s.round_id, viewer_id);

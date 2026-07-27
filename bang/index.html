@@ -512,6 +512,12 @@
   .prose-sentence { font-family: var(--serif); font-size: 16px; line-height: 29px; display: block; color: #2c1a0e; }
   .prose-author { font-size: 11px; color: #9a7060; display: none; text-align: right; margin-top: 4px; }
   .prose-author.visible { display: block; }
+  /* 초스피드 줄마다 붙는 포인트/신고아닌-경량 자정 표시 */
+  .sr-line-meta { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 2px; }
+  .sr-point-tag { font-size: 10px; font-weight: 700; color: var(--accent2); background: rgba(200,130,58,.12); padding: 1px 7px; border-radius: 8px; }
+  .sr-point-tag.sr-void { text-decoration: line-through; color: var(--muted); background: none; }
+  .sr-flag-btn { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 8px; padding: 2px 7px; cursor: pointer; font-family: var(--font); }
+  .sr-flag-btn:disabled { opacity: .4; cursor: default; }
   .prose-branch { font-size: 10px; font-weight: 700; color: #b07040; flex-shrink: 0; }
   .prose-divider {
     display: flex; align-items: center; gap: 12px; margin: 24px 0;
@@ -1931,6 +1937,80 @@ function _clearTypingPresence(episode_id) {
   firebase.firestore().collection('episode_typing').doc(episode_id + '_' + user.user_id).delete().catch(() => {});
 }
 
+// 초스피드 전용 렌더러 — 정상 스토리의 getEpisodeTree/분기 로직과 완전히
+// 분리(투표·동률·분기 개념이 없음). 각 단계는 episode 하나당 채택 제출 하나
+// (즉시확정이라 경합에서 진 제출은 애초에 안 만들어짐)라 매핑이 단순함.
+function _renderSpeedrunStory(s, episodes, submissions, story_id) {
+  const sortedEps = episodes.slice().sort((a, b) => Number(a.step) - Number(b.step));
+  const lines = sortedEps.map(ep => {
+    const sub = submissions.find(sb => sb.episode_id === ep.episode_id);
+    if (!sub) return null;
+    return { sub, points: Number((s.point_values || [])[Number(ep.step) - 1]) || 0 };
+  }).filter(Boolean);
+
+  const isFinished = s.status === 'completed';
+  const openEp = episodes.find(e => e.status === 'open');
+  const myCooldown = !!(user && (s.cooldown_winners || []).includes(user.user_id));
+
+  const linesHtml = lines.map(({ sub, points }) => `
+    <div class="prose-line">
+      <span class="prose-sentence"${sub.is_invalidated ? ' style="text-decoration:line-through;color:var(--muted)"' : ''}>${esc(sub.content)}</span>
+      <div class="sr-line-meta">
+        <span class="sr-point-tag${sub.is_invalidated ? ' sr-void' : ''}">${sub.is_invalidated ? '무효' : '+' + points + 'P'}</span>
+        <button class="sr-flag-btn" onclick="doSpeedrunDownvote('${sub.sub_id}', this)"${(user && sub.author_id === user.user_id) ? ' disabled' : ''}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>
+          ${sub.downvote_count || 0}
+        </button>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('app').innerHTML = `
+    <div class="story-toolbar" style="display:flex;align-items:center;gap:0">
+      <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="nav(window._prevRoute || 'home')">← 목록으로</button>
+    </div>
+    <div style="margin:12px 0"><span class="step-pill"><span class="step-dot"></span>⚡ ${isFinished ? '완결' : (Number(s.current_step) || 0) + '/' + (s.max_steps || 100) + '단계'}</span></div>
+    <div class="story-prose">
+      <div class="prose-opening">${esc(s.opening)}</div>
+      ${linesHtml}
+    </div>
+    ${!isFinished ? `
+      <div class="card" style="margin-top:16px">
+        ${myCooldown ? `<div class="empty" style="padding:8px 0">⏳ 최근 채택돼서 아직 참여할 수 없어요</div>` : `
+          <textarea id="sr-input" maxlength="15" rows="2" placeholder="다음 문장을 15자 이내로…" style="width:100%;resize:none;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:14px;color:var(--text);font-family:var(--serif);box-sizing:border-box" oninput="document.getElementById('sr-count').textContent=this.value.length"></textarea>
+          <div style="text-align:right;font-size:11px;color:var(--muted);margin:4px 0 8px"><span id="sr-count">0</span>/15</div>
+          <button class="btn btn-primary" id="sr-submit-btn" style="width:100%" onclick="doSpeedrunSubmit('${story_id}','${openEp ? openEp.episode_id : ''}')">제출</button>
+        `}
+      </div>` : `<div class="empty" style="margin-top:16px">🎉 100단계 완결!</div>`}`;
+}
+
+async function doSpeedrunSubmit(story_id, episode_id) {
+  const el = document.getElementById('sr-input');
+  const text = (el?.value || '').trim();
+  if (!text) { toast('내용을 입력해주세요.', true); return; }
+  if (text.length > 15) { toast('15자 이내로 작성해주세요.', true); return; }
+  const btn = document.getElementById('sr-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '제출 중...'; }
+  const res = await api('speedrunSubmit', { episode_id, content: text });
+  if (!res.ok) {
+    toast(res.error, true);
+    if (btn) { btn.disabled = false; btn.textContent = '제출'; }
+    return;
+  }
+  toast(res.points > 0 ? `채택! +${res.points}P` : '채택됐어요!');
+  _lsc.del('story_' + story_id);
+  story();
+}
+
+async function doSpeedrunDownvote(sub_id, btnEl) {
+  if (btnEl) btnEl.disabled = true;
+  const res = await api('speedrunDownvote', { sub_id });
+  if (!res.ok) { toast(res.error, true); if (btnEl) btnEl.disabled = false; return; }
+  if (res.invalidated) toast('포인트가 무효화됐어요.');
+  const sid = window._storyData && window._storyData.story ? window._storyData.story.story_id : '';
+  if (sid) _lsc.del('story_' + sid);
+  story();
+}
+
 function _applyStoryData(res, story_id) {
   // 다른 이야기로 이동 시 _branchChoice 리셋 (이전 이야기 자동경로가 오염 방지)
   if (window._branchChoiceStoryId !== story_id) {
@@ -1955,6 +2035,11 @@ function _applyStoryData(res, story_id) {
   document.removeEventListener('click', _proseSelOutsideClick, { capture: true });
   window._proseSelMode = null; // 'mvp' | 'branch'
   window._proseSelEpId = null;
+
+  // 초스피드는 투표·동률·분기가 아예 없는 완전히 다른 구조라, 아래 이어지는
+  // getEpisodeTree/분기 트리 로직을 억지로 태우지 않고 여기서 바로 전용
+  // 렌더러로 분기 — 기존 흐름은 정상 스토리 전용으로 그대로 둠.
+  if (s.mode === 'speedrun') { _renderSpeedrunStory(s, episodes, submissions, story_id); return; }
 
   // 완결 이야기: 채택 경로를 역추적해 갈림길 자동 선택
   if (s.status === 'completed' || s.status === 'inactive') {
@@ -3047,6 +3132,7 @@ const SPOTLIGHT_META = {
   sentence: { icon: '✍️', title: '사람들이 뽑은 시작 문장',   info: '사람들이 직접 제안하고 투표해서 뽑은 문장으로 이야기가 시작돼요. (1~3등에게 각 50p)' },
   ai:       { icon: '🤖', title: 'AI가 고른 뜻밖의 시작',     info: 'AI가 골라준 첫 문장으로 이야기가 시작돼요.' },
   fairytale: { icon: '📖', title: '동화를 각색한 이야기', info: '누구나 아는 동화의 첫 장면으로 시작해요. 여기서부턴 완전히 새로운 이야기로 자유롭게 이어써 보세요.' },
+  speedrun: { icon: '⚡', title: '초스피드 초장편', info: '투표 없이, 쓰는 순간 바로 채택돼요. 15자 이내 한 문장씩 100단계까지 빠르게 이어써요. 각 단계마다 1~100P가 무작위로 걸려있어요.' },
 };
 
 // 장르 확률 패널 색상 매핑 — functions/index.js의 SPOTLIGHT_GENRES와 이름이
@@ -3175,9 +3261,13 @@ function renderSpotlight() {
       // 없어서 그대로 유지. open_eps가 비어있을 극히 드문 경우(마감 직후 등)만
       // 제출수 생략.
       const _curEp = (slot.open_eps || []).slice().sort((a, b) => b.step - a.step)[0];
-      const _stepLabel = _curEp
-        ? `${calcDisplayStep(slot, _curEp.step)}단계 · 제출 ${_curEp.sub_count}개`
-        : `${(Number(slot.current_step) || 0) + 1}단계`;
+      // 초스피드는 "제출 N개"(경쟁 후보 수) 개념이 없음(즉시확정이라 항상 1개) —
+      // 대신 100단계 중 몇 단계인지를 보여줌
+      const _stepLabel = slot.mode === 'speedrun'
+        ? `${(Number(slot.current_step) || 0)}/${slot.max_steps || 100}단계`
+        : _curEp
+          ? `${calcDisplayStep(slot, _curEp.step)}단계 · 제출 ${_curEp.sub_count}개`
+          : `${(Number(slot.current_step) || 0) + 1}단계`;
       // 오늘의 단어 챌린지가 별도 페이지로 분리되면서(2026-07-15) 이 슬롯(과거
       // 챌린지 우승작으로 시작된 이야기)에서 진행 중인 챌린지로 바로 갈 수 있는
       // 통로가 없어지지 않게 버튼을 붙여둠. 색+아이콘으로 "참여하기"(이 이야기 계속
@@ -3188,7 +3278,7 @@ function renderSpotlight() {
         : '';
       bodyHtml = `
         <div class="story-prose" style="padding:28px 18px 28px 20px;margin:12px 0;cursor:pointer" onclick="openStoryProseModal('${esc(slot.story_id)}')" role="button" aria-label="지금까지의 이야기 보기">
-          <div class="prose-opening">${slot.challenge_words && slot.challenge_words.length ? boldChallengeWords(slot.opening, slot.challenge_words) : esc(slot.opening)}</div>
+          <div class="prose-opening">${slot.mode === 'speedrun' ? esc(slot.speedrun_latest_line || slot.opening) : slot.challenge_words && slot.challenge_words.length ? boldChallengeWords(slot.opening, slot.challenge_words) : esc(slot.opening)}</div>
         </div>
         ${genrePanelHtml(slot.genre_probs, slot.story_id)}
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
@@ -3217,7 +3307,7 @@ function renderSpotlight() {
     <p style="font-family:var(--serif);font-size:16px;line-height:1.9;color:#9a8070;text-align:center;margin-bottom:20px">
       당신의 한 문장을 기다리는 이야기들이 있어요.
     </p>
-    ${cardHtml('word')}${cardHtml('sentence')}${cardHtml('ai')}${cardHtml('fairytale')}`;
+    ${cardHtml('word')}${cardHtml('sentence')}${cardHtml('ai')}${cardHtml('fairytale')}${cardHtml('speedrun')}`;
 
   if (slots.sentence?.state === 'proposing' && slots.sentence.round) {
     _startSentenceRoundCountdown(slots.sentence.round.end_at);

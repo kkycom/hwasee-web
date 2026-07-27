@@ -1066,6 +1066,9 @@ exports.aiParticipate = functions
         const subIntervalMsJ  = subIntervalMs  * jitter;
         const voteIntervalMsJ = voteIntervalMs * jitter;
         const story = storyDoc.data();
+        // 초스피드는 투표 자체가 없는 즉시채택 콘텐츠라 AI 자동 참여가 개입할 이유가
+        // 없음(최악의 경우 고아 submission 생성 위험) — 완전히 스킵.
+        if (story.mode === 'speedrun') continue;
 
         const epsSnap = await db.collection('episodes')
           .where('story_id', '==', story_id).where('status', '==', 'open').get();
@@ -1364,6 +1367,17 @@ async function _requireAdmin(user_id, token) {
   if (user_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
   const secSnap = await admin.firestore().collection('user_secrets').doc(user_id).get();
   if (!secSnap.exists || secSnap.data().token !== token) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+}
+
+// _requireAdmin과 동일 패턴이지만 FB_ADMIN_ID 제한이 없는 일반 유저용 — onCall
+// 함수는 클라이언트가 보낸 user_id를 자동으로 검증해주지 않으므로(Firebase Auth
+// context.auth를 안 쓰는 커스텀 세션 구조), speedrunSubmit처럼 "진짜 그 유저가
+// 맞는지"가 중요한 콜러블은 이걸로 토큰을 실제로 대조해야 함 — 그냥 data.user_id를
+// 그대로 믿으면 다른 사람 사칭이 가능해짐.
+async function _requireUser(user_id, token) {
+  if (!user_id || !token) throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+  const secSnap = await admin.firestore().collection('user_secrets').doc(user_id).get();
+  if (!secSnap.exists || secSnap.data().token !== token) throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
 }
 
 exports.register = functions
@@ -2151,6 +2165,196 @@ exports.closeEpisode = functions
     await _serverCloseEpisode(db, episode_id, epSnap.data());
     return { ok: true };
   });
+
+// ── 초스피드 초장편: 투표 없이 즉시 채택되는 스프린트형 이야기 ──────────
+// fbCreateSubmission(클라이언트 트랜잭션, firestore.rules에서 episodes/submissions가
+// 전부 열려있어 가능한 방식)은 에피소드 open 여부 체크가 트랜잭션 "밖"의 별도
+// 읽기라 TOCTOU 허점이 있음(bang/firebase-api.js:1182 부근). 초스피드는 "누가
+// 먼저 썼는지"가 메커니즘의 전부라 이 허점을 그대로 두면 안 됨 — Admin SDK
+// 콜러블로 만들고, 에피소드 open 체크를 트랜잭션 안의 첫 읽기로 둠.
+exports.speedrunSubmit = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const episode_id = data.episode_id;
+    const author_id = data.user_id;
+    const text = (data.content || '').trim();
+    if (!episode_id || !author_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(author_id, data.token);
+    if (!text) return { ok: false, error: '내용을 입력해주세요.' };
+    if (text.length > 15) return { ok: false, error: '15자 이내로 작성해주세요.' };
+
+    const db = admin.firestore();
+    const epRef = db.collection('episodes').doc(episode_id);
+
+    const result = await db.runTransaction(async tx => {
+      const epSnap = await tx.get(epRef); // ← 가장 먼저 읽음, 트랜잭션 안에서
+      if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
+      const ep = epSnap.data();
+      if (ep.status !== 'open') return { ok: false, error: '이미 채택됐어요.' };
+
+      const storyRef = db.collection('stories').doc(ep.story_id);
+      const [storySnap, uSnap] = await Promise.all([tx.get(storyRef), tx.get(db.collection('users').doc(author_id))]);
+      if (!storySnap.exists) return { ok: false, error: '이야기를 찾을 수 없습니다.' };
+      const st = storySnap.data();
+
+      // 최근 채택자 최대 5명 배열(cooldown_winners)에 포함돼 있으면 재참여 불가 —
+      // 최근 5단계의 채택자를 매번 쿼리하는 것보다 story 문서에 이미 읽어야 하는
+      // 필드로 O(1) 체크(전례 없는 부분이라 새로 설계, 트랜잭션 안에서 추가 읽기 없음)
+      if ((st.cooldown_winners || []).includes(author_id)) {
+        return { ok: false, error: '최근에 채택돼서 아직 참여할 수 없어요.' };
+      }
+
+      const step = Number(ep.step) || 1;
+      const points = Number((st.point_values || [])[step - 1]) || 0;
+      const sub_id = db.collection('submissions').doc().id;
+      const uData = uSnap.exists ? uSnap.data() : {};
+
+      tx.set(db.collection('submissions').doc(sub_id), {
+        sub_id, episode_id, story_id: ep.story_id, content: text,
+        author_id, author_nickname: uData.display_name || uData.nickname || '익명',
+        author_badge: uData.badge || '',
+        derived_from: '', vote_count: 0, is_adopted: true,
+        created_at: new Date().toISOString(), is_closing: false,
+        downvote_count: 0, is_invalidated: false,
+      });
+      tx.update(epRef, { status: 'closed', closed_at: new Date().toISOString() });
+
+      const nextWinners = [...(st.cooldown_winners || []), author_id].slice(-5);
+      const isLastStep = step >= (Number(st.max_steps) || 100);
+
+      if (isLastStep) {
+        tx.update(storyRef, {
+          current_step: step, status: 'completed', cooldown_winners: nextWinners,
+          [`open_steps.${episode_id}`]: admin.firestore.FieldValue.delete(),
+        });
+      } else {
+        const newEpId = db.collection('episodes').doc().id;
+        tx.set(db.collection('episodes').doc(newEpId), {
+          episode_id: newEpId, story_id: ep.story_id, step: step + 1, parent_sub_id: sub_id,
+          status: 'open', vote_total: 0, created_at: new Date().toISOString(), closed_at: '', pending_at: '',
+        });
+        tx.update(storyRef, {
+          current_step: step, cooldown_winners: nextWinners,
+          [`open_steps.${episode_id}`]: admin.firestore.FieldValue.delete(),
+          [`open_steps.${newEpId}`]: { step: step + 1, sub_count: 0 },
+        });
+      }
+
+      // _serverAddPoints()는 자체 트랜잭션을 열어서 여기서 재사용 불가(트랜잭션
+      // 중첩 금지) — 잔액갱신+배지재계산+point_ledger 기록 로직을 인라인.
+      // 업적(adoption_count)은 의도적으로 건드리지 않음(유저 확정) — 초스피드는
+      // 투표 없이 빠르게 채택되는 특성이라, 기존 "투표 기반 채택" 업적 기준이
+      // 희석되는 걸 막기 위해 별도 추적(전용 업적은 나중에 필요해지면 추가).
+      if (points > 0 && author_id !== FB_ADMIN_ID && author_id !== FB_AI_ID && uSnap.exists) {
+        const newTotal = (Number(uData.total_points) || 0) + points;
+        tx.update(db.collection('users').doc(author_id), { total_points: newTotal, badge: _serverCalcBadge(newTotal) });
+        tx.set(db.collection('point_ledger').doc(), {
+          user_id: author_id, points, reason: 'speedrun_adopt', sub_id, created_at: new Date().toISOString(),
+        });
+      }
+
+      return { ok: true, sub_id, points, completed: isLastStep, story_id: ep.story_id };
+    });
+
+    if (result.ok && result.completed) {
+      try { await _serverRefillSpotlightSlot(db, result.story_id); } catch (e) { console.error('speedrun spotlight refill error:', e.message); }
+    }
+    return result;
+  });
+
+// 정식 "신고"(reports 컬렉션, 운영자 검토용)와는 별개의 경량 자정 장치 — 투표
+// 필터가 없는 초스피드 특성상 스팸/의미없는 문장을 커뮤니티가 자체적으로
+// 걸러내게 함. 결정적 doc ID(sub_id_voter_id)로 중복 방지를 트랜잭션 안의
+// 단일 읽기로 처리(reports의 query-then-write보다 원자성이 강함).
+exports.speedrunDownvote = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const { sub_id } = data;
+    const voter_id = data.user_id;
+    if (!sub_id || !voter_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(voter_id, data.token);
+    const db = admin.firestore();
+    const subRef = db.collection('submissions').doc(sub_id);
+    const dvRef = db.collection('submission_downvotes').doc(`${sub_id}_${voter_id}`);
+
+    const result = await db.runTransaction(async tx => {
+      const [subSnap, dvSnap] = await Promise.all([tx.get(subRef), tx.get(dvRef)]);
+      if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
+      if (dvSnap.exists) return { ok: false, error: '이미 표시했어요.' };
+      const sub = subSnap.data();
+      if (sub.author_id === voter_id) return { ok: false, error: '본인 글에는 표시할 수 없습니다.' };
+
+      const newCount = (Number(sub.downvote_count) || 0) + 1;
+      tx.set(dvRef, { sub_id, voter_id, created_at: new Date().toISOString() });
+      const update = { downvote_count: newCount };
+      // !sub.is_invalidated 가드로 이미 무효화된 뒤 표가 더 쌓여도 딱 한 번만 발동
+      const willInvalidate = newCount >= 3 && !sub.is_invalidated;
+      if (willInvalidate) update.is_invalidated = true;
+      tx.update(subRef, update);
+      return { ok: true, downvote_count: newCount, invalidated: willInvalidate };
+    });
+
+    if (result.ok && result.invalidated) {
+      try { await _serverReverseSpeedrunPoints(db, sub_id); } catch (e) { console.error('speedrun point reversal error:', e.message); }
+    }
+    return result;
+  });
+
+// speedrunDownvote가 3표째에서 호출 — 강제 회수라 실패해선 안 되므로 잔액부족시
+// throw하는 _fbSpendPoints와 달리 0으로 클램프(유저 확정: "이미 다른 데 써버렸어도
+// 마이너스로 안 내려감"). point_ledger에서 원래 지급 건을 sub_id+reason으로
+// 정확히 찾아서 반대 부호로 역분개.
+async function _serverReverseSpeedrunPoints(db, sub_id) {
+  const ledgerSnap = await db.collection('point_ledger')
+    .where('sub_id', '==', sub_id).where('reason', '==', 'speedrun_adopt').limit(1).get();
+  if (ledgerSnap.empty) return;
+  const entry = ledgerSnap.docs[0].data();
+  const amount = Number(entry.points) || 0;
+  if (amount <= 0) return;
+  const uRef = db.collection('users').doc(entry.user_id);
+  await db.runTransaction(async tx => {
+    const uSnap = await tx.get(uRef);
+    if (!uSnap.exists) return;
+    const newTotal = Math.max(0, (Number(uSnap.data().total_points) || 0) - amount);
+    tx.update(uRef, { total_points: newTotal, badge: _serverCalcBadge(newTotal) });
+    tx.set(db.collection('point_ledger').doc(), {
+      user_id: entry.user_id, points: -amount, reason: 'speedrun_invalidate', sub_id, created_at: new Date().toISOString(),
+    });
+  });
+}
+
+// 초스피드 전용 씨앗 생성 — _serverCreateSeedStory는 max_steps:10/vote_threshold:5가
+// 하드코딩돼 있어 그대로 못 씀. point_values는 1~100 셔플(Fisher–Yates)로 스토리
+// 생성 시 한 번만 만들어서 저장 — 매 단계 랜덤이 아니라 스토리당 고정 배정.
+function _serverCreateSpeedrunSeedStory(db, writer, opening) {
+  const story_id = db.collection('stories').doc().id;
+  const episode_id = db.collection('episodes').doc().id;
+  const point_values = [...Array(100)].map((_, i) => i + 1);
+  for (let i = point_values.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [point_values[i], point_values[j]] = [point_values[j], point_values[i]];
+  }
+  writer.set(db.collection('stories').doc(story_id), {
+    story_id, opening: opening.trim(), max_steps: 100, current_step: 0,
+    status: 'active', creator_id: FB_AI_ID, creator_nickname: '익명', creator_badge: '',
+    created_at: new Date().toISOString(), batch: '', participant_count: 0, like_count: 0,
+    is_ai_seed: true, mode: 'speedrun', point_values, cooldown_winners: [],
+    hot_score: 0, open_steps: { [episode_id]: { step: 1, sub_count: 0 } },
+  });
+  writer.set(db.collection('episodes').doc(episode_id), {
+    episode_id, story_id, step: 1, parent_sub_id: '',
+    status: 'open', vote_total: 0, created_at: new Date().toISOString(), closed_at: '', pending_at: '',
+  });
+  return story_id;
+}
+
+// 15자짜리 짧은 오프닝 — 이후 모든 줄이 15자 제한이라 오프닝만 길면 톤이 어긋남
+const SPEEDRUN_OPENINGS = [
+  '문이 갑자기 열렸다.', '전화벨이 울렸다.', '하늘에서 뭔가 떨어졌다.',
+  '갑자기 정전이 됐다.', '낯선 발소리가 들렸다.', '창문이 저절로 열렸다.',
+  '누군가 이름을 불렀다.', '땅이 흔들리기 시작했다.', '갑자기 불이 꺼졌다.',
+  '거울 속 내가 웃었다.', '시계가 거꾸로 돌았다.', '편지 한 통이 도착했다.',
+];
 
 // ── MVP 공감 포인트 지급 (Callable — 공감한 사람이 아니라 글쓴이에게 점수가 가야 하는데,
 //    그 지급을 클라이언트가 직접 하지 못하게 서버로 이전) ──
@@ -3000,7 +3204,7 @@ exports.adminForceCloseWordChallenge = functions
   });
 
 // ── 3슬롯 "오늘의 이야기" 스포트라이트 ────────────────────────
-// config/spotlight_slots = { word:{story_id}, sentence:{story_id,state,round_id}, ai:{story_id}, fairytale:{story_id} }
+// config/spotlight_slots = { word:{story_id}, sentence:{story_id,state,round_id}, ai:{story_id}, fairytale:{story_id}, speedrun:{story_id} }
 // 완결 훅(_serverCloseEpisode)이 슬롯 스토리 완결을 감지해 다음 이야기로 즉시 교체함.
 
 // firebase-api.js의 FB_AI_OPENINGS(1162행~)와 반드시 동일하게 유지할 것
@@ -3176,7 +3380,7 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
     const ptrSnap = await tx.get(ptrRef);
     if (!ptrSnap.exists) return; // adminInitSpotlight 실행 전 — 아직 스포트라이트 미도입
     const slots = ptrSnap.data();
-    const slotKey = ['word', 'sentence', 'ai', 'fairytale'].find(k => slots[k] && slots[k].story_id === completed_story_id);
+    const slotKey = ['word', 'sentence', 'ai', 'fairytale', 'speedrun'].find(k => slots[k] && slots[k].story_id === completed_story_id);
     if (!slotKey) return; // 스포트라이트 슬롯 스토리가 아님
 
     if (slotKey === 'ai') {
@@ -3189,6 +3393,21 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
       newlyCreatedStoryId = newStoryId;
       tx.set(db.collection('config').doc('used_openings'), { [opening]: true }, { merge: true });
       tx.update(ptrRef, { 'ai.story_id': newStoryId });
+      return;
+    }
+
+    if (slotKey === 'speedrun') {
+      // 저작권 큐레이션이 필요 없는 짧은 오프닝뿐이라 ai 슬롯과 동일하게 정적
+      // 배열+used_openings dedup만으로 충분 — 풀 컬렉션 불필요.
+      const usedSnap = await tx.get(db.collection('config').doc('used_openings'));
+      const used = usedSnap.exists ? usedSnap.data() : {};
+      const available = SPEEDRUN_OPENINGS.filter(o => !used[o]);
+      const src = available.length ? available : SPEEDRUN_OPENINGS;
+      const opening = src[Math.floor(Math.random() * src.length)];
+      const newStoryId = _serverCreateSpeedrunSeedStory(db, tx, opening);
+      newlyCreatedStoryId = newStoryId;
+      tx.set(db.collection('config').doc('used_openings'), { [opening]: true }, { merge: true });
+      tx.update(ptrRef, { 'speedrun.story_id': newStoryId });
       return;
     }
 
@@ -3644,6 +3863,31 @@ exports.adminDeleteFairytalePoolEntry = functions
     await _requireAdmin(data.user_id, data.token);
     await admin.firestore().collection('spotlight_fairytale_pool').doc(data.entry_id).delete();
     return { ok: true };
+  });
+
+// 초스피드 슬롯 최초 부트스트랩(1회성 관리자 콜러블) — adminInitSpotlight은 이미
+// initialized:true라 재실행 안 됨(동화각색 때와 동일 상황). 배포 후 한 번만 호출.
+exports.adminInitSpeedrunSlot = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const ptrRef = db.collection('config').doc('spotlight_slots');
+    const ptrSnap = await ptrRef.get();
+    if (ptrSnap.exists && ptrSnap.data().speedrun) return { ok: true, already: true };
+
+    const usedSnap = await db.collection('config').doc('used_openings').get();
+    const used = usedSnap.exists ? usedSnap.data() : {};
+    const available = SPEEDRUN_OPENINGS.filter(o => !used[o]);
+    const src = available.length ? available : SPEEDRUN_OPENINGS;
+    const opening = src[Math.floor(Math.random() * src.length)];
+
+    const batch = db.batch();
+    const newStoryId = _serverCreateSpeedrunSeedStory(db, batch, opening);
+    batch.set(db.collection('config').doc('used_openings'), { [opening]: true }, { merge: true });
+    batch.set(ptrRef, { speedrun: { story_id: newStoryId } }, { merge: true });
+    await batch.commit();
+    return { ok: true, story_id: newStoryId };
   });
 
 // ── 업적 시스템 도입 이전 활동 소급 반영 (1회성 관리자 콜러블) ──

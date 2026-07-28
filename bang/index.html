@@ -513,7 +513,7 @@
   .prose-author { font-size: 11px; color: #9a7060; display: none; text-align: right; margin-top: 4px; }
   .prose-author.visible { display: block; }
   /* 초스피드 줄마다 붙는 포인트/신고아닌-경량 자정 표시 */
-  .sr-line-meta { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 2px; }
+  .sr-line-meta { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-top: 2px; }
   .sr-point-tag { font-size: 10px; font-weight: 700; color: var(--accent2); background: rgba(200,130,58,.12); padding: 1px 7px; border-radius: 8px; }
   .sr-point-tag.sr-void { text-decoration: line-through; color: var(--muted); background: none; }
   .sr-flag-btn { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 8px; padding: 2px 7px; cursor: pointer; font-family: var(--font); }
@@ -1203,6 +1203,7 @@ let currentParam = null;
 function nav(route, param) {
   if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; }
   if (_hintUnsubscribe) { _hintUnsubscribe(); _hintUnsubscribe = null; }
+  clearInterval(_hintCountdownTimer);
   Object.keys(commentCache).forEach(k => delete commentCache[k]);
   if ((route === 'story' || route === 'create') && currentRoute !== 'story' && currentRoute !== 'episode' && currentRoute !== 'create') {
     window._prevRoute = currentRoute;
@@ -1920,6 +1921,7 @@ const commentCache = {};
 let _epUnsubscribe = null; // 에피소드 실시간 리스너 정리용
 let _hintUnsubscribe = null; // 초성힌트 실시간 시도 피드 리스너 정리용
 let _hintRoundData = null; // getHintRound 마지막 응답 캐시(아코디언 펼칠 때 재사용)
+let _hintCountdownTimer = null; // 정답 공개 후 다음 라운드까지 카운트다운 타이머 정리용
 
 // 공동집필 실시간 "쓰는 중" 표시 — episode_typing/{episode_id}_{user_id}에
 // 8초마다(그 이상 자주 쓸 필요 없음, 스로틀) ping을 남기고, 보는 쪽은 8초
@@ -1960,11 +1962,14 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
     <div class="prose-line">
       <span class="prose-sentence"${sub.is_invalidated ? ' style="text-decoration:line-through;color:var(--muted)"' : ''}>${esc(sub.content)}</span>
       <div class="sr-line-meta">
-        <span class="sr-point-tag${sub.is_invalidated ? ' sr-void' : ''}">${sub.is_invalidated ? '무효' : '+' + points + 'P'}</span>
-        <button class="sr-flag-btn" onclick="doSpeedrunDownvote('${sub.sub_id}', this)"${(user && sub.author_id === user.user_id) ? ' disabled' : ''}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>
-          ${sub.downvote_count || 0}
-        </button>
+        <span style="font-size:11px;color:var(--muted)">${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+          <span class="sr-point-tag${sub.is_invalidated ? ' sr-void' : ''}">${sub.is_invalidated ? '무효' : '+' + points + 'P'}</span>
+          <button class="sr-flag-btn" onclick="doSpeedrunDownvote('${sub.sub_id}', this)"${(user && sub.author_id === user.user_id) ? ' disabled' : ''}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>
+            ${sub.downvote_count || 0}
+          </button>
+        </div>
       </div>
     </div>`).join('');
 
@@ -1979,7 +1984,7 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
     </div>
     ${!isFinished ? `
       <div class="card" style="margin-top:16px">
-        ${myCooldown ? `<div class="empty" style="padding:8px 0">⏳ 최근 채택돼서 아직 참여할 수 없어요</div>` : `
+        ${myCooldown ? `<div class="empty" style="padding:8px 0">⏳ 채택 후 5단계 이내에는 참여할 수 없어요</div>` : `
           <textarea id="sr-input" maxlength="15" rows="2" placeholder="다음 문장을 15자 이내로…" style="width:100%;resize:none;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:14px;color:var(--text);font-family:var(--serif);box-sizing:border-box" oninput="document.getElementById('sr-count').textContent=this.value.length"></textarea>
           <div style="text-align:right;font-size:11px;color:var(--muted);margin:4px 0 8px"><span id="sr-count">0</span>/15</div>
           <button class="btn btn-primary" id="sr-submit-btn" style="width:100%" onclick="doSpeedrunSubmit('${story_id}','${openEp ? openEp.episode_id : ''}')">제출</button>
@@ -2192,7 +2197,7 @@ function _applyStoryData(res, story_id) {
     <div style="font-size:12px;color:var(--accent2);background:var(--surface);border-left:3px solid var(--accent2);border-radius:6px;padding:8px 12px;margin:10px 0">
       🎯 이 문장으로 끝나요: <strong>${esc(s.fixed_ending)}</strong>
     </div>` : ''}
-    ${s.mode === 'genre_switch' && openEp ? genreSwitchBannerHtml((s.genre_sequence || [])[Number(openEp.step) - 1]) : ''}
+    ${s.mode === 'genre_switch' && openEp ? genreSwitchBannerHtml((s.genre_sequence || [])[Number(openEp.step) - 1], (s.genre_sequence || [])[Number(openEp.step)]) : ''}
     ${isAdmin() && s.status === 'active' && !s.vote_threshold ? `
     <div style="display:flex;justify-content:flex-end;margin:6px 0 2px">
       <button class="btn btn-ghost btn-sm" style="border:none;color:var(--muted);font-size:12px;opacity:0.6;display:inline-flex;align-items:center;gap:3px;padding:4px 6px" onclick="adminCloseStory('${esc(s.story_id)}')"><svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>이야기 종료</button>
@@ -3358,9 +3363,39 @@ async function loadHintCard() {
   if (!area) return;
   const res = await api('getHintRound', {});
   if (!document.getElementById('hint-card-area')) return; // 그 사이 탭 이동
+  clearInterval(_hintCountdownTimer);
   if (!res.ok || !res.round) { area.innerHTML = ''; return; }
   _hintRoundData = res.round;
   area.innerHTML = renderHintCardHtml(res.round);
+  if (res.round.status === 'closed') _startHintRoundCountdown();
+}
+
+// 하루 6회 정시(08/10/12/14/16/18시 KST) 스케줄과 그대로 맞춰서 다음 라운드
+// 시각을 클라이언트에서 계산 — 서버가 별도로 "다음 라운드 시각" 필드를
+// 내려주지 않아도 되게(스케줄 자체가 고정값이라 클라에서 계산 가능,
+// _nextKstMidnightIso와 동일한 KST 변환 패턴 재사용)
+const HINT_ROUND_HOURS_KST = [8, 10, 12, 14, 16, 18];
+function _nextHintRoundIso() {
+  const kstNow = new Date(Date.now() + 9 * 3600 * 1000);
+  const h = kstNow.getUTCHours();
+  let nextHour = HINT_ROUND_HOURS_KST.find(hh => hh > h);
+  let dayOffset = 0;
+  if (nextHour === undefined) { nextHour = HINT_ROUND_HOURS_KST[0]; dayOffset = 1; }
+  const kstNextMs = Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate() + dayOffset, nextHour, 0, 0);
+  return new Date(kstNextMs - 9 * 3600 * 1000).toISOString();
+}
+function _startHintRoundCountdown() {
+  clearInterval(_hintCountdownTimer);
+  const tick = () => {
+    const el = document.getElementById('hint-countdown');
+    if (!el) { clearInterval(_hintCountdownTimer); return; }
+    const diff = new Date(_nextHintRoundIso()).getTime() - Date.now();
+    if (diff <= 0) { el.textContent = '곧 시작'; clearInterval(_hintCountdownTimer); loadHintCard(); return; }
+    const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
+    el.textContent = h > 0 ? `${h}시간 ${m}분 후` : `${m}분 후`;
+  };
+  tick();
+  _hintCountdownTimer = setInterval(tick, 30000);
 }
 
 function renderHintCardHtml(round) {
@@ -3370,11 +3405,11 @@ function renderHintCardHtml(round) {
       <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
         <span style="font-size:14px;font-weight:700">🧩 초성 힌트${solved ? ' · 정답 공개!' : ''}</span>
       </div>
-      <div class="story-prose" style="padding:18px 16px;margin:10px 0">
-        <div class="prose-opening" style="font-size:16px;font-weight:700;letter-spacing:1px">${esc(solved ? round.text : round.hint)}</div>
+      <div class="story-prose" style="padding:28px 18px;margin:10px 0">
+        <div class="prose-opening" style="font-weight:700;letter-spacing:1px">${esc(solved ? round.text : round.hint)}</div>
       </div>
       ${solved
-        ? `<div style="font-size:12px;color:var(--muted)">${round.winner_nickname ? `${esc(round.winner_nickname)}님이 <b style="color:var(--accent2)">+${round.points}P</b> 획득!` : '아직 정답자가 없어요'} · 다음 라운드를 기다려주세요</div>`
+        ? `<div style="font-size:12px;color:var(--muted)">${round.winner_nickname ? `${esc(round.winner_nickname)}님이 <b style="color:var(--accent2)">+${round.points}P</b> 획득!` : '아직 정답자가 없어요'} · 다음 라운드까지 <span id="hint-countdown"></span></div>`
         : `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
              <span class="step-pill"><span class="step-dot"></span>${round.participant_count || 0}명 도전 중</span>
              <button class="btn btn-primary btn-sm" onclick="toggleHintDetail()">도전하기</button>

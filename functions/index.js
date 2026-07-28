@@ -4192,6 +4192,10 @@ exports.adminInitFixedEndingSlot = functions
     batch.set(db.collection('config').doc('used_openings'), { [opening]: true }, { merge: true });
     batch.set(ptrRef, { fixed_ending: { story_id: newStoryId } }, { merge: true });
     await batch.commit();
+    // _serverRefillSpotlightSlot 경로(다른 슬롯들의 정상 리필)는 매번 이걸 호출하는데,
+    // 이 1회성 부트스트랩만 빠져있어서 갓 만들어진 스토리에 장르 확률 차트가
+    // 안 뜨는 버그가 있었음(유저 제보, 2026-07-28) — 추가.
+    await _classifyStoryGenre(db, newStoryId, 0).catch(e => console.error('genre classify(bootstrap) error:', e.message));
     return { ok: true, story_id: newStoryId };
   });
 

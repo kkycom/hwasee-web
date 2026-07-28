@@ -3432,6 +3432,7 @@ async function fbGetSpotlight(viewer_id) {
         challenge_words: story.challenge_words || null,
         my_submissions,
         mode: story.mode || null, max_steps: story.max_steps || null, speedrun_latest_line,
+        fixed_ending: story.fixed_ending || null, genre_sequence: story.genre_sequence || null,
       };
     } else if (key === 'sentence' && s.state === 'proposing' && s.round_id) {
       const roundData = await _fbGetSentenceRoundData(s.round_id, viewer_id);

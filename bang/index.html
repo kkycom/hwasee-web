@@ -3177,13 +3177,13 @@ function genrePanelHtml(genre_probs, story_id) {
 // 보여줌. genrePanelHtml과 같은 .genre-panel/--g/--wash 토큰을 재사용해서
 // 카드 톤이 그 장르 색으로 자연스럽게 통일되게 함(목업 리뷰 때 합의된
 // "배너뿐 아니라 카드/버튼 색 전체가 장르색으로 바뀐다" 방향).
-function genreSwitchBannerHtml(genre) {
+function genreSwitchBannerHtml(genre, nextGenre) {
   if (!genre) return '';
   const suffix = GENRE_META[genre] || 'mystery';
   return `
     <div class="genre-panel" id="genre-switch-banner" style="--g:var(--g-${suffix});--wash:var(--g-${suffix}-wash)">
       <div class="genre-row">
-        <div class="genre-headline">🎭 지금 장르: <span class="genre-pill-primary">${esc(genre)}</span></div>
+        <div class="genre-headline">🎭 지금 장르: <span class="genre-pill-primary">${esc(genre)}</span>${nextGenre ? ` · 다음엔 <span class="genre-pill-primary">${esc(nextGenre)}</span>로!` : ''}</div>
       </div>
     </div>`;
 }
@@ -3302,10 +3302,18 @@ function renderSpotlight() {
       const wcLinkBtn = key === 'word'
         ? `<button class="btn btn-sm" style="background:rgba(200,130,58,.12);color:var(--accent2);border:1px solid rgba(200,130,58,.35);border-radius:20px;display:inline-flex;align-items:center;gap:4px" onclick="nav('wordchallenge')">🎲 챌린지 가기</button>`
         : '';
+      const fixedEndingTeaserHtml = key === 'fixed_ending' && slot.fixed_ending ? `
+        <div style="font-size:12px;color:var(--accent2);background:var(--surface);border-left:3px solid var(--accent2);border-radius:6px;padding:8px 12px;margin:10px 0">
+          🎯 이 문장으로 끝나요: <strong>${esc(slot.fixed_ending)}</strong>
+        </div>` : '';
+      const genreSwitchTeaserHtml = key === 'genre_switch' && _curEp
+        ? genreSwitchBannerHtml((slot.genre_sequence || [])[Number(_curEp.step) - 1], (slot.genre_sequence || [])[Number(_curEp.step)])
+        : '';
       bodyHtml = `
         <div class="story-prose" style="padding:28px 18px 28px 20px;margin:12px 0;cursor:pointer" onclick="openStoryProseModal('${esc(slot.story_id)}')" role="button" aria-label="지금까지의 이야기 보기">
           <div class="prose-opening">${slot.mode === 'speedrun' ? esc(slot.speedrun_latest_line || slot.opening) : slot.challenge_words && slot.challenge_words.length ? boldChallengeWords(slot.opening, slot.challenge_words) : esc(slot.opening)}</div>
         </div>
+        ${fixedEndingTeaserHtml}${genreSwitchTeaserHtml}
         ${genrePanelHtml(slot.genre_probs, slot.story_id)}
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <span class="step-pill"><span class="step-dot"></span>${_stepLabel}</span>
@@ -3362,10 +3370,12 @@ function renderHintCardHtml(round) {
       <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
         <span style="font-size:14px;font-weight:700">🧩 초성 힌트${solved ? ' · 정답 공개!' : ''}</span>
       </div>
-      <div style="font-family:var(--serif);font-size:17px;font-weight:700;letter-spacing:1px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin:10px 0">${esc(solved ? round.text : round.hint)}</div>
+      <div class="story-prose" style="padding:18px 16px;margin:10px 0">
+        <div class="prose-opening" style="font-size:16px;font-weight:700;letter-spacing:1px">${esc(solved ? round.text : round.hint)}</div>
+      </div>
       ${solved
         ? `<div style="font-size:12px;color:var(--muted)">${round.winner_nickname ? `${esc(round.winner_nickname)}님이 <b style="color:var(--accent2)">+${round.points}P</b> 획득!` : '아직 정답자가 없어요'} · 다음 라운드를 기다려주세요</div>`
-        : `<button class="btn btn-primary btn-sm" onclick="toggleHintDetail()">도전하기</button>
+        : `<div style="display:flex;justify-content:flex-end"><button class="btn btn-primary btn-sm" onclick="toggleHintDetail()">도전하기</button></div>
            <div id="hint-detail-area" style="display:none;margin-top:12px"></div>`}
     </div>`;
 }

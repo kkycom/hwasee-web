@@ -4039,7 +4039,7 @@ async function _serverStartHintRound(db) {
       round_id: roundRef.id, text, hint: _serverToChoseong(text),
       status: 'active', start_at: now.toISOString(), end_at: '',
       winner_user_id: null, winner_nickname: null, winner_submission_id: null, winner_text: null,
-      points: HINT_GUESS_POINTS, closed_at: null,
+      points: HINT_GUESS_POINTS, closed_at: null, participant_count: 0,
     });
   });
 }
@@ -4077,8 +4077,11 @@ exports.getHintRound = functions
     }
     if (!doc) return { ok: true, round: null };
     const r = doc.data();
-    const guessSnap = await db.collection('hint_guesses').where('round_id', '==', doc.id).get();
-    const participant_count = new Set(guessSnap.docs.map(g => g.data().user_id)).size;
+    // 예전엔 매 호출마다 hint_guesses를 round_id로 전체 스캔해서 유니크 참여자
+    // 수를 셌는데, 시도가 쌓일수록(이 함수는 홈 탭 방문/재렌더마다 호출됨) 매번
+    // 무거워지는 구조였음 — hintGuess 트랜잭션에서 이미 비정규화해서 저장하는
+    // participant_count 필드를 그대로 읽음(2026-07-29, open_steps와 동일 패턴)
+    const participant_count = r.participant_count || 0;
     const base = { round_id: doc.id, hint: r.hint, status: r.status, start_at: r.start_at, points: r.points, participant_count };
     if (r.status === 'closed') {
       return { ok: true, round: { ...base, text: r.text, winner_user_id: r.winner_user_id, winner_nickname: r.winner_nickname, winner_text: r.winner_text } };
@@ -4137,13 +4140,22 @@ exports.hintGuess = functions
         is_correct: isCorrect, created_at: new Date().toISOString(),
       });
 
+      // participant_count 비정규화(open_steps와 동일 패턴, 2026-07-29) — 예전엔
+      // getHintRound가 매번 hint_guesses를 round_id로 통째로 스캔해서 유니크
+      // user_id 수를 세었는데, 라운드가 진행될수록(시도 쌓일수록) 매 호출마다
+      // 점점 무거워지는 구조였음. 여기서 이미 쿨다운 체크용으로 "이 유저의
+      // 기존 시도"를 읽고 있으므로(myGuessesSnap), 그게 비어있으면(=이 라운드
+      // 첫 시도) 신규 참여자란 뜻 — 추가 읽기 없이 그대로 판단 가능.
+      const roundUpdate = {};
+      if (myGuessesSnap.empty) roundUpdate.participant_count = admin.firestore.FieldValue.increment(1);
       if (isCorrect) {
-        tx.update(roundRef, {
+        Object.assign(roundUpdate, {
           status: 'closed', closed_at: new Date().toISOString(),
           winner_user_id: author_id, winner_nickname: nickname,
           winner_submission_id: guessRef.id, winner_text: text,
         });
       }
+      if (Object.keys(roundUpdate).length) tx.update(roundRef, roundUpdate);
       // 지급액은 상수가 아니라 라운드 생성 시점에 저장된 round.points를 씀 —
       // 안 그러면 포인트 값이 바뀐 시점에 이미 열려있던(옛 값으로 만들어진)
       // 라운드가 화면엔 옛 값으로 표시되는데 실제 지급은 새 상수로 되는 불일치 발생

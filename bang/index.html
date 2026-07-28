@@ -281,8 +281,26 @@
   .boost-scroll { display:flex; gap:12px; overflow-x:auto; scrollbar-width:none; -ms-overflow-style:none; padding-bottom:2px; }
   .boost-scroll::-webkit-scrollbar { display:none; }
   .boost-card-wrap { min-width:300px; max-width:300px; flex-shrink:0; }
-  .sort-btn { background:var(--surface); border:none; color:var(--muted); padding:5px 12px; border-radius:16px; font-size:12px; font-weight:600; cursor:pointer; transition:.15s; }
-  .sort-btn.active { background:var(--accent); color:#3a5548; }
+  /* ── 정렬 드롭다운(알약버튼 나열 대신 프로필/어드민 메뉴와 같은 드롭다운 패턴) */
+  .sort-menu-wrap { position: relative; }
+  .sort-menu-btn { display:flex; align-items:center; gap:5px; background:var(--surface); border:none; color:var(--text); padding:6px 12px; border-radius:16px; font-size:12px; font-weight:600; cursor:pointer; transition:.15s; }
+  .sort-menu-btn .caret { font-size:9px; color:var(--muted); transition: transform .15s; }
+  .sort-menu-btn.open .caret { transform: rotate(180deg); }
+  .sort-dropdown {
+    display: none; position: absolute; top: calc(100% + 8px); left: 0;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4); min-width: 140px; z-index: 200; overflow: hidden;
+  }
+  .sort-dropdown.open { display: block; }
+  .sort-dropdown-item {
+    display: flex; align-items: center; gap: 6px;
+    padding: 10px 14px; font-size: 13px; color: var(--text);
+    background: none; border: none; width: 100%; text-align: left; cursor: pointer;
+    transition: background .1s; white-space: nowrap;
+  }
+  .sort-dropdown-item:hover { background: var(--surface); }
+  .sort-dropdown-item.active { color: var(--accent2); font-weight: 700; }
+  .sort-dropdown-item .check { width: 14px; flex-shrink: 0; }
 
   /* ── 레이아웃 */
   main { max-width: 720px; margin: 0 auto; padding: 32px 16px 48px; }
@@ -961,7 +979,7 @@ let _renderEpoch = 0;
 // ─── 탭 정렬 상태 ──────────────────────────────────────────
 // 관심받는+참여중 탭이 "자유 이야기" 하나로 통합됨(3슬롯 스포트라이트 개편) —
 // 참여중 카드는 별도 탭이 아니라 mine 그룹으로 볼드+정렬 우선순위만 유지.
-let _freeSort  = 'activity';
+let _freeSort  = 'available';
 let _freeCache = null; // { mine, others }
 let _freeLimit = 20;
 let _doneSort  = 'activity';
@@ -997,34 +1015,59 @@ function _sortDisplayStep(s) {
 
 function _sortStories(stories, key) {
   const arr = [...stories];
-  if (key === 'activity')    return arr.sort((a, b) => (Number(b.activity_count)||0) - (Number(a.activity_count)||0));
+  // 'available'(참여 가능 순)은 그룹(mine/others) 재배치로 처리되고, 그룹 내부
+  // 정렬은 activity와 동일 기준을 씀(가장 참여 활발한 것부터)
+  if (key === 'activity' || key === 'available') return arr.sort((a, b) => (Number(b.activity_count)||0) - (Number(a.activity_count)||0));
   if (key === 'step')        return arr.sort((a, b) => _sortDisplayStep(b) - _sortDisplayStep(a));
   if (key === 'likes')       return arr.sort((a, b) => (Number(b.like_count)||0)     - (Number(a.like_count)||0));
   if (key === 'submissions') return arr.sort((a, b) => _currentSubCount(b) - _currentSubCount(a));
   return arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
+// 알약버튼 나열 대신 "정렬" 버튼 하나 + 드롭다운(프로필/어드민 메뉴와 같은
+// 패턴 재사용) — 옵션이 5개로 늘면서 알약을 다 펼치면 윗공간을 너무 차지해서
+// 전환(2026-07-28, 유저 지적).
 function _sortBtns(prefix, keys, current, trailingHtml = '') {
-  return `<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
-    ${keys.map(([k,l]) =>
-      `<button id="${prefix}-${k}" class="sort-btn ${current===k?'active':''}" onclick="${prefix==='fs'?'setFreeSort':'setDoneSort'}('${k}')">${l}</button>`
-    ).join('')}
+  const currentLabel = (keys.find(([k]) => k === current) || [])[1] || '정렬';
+  return `<div style="display:flex;gap:6px;margin-bottom:14px;align-items:center">
+    <div class="sort-menu-wrap" id="${prefix}-sort-wrap">
+      <button class="sort-menu-btn" id="${prefix}-sort-btn" onclick="toggleSortMenu('${prefix}')">${currentLabel} <span class="caret">▾</span></button>
+      <div class="sort-dropdown" id="${prefix}-sort-dropdown">
+        ${keys.map(([k,l]) =>
+          `<button class="sort-dropdown-item ${current===k?'active':''}" onclick="${prefix==='fs'?'setFreeSort':'setDoneSort'}('${k}');closeSortMenu('${prefix}')"><span class="check">${current===k?'✓':''}</span>${l}</button>`
+        ).join('')}
+      </div>
+    </div>
     ${trailingHtml ? `<span style="margin-left:auto">${trailingHtml}</span>` : ''}
   </div>`;
 }
 
+function toggleSortMenu(prefix) {
+  const btn  = document.getElementById(`${prefix}-sort-btn`);
+  const drop = document.getElementById(`${prefix}-sort-dropdown`);
+  if (!btn || !drop) return;
+  const opening = !drop.classList.contains('open');
+  drop.classList.toggle('open', opening);
+  btn.classList.toggle('open', opening);
+}
+function closeSortMenu(prefix) {
+  const btn  = document.getElementById(`${prefix}-sort-btn`);
+  const drop = document.getElementById(`${prefix}-sort-dropdown`);
+  if (btn)  btn.classList.remove('open');
+  if (drop) drop.classList.remove('open');
+}
+
 function setFreeSort(key) {
   _freeSort = key; _freeLimit = 20;
-  ['activity','step','submissions','latest'].forEach(k => {
-    const el = document.getElementById('fs-' + k);
-    if (el) el.classList.toggle('active', k === key);
-  });
   renderFreeCards();
 }
 
-// 참여중(mine) 카드는 항상 볼드+맨 위 그룹으로 고정 노출(페이징 없음 — 보통
-// 개수가 적음), 그 아래로 나머지(others) 카드가 정렬+더보기 페이징됨. 부스트는
-// mine/others 어느 쪽에서 나왔든 한 스크롤에 합쳐서 보여줌.
+// 참여중(mine) 카드는 기본적으로 항상 볼드+맨 위 그룹으로 고정 노출(페이징
+// 없음 — 보통 개수가 적음), 그 아래로 나머지(others) 카드가 정렬+더보기
+// 페이징됨. 부스트는 mine/others 어느 쪽에서 나왔든 한 스크롤에 합쳐서 보여줌.
+// 단, '참여 가능 순'(available)일 땐 반대로 others를 먼저 보여주고 mine을
+// 맨 아래로 내림 — 이미 많이 참여한 유저가 새로 쓸 이야기를 찾으려고 매번
+// 자기 참여작들을 스크롤로 지나쳐야 했던 문제 개선(2026-07-28 유저 제보).
 function renderFreeCards() {
   const content = document.getElementById('home-content');
   if (!content || !_freeCache) return;
@@ -1042,12 +1085,16 @@ function renderFreeCards() {
   const loadMoreHtml = remaining > 0
     ? `<button id="free-load-more" class="btn btn-ghost" style="width:100%;margin-top:8px;color:var(--muted)" onclick="loadMoreFree()">더 보기 (${remaining}개)</button>`
     : '';
-  const cardsHtml = mineSorted.map(s => myStoryCardHtml(s)).join('') + visibleOthers.map(s => popularCardHtml(s)).join('');
+  const mineHtml = mineSorted.map(s => myStoryCardHtml(s)).join('');
+  const othersHtml = visibleOthers.map(s => popularCardHtml(s)).join('');
+  const cardsHtml = _freeSort === 'available'
+    ? othersHtml + loadMoreHtml + (mineSorted.length ? `<div class="boost-section-label" style="margin-top:20px">✍ 이미 참여한 이야기</div>${mineHtml}` : '')
+    : mineHtml + othersHtml + loadMoreHtml;
   content.innerHTML = boostHtml
-    + _sortBtns('fs', [['activity','참여도 순'],['step','진행도 순'],['submissions','제출 순'],['latest','최신 순']], _freeSort,
+    + _sortBtns('fs', [['available','참여 가능 순'],['activity','참여도 순'],['step','진행도 순'],['submissions','제출 순'],['latest','최신 순']], _freeSort,
         `<button class="btn btn-primary btn-sm" style="flex:none" onclick="nav('create')">+ 새 이야기</button>`)
     + ((mineSorted.length || othersSorted.length)
-      ? cardsHtml + loadMoreHtml
+      ? cardsHtml
       : `<div class="empty" style="padding-top:40px">아직 이야기가 없어요.<br>오늘의 이야기에서 참여해 보세요!<br>
           <button class="btn btn-primary btn-sm" style="margin-top:16px" onclick="switchHomeTab('spotlight')">오늘의 이야기로 가기</button>
         </div>`);
@@ -1068,10 +1115,6 @@ function loadMoreFree() {
 
 function setDoneSort(key) {
   _doneSort = key; _doneLimit = 20;
-  ['activity','likes','latest'].forEach(k => {
-    const el = document.getElementById('ds-' + k);
-    if (el) el.classList.toggle('active', k === key);
-  });
   renderDoneCards();
 }
 
@@ -1379,6 +1422,10 @@ document.addEventListener('click', e => {
   if (wrap && !wrap.contains(e.target)) closeProfileMenu();
   const adminWrap = document.getElementById('admin-menu-wrap');
   if (adminWrap && !adminWrap.contains(e.target)) closeAdminMenu();
+  ['fs', 'ds'].forEach(p => {
+    const sortWrap = document.getElementById(`${p}-sort-wrap`);
+    if (sortWrap && !sortWrap.contains(e.target)) closeSortMenu(p);
+  });
 });
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');

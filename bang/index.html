@@ -3238,7 +3238,7 @@ function genreSwitchBannerHtml(genre, nextGenre) {
   if (!genre) return '';
   const suffix = GENRE_META[genre] || 'mystery';
   return `
-    <div class="genre-panel" id="genre-switch-banner" style="--g:var(--g-${suffix});--wash:var(--g-${suffix}-wash)">
+    <div class="genre-panel" id="genre-switch-banner" style="--g:var(--g-${suffix});--wash:var(--g-${suffix}-wash);margin-top:10px">
       <div class="genre-row">
         <div class="genre-headline">🎭 지금 장르: <span class="genre-pill-primary">${esc(genre)}</span>${nextGenre ? ` · 다음엔 <span class="genre-pill-primary">${esc(nextGenre)}</span>로!` : ''}</div>
       </div>

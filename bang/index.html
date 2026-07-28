@@ -634,6 +634,12 @@
     70%  { filter: blur(1px); }
     100% { clip-path: inset(0 0% 0 -4px); filter: blur(0); }
   }
+  /* 초성힌트 정답 공개 — 산문뷰 탭하면 초성에서 정답 문장으로 잉크 리빌
+     (동일 inkIn 애니메이션 재사용, 대상만 .prose-opening으로 확장) */
+  .prose-opening.ink-in {
+    clip-path: inset(0 100% 0 -4px); filter: blur(3px);
+    animation: inkIn 1.2s steps(40,end) forwards;
+  }
 
   /* ── 완결 축하: 필기체 "The End" ── */
   .theend-fx { margin-top: 18px; display: flex; justify-content: center; }
@@ -646,6 +652,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .prose-line.ink-in { animation: none; }
+    .prose-opening.ink-in { animation: none; clip-path: none; filter: none; }
     .theend-fx.play .theend-text { animation: none; clip-path: none; }
   }
 
@@ -3398,7 +3405,14 @@ function renderSpotlight() {
     _startSentenceRoundCountdown(slots.sentence.round.end_at);
   }
   // 초성힌트는 스포트라이트 슬롯이 아니라(스토리가 아님) spotlight_slots/
-  // fbGetSpotlight 캐시 로직과 완전히 분리된 독립 fetch — fire-and-forget
+  // fbGetSpotlight 캐시 로직과 완전히 분리된 독립 fetch — fire-and-forget.
+  // renderSpotlight()는 캐시로 즉시 그리고 곧이어 최신 데이터로 다시 그리는
+  // 구조라 한 번의 탭 방문에 여러 번 불릴 수 있는데, 그때마다 #hint-card-area를
+  // 빈 채로 새로 만들어버리면 loadHintCard()의 비동기 재조회가 끝나기 전까지
+  // 카드가 잠깐 사라졌다 다시 나타나는 깜빡임이 있었음(유저 제보, 2026-07-28)
+  // — 이전에 받아온 데이터가 있으면 그걸로 먼저 즉시 채워두고 그 위에 최신화.
+  const hintArea = document.getElementById('hint-card-area');
+  if (hintArea && _hintRoundData) hintArea.innerHTML = renderHintCardHtml(_hintRoundData);
   loadHintCard();
 }
 
@@ -3443,6 +3457,10 @@ function _startHintRoundCountdown() {
   _hintCountdownTimer = setInterval(tick, 30000);
 }
 
+// 정답 공개 직후에도 문장이 곧바로 딱 떠있으면 낯선 사람 눈엔 "이게 뭔가"
+// 싶어서(유저 지적, 2026-07-28), 라운드가 닫혀도 초성은 그대로 두고 산문뷰를
+// 탭해야 잉크 리빌로 정답이 드러나게 함 — 정적 텍스트가 아니라 "발표 순간"으로
+// 느껴지게. 이미 정답을 아는 사람(초성힌트 맞춘 사람 등)에게도 재확인용으로 유효.
 function renderHintCardHtml(round) {
   const solved = round.status === 'closed';
   return `
@@ -3450,12 +3468,13 @@ function renderHintCardHtml(round) {
       <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
         <span style="font-size:14px;font-weight:700">🧩 초성 힌트${solved ? ' · 정답 공개!' : ''}</span>
       </div>
-      <div class="story-prose" style="padding:28px 18px;margin:10px 0">
-        <div class="prose-opening" style="font-weight:700;letter-spacing:1px">${esc(solved ? round.text : round.hint)}</div>
+      <div class="story-prose" style="padding:28px 18px;margin:10px 0${solved ? ';cursor:pointer' : ''}"${solved ? ' onclick="revealHintAnswer()"' : ''}>
+        <div class="prose-opening" id="hint-answer-text" style="font-weight:700;letter-spacing:1px">${esc(round.hint)}</div>
+        ${solved ? `<div id="hint-reveal-affordance" style="font-size:11px;color:var(--muted);margin-top:10px">👆 눌러서 정답 확인하기</div>` : ''}
       </div>
       ${solved
-        ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-             <span style="font-size:12px;color:var(--muted)">${round.winner_nickname ? `${esc(round.winner_nickname)}님이 <b style="color:var(--accent2)">+${round.points}P</b> 획득!` : '아직 정답자가 없어요'} · 다음 라운드까지 <span id="hint-countdown"></span></span>
+        ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px">${round.winner_nickname ? `${esc(round.winner_nickname)}님이 <b style="color:var(--accent2)">+${round.points}P</b> 획득!` : '아직 정답자가 없어요'} · 다음 라운드까지 <span id="hint-countdown"></span></div>
+           <div style="display:flex;justify-content:flex-end">
              <button class="btn btn-ghost btn-sm" onclick="toggleHintHistory('${round.round_id}')">참여 과정 보기</button>
            </div>
            <div id="hint-history-area" style="display:none;margin-top:12px"></div>`
@@ -3465,6 +3484,16 @@ function renderHintCardHtml(round) {
            </div>
            <div id="hint-detail-area" style="display:none;margin-top:12px"></div>`}
     </div>`;
+}
+
+function revealHintAnswer() {
+  if (!_hintRoundData || _hintRoundData.status !== 'closed') return;
+  const el = document.getElementById('hint-answer-text');
+  if (!el || el.dataset.revealed) return;
+  el.dataset.revealed = '1';
+  el.textContent = _hintRoundData.text;
+  requestAnimationFrame(() => el.classList.add('ink-in'));
+  document.getElementById('hint-reveal-affordance')?.remove();
 }
 
 async function toggleHintHistory(round_id) {

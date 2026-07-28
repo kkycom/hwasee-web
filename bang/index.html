@@ -528,7 +528,11 @@
   }
   .prose-line { margin-top: 29px; position: relative; }
   .prose-sentence { font-family: var(--serif); font-size: 16px; line-height: 29px; display: block; color: #2c1a0e; }
-  .prose-author { font-size: 11px; color: #9a7060; display: none; text-align: right; margin-top: 4px; }
+  /* line-height를 29px 한 줄에 맞춰야 .prose-author가 보이는 곳(초스피드 등)에서
+     산문뷰 줄무늬 배경과 어긋나지 않음 — margin-top(4px)+기본 line-height일 땐
+     한 줄(29px)의 배수가 아니라서 그 아래 모든 줄이 누적으로 밀렸었음(유저 지적,
+     2026-07-28) */
+  .prose-author { font-size: 11px; color: #9a7060; display: none; text-align: right; line-height: 29px; }
   .prose-author.visible { display: block; }
   /* 초스피드 줄마다 붙는 포인트/신고아닌-경량 자정 표시 */
   .sr-line-meta { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
@@ -3509,9 +3513,9 @@ function renderHintCardHtml(round) {
         <span style="font-size:14px;font-weight:700">🧩 초성 힌트${solved ? ' · 정답 공개!' : ''}</span>
         ${solved ? `<span style="font-size:11px;color:var(--muted);font-weight:400">(다음 라운드까지 <span id="hint-countdown"></span>)</span>` : ''}
       </div>
-      <div class="story-prose" style="padding:28px 18px;margin:10px 0${solved ? ';cursor:pointer' : ''}"${solved ? ' onclick="revealHintAnswer()"' : ''}>
+      <div class="story-prose" style="padding:28px 18px;margin:10px 0;position:relative${solved ? ';cursor:pointer' : ''}"${solved ? ' onclick="revealHintAnswer()"' : ''}>
         <div class="prose-opening" id="hint-answer-text" style="font-weight:700;letter-spacing:1px">${esc(round.hint)}</div>
-        ${solved ? `<div id="hint-reveal-affordance" style="font-size:11px;color:var(--muted);margin-top:10px;min-height:14px">👆 눌러서 정답 확인하기</div>` : ''}
+        ${solved ? `<div id="hint-reveal-affordance" style="position:absolute;left:18px;bottom:8px;font-size:11px;color:var(--muted)">👆 눌러서 정답 확인하기</div>` : ''}
       </div>
       ${solved
         ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">

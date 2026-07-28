@@ -2095,7 +2095,9 @@ async function doSpeedrunSubmit(story_id, episode_id) {
     if (btn) { btn.disabled = false; btn.textContent = '제출'; }
     return;
   }
-  toast(res.points > 0 ? `채택! +${res.points}P` : '채택됐어요!');
+  // 초스피드는 투표 없이 전원 무조건 채택이라 "채택!"이라고 알려줘봐야 정보
+  // 가치가 없었음(유저 지적, 2026-07-28) — 실제로 받은 포인트만 안내
+  toast(res.points > 0 ? `+${res.points}P 받았어요!` : '제출됐어요!');
   _lsc.del('story_' + story_id);
   story();
 }
@@ -3462,10 +3464,16 @@ function renderSpotlight() {
 
 // ─── 초성 힌트 (정시 이벤트 — 스토리 아님, 카드+아코디언) ───────────────
 async function loadHintCard() {
-  const area = document.getElementById('hint-card-area');
-  if (!area) return;
+  if (!document.getElementById('hint-card-area')) return;
   const res = await api('getHintRound', {});
-  if (!document.getElementById('hint-card-area')) return; // 그 사이 탭 이동
+  // 알림 패널/댓글-MVP 섹션과 동일한 stale DOM 참조 버그 — await로 기다리는
+  // 사이 renderSpotlight()가 다시 불려서 #hint-card-area 전체가 새 엘리먼트로
+  // 갈아끼워지면, 여기서 미리 잡아둔 참조에 결과를 써봐야 이미 화면에서
+  // 떨어져나간 옛 엘리먼트라 아무 반영도 안 됨(카드가 안 채워진 것처럼 보임 —
+  // 유저 제보 "카드가 보였다 안 보였다", 2026-07-28). 응답 도착 시점에 항상
+  // 최신 엘리먼트를 다시 조회.
+  const area = document.getElementById('hint-card-area');
+  if (!area) return; // 그 사이 탭 이동
   clearInterval(_hintCountdownTimer);
   if (!res.ok || !res.round) { area.innerHTML = ''; return; }
   _hintRoundData = res.round;

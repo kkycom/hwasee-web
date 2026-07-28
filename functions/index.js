@@ -4083,6 +4083,20 @@ exports.hintGuess = functions
       const round = roundSnap.data();
       if (round.status !== 'active') return { ok: false, error: '이미 마감된 라운드예요.' };
 
+      // 시도 간 쿨다운 10초 — 원래 설계엔 없었는데(무제한 시도), 실사용에서
+      // 한 사람이 연속으로 여러 번 찍어서 맞히는 사례가 나와 추가(2026-07-28,
+      // 유저 판단). round_id+user_id 둘 다 등호 조건이라 복합 인덱스 불필요.
+      const myGuessesSnap = await tx.get(
+        db.collection('hint_guesses').where('round_id', '==', round_id).where('user_id', '==', author_id));
+      const lastGuess = myGuessesSnap.docs.map(d => d.data())
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+      if (lastGuess) {
+        const elapsedMs = Date.now() - new Date(lastGuess.created_at).getTime();
+        if (elapsedMs < 10000) {
+          return { ok: false, error: `${Math.ceil((10000 - elapsedMs) / 1000)}초 후 다시 시도해주세요.` };
+        }
+      }
+
       // 정규화: 공백 전부 제거 + 끝의 마침표 제거(씨앗 문장이 전부 "다."로 끝남) —
       // 정답 판정과 글자별 매치 카운트 둘 다 이 정규화된 문자열 기준으로 통일
       const norm = s => (s || '').replace(/\s+/g, '').replace(/\.+$/, '');

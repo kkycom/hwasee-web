@@ -2061,14 +2061,14 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
         </button>
       </div>
     </div>
-    <span class="prose-author visible">— ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>`).join('');
+    <span class="prose-author visible" style="line-height:16px;margin-top:2px">— ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>`).join('');
 
   document.getElementById('app').innerHTML = `
     <div class="story-toolbar" style="display:flex;align-items:center;gap:0">
       <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="nav(window._prevRoute || 'home')">← 목록으로</button>
     </div>
     <div style="margin:12px 0"><span class="step-pill"><span class="step-dot"></span>⚡ ${isFinished ? '완결' : (Number(s.current_step) || 0) + '/' + (s.max_steps || 100) + '단계'}</span></div>
-    <div class="story-prose">
+    <div class="story-prose" id="story-prose-wrap" onclick="handleProseWrapClick(event)">
       <div class="prose-opening">${esc(s.opening)}</div>
       ${linesHtml}
     </div>
@@ -2285,7 +2285,7 @@ function _applyStoryData(res, story_id) {
       ${confirmedHtml || ''}
       ${s.mode === 'fixed_ending' && s.fixed_ending && s.status === 'active' ? `
       <div style="text-align:center;margin-top:29px;height:29px;line-height:29px;letter-spacing:6px;color:#9a8070;font-size:15px" aria-hidden="true">⋮</div>
-      <div class="prose-line" style="margin-top:0">
+      <div class="prose-line">
         <span class="prose-sentence" style="color:var(--accent2);font-style:italic">🎯 ${esc(s.fixed_ending)}</span>
       </div>` : ''}
       ${isFinished ? `<div class="theend-fx" id="story-ending-fx"><span class="theend-text">The End</span></div>` : ''}
@@ -3281,7 +3281,7 @@ function genreSwitchBannerHtml(genre, nextGenre) {
   return `
     <div class="genre-panel" id="genre-switch-banner" style="--g:var(--g-${suffix});--wash:var(--g-${suffix}-wash);margin-top:10px">
       <div class="genre-row">
-        <div class="genre-headline">🎭 지금 장르: <span class="genre-pill-primary">${esc(genre)}</span>${nextGenre ? ` · 다음엔 <span class="genre-pill-primary">${esc(nextGenre)}</span>로!` : ''}</div>
+        <div class="genre-headline">🎭 지금 장르: <span class="genre-pill-primary">${esc(genre)}</span>${nextGenre ? ` · 다음 단계 장르 <span class="genre-pill-primary">${esc(nextGenre)}</span>로!` : ''}</div>
       </div>
     </div>`;
 }

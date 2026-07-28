@@ -2243,12 +2243,13 @@ function _applyStoryData(res, story_id) {
       </div>
       <span class="prose-author">— ${s.creator_badge ? `<span class="badge badge-${s.creator_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(s.creator_badge)}</span>` : ''}${esc(s.creator_nickname || '익명')}</span>
       ${confirmedHtml || ''}
+      ${s.mode === 'fixed_ending' && s.fixed_ending && s.status === 'active' ? `
+      <div style="text-align:center;margin-top:29px;height:29px;line-height:29px;letter-spacing:6px;color:#9a8070;font-size:15px" aria-hidden="true">⋮</div>
+      <div class="prose-line" style="margin-top:0">
+        <span class="prose-sentence" style="color:var(--accent2);font-style:italic">🎯 ${esc(s.fixed_ending)}</span>
+      </div>` : ''}
       ${isFinished ? `<div class="theend-fx" id="story-ending-fx"><span class="theend-text">The End</span></div>` : ''}
     </div>
-    ${s.mode === 'fixed_ending' && s.fixed_ending && s.status === 'active' ? `
-    <div style="font-size:12px;color:var(--accent2);background:var(--surface);border-left:3px solid var(--accent2);border-radius:6px;padding:8px 12px;margin:10px 0">
-      🎯 이 문장으로 끝나요: <strong>${esc(s.fixed_ending)}</strong>
-    </div>` : ''}
     ${s.mode === 'genre_switch' && openEp ? genreSwitchBannerHtml((s.genre_sequence || [])[Number(openEp.step) - 1], (s.genre_sequence || [])[Number(openEp.step)]) : ''}
     ${isAdmin() && s.status === 'active' && !s.vote_threshold ? `
     <div style="display:flex;justify-content:flex-end;margin:6px 0 2px">

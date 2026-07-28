@@ -3560,7 +3560,7 @@ async function toggleHintHistory(round_id) {
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
       .map(g => g.is_correct
         ? `<div class="feed-line" style="font-size:12.5px;padding:6px 0;font-weight:800;color:var(--accent2)">✓ ${esc(g.nickname)}님 정답!</div>`
-        : `<div class="feed-line" style="font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--border)">${esc(g.text)} <span style="color:var(--accent2);font-weight:700">(${g.match_count}/${g.total_length})</span> <span style="color:var(--muted)">${esc(g.nickname)}</span></div>`)
+        : `<div class="feed-line" style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--border)"><span>${esc(g.text)} <span style="color:var(--accent2);font-weight:700">(${g.match_count}/${g.total_length})</span></span><span style="color:var(--muted);flex-shrink:0">${esc(g.nickname)}</span></div>`)
       .join('');
     el.innerHTML = rows || `<div class="empty" style="padding:10px 0;font-size:12px">시도가 없었어요</div>`;
   }
@@ -3596,7 +3596,7 @@ function _startHintGuessListener(round_id) {
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
         .map(g => g.is_correct
           ? `<div class="feed-line" style="font-size:12.5px;padding:6px 0;font-weight:800;color:var(--accent2)">✓ ${esc(g.nickname)}님 정답!</div>`
-          : `<div class="feed-line" style="font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--border)">${esc(g.text)} <span style="color:var(--accent2);font-weight:700">(${g.match_count}/${g.total_length})</span> <span style="color:var(--muted)">${esc(g.nickname)}</span></div>`)
+          : `<div class="feed-line" style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--border)"><span>${esc(g.text)} <span style="color:var(--accent2);font-weight:700">(${g.match_count}/${g.total_length})</span></span><span style="color:var(--muted);flex-shrink:0">${esc(g.nickname)}</span></div>`)
         .join('');
       feed.innerHTML = rows || `<div class="empty" style="padding:10px 0;font-size:12px">아직 시도가 없어요</div>`;
     }, () => { if (_hintUnsubscribe) { _hintUnsubscribe(); _hintUnsubscribe = null; } });

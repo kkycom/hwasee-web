@@ -2816,6 +2816,12 @@ async function fbSpeedrunDownvote(sub_id, voter_id) {
     return r.data;
   } catch (e) { return { ok: false, error: e.message || '처리에 실패했습니다.' }; }
 }
+async function fbSpeedrunUpvote(sub_id, voter_id) {
+  try {
+    const r = await functionsRegion.httpsCallable('speedrunUpvote')({ sub_id, user_id: voter_id, token: localStorage.getItem('hwasee_token') });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '처리에 실패했습니다.' }; }
+}
 
 // 초성힌트 — hint_rounds가 정답을 담고 있고 firestore.rules에서 완전히
 // 잠겨있어(functions/index.js 주석 참고) 조회 자체도 Cloud Function 경유
@@ -3073,6 +3079,7 @@ async function firebaseApi(action, params = {}) {
     case 'vote':               return fbVote(params.episode_id, params.sub_ids, await requireUid());
     case 'speedrunSubmit':     return fbSpeedrunSubmit(params.episode_id, params.content, await requireUid());
     case 'speedrunDownvote':   return fbSpeedrunDownvote(params.sub_id, await requireUid());
+    case 'speedrunUpvote':     return fbSpeedrunUpvote(params.sub_id, await requireUid());
     case 'getHintRound':       return fbGetHintRound();
     case 'hintGuess':          return fbHintGuess(params.round_id, params.guess, await requireUid());
 

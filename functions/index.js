@@ -4050,7 +4050,9 @@ exports.getHintRound = functions
     }
     if (!doc) return { ok: true, round: null };
     const r = doc.data();
-    const base = { round_id: doc.id, hint: r.hint, status: r.status, start_at: r.start_at, points: r.points };
+    const guessSnap = await db.collection('hint_guesses').where('round_id', '==', doc.id).get();
+    const participant_count = new Set(guessSnap.docs.map(g => g.data().user_id)).size;
+    const base = { round_id: doc.id, hint: r.hint, status: r.status, start_at: r.start_at, points: r.points, participant_count };
     if (r.status === 'closed') {
       return { ok: true, round: { ...base, text: r.text, winner_user_id: r.winner_user_id, winner_nickname: r.winner_nickname, winner_text: r.winner_text } };
     }

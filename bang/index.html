@@ -3375,7 +3375,10 @@ function renderHintCardHtml(round) {
       </div>
       ${solved
         ? `<div style="font-size:12px;color:var(--muted)">${round.winner_nickname ? `${esc(round.winner_nickname)}님이 <b style="color:var(--accent2)">+${round.points}P</b> 획득!` : '아직 정답자가 없어요'} · 다음 라운드를 기다려주세요</div>`
-        : `<div style="display:flex;justify-content:flex-end"><button class="btn btn-primary btn-sm" onclick="toggleHintDetail()">도전하기</button></div>
+        : `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+             <span class="step-pill"><span class="step-dot"></span>${round.participant_count || 0}명 도전 중</span>
+             <button class="btn btn-primary btn-sm" onclick="toggleHintDetail()">도전하기</button>
+           </div>
            <div id="hint-detail-area" style="display:none;margin-top:12px"></div>`}
     </div>`;
 }
@@ -3404,13 +3407,13 @@ function _startHintGuessListener(round_id) {
     .onSnapshot(snap => {
       const feed = document.getElementById('hint-guess-feed');
       if (!feed) { if (_hintUnsubscribe) { _hintUnsubscribe(); _hintUnsubscribe = null; } return; }
-      // 진행 중 라운드는 이름/원문을 감추고 글자수 일치만 보여줌(소프트 익명 —
-      // 문서 자체엔 저장돼있지만 라운드가 열려있는 동안만 렌더링에서 안 보여줌)
+      // 다른 사람의 시도를 그대로 공개해서 서로 유추해가는 게 원래 설계 의도라(설계
+      // 확정 메모 참고), 오답이라도 문장·일치자수·닉네임을 다 보여줌
       const rows = snap.docs.map(d => d.data())
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
         .map(g => g.is_correct
-          ? `<div class="feed-line" style="display:flex;justify-content:space-between;font-size:12.5px;padding:6px 0;font-weight:800;color:var(--accent2)"><span>✓ ${esc(g.nickname)}님 정답!</span></div>`
-          : `<div class="feed-line" style="display:flex;justify-content:space-between;font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--border)"><span>익명</span><span style="color:var(--accent2);font-weight:700">${g.match_count}/${g.total_length}자 일치</span></div>`)
+          ? `<div class="feed-line" style="font-size:12.5px;padding:6px 0;font-weight:800;color:var(--accent2)">✓ ${esc(g.nickname)}님 정답!</div>`
+          : `<div class="feed-line" style="font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--border)">${esc(g.text)} <span style="color:var(--accent2);font-weight:700">(${g.match_count}/${g.total_length})</span> <span style="color:var(--muted)">${esc(g.nickname)}</span></div>`)
         .join('');
       feed.innerHTML = rows || `<div class="empty" style="padding:10px 0;font-size:12px">아직 시도가 없어요</div>`;
     }, () => { if (_hintUnsubscribe) { _hintUnsubscribe(); _hintUnsubscribe = null; } });

@@ -5677,9 +5677,9 @@ function buildStoryActionHtml(openEp) {
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px">
           <div id="sub-submit-actions" style="display:flex;gap:8px;flex-wrap:wrap">
             ${effectiveClosedCount >= 1 && !isFixedEnding
-              ? `<button class="btn btn-primary btn-sm"${isGenreSwitch ? ` style="background:var(--g)"` : ''} ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', false)" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">연재하기</button>
+              ? `<button class="btn btn-primary btn-sm"${isGenreSwitch ? ` style="background:var(--g);color:#fff"` : ''} ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', false)" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">연재하기</button>
                  <button class="btn btn-sm" style="background:var(--accent2);color:#fff;border:none;font-weight:700" ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', true)" onclick="submitSubInStory('${esc(openEp.episode_id)}', true)">완결하기</button>`
-              : `<button class="btn btn-primary btn-sm"${isGenreSwitch ? ` style="background:var(--g)"` : ''} ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', false)" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">제출</button>`}
+              : `<button class="btn btn-primary btn-sm"${isGenreSwitch ? ` style="background:var(--g);color:#fff"` : ''} ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', false)" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">제출</button>`}
           </div>
           <span class="char-count" id="sub-cc" style="margin-top:0">0자</span>
         </div>

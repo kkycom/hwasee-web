@@ -3499,7 +3499,7 @@ function renderHintCardHtml(round) {
            <div id="hint-history-area" style="display:none;margin-top:12px"></div>`
         : `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
              <span class="step-pill"><span class="step-dot"></span>${round.participant_count || 0}명 도전 중</span>
-             <button class="btn btn-primary btn-sm" onclick="toggleHintDetail()">도전하기</button>
+             <button class="btn btn-primary btn-sm" style="border-radius:20px" onclick="toggleHintDetail()">참여하기</button>
            </div>
            <div id="hint-detail-area" style="display:none;margin-top:12px"></div>`}
     </div>`;
@@ -5645,12 +5645,14 @@ function buildStoryActionHtml(openEp) {
         <div id="polish-indicator" style="display:none;font-size:12px;color:var(--accent2);margin-bottom:8px;padding:6px 10px;background:var(--surface);border-radius:6px;border-left:2px solid var(--accent2)"></div>
         <div id="typing-indicator" style="font-size:12px;color:var(--muted)"></div>
         <input type="text" id="sub-input" maxlength="${subMax}" placeholder="${esc(subPlaceholder)}" oninput="updateCount('sub-input','sub-cc',${subMax},${subMin});_pingTyping('${esc(openEp.episode_id)}')">
-        <div class="char-count" id="sub-cc" style="margin-bottom:8px">0자</div>
-        <div id="sub-submit-actions" style="display:flex;gap:8px;flex-wrap:wrap">
-          ${effectiveClosedCount >= 1 && !isFixedEnding
-            ? `<button class="btn btn-primary btn-sm"${isGenreSwitch ? ` style="background:var(--g)"` : ''} ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', false)" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">연재하기</button>
-               <button class="btn btn-sm" style="background:var(--accent2);color:#fff;border:none;font-weight:700" ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', true)" onclick="submitSubInStory('${esc(openEp.episode_id)}', true)">완결하기</button>`
-            : `<button class="btn btn-primary btn-sm"${isGenreSwitch ? ` style="background:var(--g)"` : ''} ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', false)" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">제출</button>`}
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span class="char-count" id="sub-cc">0자</span>
+          <div id="sub-submit-actions" style="display:flex;gap:8px;flex-wrap:wrap">
+            ${effectiveClosedCount >= 1 && !isFixedEnding
+              ? `<button class="btn btn-primary btn-sm"${isGenreSwitch ? ` style="background:var(--g)"` : ''} ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', false)" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">연재하기</button>
+                 <button class="btn btn-sm" style="background:var(--accent2);color:#fff;border:none;font-weight:700" ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', true)" onclick="submitSubInStory('${esc(openEp.episode_id)}', true)">완결하기</button>`
+              : `<button class="btn btn-primary btn-sm"${isGenreSwitch ? ` style="background:var(--g)"` : ''} ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', false)" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">제출</button>`}
+          </div>
         </div>
       </div>` : ''}
     ${user && !canSubmitMore ? `

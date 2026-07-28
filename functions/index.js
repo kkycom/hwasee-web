@@ -3462,7 +3462,9 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
     const ptrSnap = await tx.get(ptrRef);
     if (!ptrSnap.exists) return; // adminInitSpotlight 실행 전 — 아직 스포트라이트 미도입
     const slots = ptrSnap.data();
-    const slotKey = ['word', 'sentence', 'ai', 'fairytale', 'speedrun', 'fixed_ending', 'genre_switch'].find(k => slots[k] && slots[k].story_id === completed_story_id);
+    // sentence/ai 슬롯 폐지(2026-07-28) — 더는 이 목록에 없으므로 두 슬롯이던
+    // 스토리가 완결돼도 자동 리필하지 않음(featured 노출 자체가 끝났으므로).
+    const slotKey = ['word', 'fairytale', 'speedrun', 'fixed_ending', 'genre_switch'].find(k => slots[k] && slots[k].story_id === completed_story_id);
     if (!slotKey) return; // 스포트라이트 슬롯 스토리가 아님
 
     if (slotKey === 'ai') {
@@ -4243,6 +4245,38 @@ exports.adminInitGenreSwitchSlot = functions
     batch.set(ptrRef, { genre_switch: { story_id: newStoryId } }, { merge: true });
     await batch.commit();
     return { ok: true, story_id: newStoryId };
+  });
+
+// sentence/ai 슬롯 폐지 실행 (1회성 관리자 콜러블) — 원래 계획대로 초스피드+
+// 동화각색이 완성된 시점에 한꺼번에 교체(콘텐츠 다양화 기획 메모 참고).
+// 진행 중이던 두 스토리는 삭제하지 않고 24시간 주목(무료, 포인트 차감 없음)만
+// 부여해서 자유 이야기 탭에서 계속 눈에 띄게 하고, featured 포인터는 비움
+// (프론트가 이미 sentence/ai를 조회 목록에서 뺐으므로 실질적으로는 방어용).
+exports.adminExitSentenceAiSlots = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const ptrRef = db.collection('config').doc('spotlight_slots');
+    const ptrSnap = await ptrRef.get();
+    if (!ptrSnap.exists) return { ok: false, error: '스포트라이트가 아직 초기화되지 않았습니다.' };
+    const slots = ptrSnap.data();
+
+    const boosted = [];
+    const batch = db.batch();
+    for (const key of ['sentence', 'ai']) {
+      const storyId = slots[key] && slots[key].story_id;
+      if (storyId) {
+        batch.set(db.collection('boosts').doc(), {
+          story_id: storyId, user_id: FB_ADMIN_ID, created_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        });
+        boosted.push(storyId);
+      }
+      batch.update(ptrRef, { [`${key}.story_id`]: null });
+    }
+    await batch.commit();
+    return { ok: true, boosted_story_ids: boosted };
   });
 
 // ── 업적 시스템 도입 이전 활동 소급 반영 (1회성 관리자 콜러블) ──

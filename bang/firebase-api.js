@@ -3350,7 +3350,10 @@ async function fbGetSpotlight(viewer_id) {
 
   // 슬롯 3개를 순차로 하나씩 기다리지 않고 병렬로 조회 — 홈 첫 화면이라
   // 진입 빈도가 가장 높은 만큼 왕복 1번(가장 느린 슬롯 기준)으로 줄임
-  const keys = ['word', 'sentence', 'ai', 'fairytale', 'speedrun', 'fixed_ending', 'genre_switch'];
+  // sentence/ai 슬롯 폐지(2026-07-28, 원래 계획대로 초스피드+동화각색 완성
+  // 시점에 한꺼번에 교체 실행) — 더는 조회/노출하지 않음. 진행 중이던 두
+  // 스토리는 사라지지 않고 자유 이야기 탭에서 그대로 이어씀(24h 주목 부여).
+  const keys = ['word', 'fairytale', 'speedrun', 'fixed_ending', 'genre_switch'];
   const slotResults = await Promise.all(keys.map(async key => {
     const s = ptr[key] || {};
     if (s.story_id) {

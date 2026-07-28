@@ -2030,17 +2030,17 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
   const myCooldown = !!(user && (s.cooldown_winners || []).includes(user.user_id));
 
   const linesHtml = lines.map(({ sub, points }) => `
-    <div class="prose-line" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+    <div class="prose-line" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
       <span class="prose-sentence"${sub.is_invalidated ? ' style="text-decoration:line-through;color:var(--muted)"' : ''}>${esc(sub.content)}</span>
       <div class="sr-line-meta">
-        <span style="font-size:11px;color:var(--muted);display:inline-flex;align-items:center;gap:3px">${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px">${badgeEmoji(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
         <span class="sr-point-tag${sub.is_invalidated ? ' sr-void' : ''}">${sub.is_invalidated ? '무효' : '+' + points + 'P'}</span>
         <button class="sr-flag-btn" onclick="doSpeedrunDownvote('${sub.sub_id}', this)"${(user && sub.author_id === user.user_id) ? ' disabled' : ''}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>
           ${sub.downvote_count || 0}
         </button>
       </div>
-    </div>`).join('');
+    </div>
+    <span class="prose-author visible">— ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>`).join('');
 
   document.getElementById('app').innerHTML = `
     <div class="story-toolbar" style="display:flex;align-items:center;gap:0">
@@ -3421,7 +3421,7 @@ function renderSpotlight() {
     <p style="font-family:var(--serif);font-size:16px;line-height:1.9;color:#9a8070;text-align:center;margin-bottom:20px">
       당신의 한 문장을 기다리는 이야기들이 있어요.
     </p>
-    ${cardHtml('word')}${cardHtml('sentence')}${cardHtml('ai')}${cardHtml('fairytale')}${cardHtml('speedrun')}${cardHtml('fixed_ending')}${cardHtml('genre_switch')}
+    ${cardHtml('word')}${cardHtml('fairytale')}${cardHtml('speedrun')}${cardHtml('fixed_ending')}${cardHtml('genre_switch')}
     <div id="hint-card-area"></div>`;
 
   if (slots.sentence?.state === 'proposing' && slots.sentence.round) {
@@ -3494,7 +3494,7 @@ function renderHintCardHtml(round) {
       </div>
       <div class="story-prose" style="padding:28px 18px;margin:10px 0${solved ? ';cursor:pointer' : ''}"${solved ? ' onclick="revealHintAnswer()"' : ''}>
         <div class="prose-opening" id="hint-answer-text" style="font-weight:700;letter-spacing:1px">${esc(round.hint)}</div>
-        ${solved ? `<div id="hint-reveal-affordance" style="font-size:11px;color:var(--muted);margin-top:10px">👆 눌러서 정답 확인하기</div>` : ''}
+        ${solved ? `<div id="hint-reveal-affordance" style="font-size:11px;color:var(--muted);margin-top:10px;min-height:14px">👆 눌러서 정답 확인하기</div>` : ''}
       </div>
       ${solved
         ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
@@ -3517,7 +3517,10 @@ function revealHintAnswer() {
   el.dataset.revealed = '1';
   el.textContent = _hintRoundData.text;
   requestAnimationFrame(() => el.classList.add('ink-in'));
-  document.getElementById('hint-reveal-affordance')?.remove();
+  // 통째로 .remove()하면 그 줄만큼 박스 높이가 줄어들며 "꿀렁"거리는 느낌이
+  // 있었음(유저 지적, 2026-07-28) — 자리(min-height)는 그대로 두고 글자만 비움
+  const affordance = document.getElementById('hint-reveal-affordance');
+  if (affordance) affordance.textContent = '';
 }
 
 async function toggleHintHistory(round_id) {

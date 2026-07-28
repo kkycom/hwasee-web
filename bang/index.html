@@ -3499,7 +3499,7 @@ function renderHintCardHtml(round) {
       ${solved
         ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
              <span style="font-size:12px;color:var(--muted)">${round.winner_nickname ? `${esc(round.winner_nickname)}님이 <b style="color:var(--accent2)">+${round.points}P</b> 획득!` : '아직 정답자가 없어요'}</span>
-             <button class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="toggleHintHistory('${round.round_id}')">참여 과정 보기</button>
+             <button class="btn btn-ghost btn-sm" style="flex-shrink:0;border-radius:20px" onclick="toggleHintHistory('${round.round_id}')">참여 과정 보기</button>
            </div>
            <div id="hint-history-area" style="display:none;margin-top:12px"></div>`
         : `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">

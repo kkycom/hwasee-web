@@ -3557,6 +3557,10 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
     // 단어챌린지 우승작이면 그 3단어를 같이 넘겨서 스토리에 저장(challenge_words) —
     // 쓰기(tx.update) 전에 읽어야 하는 Firestore 트랜잭션 규칙 때문에 여기서 먼저 조회
     let extraFields = {};
+    // 완성된 이야기 탭에서 콘텐츠 종류별 배지를 보여주기 위함(유저 요청,
+    // 2026-07-28) — 다른 신규 콘텐츠(결말고정/장르전환/초스피드)는 이미
+    // mode 필드가 있는데 동화각색만 없어서 추가.
+    if (slotKey === 'fairytale') extraFields.mode = 'fairytale';
     const entryData = nextEntry.data();
     if (slotKey === 'word' && entryData.source_challenge_id) {
       const challengeSnap = await tx.get(db.collection('word_challenges').doc(entryData.source_challenge_id));
@@ -3641,6 +3645,10 @@ async function _serverRefillSlotFromPoolIfEmpty(db, slotKey) {
     // 단어챌린지 우승작이면 그 3단어를 같이 넘겨서 스토리에 저장(challenge_words) —
     // 쓰기(tx.update) 전에 읽어야 하는 Firestore 트랜잭션 규칙 때문에 여기서 먼저 조회
     let extraFields = {};
+    // 완성된 이야기 탭에서 콘텐츠 종류별 배지를 보여주기 위함(유저 요청,
+    // 2026-07-28) — 다른 신규 콘텐츠(결말고정/장르전환/초스피드)는 이미
+    // mode 필드가 있는데 동화각색만 없어서 추가.
+    if (slotKey === 'fairytale') extraFields.mode = 'fairytale';
     const entryData = nextEntry.data();
     if (slotKey === 'word' && entryData.source_challenge_id) {
       const challengeSnap = await tx.get(db.collection('word_challenges').doc(entryData.source_challenge_id));

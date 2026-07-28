@@ -1805,8 +1805,14 @@ async function _resumePendingSeedStory() {
 }
 
 // 관심받는 이야기 카드
+// 완성된 이야기 탭에서 어떤 콘텐츠 출신인지 한눈에 보이게(유저 요청,
+// 2026-07-28) — 초성힌트는 스토리가 아니라 완성 개념 자체가 없어서 제외.
+const CONTENT_MODE_STICKER = {
+  fixed_ending: '🎯 결말', genre_switch: '🎭 장르', speedrun: '⚡ 초장편', fairytale: '📖 동화',
+};
 function cardStickersHtml(s, alwaysBm) {
   const hasBm = alwaysBm || _bmIds.has(s.story_id);
+  const modeTag = (s.status === 'completed' && CONTENT_MODE_STICKER[s.mode]) ? `<span class="card-branch-sticker">${CONTENT_MODE_STICKER[s.mode]}</span>` : '';
   // 분기/연장은 서로 배타적이지 않음 — 완결된 원본 이야기가 분기도 있고
   // 나중에 연장도 됐으면 둘 다 표시(is_continuation은 "이 이야기 자체가
   // 연장본"인 경우, has_continuation은 "이 이야기가 연장됐다"인 경우라 서로 다름)
@@ -1820,6 +1826,7 @@ function cardStickersHtml(s, alwaysBm) {
   // 절대 지워지지 않으므로(전체 grep 확인) 별도 태깅 없이 이 필드만으로 판별 가능
   const todayTag = s.vote_threshold ? `<span class="card-today-sticker">✦ 오늘</span>` : '';
   const parts = [
+    modeTag,
     branchTag,
     contTag,
     newTag,

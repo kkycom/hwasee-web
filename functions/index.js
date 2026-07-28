@@ -2238,6 +2238,11 @@ exports.speedrunSubmit = functions
       const [storySnap, uSnap] = await Promise.all([tx.get(storyRef), tx.get(db.collection('users').doc(author_id))]);
       if (!storySnap.exists) return { ok: false, error: '이야기를 찾을 수 없습니다.' };
       const st = storySnap.data();
+      // 이 체크가 없으면 초스피드가 아닌 일반(투표 기반) 이야기의 episode_id를
+      // 그대로 넣어 호출해도 즉시채택+마감이 그대로 먹혀서, 남이 투표로 진행
+      // 중인 이야기를 아무나 가로챌 수 있었음(디버그방 감사 지적, 2026-07-28) —
+      // 클라이언트 버튼이 안 보인다고 서버가 안전한 게 아니므로 여기서 직접 검증.
+      if (st.mode !== 'speedrun') return { ok: false, error: '잘못된 요청입니다.' };
 
       // 최근 채택자 최대 5명 배열(cooldown_winners)에 포함돼 있으면 재참여 불가 —
       // 최근 5단계의 채택자를 매번 쿼리하는 것보다 story 문서에 이미 읽어야 하는
@@ -2325,6 +2330,11 @@ exports.speedrunDownvote = functions
       if (dvSnap.exists) return { ok: false, error: '이미 표시했어요.' };
       const sub = subSnap.data();
       if (sub.author_id === voter_id) return { ok: false, error: '본인 글에는 표시할 수 없습니다.' };
+      // speedrunSubmit과 동일한 이유로 방어 — 이 경로 자체는 일반 이야기에
+      // 걸어도 실제 화면엔 영향 없지만(일반 산문 렌더러가 is_invalidated를
+      // 안 읽음), 애초에 범위 밖 문서에 쓰기가 들어가지 않게 막아둠.
+      const storySnap = await tx.get(db.collection('stories').doc(sub.story_id));
+      if (!storySnap.exists || storySnap.data().mode !== 'speedrun') return { ok: false, error: '잘못된 요청입니다.' };
 
       const newCount = (Number(sub.downvote_count) || 0) + 1;
       tx.set(dvRef, { sub_id, voter_id, created_at: new Date().toISOString() });

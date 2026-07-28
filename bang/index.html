@@ -3473,9 +3473,12 @@ function renderHintCardHtml(round) {
         ${solved ? `<div id="hint-reveal-affordance" style="font-size:11px;color:var(--muted);margin-top:10px">👆 눌러서 정답 확인하기</div>` : ''}
       </div>
       ${solved
-        ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px">${round.winner_nickname ? `${esc(round.winner_nickname)}님이 <b style="color:var(--accent2)">+${round.points}P</b> 획득!` : '아직 정답자가 없어요'} · 다음 라운드까지 <span id="hint-countdown"></span></div>
-           <div style="display:flex;justify-content:flex-end">
-             <button class="btn btn-ghost btn-sm" onclick="toggleHintHistory('${round.round_id}')">참여 과정 보기</button>
+        ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+             <div style="font-size:12px;color:var(--muted);line-height:1.6">
+               <div>${round.winner_nickname ? `${esc(round.winner_nickname)}님이 <b style="color:var(--accent2)">+${round.points}P</b> 획득!` : '아직 정답자가 없어요'}</div>
+               <div>다음 라운드까지 <span id="hint-countdown"></span></div>
+             </div>
+             <button class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="toggleHintHistory('${round.round_id}')">참여 과정 보기</button>
            </div>
            <div id="hint-history-area" style="display:none;margin-top:12px"></div>`
         : `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">

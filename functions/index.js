@@ -4105,11 +4105,14 @@ exports.hintGuess = functions
           winner_submission_id: guessRef.id, winner_text: text,
         });
       }
-      return { ok: true, guess_id: guessRef.id, match_count: matchCount, total_length: aN.length, correct: isCorrect, points: HINT_GUESS_POINTS };
+      // 지급액은 상수가 아니라 라운드 생성 시점에 저장된 round.points를 씀 —
+      // 안 그러면 포인트 값이 바뀐 시점에 이미 열려있던(옛 값으로 만들어진)
+      // 라운드가 화면엔 옛 값으로 표시되는데 실제 지급은 새 상수로 되는 불일치 발생
+      return { ok: true, guess_id: guessRef.id, match_count: matchCount, total_length: aN.length, correct: isCorrect, points: round.points };
     });
 
     if (result.ok && result.correct) {
-      try { await _serverAddPoints(db, author_id, HINT_GUESS_POINTS, 'hint_guess_win', result.guess_id); } catch (e) { console.error('hint point award error:', e.message); }
+      try { await _serverAddPoints(db, author_id, result.points, 'hint_guess_win', result.guess_id); } catch (e) { console.error('hint point award error:', e.message); }
     }
     return result;
   });

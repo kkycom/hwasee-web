@@ -289,7 +289,7 @@
   .sort-dropdown {
     display: none; position: absolute; top: calc(100% + 8px); left: 0;
     background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.4); min-width: 140px; z-index: 200; overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4); min-width: 108px; z-index: 200; overflow: hidden;
   }
   .sort-dropdown.open { display: block; }
   .sort-dropdown-item {
@@ -1063,6 +1063,19 @@ function closeSortMenu(prefix) {
   if (btn)  btn.classList.remove('open');
   if (drop) drop.classList.remove('open');
 }
+// 자유/완성 탭은 캐시로 먼저 그리고 곧이어 최신 데이터로 다시 그리는 구조라
+// (spotlight/초성힌트와 동일 패턴) 정렬 드롭다운을 막 펼친 직후에 그 재렌더가
+// 오면 #home-content가 통째로 새로 그려지면서 드롭다운이 저절로 닫혀버림
+// (유저 제보 2026-07-28, 안 눌렀는데 꺼진다는 증상과 일치) — 재렌더 직전에
+// 열려있었는지 기억해뒀다가 재렌더 후 그대로 복원.
+function _isSortMenuOpen(prefix) {
+  return !!document.getElementById(`${prefix}-sort-dropdown`)?.classList.contains('open');
+}
+function _restoreSortMenuOpen(prefix, wasOpen) {
+  if (!wasOpen) return;
+  document.getElementById(`${prefix}-sort-dropdown`)?.classList.add('open');
+  document.getElementById(`${prefix}-sort-btn`)?.classList.add('open');
+}
 
 function setFreeSort(key) {
   _freeSort = key; _freeLimit = 20;
@@ -1078,6 +1091,7 @@ function setFreeSort(key) {
 function renderFreeCards() {
   const content = document.getElementById('home-content');
   if (!content || !_freeCache) return;
+  const _wasSortOpen = _isSortMenuOpen('fs');
   const { mine, others } = _freeCache;
   const boosted = [...mine, ...others].filter(s => s.is_boosted);
   const mineSorted = _sortStories(mine.filter(s => !s.is_boosted), _freeSort);
@@ -1105,6 +1119,7 @@ function renderFreeCards() {
       : `<div class="empty" style="padding-top:40px">아직 이야기가 없어요.<br>오늘의 이야기에서 참여해 보세요!<br>
           <button class="btn btn-primary btn-sm" style="margin-top:16px" onclick="switchHomeTab('spotlight')">오늘의 이야기로 가기</button>
         </div>`);
+  _restoreSortMenuOpen('fs', _wasSortOpen);
 }
 
 function loadMoreFree() {
@@ -1128,6 +1143,7 @@ function setDoneSort(key) {
 function renderDoneCards() {
   const content = document.getElementById('home-content');
   if (!content || !_doneCache) return;
+  const _wasSortOpen = _isSortMenuOpen('ds');
   const sorted = _sortStories(_doneCache.stories, _doneSort);
   const visible = sorted.slice(0, _doneLimit);
   const remaining = sorted.length - _doneLimit;
@@ -1138,6 +1154,7 @@ function renderDoneCards() {
     + (sorted.length
       ? visible.map(s => doneCardHtml(s)).join('') + loadMoreHtml
       : `<div class="empty" style="padding-top:40px">아직 완결된 이야기가 없어요.<br>이야기에 참여해 함께 만들어 가요!</div>`);
+  _restoreSortMenuOpen('ds', _wasSortOpen);
 }
 
 function loadMoreDone() {
@@ -5613,16 +5630,22 @@ function buildStoryActionHtml(openEp) {
   const subMin = isGenreSwitch ? FB_GENRE_SWITCH_MIN_CHARS : 0;
   const subPlaceholder = isGenreSwitch && curGenre ? `${curGenre} 분위기로 이어서, ${subMax}자로…` : '한 문장으로 이어가세요';
   const genreSuffix = isGenreSwitch ? (GENRE_META[curGenre] || 'mystery') : null;
-  const genreToneAttr = isGenreSwitch ? ` style="--g:var(--g-${genreSuffix});--wash:var(--g-${genreSuffix}-wash)"` : '';
+  // 카드에 --g/--wash 커스텀 프로퍼티(장르 톤)와 margin-bottom 등 일반 스타일을
+  // 별개의 style 속성 두 개로 나눠 넣었더니, HTML 파서가 중복 속성 중 첫
+  // 번째(--g/--wash)만 살리고 두 번째(margin-bottom/background/border-left)를
+  // 통째로 버려서 카드 톤이 전혀 안 먹히던 버그(유저 지적 "왜캐 거뭇냐",
+  // 2026-07-28) — 하나의 style로 합쳐서 수정. 겸사겸사 카드 안 여백도
+  // (padding 20→16, 항목간 margin도) 좀 촘촘하게 줄임.
+  const cardStyle = `padding:16px;margin-bottom:20px${isGenreSwitch ? `;--g:var(--g-${genreSuffix});--wash:var(--g-${genreSuffix}-wash);background:var(--wash);border-left:3px solid var(--g)` : ''}`;
   return `
     <div class="prose-divider">이 이야기의 다음 문장을 결정합니다</div>
     ${user && canSubmitMore ? `
-      <div class="card"${genreToneAttr} style="margin-bottom:20px${isGenreSwitch ? ';background:var(--wash);border-left:3px solid var(--g)' : ''}">
-        <div style="font-size:13px;font-weight:700;margin-bottom:10px">✏️ 이어 쓰기</div>
+      <div class="card" style="${cardStyle}">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px">✏️ 이어 쓰기</div>
         <div id="polish-indicator" style="display:none;font-size:12px;color:var(--accent2);margin-bottom:8px;padding:6px 10px;background:var(--surface);border-radius:6px;border-left:2px solid var(--accent2)"></div>
-        <div id="typing-indicator" style="font-size:12px;color:var(--muted);margin-bottom:6px;min-height:16px"></div>
+        <div id="typing-indicator" style="font-size:12px;color:var(--muted)"></div>
         <input type="text" id="sub-input" maxlength="${subMax}" placeholder="${esc(subPlaceholder)}" oninput="updateCount('sub-input','sub-cc',${subMax},${subMin});_pingTyping('${esc(openEp.episode_id)}')">
-        <div class="char-count" id="sub-cc" style="margin-bottom:10px">0자</div>
+        <div class="char-count" id="sub-cc" style="margin-bottom:8px">0자</div>
         <div id="sub-submit-actions" style="display:flex;gap:8px;flex-wrap:wrap">
           ${effectiveClosedCount >= 1 && !isFixedEnding
             ? `<button class="btn btn-primary btn-sm"${isGenreSwitch ? ` style="background:var(--g)"` : ''} ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', false)" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">연재하기</button>
@@ -5694,6 +5717,14 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
   const isMyMvp   = myMvpEpId === ep.episode_id;
   const mvpBadge  = mvpCount > 0 ? `<span class="prose-line-mvp${isMyMvp ? ' my-mvp' : ''}"${isMyMvp ? ' title="내가 선정한 으뜸 글"' : ''}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg><span>${mvpCount}</span></span>` : '';
   const myMvpMark = '';
+
+  // 장르 강제 전환 이야기: 이 단계가 어떤 장르로 강제됐었는지 채택 후에도
+  // 산문뷰에서 계속 보이게(안 그러면 채택되고 나면 그 줄이 무슨 장르였는지
+  // 알 방법이 없음, 유저 지적 2026-07-28) — genrePanelHtml의 --g 토큰 재사용.
+  const _gsStory = window._storyData && window._storyData.story;
+  const _gsGenre = (_gsStory && _gsStory.mode === 'genre_switch') ? (_gsStory.genre_sequence || [])[Number(ep.step) - 1] : null;
+  const genreTagHtml = _gsGenre
+    ? ` <span class="genre-pill-primary" style="--g:var(--g-${GENRE_META[_gsGenre] || 'mystery'});font-size:9px;padding:1px 6px">${esc(_gsGenre)}</span>` : '';
 
   // 외부 분기: 이 에피소드가 분기의 실제 단절 지점(branch_leaf_episode_id)이면 포크 표시
   const extBranch = (branches || []).find(b => b.branch_leaf_episode_id === ep.episode_id);

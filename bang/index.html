@@ -3563,7 +3563,7 @@ async function doHintGuessSubmit() {
   if (!res.ok) { toast(res.error, true); return; }
   if (el) el.value = '';
   if (res.correct) {
-    toast(`정답! +50P`);
+    toast(`정답! +${res.points}P`);
     if (_hintUnsubscribe) { _hintUnsubscribe(); _hintUnsubscribe = null; }
     loadHintCard();
   } else {

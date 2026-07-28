@@ -3995,6 +3995,8 @@ function _serverToChoseong(text) {
   }).join('');
 }
 
+const HINT_GUESS_POINTS = 30; // 50P였다가 30P로 하향(2026-07-28, 유저 판단 — 반응 과열)
+
 async function _serverStartHintRound(db) {
   const now = new Date();
   await db.runTransaction(async tx => {
@@ -4012,7 +4014,7 @@ async function _serverStartHintRound(db) {
       round_id: roundRef.id, text, hint: _serverToChoseong(text),
       status: 'active', start_at: now.toISOString(), end_at: '',
       winner_user_id: null, winner_nickname: null, winner_submission_id: null, winner_text: null,
-      points: 50, closed_at: null,
+      points: HINT_GUESS_POINTS, closed_at: null,
     });
   });
 }
@@ -4103,11 +4105,11 @@ exports.hintGuess = functions
           winner_submission_id: guessRef.id, winner_text: text,
         });
       }
-      return { ok: true, guess_id: guessRef.id, match_count: matchCount, total_length: aN.length, correct: isCorrect };
+      return { ok: true, guess_id: guessRef.id, match_count: matchCount, total_length: aN.length, correct: isCorrect, points: HINT_GUESS_POINTS };
     });
 
     if (result.ok && result.correct) {
-      try { await _serverAddPoints(db, author_id, 50, 'hint_guess_win', result.guess_id); } catch (e) { console.error('hint point award error:', e.message); }
+      try { await _serverAddPoints(db, author_id, HINT_GUESS_POINTS, 'hint_guess_win', result.guess_id); } catch (e) { console.error('hint point award error:', e.message); }
     }
     return result;
   });

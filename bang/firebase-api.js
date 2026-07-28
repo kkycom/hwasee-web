@@ -129,6 +129,17 @@ const FB_ACHIEVEMENTS = [
   { id: 'wordchallenge_king',   category: 'word_challenge_wins',     threshold: 10,  name: '단어의 신',     avatar: '🏆' },
   { id: 'firstline_rookie',     category: 'spotlight_sentence_picks', threshold: 5,   name: '첫줄 유망주',   avatar: '💡' },
   { id: 'firstline_king',       category: 'spotlight_sentence_picks', threshold: 10,  name: '첫줄의 신',     avatar: '🌟' },
+  // 콘텐츠 다양화 신규 4종+초성힌트 전용 업적(2026-07-28 추가)
+  { id: 'fairytale_rookie',     category: 'fairytale_count',     threshold: 15,  name: '각색루키',      avatar: '🧚' },
+  { id: 'fairytale_king',       category: 'fairytale_count',     threshold: 50,  name: '각색왕',        avatar: '🏰' },
+  { id: 'speedrun_rookie',      category: 'speedrun_count',      threshold: 30,  name: '질주루키',      avatar: '🏃' },
+  { id: 'speedrun_king',        category: 'speedrun_count',      threshold: 100, name: '질주왕',        avatar: '🚀' },
+  { id: 'fixedending_rookie',   category: 'fixed_ending_count',  threshold: 15,  name: '운명루키',      avatar: '🧵' },
+  { id: 'fixedending_king',     category: 'fixed_ending_count',  threshold: 50,  name: '운명왕',        avatar: '🏛️' },
+  { id: 'genreswitch_rookie',   category: 'genre_switch_count',  threshold: 15,  name: '장르루키',      avatar: '🎪' },
+  { id: 'genreswitch_king',     category: 'genre_switch_count',  threshold: 50,  name: '장르왕',        avatar: '🌪️' },
+  { id: 'hint_rookie',          category: 'hint_win_count',      threshold: 15,  name: '추리루키',      avatar: '🔍' },
+  { id: 'hint_king',            category: 'hint_win_count',      threshold: 50,  name: '추리왕',        avatar: '🕵️' },
 ];
 
 // 카운터 값이 갱신될 때마다 호출 — 새로 넘긴 문턱값을 이미 달성한 미보유
@@ -1233,6 +1244,18 @@ async function fbCreateSubmission(episode_id, content, author_id, derived_from, 
   db.collection('users').doc(author_id).update({ submission_count: firebase.firestore.FieldValue.increment(1) })
     .then(() => _fbCheckAchievements(author_id, 'submission_count', newSubCount))
     .catch(() => {});
+
+  // 콘텐츠별 전용 업적(2026-07-28 추가) — 동화각색/결말고정/장르전환은 이
+  // 일반 제출 엔진을 그대로 쓰므로 story0.mode로 분기해서 같이 카운트.
+  // 초스피드는 별도 콜러블(speedrunSubmit)이라 여기 안 걸림.
+  const MODE_ACHIEVEMENT_CATEGORY = { fairytale: 'fairytale_count', fixed_ending: 'fixed_ending_count', genre_switch: 'genre_switch_count' };
+  const modeCat = MODE_ACHIEVEMENT_CATEGORY[story0.mode];
+  if (modeCat) {
+    const newModeCount = (uData[modeCat] || 0) + 1;
+    db.collection('users').doc(author_id).update({ [modeCat]: firebase.firestore.FieldValue.increment(1) })
+      .then(() => _fbCheckAchievements(author_id, modeCat, newModeCount))
+      .catch(() => {});
+  }
 
   // participant_count 증가 (첫 제출 시) — 복합 인덱스 없이 단일 필드 쿼리 후 클라이언트 필터.
   // 증가 자체는 트랜잭션으로 묶어서(예전엔 이 조회 따로 + update 따로라 동시 제출 시

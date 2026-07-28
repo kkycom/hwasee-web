@@ -508,6 +508,17 @@ const FB_ACHIEVEMENTS = [
   { id: 'wordchallenge_king',   category: 'word_challenge_wins',     threshold: 10,  name: '단어의 신',     avatar: '🏆' },
   { id: 'firstline_rookie',     category: 'spotlight_sentence_picks', threshold: 5,   name: '첫줄 유망주',   avatar: '💡' },
   { id: 'firstline_king',       category: 'spotlight_sentence_picks', threshold: 10,  name: '첫줄의 신',     avatar: '🌟' },
+  // 콘텐츠 다양화 신규 4종+초성힌트 전용 업적(2026-07-28 추가)
+  { id: 'fairytale_rookie',     category: 'fairytale_count',     threshold: 15,  name: '각색루키',      avatar: '🧚' },
+  { id: 'fairytale_king',       category: 'fairytale_count',     threshold: 50,  name: '각색왕',        avatar: '🏰' },
+  { id: 'speedrun_rookie',      category: 'speedrun_count',      threshold: 30,  name: '질주루키',      avatar: '🏃' },
+  { id: 'speedrun_king',        category: 'speedrun_count',      threshold: 100, name: '질주왕',        avatar: '🚀' },
+  { id: 'fixedending_rookie',   category: 'fixed_ending_count',  threshold: 15,  name: '운명루키',      avatar: '🧵' },
+  { id: 'fixedending_king',     category: 'fixed_ending_count',  threshold: 50,  name: '운명왕',        avatar: '🏛️' },
+  { id: 'genreswitch_rookie',   category: 'genre_switch_count',  threshold: 15,  name: '장르루키',      avatar: '🎪' },
+  { id: 'genreswitch_king',     category: 'genre_switch_count',  threshold: 50,  name: '장르왕',        avatar: '🌪️' },
+  { id: 'hint_rookie',          category: 'hint_win_count',      threshold: 15,  name: '추리루키',      avatar: '🔍' },
+  { id: 'hint_king',            category: 'hint_win_count',      threshold: 50,  name: '추리왕',        avatar: '🕵️' },
 ];
 
 async function _serverCheckAchievements(db, user_id, category, newValue) {
@@ -2303,6 +2314,10 @@ exports.speedrunSubmit = functions
       return { ok: true, sub_id, points, completed: isLastStep, story_id: ep.story_id };
     });
 
+    if (result.ok) {
+      // 위 "업적 의도적으로 안 건드림" 코멘트가 말하던 전용 업적(2026-07-28 추가)
+      try { await _serverBumpAchievementCounter(db, author_id, 'speedrun_count'); } catch (e) { console.error('speedrun achievement error:', e.message); }
+    }
     if (result.ok && result.completed) {
       try { await _serverRefillSpotlightSlot(db, result.story_id); } catch (e) { console.error('speedrun spotlight refill error:', e.message); }
     }
@@ -4137,6 +4152,7 @@ exports.hintGuess = functions
 
     if (result.ok && result.correct) {
       try { await _serverAddPoints(db, author_id, result.points, 'hint_guess_win', result.guess_id); } catch (e) { console.error('hint point award error:', e.message); }
+      try { await _serverBumpAchievementCounter(db, author_id, 'hint_win_count'); } catch (e) { console.error('hint achievement error:', e.message); }
     }
     return result;
   });

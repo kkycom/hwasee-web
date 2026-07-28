@@ -3143,7 +3143,7 @@ const SPOTLIGHT_META = {
   fairytale: { icon: '📖', title: '동화를 각색한 이야기', info: '누구나 아는 동화의 첫 장면으로 시작해요. 여기서부턴 완전히 새로운 이야기로 자유롭게 이어써 보세요.' },
   speedrun: { icon: '⚡', title: '초스피드 초장편', info: '투표 없이, 쓰는 순간 바로 채택돼요. 15자 이내 한 문장씩 100단계까지 빠르게 이어써요. 각 단계마다 1~100P가 무작위로 걸려있어요.' },
   fixed_ending: { icon: '🎯', title: '결말이 정해진 이야기', info: '마지막 문장이 미리 정해져 있어요. 그 결말까지 자유롭게 이어써 보세요.' },
-  genre_switch: { icon: '🎭', title: '장르 강제 전환', info: '매 단계마다 장르가 랜덤으로 바뀌어요. 문장은 50~100자로 조금 길게 써주세요.' },
+  genre_switch: { icon: '🎭', title: '장르 강제 전환', info: '매 단계마다 장르가 랜덤으로 바뀌어요. 문장은 50자로 써주세요.' },
 };
 
 // 장르 확률 패널 색상 매핑 — functions/index.js의 SPOTLIGHT_GENRES와 이름이
@@ -5461,7 +5461,7 @@ function buildStoryActionHtml(openEp) {
   const curGenre = isGenreSwitch ? (story.genre_sequence || [])[Number(openEp.step) - 1] : null;
   const subMax = isGenreSwitch ? FB_GENRE_SWITCH_MAX_CHARS : 50;
   const subMin = isGenreSwitch ? FB_GENRE_SWITCH_MIN_CHARS : 0;
-  const subPlaceholder = isGenreSwitch && curGenre ? `${curGenre} 분위기로 이어서, 최소 ${subMin}자…` : '한 문장으로 이어가세요';
+  const subPlaceholder = isGenreSwitch && curGenre ? `${curGenre} 분위기로 이어서, ${subMax}자로…` : '한 문장으로 이어가세요';
   const genreSuffix = isGenreSwitch ? (GENRE_META[curGenre] || 'mystery') : null;
   const genreToneAttr = isGenreSwitch ? ` style="--g:var(--g-${genreSuffix});--wash:var(--g-${genreSuffix}-wash)"` : '';
   return `

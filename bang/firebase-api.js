@@ -54,11 +54,10 @@ const FB_ADMIN_ID        = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
 const FB_AI_ID           = '578873e7-47b7-48d3-9cd8-894546196205'; // AI 자동참여 전용 봇 계정 (관리자 계정과 분리)
 var FB_VOTE_THRESHOLD  = 3;
 const FB_WORD_CHALLENGE_MAX_CHARS = 50;
-// 장르 강제 전환 이야기 전용 글자수 범위 — 기존 이어쓰기 최대(50자)를 그대로
-// "최소"로 쓰면 사실상 정확히 50자만 되는 이상한 제약이라, 오프닝 글자
-// 상한(100자)에 맞춰 전용으로 늘림
+// 장르 강제 전환 이야기 전용 글자수 범위 — 50자 고정(유저 확정, 2026-07-28.
+// 구현 중 제가 임의로 100자까지 늘렸었는데 그런 지시는 없었음 — 원복).
 const FB_GENRE_SWITCH_MIN_CHARS = 50;
-const FB_GENRE_SWITCH_MAX_CHARS = 100;
+const FB_GENRE_SWITCH_MAX_CHARS = 50;
 const _closingEpisodes = new Set(); // 동시 중복 마감 방지
 
 // ─── 유틸 ────────────────────────────────────────────────

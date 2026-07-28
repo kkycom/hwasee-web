@@ -3409,13 +3409,39 @@ function renderHintCardHtml(round) {
         <div class="prose-opening" style="font-weight:700;letter-spacing:1px">${esc(solved ? round.text : round.hint)}</div>
       </div>
       ${solved
-        ? `<div style="font-size:12px;color:var(--muted)">${round.winner_nickname ? `${esc(round.winner_nickname)}님이 <b style="color:var(--accent2)">+${round.points}P</b> 획득!` : '아직 정답자가 없어요'} · 다음 라운드까지 <span id="hint-countdown"></span></div>`
+        ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+             <span style="font-size:12px;color:var(--muted)">${round.winner_nickname ? `${esc(round.winner_nickname)}님이 <b style="color:var(--accent2)">+${round.points}P</b> 획득!` : '아직 정답자가 없어요'} · 다음 라운드까지 <span id="hint-countdown"></span></span>
+             <button class="btn btn-ghost btn-sm" onclick="toggleHintHistory('${round.round_id}')">참여 과정 보기</button>
+           </div>
+           <div id="hint-history-area" style="display:none;margin-top:12px"></div>`
         : `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
              <span class="step-pill"><span class="step-dot"></span>${round.participant_count || 0}명 도전 중</span>
              <button class="btn btn-primary btn-sm" onclick="toggleHintDetail()">도전하기</button>
            </div>
            <div id="hint-detail-area" style="display:none;margin-top:12px"></div>`}
     </div>`;
+}
+
+async function toggleHintHistory(round_id) {
+  const el = document.getElementById('hint-history-area');
+  if (!el) return;
+  const opening = el.style.display === 'none';
+  el.style.display = opening ? 'block' : 'none';
+  if (opening && !el.dataset.loaded) {
+    el.dataset.loaded = '1';
+    el.innerHTML = `<div class="loading" style="padding:10px 0"></div>`;
+    const snap = await firebase.firestore().collection('hint_guesses').where('round_id', '==', round_id).get();
+    // 정답 공개 후엔 실시간일 필요가 없어 1회성 조회로 충분 — 오래된 순으로
+    // 정렬해서 사람들이 초성부터 답을 좁혀가던 과정이 순서대로 보이게 함
+    // (실시간 피드는 최신순이지만, 다 끝난 뒤 복기할 땐 처음부터 보는 게 재미)
+    const rows = snap.docs.map(d => d.data())
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      .map(g => g.is_correct
+        ? `<div class="feed-line" style="font-size:12.5px;padding:6px 0;font-weight:800;color:var(--accent2)">✓ ${esc(g.nickname)}님 정답!</div>`
+        : `<div class="feed-line" style="font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--border)">${esc(g.text)} <span style="color:var(--accent2);font-weight:700">(${g.match_count}/${g.total_length})</span> <span style="color:var(--muted)">${esc(g.nickname)}</span></div>`)
+      .join('');
+    el.innerHTML = rows || `<div class="empty" style="padding:10px 0;font-size:12px">시도가 없었어요</div>`;
+  }
 }
 
 function toggleHintDetail() {

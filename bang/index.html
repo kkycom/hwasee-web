@@ -3335,7 +3335,12 @@ function renderSpotlight() {
       // 참여 이력이 있을 때만 참여하기 버튼을 알약 2등분(참여/펼치기)으로 —
       // 없는 사람에겐 지금처럼 버튼 하나만 보이게 해서 괜히 지저분해지지 않게 함
       const hasHistory = (slot.my_submissions || []).length > 0;
-      const ctaHtml = hasHistory ? `
+      // 초스피드 쿨다운 중엔 카드 단계에서부터 알려줌 — 안 그러면 들어가서야
+      // "채택 후 5단계 이내라 못 씀"을 알게 돼 참여율이 떨어진다는 지적(2026-07-28)
+      const inCooldown = key === 'speedrun' && slot.my_in_cooldown;
+      const ctaHtml = inCooldown
+        ? `<button class="btn btn-ghost btn-sm" style="border-radius:20px;color:var(--muted)" onclick="nav('story','${esc(slot.story_id)}')">⏳ 참여 대기 중</button>`
+        : hasHistory ? `
         <div style="display:flex;border-radius:20px;overflow:hidden">
           <button class="btn btn-primary btn-sm" style="border-radius:20px 0 0 20px;border-right:1px solid rgba(58,85,72,.3)" onclick="nav('story','${esc(slot.story_id)}')">참여하기</button>
           <button class="btn btn-primary btn-sm" style="border-radius:0 20px 20px 0;padding:7px 10px" onclick="toggleSpotlightHistory('${key}')" aria-label="내 참여 내역 보기"><span id="sp-hist-arrow-${key}">▾</span></button>

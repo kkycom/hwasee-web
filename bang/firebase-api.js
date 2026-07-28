@@ -3433,6 +3433,9 @@ async function fbGetSpotlight(viewer_id) {
         my_submissions,
         mode: story.mode || null, max_steps: story.max_steps || null, speedrun_latest_line,
         fixed_ending: story.fixed_ending || null, genre_sequence: story.genre_sequence || null,
+        // 초스피드 쿨다운 중인지 카드 단계에서부터 보여주기 위함(안 그러면
+        // 들어가서야 알 수 있어 참여율이 저조하다는 유저 지적, 2026-07-28)
+        my_in_cooldown: (story.mode === 'speedrun' && viewer_id) ? (story.cooldown_winners || []).includes(viewer_id) : false,
       };
     } else if (key === 'sentence' && s.state === 'proposing' && s.round_id) {
       const roundData = await _fbGetSentenceRoundData(s.round_id, viewer_id);

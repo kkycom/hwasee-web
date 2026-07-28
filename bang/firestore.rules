@@ -108,6 +108,15 @@ service cloud.firestore {
     // 큐레이션 목적상 반드시 서버 전용(Admin SDK, adminAddFairytalePoolEntries 등)으로만
     // 써야 함 — 클라이언트 직접 write를 열어두면 큐레이션 취지가 무너짐.
     match /spotlight_fairytale_pool/{docId} { allow read, write: if false; }
+    // 초성힌트: 씨앗 풀은 fairytale 풀과 동일 이유로 서버 전용. hint_rounds는
+    // 반드시 완전히 잠가야 함 — Firestore 규칙은 문서 단위로만 열고 닫을 수
+    // 있어서(필드 단위 비공개 불가), 조금이라도 클라이언트에서 읽히면
+    // 정답(text)이 개발자 도구로 그대로 노출됨. 라운드 상태 조회는 반드시
+    // getHintRound Cloud Function(진행 중엔 text를 응답에서 아예 뺌)으로만.
+    // hint_guesses는 정답 텍스트가 안 들어있어 실시간 피드용으로 읽기만 열어둠.
+    match /hint_pool/{docId} { allow read, write: if false; }
+    match /hint_rounds/{docId} { allow read, write: if false; }
+    match /hint_guesses/{docId} { allow read: if true; allow write: if false; }
     // 분석 대시보드 일별 집계 — computeAnalyticsDaily/backfillAnalyticsDaily(Admin
     // SDK)만 쓰고, getAnalyticsDashboard(_requireAdmin 게이트)를 통해서만 읽음.
     match /analytics_daily/{docId} { allow read, write: if false; }

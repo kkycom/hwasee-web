@@ -903,7 +903,12 @@ async function _serverCloseEpisode(db, episode_id, ep) {
   if (!storySnap.exists) return;
 
   const st = storySnap.data();
-  const anyClose = winners.some(w => w.is_closing === true);
+  // 결말 고정 이야기는 fbCreateSubmission이 클라이언트 직접 Firestore write라
+  // (firestore.rules에서 submissions가 전부 열려있음) 유저가 기존 "완결하기"
+  // (closing:true) 버튼으로 정해진 결말을 우회하고 조기 완결시킬 수 있음 —
+  // is_closing을 무조건 무력화해서, 아래 새로 추가한 마지막 단계 자동주입
+  // 분기가 결말 고정 이야기의 유일한 완결 경로가 되게 막음.
+  const anyClose = st.mode === 'fixed_ending' ? false : winners.some(w => w.is_closing === true);
 
   // ⚠️ 이 에피소드가 스토리의 "다음 정경(canonical) 단계"가 맞는지 확인.
   // 동률로 갈린 두 갈래 중 하나가 먼저 닫혀서 이미 다음 단계로 진행된 뒤,
@@ -936,8 +941,45 @@ async function _serverCloseEpisode(db, episode_id, ep) {
   // 저장이 안 될 수 있음(속도개선방 지적, 2026-07-15). 클라이언트가 애초에 closeEpisode
   // 결과를 기다리지 않고 호출하므로(firebase-api.js closeEpisode 호출부 .catch(()=>{})
   // fire-and-forget) 여기서 await해도 체감 지연은 없음.
-  if (st.vote_threshold) {
+  // 장르 강제 전환 이야기는 이미 장르가 확정돼있어(genre_sequence) AI 확률
+  // 분류가 낭비+모순(강제된 장르랑 다른 확률이 나올 수 있음)이라 스킵
+  if (st.vote_threshold && st.mode !== 'genre_switch') {
     await _classifyStoryGenre(db, ep.story_id, nextStep).catch(e => console.error('genre classify error:', e.message));
+  }
+
+  // 결말 고정 이야기: 마지막 단계(max_steps)를 공개 제출로 열지 않고, 생성 시
+  // 미리 정해둔 fixed_ending을 채택된 내용으로 그대로 주입해서 즉시 완결시킴.
+  // anyClose를 위에서 이미 무력화했으므로 이 분기가 유일한 완결 경로.
+  if (st.mode === 'fixed_ending' && nextStep + 1 === Number(st.max_steps)) {
+    const now = new Date().toISOString();
+    const finalBatch = db.batch();
+    // winners가 동률로 여러 갈래일 수 있음 — 갈래를 버리지 않고 각 갈래 끝에
+    // 동일한 fixed_ending을 캡으로 씌움
+    winners.forEach(w => {
+      const finalEpId = db.collection('episodes').doc().id;
+      const finalSubId = db.collection('submissions').doc().id;
+      finalBatch.set(db.collection('episodes').doc(finalEpId), {
+        episode_id: finalEpId, story_id: ep.story_id,
+        step: nextStep + 1, parent_sub_id: w.id,
+        status: 'closed', vote_total: 0,
+        created_at: now, closed_at: now, pending_at: '',
+      });
+      finalBatch.set(db.collection('submissions').doc(finalSubId), {
+        sub_id: finalSubId, episode_id: finalEpId, story_id: ep.story_id,
+        content: st.fixed_ending,
+        author_id: FB_AI_ID, author_nickname: '익명', author_badge: '',
+        derived_from: '', vote_count: 0, is_adopted: true,
+        created_at: now, is_closing: true,
+      });
+    });
+    finalBatch.update(storySnap.ref, {
+      current_step: nextStep + 1, status: 'completed',
+      ...(winners.length > 1 ? { has_branch: true } : {}),
+    });
+    await finalBatch.commit();
+    try { await _serverRefillSpotlightSlot(db, ep.story_id); } catch (e) { console.error('spotlight refill error:', e.message); }
+    console.log(`serverCloseEpisode: ${episode_id} → fixed_ending 완결 (step ${nextStep + 1})`);
+    return;
   }
 
   if (anyClose) {
@@ -2356,6 +2398,36 @@ const SPEEDRUN_OPENINGS = [
   '거울 속 내가 웃었다.', '시계가 거꾸로 돌았다.', '편지 한 통이 도착했다.',
 ];
 
+// 결말 고정 이야기의 마무리 문장 풀 — 장르 무관하게 두루 붙게 톤을 섞어서
+// 작성함. 저작권 큐레이션이 필요한 콘텐츠가 아니라(직접 작성) fairytale
+// 풀과 달리 정적 배열로 충분 — 스토리마다 랜덤으로 하나 배정.
+const FIXED_ENDING_POOL = [
+  '그렇게, 아무도 그날의 진실을 다시 묻지 않았다.',
+  '문은 닫혔고, 다시는 열리지 않았다.',
+  '그는 뒤돌아보지 않고 걸었다.',
+  '계절이 두 번 바뀌고 나서야, 모든 것이 제자리를 찾았다.',
+  '아무도 몰랐다, 그것이 마지막 만남이라는 것을.',
+  '편지는 끝내 부쳐지지 않았다.',
+  '그리고, 아주 오랫동안 아무 일도 일어나지 않았다.',
+  '그날 이후로 그는 다시 웃을 수 있었다.',
+  '모두가 떠난 자리에, 작은 불빛 하나만 남아있었다.',
+  '결국, 처음부터 정해져 있던 결말이었다.',
+  '세상은 아무 일 없었다는 듯 다시 돌아갔다.',
+  '그 후로 오랫동안, 그들은 행복했다.',
+];
+function _serverRandomFixedEnding() {
+  return FIXED_ENDING_POOL[Math.floor(Math.random() * FIXED_ENDING_POOL.length)];
+}
+
+// 장르 강제 전환 이야기 — 매 단계 장르가 랜덤으로 바뀜. speedrun의
+// point_values와 동일하게 스토리 생성 시 1회만 만들어서 고정 배정(매 단계
+// 라이브로 뽑지 않음 — 완결까지 일관되게 조회 가능해야 함).
+function _serverRandomGenreSequence(steps) {
+  const arr = [];
+  for (let i = 0; i < steps; i++) arr.push(SPOTLIGHT_GENRES[Math.floor(Math.random() * SPOTLIGHT_GENRES.length)]);
+  return arr;
+}
+
 // ── MVP 공감 포인트 지급 (Callable — 공감한 사람이 아니라 글쓴이에게 점수가 가야 하는데,
 //    그 지급을 클라이언트가 직접 하지 못하게 서버로 이전) ──
 exports.grantMvpPoints = functions
@@ -3204,7 +3276,7 @@ exports.adminForceCloseWordChallenge = functions
   });
 
 // ── 3슬롯 "오늘의 이야기" 스포트라이트 ────────────────────────
-// config/spotlight_slots = { word:{story_id}, sentence:{story_id,state,round_id}, ai:{story_id}, fairytale:{story_id}, speedrun:{story_id} }
+// config/spotlight_slots = { word:{story_id}, sentence:{story_id,state,round_id}, ai:{story_id}, fairytale:{story_id}, speedrun:{story_id}, fixed_ending:{story_id}, genre_switch:{story_id} }
 // 완결 훅(_serverCloseEpisode)이 슬롯 스토리 완결을 감지해 다음 이야기로 즉시 교체함.
 
 // firebase-api.js의 FB_AI_OPENINGS(1162행~)와 반드시 동일하게 유지할 것
@@ -3380,7 +3452,7 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
     const ptrSnap = await tx.get(ptrRef);
     if (!ptrSnap.exists) return; // adminInitSpotlight 실행 전 — 아직 스포트라이트 미도입
     const slots = ptrSnap.data();
-    const slotKey = ['word', 'sentence', 'ai', 'fairytale', 'speedrun'].find(k => slots[k] && slots[k].story_id === completed_story_id);
+    const slotKey = ['word', 'sentence', 'ai', 'fairytale', 'speedrun', 'fixed_ending', 'genre_switch'].find(k => slots[k] && slots[k].story_id === completed_story_id);
     if (!slotKey) return; // 스포트라이트 슬롯 스토리가 아님
 
     if (slotKey === 'ai') {
@@ -3408,6 +3480,38 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
       newlyCreatedStoryId = newStoryId;
       tx.set(db.collection('config').doc('used_openings'), { [opening]: true }, { merge: true });
       tx.update(ptrRef, { 'speedrun.story_id': newStoryId });
+      return;
+    }
+
+    if (slotKey === 'fixed_ending') {
+      // 정상 엔진 그대로 재사용(투표/채택 로직 안 건드림) — extraFields로
+      // mode+fixed_ending만 얹어서 _serverCloseEpisode의 새 분기가 인식하게 함.
+      const usedSnap = await tx.get(db.collection('config').doc('used_openings'));
+      const used = usedSnap.exists ? usedSnap.data() : {};
+      const available = SPOTLIGHT_AI_OPENINGS.filter(o => !used[o]);
+      const src = available.length ? available : SPOTLIGHT_AI_OPENINGS;
+      const opening = src[Math.floor(Math.random() * src.length)];
+      const newStoryId = _serverCreateSeedStory(db, tx, opening, {
+        mode: 'fixed_ending', fixed_ending: _serverRandomFixedEnding(),
+      });
+      newlyCreatedStoryId = newStoryId;
+      tx.set(db.collection('config').doc('used_openings'), { [opening]: true }, { merge: true });
+      tx.update(ptrRef, { 'fixed_ending.story_id': newStoryId });
+      return;
+    }
+
+    if (slotKey === 'genre_switch') {
+      const usedSnap = await tx.get(db.collection('config').doc('used_openings'));
+      const used = usedSnap.exists ? usedSnap.data() : {};
+      const available = SPOTLIGHT_AI_OPENINGS.filter(o => !used[o]);
+      const src = available.length ? available : SPOTLIGHT_AI_OPENINGS;
+      const opening = src[Math.floor(Math.random() * src.length)];
+      const newStoryId = _serverCreateSeedStory(db, tx, opening, {
+        mode: 'genre_switch', genre_sequence: _serverRandomGenreSequence(10),
+      });
+      newlyCreatedStoryId = newStoryId;
+      tx.set(db.collection('config').doc('used_openings'), { [opening]: true }, { merge: true });
+      tx.update(ptrRef, { 'genre_switch.story_id': newStoryId });
       return;
     }
 
@@ -3865,6 +3969,172 @@ exports.adminDeleteFairytalePoolEntry = functions
     return { ok: true };
   });
 
+// ── 초성 힌트: 정시(하루 6회) 문장 맞히기 이벤트 — 스토리가 아닌 완전히
+//    독립된 스케줄 이벤트. hint_pool(관리자 큐레이션 씨앗 풀, fairytale
+//    풀과 동일 패턴) → hint_rounds(진행 중 라운드, 반드시 서버 전용) →
+//    hint_guesses(실시간 시도 피드, 정답 없어서 읽기는 열어둠) ──────────
+
+const CHOSEONG = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+// 완성형 한글 유니코드 분해: code=charCode-0xAC00, 초성=CHOSEONG[Math.floor(code/588)]
+// (588 = 21(중성)*28(종성)). 완성형 범위 밖(공백/문장부호 등)은 그대로 통과.
+function _serverToChoseong(text) {
+  return [...text].map(ch => {
+    const code = ch.charCodeAt(0) - 0xAC00;
+    if (code < 0 || code > 11171) return ch;
+    return CHOSEONG[Math.floor(code / 588)];
+  }).join('');
+}
+
+async function _serverStartHintRound(db) {
+  const now = new Date();
+  await db.runTransaction(async tx => {
+    const activeSnap = await tx.get(db.collection('hint_rounds').where('status', '==', 'active').limit(1));
+    activeSnap.docs.forEach(d => tx.update(d.ref, { status: 'closed', closed_at: now.toISOString() }));
+
+    const poolSnap = await tx.get(db.collection('hint_pool').orderBy('created_at', 'asc').limit(50));
+    const nextEntry = poolSnap.docs.find(d => !d.data().used);
+    if (!nextEntry) return; // 풀 소진 — 관리자가 채울 때까지 그냥 공백으로 둠(word/fairytale 슬롯과 동일 원칙)
+
+    tx.update(nextEntry.ref, { used: true });
+    const roundRef = db.collection('hint_rounds').doc();
+    const text = nextEntry.data().text;
+    tx.set(roundRef, {
+      round_id: roundRef.id, text, hint: _serverToChoseong(text),
+      status: 'active', start_at: now.toISOString(), end_at: '',
+      winner_user_id: null, winner_nickname: null, winner_submission_id: null, winner_text: null,
+      points: 50, closed_at: null,
+    });
+  });
+}
+
+// 하루 6회 정시(08/10/12/14/16/18시 KST) — 이 코드베이스의 기존 관례(단일시각
+// 스케줄 문자열, 콤마/유닉스크론 전례 없음)를 그대로 따름. 전부 공용 헬퍼 호출.
+exports.startHintRound08 = functions.region('asia-northeast3').pubsub.schedule('every day 08:00').timeZone('Asia/Seoul').onRun(async () => { await _serverStartHintRound(admin.firestore()); return null; });
+exports.startHintRound10 = functions.region('asia-northeast3').pubsub.schedule('every day 10:00').timeZone('Asia/Seoul').onRun(async () => { await _serverStartHintRound(admin.firestore()); return null; });
+exports.startHintRound12 = functions.region('asia-northeast3').pubsub.schedule('every day 12:00').timeZone('Asia/Seoul').onRun(async () => { await _serverStartHintRound(admin.firestore()); return null; });
+exports.startHintRound14 = functions.region('asia-northeast3').pubsub.schedule('every day 14:00').timeZone('Asia/Seoul').onRun(async () => { await _serverStartHintRound(admin.firestore()); return null; });
+exports.startHintRound16 = functions.region('asia-northeast3').pubsub.schedule('every day 16:00').timeZone('Asia/Seoul').onRun(async () => { await _serverStartHintRound(admin.firestore()); return null; });
+exports.startHintRound18 = functions.region('asia-northeast3').pubsub.schedule('every day 18:00').timeZone('Asia/Seoul').onRun(async () => { await _serverStartHintRound(admin.firestore()); return null; });
+
+// 테스트/부트스트랩용 — 콘솔에서 수동 트리거
+exports.adminForceStartHintRound = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    await _serverStartHintRound(admin.firestore());
+    return { ok: true };
+  });
+
+// 진행 중(active) 라운드면 text를 절대 응답에 안 넣음(힌트만) — 정답 유출은
+// 이 함수가 유일한 클라이언트 접점이라 여기서만 막으면 됨(hint_rounds 자체는
+// firestore.rules에서 완전히 잠겨있어 직접 읽기는 원천 차단).
+exports.getHintRound = functions
+  .region('asia-northeast3')
+  .https.onCall(async () => {
+    const db = admin.firestore();
+    const activeSnap = await db.collection('hint_rounds').where('status', '==', 'active').limit(1).get();
+    let doc = !activeSnap.empty ? activeSnap.docs[0] : null;
+    if (!doc) {
+      const lastSnap = await db.collection('hint_rounds').orderBy('start_at', 'desc').limit(1).get();
+      doc = !lastSnap.empty ? lastSnap.docs[0] : null;
+    }
+    if (!doc) return { ok: true, round: null };
+    const r = doc.data();
+    const base = { round_id: doc.id, hint: r.hint, status: r.status, start_at: r.start_at, points: r.points };
+    if (r.status === 'closed') {
+      return { ok: true, round: { ...base, text: r.text, winner_user_id: r.winner_user_id, winner_nickname: r.winner_nickname, winner_text: r.winner_text } };
+    }
+    return { ok: true, round: base }; // text는 절대 안 내려줌
+  });
+
+exports.hintGuess = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const round_id = data.round_id;
+    const author_id = data.user_id;
+    const text = (data.guess || '').trim();
+    if (!round_id || !author_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(author_id, data.token);
+    if (!text) return { ok: false, error: '답을 입력해주세요.' };
+
+    const db = admin.firestore();
+    const uSnap = await db.collection('users').doc(author_id).get();
+    const uData = uSnap.exists ? uSnap.data() : {};
+    const nickname = uData.display_name || uData.nickname || '익명';
+    const roundRef = db.collection('hint_rounds').doc(round_id);
+
+    const result = await db.runTransaction(async tx => {
+      const roundSnap = await tx.get(roundRef);
+      if (!roundSnap.exists) return { ok: false, error: '라운드를 찾을 수 없습니다.' };
+      const round = roundSnap.data();
+      if (round.status !== 'active') return { ok: false, error: '이미 마감된 라운드예요.' };
+
+      // 정규화: 공백 전부 제거 + 끝의 마침표 제거(씨앗 문장이 전부 "다."로 끝남) —
+      // 정답 판정과 글자별 매치 카운트 둘 다 이 정규화된 문자열 기준으로 통일
+      const norm = s => (s || '').replace(/\s+/g, '').replace(/\.+$/, '');
+      const gN = norm(text), aN = norm(round.text);
+      const isCorrect = gN.length > 0 && gN === aN;
+      let matchCount = 0;
+      for (let i = 0; i < Math.min(gN.length, aN.length); i++) if (gN[i] === aN[i]) matchCount++;
+
+      const guessRef = db.collection('hint_guesses').doc();
+      tx.set(guessRef, {
+        guess_id: guessRef.id, round_id, user_id: author_id, nickname,
+        text, match_count: matchCount, total_length: aN.length,
+        is_correct: isCorrect, created_at: new Date().toISOString(),
+      });
+
+      if (isCorrect) {
+        tx.update(roundRef, {
+          status: 'closed', closed_at: new Date().toISOString(),
+          winner_user_id: author_id, winner_nickname: nickname,
+          winner_submission_id: guessRef.id, winner_text: text,
+        });
+      }
+      return { ok: true, guess_id: guessRef.id, match_count: matchCount, total_length: aN.length, correct: isCorrect };
+    });
+
+    if (result.ok && result.correct) {
+      try { await _serverAddPoints(db, author_id, 50, 'hint_guess_win', result.guess_id); } catch (e) { console.error('hint point award error:', e.message); }
+    }
+    return result;
+  });
+
+// 초성힌트 씨앗 풀 관리 — spotlight_fairytale_pool과 동일 이유로 서버 전용
+// Cloud Function 트리오(hint_rounds가 정답을 참조하는 원천이라 마찬가지로
+// 아무 텍스트나 주입되면 안 됨).
+exports.adminAddHintPoolEntries = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const lines = (data.raw_text || '').split('\n').map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return { ok: false, error: '등록할 문장이 없어요.' };
+    const batch = db.batch();
+    lines.forEach(line => {
+      batch.set(db.collection('hint_pool').doc(), { text: line, used: false, created_at: new Date().toISOString() });
+    });
+    await batch.commit();
+    return { ok: true, added: lines.length };
+  });
+
+exports.adminGetHintPoolQueue = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const snap = await admin.firestore().collection('hint_pool').orderBy('created_at', 'asc').limit(500).get();
+    const all = snap.docs.map(d => ({ entry_id: d.id, ...d.data() }));
+    return { ok: true, unused: all.filter(s => !s.used), used_count: all.filter(s => s.used).length };
+  });
+
+exports.adminDeleteHintPoolEntry = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    await admin.firestore().collection('hint_pool').doc(data.entry_id).delete();
+    return { ok: true };
+  });
+
 // 초스피드 슬롯 최초 부트스트랩(1회성 관리자 콜러블) — adminInitSpotlight은 이미
 // initialized:true라 재실행 안 됨(동화각색 때와 동일 상황). 배포 후 한 번만 호출.
 exports.adminInitSpeedrunSlot = functions
@@ -3886,6 +4156,56 @@ exports.adminInitSpeedrunSlot = functions
     const newStoryId = _serverCreateSpeedrunSeedStory(db, batch, opening);
     batch.set(db.collection('config').doc('used_openings'), { [opening]: true }, { merge: true });
     batch.set(ptrRef, { speedrun: { story_id: newStoryId } }, { merge: true });
+    await batch.commit();
+    return { ok: true, story_id: newStoryId };
+  });
+
+exports.adminInitFixedEndingSlot = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const ptrRef = db.collection('config').doc('spotlight_slots');
+    const ptrSnap = await ptrRef.get();
+    if (ptrSnap.exists && ptrSnap.data().fixed_ending) return { ok: true, already: true };
+
+    const usedSnap = await db.collection('config').doc('used_openings').get();
+    const used = usedSnap.exists ? usedSnap.data() : {};
+    const available = SPOTLIGHT_AI_OPENINGS.filter(o => !used[o]);
+    const src = available.length ? available : SPOTLIGHT_AI_OPENINGS;
+    const opening = src[Math.floor(Math.random() * src.length)];
+
+    const batch = db.batch();
+    const newStoryId = _serverCreateSeedStory(db, batch, opening, {
+      mode: 'fixed_ending', fixed_ending: _serverRandomFixedEnding(),
+    });
+    batch.set(db.collection('config').doc('used_openings'), { [opening]: true }, { merge: true });
+    batch.set(ptrRef, { fixed_ending: { story_id: newStoryId } }, { merge: true });
+    await batch.commit();
+    return { ok: true, story_id: newStoryId };
+  });
+
+exports.adminInitGenreSwitchSlot = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const ptrRef = db.collection('config').doc('spotlight_slots');
+    const ptrSnap = await ptrRef.get();
+    if (ptrSnap.exists && ptrSnap.data().genre_switch) return { ok: true, already: true };
+
+    const usedSnap = await db.collection('config').doc('used_openings').get();
+    const used = usedSnap.exists ? usedSnap.data() : {};
+    const available = SPOTLIGHT_AI_OPENINGS.filter(o => !used[o]);
+    const src = available.length ? available : SPOTLIGHT_AI_OPENINGS;
+    const opening = src[Math.floor(Math.random() * src.length)];
+
+    const batch = db.batch();
+    const newStoryId = _serverCreateSeedStory(db, batch, opening, {
+      mode: 'genre_switch', genre_sequence: _serverRandomGenreSequence(10),
+    });
+    batch.set(db.collection('config').doc('used_openings'), { [opening]: true }, { merge: true });
+    batch.set(ptrRef, { genre_switch: { story_id: newStoryId } }, { merge: true });
     await batch.commit();
     return { ok: true, story_id: newStoryId };
   });

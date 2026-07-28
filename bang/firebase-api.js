@@ -54,6 +54,11 @@ const FB_ADMIN_ID        = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
 const FB_AI_ID           = '578873e7-47b7-48d3-9cd8-894546196205'; // AI 자동참여 전용 봇 계정 (관리자 계정과 분리)
 var FB_VOTE_THRESHOLD  = 3;
 const FB_WORD_CHALLENGE_MAX_CHARS = 50;
+// 장르 강제 전환 이야기 전용 글자수 범위 — 기존 이어쓰기 최대(50자)를 그대로
+// "최소"로 쓰면 사실상 정확히 50자만 되는 이상한 제약이라, 오프닝 글자
+// 상한(100자)에 맞춰 전용으로 늘림
+const FB_GENRE_SWITCH_MIN_CHARS = 50;
+const FB_GENRE_SWITCH_MAX_CHARS = 100;
 const _closingEpisodes = new Set(); // 동시 중복 마감 방지
 
 // ─── 유틸 ────────────────────────────────────────────────
@@ -1173,13 +1178,22 @@ async function _fbGetStoryParticipants(story_id) {
 
 async function fbCreateSubmission(episode_id, content, author_id, derived_from, closing) {
   const text = (content || '').trim();
-  if (!text)            return { ok: false, error: '내용을 입력해주세요.' };
-  if (text.length > 50) return { ok: false, error: '50자 이내로 작성해주세요.' };
+  if (!text) return { ok: false, error: '내용을 입력해주세요.' };
 
   const epSnap = await db.collection('episodes').doc(episode_id).get();
   if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
   const ep = epSnap.data();
   if (ep.status !== 'open') return { ok: false, error: '제출이 마감됐습니다.' };
+
+  // 장르 강제 전환 이야기는 글자수 제한이 다름(최소 50~최대 100) — fbVote가
+  // vote_threshold를 읽는 것과 동일하게, 무거운 트랜잭션 전에 story를 한 번
+  // 먼저 읽어서 모드만 확인
+  const storySnap0 = await db.collection('stories').doc(ep.story_id).get();
+  const story0 = storySnap0.exists ? storySnap0.data() : {};
+  const maxChars = story0.mode === 'genre_switch' ? FB_GENRE_SWITCH_MAX_CHARS : 50;
+  const minChars = story0.mode === 'genre_switch' ? FB_GENRE_SWITCH_MIN_CHARS : 0;
+  if (text.length > maxChars) return { ok: false, error: `${maxChars}자 이내로 작성해주세요.` };
+  if (text.length < minChars) return { ok: false, error: `최소 ${minChars}자 이상 작성해주세요.` };
 
   const prevSubsSnap = await db.collection('submissions').where('episode_id','==',episode_id).get();
   const myPrevCount = prevSubsSnap.docs.filter(d => d.data().author_id === author_id && !d.data().is_ai).length;
@@ -2781,6 +2795,43 @@ async function fbSpeedrunDownvote(sub_id, voter_id) {
   } catch (e) { return { ok: false, error: e.message || '처리에 실패했습니다.' }; }
 }
 
+// 초성힌트 — hint_rounds가 정답을 담고 있고 firestore.rules에서 완전히
+// 잠겨있어(functions/index.js 주석 참고) 조회 자체도 Cloud Function 경유
+// (일반 fbXxx 로컬 Firestore 함수가 아님 — speedrunSubmit과 동일 이유).
+async function fbGetHintRound() {
+  try {
+    const r = await functionsRegion.httpsCallable('getHintRound')({});
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '조회에 실패했습니다.' }; }
+}
+async function fbHintGuess(round_id, guess, user_id) {
+  try {
+    const r = await functionsRegion.httpsCallable('hintGuess')({ round_id, guess, user_id, token: localStorage.getItem('hwasee_token') });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '제출에 실패했습니다.' }; }
+}
+async function fbAdminAddHintPoolEntries(admin_id, rawText) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  try {
+    const r = await functionsRegion.httpsCallable('adminAddHintPoolEntries')({ user_id: admin_id, token: localStorage.getItem('hwasee_token'), raw_text: rawText });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '등록에 실패했습니다.' }; }
+}
+async function fbAdminGetHintPoolQueue(admin_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  try {
+    const r = await functionsRegion.httpsCallable('adminGetHintPoolQueue')({ user_id: admin_id, token: localStorage.getItem('hwasee_token') });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '조회에 실패했습니다.' }; }
+}
+async function fbAdminDeleteHintPoolEntry(admin_id, entry_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  try {
+    const r = await functionsRegion.httpsCallable('adminDeleteHintPoolEntry')({ user_id: admin_id, token: localStorage.getItem('hwasee_token'), entry_id });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '삭제에 실패했습니다.' }; }
+}
+
 async function fbGetBugReports(user_id) {
   const uSnap = await db.collection('users').doc(user_id).get();
   if (!uSnap.exists || uSnap.data().badge !== 'treeguard') return { ok: false, error: '권한이 없습니다.' };
@@ -3000,6 +3051,8 @@ async function firebaseApi(action, params = {}) {
     case 'vote':               return fbVote(params.episode_id, params.sub_ids, await requireUid());
     case 'speedrunSubmit':     return fbSpeedrunSubmit(params.episode_id, params.content, await requireUid());
     case 'speedrunDownvote':   return fbSpeedrunDownvote(params.sub_id, await requireUid());
+    case 'getHintRound':       return fbGetHintRound();
+    case 'hintGuess':          return fbHintGuess(params.round_id, params.guess, await requireUid());
 
     case 'getSeeds':           return fbGetSeeds();
     case 'getAISuggestion':    return fbGetAISuggestion();
@@ -3063,6 +3116,9 @@ async function firebaseApi(action, params = {}) {
     case 'adminAddFairytalePoolEntries':  return fbAdminAddFairytalePoolEntries(await requireUid(), params.raw_text);
     case 'adminGetFairytalePoolQueue':    return fbAdminGetFairytalePoolQueue(await requireUid());
     case 'adminDeleteFairytalePoolEntry': return fbAdminDeleteFairytalePoolEntry(await requireUid(), params.entry_id);
+    case 'adminAddHintPoolEntries':  return fbAdminAddHintPoolEntries(await requireUid(), params.raw_text);
+    case 'adminGetHintPoolQueue':    return fbAdminGetHintPoolQueue(await requireUid());
+    case 'adminDeleteHintPoolEntry': return fbAdminDeleteHintPoolEntry(await requireUid(), params.entry_id);
     case 'getEmailConfigStatus':  return fbGetEmailConfigStatus(await requireUid());
     case 'setEmailConfig':        return fbSetEmailConfig(await requireUid(), params.gmail_user, params.gmail_app_pass);
 
@@ -3295,7 +3351,7 @@ async function fbGetSpotlight(viewer_id) {
 
   // 슬롯 3개를 순차로 하나씩 기다리지 않고 병렬로 조회 — 홈 첫 화면이라
   // 진입 빈도가 가장 높은 만큼 왕복 1번(가장 느린 슬롯 기준)으로 줄임
-  const keys = ['word', 'sentence', 'ai', 'fairytale', 'speedrun'];
+  const keys = ['word', 'sentence', 'ai', 'fairytale', 'speedrun', 'fixed_ending', 'genre_switch'];
   const slotResults = await Promise.all(keys.map(async key => {
     const s = ptr[key] || {};
     if (s.story_id) {

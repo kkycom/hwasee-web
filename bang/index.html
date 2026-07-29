@@ -3487,13 +3487,16 @@ function cardHtml(key) {
       // 🔥 인기 자유 이야기: "지금 마음에 안 들면 끝"이라 활성화에 도움이
       // 안 된다는 유저 지적(2026-07-28) — 참여자 순으로 다음/이전 이야기를
       // 넘겨볼 수 있게 함(후보는 fbGetSpotlight가 이미 참여자 순으로 정렬해서 내려줌).
+      // 별도 줄로 안 빼고 단계 알약과 참여하기 버튼 사이 빈 공간에 화살표+숫자만
+      // 얹음(카드형 버튼+"이전/다음 이야기" 문구는 과했다는 유저 피드백, 화살표만으로
+      // 충분히 이해되는 UI라 텍스트 라벨도 뺌).
       const hotCandidates = window._hotCandidateIds || [];
       const hotIdx = window._hotIndex || 0;
       const hotPagerHtml = key === 'hot' && hotCandidates.length > 1 ? `
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;font-size:12px;color:var(--muted)">
-          <button class="btn btn-ghost btn-sm"${hotIdx === 0 ? ' disabled' : ''} onclick="_navigateHotCard(-1)">◀ 이전</button>
-          <span>${hotIdx + 1} / ${hotCandidates.length}</span>
-          <button class="btn btn-ghost btn-sm"${hotIdx >= hotCandidates.length - 1 ? ' disabled' : ''} onclick="_navigateHotCard(1)">다음 이야기 ▶</button>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);flex-shrink:0">
+          <button aria-label="이전 이야기" style="background:none;border:none;font-size:14px;padding:2px 4px;cursor:pointer;color:${hotIdx === 0 ? 'var(--border)' : 'var(--muted)'}"${hotIdx === 0 ? ' disabled' : ''} onclick="_navigateHotCard(-1)">◀</button>
+          <span style="font-variant-numeric:tabular-nums">${hotIdx + 1} / ${hotCandidates.length}</span>
+          <button aria-label="다음 이야기" style="background:none;border:none;font-size:14px;padding:2px 4px;cursor:pointer;color:${hotIdx >= hotCandidates.length - 1 ? 'var(--border)' : 'var(--muted)'}"${hotIdx >= hotCandidates.length - 1 ? ' disabled' : ''} onclick="_navigateHotCard(1)">▶</button>
         </div>` : '';
       bodyHtml = `
         <div class="story-prose" style="padding:28px 18px 28px 20px;margin:12px 0;cursor:pointer" onclick="openStoryProseModal('${esc(slot.story_id)}')" role="button" aria-label="지금까지의 이야기 보기">
@@ -3503,9 +3506,10 @@ function cardHtml(key) {
         ${genrePanelHtml(slot.genre_probs, slot.story_id)}
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <span class="step-pill"><span class="step-dot"></span>${_stepLabel}</span>
+          ${hotPagerHtml}
           <div style="display:flex;gap:6px;flex-shrink:0">${wcLinkBtn}${ctaHtml}</div>
         </div>
-        ${hasHistory ? `<div id="sp-hist-${key}" style="display:none;margin-top:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">${histHtml}</div>` : ''}${hotPagerHtml}`;
+        ${hasHistory ? `<div id="sp-hist-${key}" style="display:none;margin-top:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">${histHtml}</div>` : ''}`;
     } else if (key === 'sentence' && slot.state === 'proposing') {
       bodyHtml = renderSentenceRoundInner(slot);
     } else {

@@ -191,6 +191,7 @@ function _kpiCardsHtml(series) {
     ['투표 유저', last.voter_count, prev && prev.voter_count],
     ['총 투표수', last.vote_count, prev && prev.vote_count],
     ['단어챌린지 작성', last.wc_writer_count, prev && prev.wc_writer_count],
+    ['초성힌트 참여자', last.hint_participant_count, prev && prev.hint_participant_count],
     ['활성 유저(DAU)', last.active_user_count, prev && prev.active_user_count],
   ];
   return `
@@ -230,6 +231,9 @@ function _lifetimeCardHtml(lifetime) {
       <div style="height:10px;border-radius:6px;background:var(--surface);overflow:hidden">
         <div style="height:100%;width:${Math.min(100, completionPct)}%;background:var(--success)"></div>
       </div>
+    </div>
+    <div style="margin-top:14px;font-size:13px;color:var(--muted)">
+      🏆 누적 업적(뱃지) 달성 건수: <span style="color:var(--text);font-weight:700">${lifetime.achievements_total ?? 0}</span>건
     </div>`);
 }
 
@@ -385,7 +389,7 @@ async function _loadInsights() {
       series: res.series, retention: res.retention, stickiness: res.stickiness,
       cohorts: res.cohorts, activation_cohorts: res.activation_cohorts,
       story_cohorts: res.story_cohorts, referral_breakdown: res.referral_breakdown,
-      lifetime: res.lifetime,
+      achievements: res.achievements, lifetime: res.lifetime,
     });
     const data = r.data;
     if (!data || !data.ok) {
@@ -450,9 +454,18 @@ function _renderDashboard(res) {
   const sectionChart = _svgStackedBarChart(dates, [
     { label: '단어챌린지 응모', color: 'var(--success)', values: res.series.map(d => d.section_word_challenge) },
     { label: '단어챌린지 선정작 이어쓰기', color: 'var(--accent)', values: res.series.map(d => d.section_word_challenge_story) },
-    { label: '스포트라이트(문장제안+AI픽)', color: 'var(--accent2)', values: res.series.map(d => d.section_spotlight_other) },
+    { label: '초성힌트 시도', color: '#4a4364', values: res.series.map(d => d.hint_guess_count) },
+    { label: '초스피드', color: '#7a4030', values: res.series.map(d => d.section_speedrun) },
+    { label: '장르전환', color: '#4a4a8a', values: res.series.map(d => d.section_genre_switch) },
+    { label: '결말고정', color: '#2e5f66', values: res.series.map(d => d.section_fixed_ending) },
+    { label: '동화각색', color: '#8a4a5c', values: res.series.map(d => d.section_fairytale) },
+    { label: '스포트라이트(레거시, 문장제안+AI픽)', color: 'var(--accent2)', values: res.series.map(d => d.section_spotlight_other) },
     { label: '자유 이야기', color: '#8a6420', values: res.series.map(d => d.section_free) },
   ]);
+  const achievementDates = (res.achievements || []).map(d => d.date);
+  const achievementChart = _svgLineChart([
+    { label: '업적 달성 건수', color: 'var(--accent2)', values: (res.achievements || []).map(d => d.count) },
+  ], achievementDates);
 
   _app().innerHTML = `
     ${_rangeControlsHtml()}
@@ -472,6 +485,7 @@ function _renderDashboard(res) {
     ${_chartCardHtml('🔁 재방문 빈도 (Stickiness: DAU/WAU · DAU/MAU, %)', 'stickiness', stickinessChart)}
     ${_chartCardHtml('📊 주간 잔존율 추이 (지난주 WAU 대비 이번주 잔존율, %)', 'retention', retentionChart)}
     ${_chartCardHtml('🧭 일별 부문 참여 비율 (그날 참여가 어디에 몰렸는지, 100% 기준)', 'sections', sectionChart)}
+    ${_chartCardHtml('🏆 일별 업적(뱃지) 달성 건수', 'achievements', achievementChart)}
     <div class="card">
       <div class="chart-title">⏱️ 일별 평균 체류시간 (Google Analytics)</div>
       <div class="insight" id="insight-dwell_time" style="display:none"></div>

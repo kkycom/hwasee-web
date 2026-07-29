@@ -2604,7 +2604,7 @@ async function _computeAndStoreAnalyticsForDate(db, kstDateStr) {
   const visitors_unique = visitDoc.exists ? (visitDoc.data().count || 0) : 0;
   const visitors_total  = visitDoc.exists ? (visitDoc.data().raw_count || 0) : 0;
 
-  const [usersSnap, subsSnap, ledgerSnap, votesSnap, wcSubsSnap, cumulativeUsersSnap] = await Promise.all([
+  const [usersSnap, subsSnap, ledgerSnap, votesSnap, wcSubsSnap, cumulativeUsersSnap, hintGuessesSnap] = await Promise.all([
     db.collection('users').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
     db.collection('submissions').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
     // reason/is_ai는 쿼리 등호필터에 안 넣고(복합 인덱스 필요해지는 걸 회피) 메모리에서 필터
@@ -2614,6 +2614,9 @@ async function _computeAndStoreAnalyticsForDate(db, kstDateStr) {
     // 누적 가입자 수(우상향 곡선용) — 해당 KST 하루가 끝난 시점까지 가입한 전체
     // 유저 수. count() 집계 쿼리라 문서 전체를 안 읽어와 저렴함.
     db.collection('users').where('created_at', '<', endIso).count().get(),
+    // 초성힌트 — hint_guesses.created_at은 항상 ISO 문자열(서버 hintGuess onCall이
+    // new Date().toISOString()로 씀, notifications.created_at 같은 타입 혼재 없음).
+    db.collection('hint_guesses').where('created_at', '>=', startIso).where('created_at', '<', endIso).get(),
   ]);
   const cumulative_users = cumulativeUsersSnap.data().count || 0;
 
@@ -2628,13 +2631,18 @@ async function _computeAndStoreAnalyticsForDate(db, kstDateStr) {
     if (isReal(s.author_id)) writerIds.add(s.author_id);
   });
 
-  // 일별 부문 참여 — 이 제출(submission)이 어느 "오늘의 이야기" 슬롯 출신
-  // 스토리에 달린 건지 story_id로 역추적. challenge_words가 있으면 슬롯1(단어챌린지
-  // 선정작), vote_threshold만 있으면 슬롯2/3(문장제안 당첨작·AI픽 — 이 둘은 코드상
-  // 저장값이 완전히 같아서 구분 불가, "스포트라이트"로 합쳐서 봄), 둘 다 없으면
-  // 자유 이야기. 필요한 story만 documentId() in 청크(30개)로 select() 조회해서
-  // stories 전체를 훑지 않음.
-  const section = { word_challenge_story: 0, spotlight_other: 0, free: 0 };
+  // 일별 부문 참여 — 이 제출(submission)이 어느 콘텐츠 종류 스토리에 달린 건지
+  // story_id로 역추적. challenge_words가 있으면 단어챌린지 선정작 이어쓰기,
+  // mode 필드로 신규 콘텐츠 4종(초스피드/장르전환/결말고정/동화각색) 구분 —
+  // speedrun은 vote_threshold가 아예 안 붙어서 mode를 vote_threshold보다 먼저
+  // 체크해야 함. mode 없이 vote_threshold만 있으면 레거시 스포트라이트(문장제안+
+  // AI픽, sentence/ai 슬롯 폐지로 신규 발생은 없지만 과거 데이터엔 남아있음).
+  // 둘 다 없으면 자유 이야기. 필요한 story만 documentId() in 청크(30개)로
+  // select() 조회해서 stories 전체를 훑지 않음.
+  const section = {
+    word_challenge_story: 0, speedrun: 0, genre_switch: 0, fixed_ending: 0,
+    fairytale: 0, spotlight_other: 0, free: 0,
+  };
   {
     const humanSubStoryIds = [...new Set(subsSnap.docs.map(d => d.data()).filter(s => !s.is_ai).map(s => s.story_id).filter(Boolean))];
     const storyFlagMap = {};
@@ -2643,7 +2651,7 @@ async function _computeAndStoreAnalyticsForDate(db, kstDateStr) {
       for (let i = 0; i < humanSubStoryIds.length; i += 30) chunks.push(humanSubStoryIds.slice(i, i + 30));
       const chunkSnaps = await Promise.all(chunks.map(c =>
         db.collection('stories').where(admin.firestore.FieldPath.documentId(), 'in', c)
-          .select('vote_threshold', 'challenge_words').get()
+          .select('vote_threshold', 'challenge_words', 'mode').get()
       ));
       chunkSnaps.forEach(snap => snap.docs.forEach(d => { storyFlagMap[d.id] = d.data(); }));
     }
@@ -2652,10 +2660,25 @@ async function _computeAndStoreAnalyticsForDate(db, kstDateStr) {
       if (s.is_ai) return;
       const flags = storyFlagMap[s.story_id] || {};
       if (flags.challenge_words) section.word_challenge_story++;
+      else if (flags.mode === 'speedrun') section.speedrun++;
+      else if (flags.mode === 'genre_switch') section.genre_switch++;
+      else if (flags.mode === 'fixed_ending') section.fixed_ending++;
+      else if (flags.mode === 'fairytale') section.fairytale++;
       else if (flags.vote_threshold) section.spotlight_other++;
       else section.free++;
     });
   }
+
+  // 초성힌트 — 별도 컬렉션(hint_guesses)이라 submissions 기반 부문집계와 분리.
+  // guess_count(시도 횟수, 다른 부문의 "제출 건수"와 같은 단위)와 participant
+  // 수를 둘 다 저장.
+  const hintParticipantIds = new Set();
+  let hint_guess_count = 0;
+  hintGuessesSnap.docs.forEach(d => {
+    const g = d.data();
+    hint_guess_count++;
+    if (isReal(g.user_id)) hintParticipantIds.add(g.user_id);
+  });
 
   const activeIds = new Set();
   ledgerSnap.docs.forEach(d => {
@@ -2688,12 +2711,17 @@ async function _computeAndStoreAnalyticsForDate(db, kstDateStr) {
     vote_count, voter_count: voterIds.size, voter_ids: [...voterIds],
     wc_writer_count: wcWriterIds.size, wc_writer_ids: [...wcWriterIds],
     cumulative_users,
-    // 부문별 참여(제출 기준) — word_challenge는 story submissions가 아니라 별도
-    // word_challenge_submissions 건수(응모 자체), 나머지 3개는 section 변수 그대로.
+    // 부문별 참여(제출 기준) — word_challenge/초성힌트는 story submissions가
+    // 아니라 각자 별도 컬렉션 건수(응모/시도 자체), 나머지는 section 변수 그대로.
     section_word_challenge: wcSubsSnap.size,
     section_word_challenge_story: section.word_challenge_story,
+    section_speedrun: section.speedrun,
+    section_genre_switch: section.genre_switch,
+    section_fixed_ending: section.fixed_ending,
+    section_fairytale: section.fairytale,
     section_spotlight_other: section.spotlight_other,
     section_free: section.free,
+    hint_guess_count, hint_participant_count: hintParticipantIds.size, hint_participant_ids: [...hintParticipantIds],
     computed_at: new Date().toISOString(),
   });
 
@@ -2895,8 +2923,14 @@ exports.getAnalyticsDashboard = functions
         cumulative_users: v.cumulative_users || 0,
         section_word_challenge: v.section_word_challenge || 0,
         section_word_challenge_story: v.section_word_challenge_story || 0,
+        section_speedrun: v.section_speedrun || 0,
+        section_genre_switch: v.section_genre_switch || 0,
+        section_fixed_ending: v.section_fixed_ending || 0,
+        section_fairytale: v.section_fairytale || 0,
         section_spotlight_other: v.section_spotlight_other || 0,
         section_free: v.section_free || 0,
+        hint_guess_count: v.hint_guess_count || 0,
+        hint_participant_count: v.hint_participant_count || 0,
         has_data: !!byDate[d],
       };
     });
@@ -2975,9 +3009,29 @@ exports.getAnalyticsDashboard = functions
       }))
       .sort((a, b) => b.total - a.total);
 
+    // 업적(뱃지) 발생건수 추이 — notifications(type:'achievement')가 유일한 타임스탬프
+    // 기록(users.achievements 배열엔 시각이 없어 추이를 못 만듦). created_at이
+    // 클라이언트 경로(_fbCheckAchievements, ISO 문자열)와 서버 경로
+    // (_serverCheckAchievements, Firestore Timestamp)로 섞여 저장되는 기존 버그가
+    // 있어 range 쿼리 대신 type 등호필터로만 전량 읽고(유저수×업적30종이 상한이라
+    // 소량) 메모리에서 두 형태 다 처리해 날짜별로 집계 — 그래서 별도 백필도 불필요,
+    // 매번 최신 전체를 다시 계산함.
+    const achievementsSnap = await db.collection('notifications').where('type', '==', 'achievement').get();
+    const achievementCountByDate = {};
+    achievementsSnap.docs.forEach(d => {
+      const raw = d.data().created_at;
+      const iso = typeof raw === 'string' ? raw
+        : (raw && typeof raw.toDate === 'function') ? raw.toDate().toISOString() : null;
+      if (!iso) return;
+      const dateStr = _kstDateStr(iso);
+      achievementCountByDate[dateStr] = (achievementCountByDate[dateStr] || 0) + 1;
+    });
+    const achievements = visibleDates.map(d => ({ date: d, count: achievementCountByDate[d] || 0 }));
+    lifetime.achievements_total = achievementsSnap.size;
+
     return {
       ok: true, series, retention, stickiness, cohorts, activation_cohorts, story_cohorts,
-      referral_breakdown, lifetime, generated_at: new Date().toISOString(),
+      referral_breakdown, achievements, lifetime, generated_at: new Date().toISOString(),
     };
   });
 
@@ -3040,21 +3094,27 @@ exports.getAnalyticsInsights = functions
       스티키니스_DAU_MAU_퍼센트: _trendSummary(stickiness.map(d => d.date), stickiness.map(d => d.dau_mau_pct || 0)),
       부문별_참여_단어챌린지응모: _trendSummary(dates, series.map(d => d.section_word_challenge)),
       부문별_참여_단어챌린지선정작이어쓰기: _trendSummary(dates, series.map(d => d.section_word_challenge_story)),
-      '부문별_참여_스포트라이트(문장제안+AI픽)': _trendSummary(dates, series.map(d => d.section_spotlight_other)),
+      부문별_참여_초성힌트시도: _trendSummary(dates, series.map(d => d.hint_guess_count)),
+      부문별_참여_초스피드: _trendSummary(dates, series.map(d => d.section_speedrun)),
+      부문별_참여_장르전환: _trendSummary(dates, series.map(d => d.section_genre_switch)),
+      부문별_참여_결말고정: _trendSummary(dates, series.map(d => d.section_fixed_ending)),
+      부문별_참여_동화각색: _trendSummary(dates, series.map(d => d.section_fairytale)),
+      '부문별_참여_레거시스포트라이트(문장제안+AI픽,신규발생없음)': _trendSummary(dates, series.map(d => d.section_spotlight_other)),
       부문별_참여_자유이야기: _trendSummary(dates, series.map(d => d.section_free)),
+      일별_업적달성건수: _trendSummary((data.achievements || []).map(d => d.date), (data.achievements || []).map(d => d.count)),
       최근_신규가입_리텐션_코호트: cohorts.slice(-4),
       최근_가입후_첫활동_전환_코호트: activationCohorts.slice(-4),
       최근_이야기_완주_코호트: storyCohorts.slice(-4),
       가입경로별_정착도: referralBreakdown,
-      누적_가입자_대비_글쓴유저_및_완주율: lifetime,
+      누적_가입자_대비_글쓴유저_및_완주율_및_누적업적수: lifetime,
     };
 
-    const prompt = `다음은 협업 릴레이소설 서비스 "화씨.방" 관리자 애널리틱스 대시보드의 최근 추이 요약(JSON)입니다. 운영자가 참고할 수 있도록 지표별로 간결한 한국어 분석 의견을 1~2문장씩 작성해주세요. 숫자를 그대로 반복하지 말고, 증가/감소 흐름과 그 의미, 주목할 점, 필요하면 짧은 제안을 담아주세요. change_pct가 null이거나 표본(n)이 작은 지표는 그 한계도 짧게 언급하세요. "가입후_첫활동_전환"은 리텐션(다시 돌아오는지)과 다르게 "애초에 한 번이라도 참여해봤는지"를 뜻합니다. "부문별_참여"는 그날 글쓰기 참여가 단어챌린지/단어챌린지 선정작 이어쓰기/스포트라이트(문장제안+AI픽, 이 둘은 데이터상 구분이 안 돼 합쳐짐)/자유이야기 중 어디에 몰렸는지를 뜻합니다.
+    const prompt = `다음은 협업 릴레이소설 서비스 "화씨.방" 관리자 애널리틱스 대시보드의 최근 추이 요약(JSON)입니다. 운영자가 참고할 수 있도록 지표별로 간결한 한국어 분석 의견을 1~2문장씩 작성해주세요. 숫자를 그대로 반복하지 말고, 증가/감소 흐름과 그 의미, 주목할 점, 필요하면 짧은 제안을 담아주세요. change_pct가 null이거나 표본(n)이 작은 지표는 그 한계도 짧게 언급하세요. "가입후_첫활동_전환"은 리텐션(다시 돌아오는지)과 다르게 "애초에 한 번이라도 참여해봤는지"를 뜻합니다. "부문별_참여"는 최근 대규모 콘텐츠 업그레이드로 추가된 초성힌트/초스피드/장르전환/결말고정/동화각색을 포함해 그날 참여가 어디에 몰렸는지를 뜻합니다(레거시 스포트라이트는 옛 슬롯 방식으로 지금은 신규 발생이 없음). "일별_업적달성건수"는 유저들이 뱃지(업적)를 새로 획득한 건수 추이입니다.
 
 ${JSON.stringify(summary)}
 
 다른 설명 없이 아래 키를 가진 JSON 객체 하나만 출력하세요:
-{"overall":"...", "visitors":"...", "cumulative_users":"...", "writers":"...", "votes":"...", "word_challenge":"...", "dau":"...", "stickiness":"...", "retention":"...", "cohorts":"...", "activation":"...", "story_completion":"...", "referral":"...", "sections":"..."}`;
+{"overall":"...", "visitors":"...", "cumulative_users":"...", "writers":"...", "votes":"...", "word_challenge":"...", "dau":"...", "stickiness":"...", "retention":"...", "cohorts":"...", "activation":"...", "story_completion":"...", "referral":"...", "sections":"...", "achievements":"..."}`;
 
     let raw;
     try { raw = await _callClaude(claudeKey, prompt, 1400); }

@@ -2401,7 +2401,8 @@ exports.speedrunReport = functions
       tx.set(reportRef, { sub_id, voter_id, created_at: new Date().toISOString() });
       const willDelete = newReportCount >= SPEEDRUN_REPORT_THRESHOLD;
       const update = { report_count: newReportCount };
-      if (willDelete) update.is_deleted = true;
+      // deleted_at — 관리자 "신고 내역" 페이지에서 최신순 정렬용(2026-07-29 확장).
+      if (willDelete) { update.is_deleted = true; update.deleted_at = new Date().toISOString(); }
       tx.update(subRef, update);
       return { ok: true, report_count: newReportCount, deleted: willDelete, hadBonus: sub.upvote_bonus_given === true };
     });

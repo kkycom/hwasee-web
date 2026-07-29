@@ -6956,29 +6956,44 @@ async function adminReports() {
   if (_renderEpoch !== epoch || currentRoute !== 'admin-reports') return;
   if (!res.ok) { document.getElementById('app').innerHTML = _adminNav('reports') + `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="adminReports()">다시 시도</button></div>`; return; }
   const reports = res.reports;
+  // 일반 이야기(정식 신고, 관리자 검토 필요)와 초스피드(신고 누적 시 이미
+  // 자동삭제 완료, 사후 열람+복구만 필요)는 처리 상태가 달라서 액션 버튼을
+  // 다르게 보여줌 — 자동삭제 쪽은 report_id가 없어(reports 컬렉션에 안 남음)
+  // "글 삭제/무시" 대신 "복구"만 제공(2026-07-29 확장, 유저 요청).
   document.getElementById('app').innerHTML = `
     ${_adminNav('reports')}
     <h2 style="margin:0 0 18px">🚩 신고 내역 <span style="font-size:14px;font-weight:400;color:var(--muted)">${reports.length}건</span></h2>
     ${reports.length === 0 ? `<div class="empty">처리할 신고가 없습니다.</div>` :
       reports.map(r => `
-        <div class="card" style="padding:14px 16px;margin-bottom:10px" id="report-card-${esc(r.report_id)}">
+        <div class="card" style="padding:14px 16px;margin-bottom:10px" id="report-card-${esc(r.sub_id)}">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
             <div style="flex:1">
               <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
                 <span style="color:var(--accent2);font-weight:700">${esc(r.reason)}</span>
-                · ${esc(r.reporter_nickname)}님이 신고 · ${timeAgo(r.created_at)}
+                ${r.source === 'speedrun_auto' ? ` · ${timeAgo(r.created_at)} · 자동처리됨` : ` · ${esc(r.reporter_nickname)}님이 신고 · ${timeAgo(r.created_at)}`}
               </div>
               <div style="font-size:14px;line-height:1.5;margin-bottom:4px">${esc(r.sub_content)}</div>
               <div style="font-size:12px;color:var(--muted)">작성자: ${esc(r.sub_author)}</div>
             </div>
             <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
-              <button class="admin-btn admin-delete"
-                onclick="adminDeleteFromReport('${esc(r.sub_id)}','${esc(r.report_id)}')">글 삭제</button>
-              <button class="admin-btn" style="background:var(--surface);color:var(--muted)"
-                onclick="dismissReportItem('${esc(r.report_id)}')">무시</button>
+              ${r.source === 'speedrun_auto' ? `
+                <button class="admin-btn" style="background:var(--surface);color:var(--muted)"
+                  onclick="adminReviveSpeedrunFromReportPage('${esc(r.sub_id)}', this)">복구</button>` : `
+                <button class="admin-btn admin-delete"
+                  onclick="adminDeleteFromReport('${esc(r.sub_id)}','${esc(r.report_id)}')">글 삭제</button>
+                <button class="admin-btn" style="background:var(--surface);color:var(--muted)"
+                  onclick="dismissReportItem('${esc(r.report_id)}')">무시</button>`}
             </div>
           </div>
         </div>`).join('')}`;
+}
+
+async function adminReviveSpeedrunFromReportPage(sub_id, btnEl) {
+  if (btnEl) btnEl.disabled = true;
+  const res = await api('adminReviveSpeedrunSubmission', { sub_id });
+  if (!res.ok) { toast(res.error, true); if (btnEl) btnEl.disabled = false; return; }
+  toast(res.restored_points > 0 ? `복구됐어요 (+${res.restored_points}P 재지급)` : '복구됐어요.');
+  document.getElementById(`report-card-${sub_id}`)?.remove();
 }
 
 // ─── 버그 내역 ────────────────────────────────────────────

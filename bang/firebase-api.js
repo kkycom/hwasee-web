@@ -1834,12 +1834,21 @@ async function fbAddReport(sub_id, reason, reporter_id) {
   return { ok: true };
 }
 
+// 일반 이야기(정식 신고, reports 컬렉션+관리자 검토)와 초스피드(신고 3표
+// 자동삭제, 관리자 검토 없이 즉시 처리)는 물량 특성이 달라 의도적으로 서로
+// 다른 파이프라인으로 설계했지만, 그러다 보니 "신고 내역" 페이지 이름만
+// 보면 관리자가 초스피드 쪽은 아예 안 보인다고 오해할 수 있었음(유저 지적,
+// 2026-07-29) — 초스피드 자동삭제 이력도 읽기전용으로 같이 노출해서 전체
+// 신고 현황을 한 화면에서 볼 수 있게 함(source:'speedrun_auto'로 구분).
 async function fbGetReports(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const rSnap = await db.collection('reports').orderBy('created_at', 'desc').limit(200).get();
-  if (rSnap.empty) return { ok: true, reports: [] };
+  const [rSnap, srSnap] = await Promise.all([
+    db.collection('reports').orderBy('created_at', 'desc').limit(200).get(),
+    db.collection('submissions').where('is_deleted', '==', true).limit(200).get(),
+  ]);
+  if (rSnap.empty && srSnap.empty) return { ok: true, reports: [] };
 
-  const subIds     = [...new Set(rSnap.docs.map(d => d.data().sub_id).filter(Boolean))];
+  const subIds      = [...new Set(rSnap.docs.map(d => d.data().sub_id).filter(Boolean))];
   const reporterIds = [...new Set(rSnap.docs.map(d => d.data().reporter_id).filter(Boolean))];
 
   // 개별 .doc(id).get() N번 대신 documentId() 'in' 청크 배치 조회('in'은 최대 30개)
@@ -1852,6 +1861,7 @@ async function fbGetReports(admin_id) {
     : [];
   const authorIds = [];
   subDocs.forEach(d => { subMap[d.id] = d.data(); if (d.data().author_id) authorIds.push(d.data().author_id); });
+  srSnap.docs.forEach(d => { if (d.data().author_id) authorIds.push(d.data().author_id); });
 
   const allUserIds = [...new Set([...reporterIds, ...authorIds])];
   if (allUserIds.length > 0) {
@@ -1860,11 +1870,11 @@ async function fbGetReports(admin_id) {
   }
 
   const label = { plagiarism:'표절', sexual:'성적 묘사', profanity:'욕설·혐오', spam:'스팸', other:'기타' };
-  const reports = rSnap.docs.map(d => {
+  const formalReports = rSnap.docs.map(d => {
     const r = d.data();
     const s = subMap[r.sub_id] || {};
     return {
-      report_id: d.id, sub_id: r.sub_id, story_id: r.story_id,
+      source: 'formal', report_id: d.id, sub_id: r.sub_id, story_id: r.story_id,
       reason: label[r.reason] || r.reason,
       reporter_nickname: nickMap[r.reporter_id] || '?',
       sub_content: s.content || '(삭제됨)',
@@ -1872,6 +1882,18 @@ async function fbGetReports(admin_id) {
       created_at:  r.created_at,
     };
   });
+  const speedrunAuto = srSnap.docs.map(d => {
+    const s = d.data();
+    return {
+      source: 'speedrun_auto', report_id: null, sub_id: d.id, story_id: s.story_id,
+      reason: `초스피드 자동삭제(신고 ${s.report_count || 0}표)`,
+      reporter_nickname: '-',
+      sub_content: s.content || '(내용 없음)',
+      sub_author: nickMap[s.author_id] || '?',
+      created_at: s.deleted_at || s.created_at,
+    };
+  });
+  const reports = [...formalReports, ...speedrunAuto].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   return { ok: true, reports };
 }
 

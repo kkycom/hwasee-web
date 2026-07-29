@@ -2338,6 +2338,7 @@ function _applyStoryData(res, story_id) {
         <button class="btn btn-ghost btn-sm" style="border:none;color:var(--muted);display:inline-flex;align-items:center;gap:4px" onclick="shareStory('${esc(s.story_id)}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>공유</button>
       </div>
     </div>
+    ${s.mode === 'fixed_ending' ? `<div style="margin:12px 0"><span class="step-pill"><span class="step-dot"></span>🎯 ${isFinished ? '완결' : (openEp ? calcDisplayStep(s, openEp.step) : (Number(s.current_step) || 0) + 1) + '/' + (s.max_steps || 10) + '단계'}</span></div>` : ''}
     <div id="prose-select-bar" class="prose-select-bar"></div>
     <div class="story-prose" id="story-prose-wrap" onclick="handleProseWrapClick(event)">
       <div class="prose-opening-wrap" style="position:relative">

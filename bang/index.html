@@ -3500,7 +3500,9 @@ function cardHtml(key) {
         </div>` : '';
       bodyHtml = `
         <div class="story-prose" style="padding:28px 18px 28px 20px;margin:12px 0;cursor:pointer" onclick="openStoryProseModal('${esc(slot.story_id)}')" role="button" aria-label="지금까지의 이야기 보기">
-          <div class="prose-opening">${slot.mode === 'speedrun' ? esc(slot.speedrun_latest_line || slot.opening) : slot.challenge_words && slot.challenge_words.length ? boldChallengeWords(slot.opening, slot.challenge_words) : esc(slot.opening)}</div>
+          <div class="prose-opening">${slot.mode === 'speedrun'
+            ? `${esc(slot.speedrun_latest_line || slot.opening)}${slot.speedrun_latest_line ? ` <span style="font-size:11px;color:var(--muted);font-weight:400">(최신 문장)</span>` : ''}`
+            : slot.challenge_words && slot.challenge_words.length ? boldChallengeWords(slot.opening, slot.challenge_words) : esc(slot.opening)}</div>
         </div>
         ${fixedEndingTeaserHtml}${genreSwitchTeaserHtml}
         ${genrePanelHtml(slot.genre_probs, slot.story_id)}

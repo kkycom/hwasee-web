@@ -326,22 +326,10 @@ async function main() {
   const stories = storiesSnap.docs.map(d => ({ story_id: d.id, ...d.data() }));
   console.log(`완결 이야기 ${stories.length}건 발견`);
 
-  // TEMP DEBUG(2026-07-29, 디버그방) — /bang/story/ 아카이브가 계속 "완결작 0건"으로
-  // 나오는 원인 진단용. GitHub Actions 로그에 접근 권한이 없어서 결과를 정적
-  // 파일로 남겨 curl로 직접 확인. 원인 파악되는 대로 이 블록은 제거함.
-  try {
-    fs.writeFileSync(path.join(ROOT, 'debug-ssg.json'), JSON.stringify({
-      completedStoriesCount: stories.length,
-      serviceAccountProjectId: svcJson.project_id || null,
-      timestamp: new Date().toISOString(),
-    }, null, 2));
-  } catch (e) {}
-
   fs.rmSync(OUT_DIR, { recursive: true, force: true });
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   const sitemapEntries = [];
-  const skipReasons = [];
   let ok = 0;
 
   for (const story of stories) {
@@ -349,19 +337,11 @@ async function main() {
       const { episodes, submissions } = await fetchStoryData(db, story.story_id);
       const closedEps = episodes.filter(e => e.status === 'closed');
       const tree = getEpisodeTree(closedEps, submissions);
-      if (!tree) {
-        console.error(`스킵(마감된 에피소드 없음): ${story.story_id}`);
-        skipReasons.push({ story_id: story.story_id, reason: 'no_tree', episodes: episodes.length, closedEps: closedEps.length, submissions: submissions.length });
-        continue;
-      }
+      if (!tree) { console.error(`스킵(마감된 에피소드 없음): ${story.story_id}`); continue; }
 
       const canonicalPath = buildCanonicalPath(closedEps, submissions);
       const lines = collectLines(tree, canonicalPath);
-      if (!lines.length) {
-        console.error(`스킵(채택 문장 없음): ${story.story_id}`);
-        skipReasons.push({ story_id: story.story_id, reason: 'no_lines', episodes: episodes.length, closedEps: closedEps.length, submissions: submissions.length });
-        continue;
-      }
+      if (!lines.length) { console.error(`스킵(채택 문장 없음): ${story.story_id}`); continue; }
 
       const lastmod = closedEps.reduce((max, e) => (e.closed_at && e.closed_at > max ? e.closed_at : max), '');
       const title = story.opening.length > 40 ? story.opening.slice(0, 40) + '…' : story.opening;
@@ -382,19 +362,8 @@ async function main() {
       ok++;
     } catch (e) {
       console.error(`이야기 처리 실패(${story.story_id}):`, e.message);
-      skipReasons.push({ story_id: story.story_id, reason: 'exception', message: e.message });
     }
   }
-
-  // TEMP DEBUG(2026-07-29, 디버그방) — 완결작 25건 전부가 스킵되는 원인 추적용.
-  try {
-    fs.writeFileSync(path.join(ROOT, 'debug-ssg.json'), JSON.stringify({
-      completedStoriesCount: stories.length,
-      ok,
-      skipReasons: skipReasons.slice(0, 10),
-      timestamp: new Date().toISOString(),
-    }, null, 2));
-  } catch (e) {}
 
   // 최신순으로 정렬해서 아카이브 목록에 최근 완결작이 먼저 보이게
   sitemapEntries.sort((a, b) => (b.lastmod || '').localeCompare(a.lastmod || ''));

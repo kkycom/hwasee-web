@@ -3522,7 +3522,14 @@ function renderSpotlight() {
   // 카드가 잠깐 사라졌다 다시 나타나는 깜빡임이 있었음(유저 제보, 2026-07-28)
   // — 이전에 받아온 데이터가 있으면 그걸로 먼저 즉시 채워두고 그 위에 최신화.
   const hintArea = document.getElementById('hint-card-area');
-  if (hintArea && _hintRoundData) hintArea.innerHTML = renderHintCardHtml(_hintRoundData);
+  if (hintArea && _hintRoundData) {
+    hintArea.innerHTML = renderHintCardHtml(_hintRoundData);
+    // renderHintCardHtml은 #hint-countdown을 빈 채로만 그려두고 실제 숫자는
+    // _startHintRoundCountdown()의 tick()이 채움 — 여기서 안 불러주면
+    // loadHintCard()가 "라운드/상태 안 바뀜"으로 판단해 재렌더를 건너뛸 때
+    // 카운트다운이 영영 빈 채로 남았음("시간이 안 나온다" 유저 제보, 2026-07-29).
+    if (_hintRoundData.status === 'closed') _startHintRoundCountdown();
+  }
   loadHintCard();
 }
 

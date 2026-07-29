@@ -3458,8 +3458,9 @@ function renderSpotlight() {
     <p style="font-family:var(--serif);font-size:16px;line-height:1.9;color:#9a8070;text-align:center;margin-bottom:20px">
       당신의 한 문장을 기다리는 이야기들이 있어요.
     </p>
-    ${cardHtml('word')}${cardHtml('fairytale')}${cardHtml('speedrun')}${cardHtml('fixed_ending')}${cardHtml('genre_switch')}
-    <div id="hint-card-area"></div>`;
+    ${cardHtml('word')}
+    <div id="hint-card-area"></div>
+    ${cardHtml('speedrun')}${cardHtml('genre_switch')}${cardHtml('fairytale')}${cardHtml('fixed_ending')}`;
 
   if (slots.sentence?.state === 'proposing' && slots.sentence.round) {
     _startSentenceRoundCountdown(slots.sentence.round.end_at);
@@ -3547,7 +3548,7 @@ function renderHintCardHtml(round) {
            <div id="hint-history-area" style="display:none;margin-top:12px"></div>`
         : `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
              <span class="step-pill"><span class="step-dot"></span>${round.participant_count || 0}명 도전 중</span>
-             <button class="btn btn-primary btn-sm" style="border-radius:20px" onclick="toggleHintDetail()">참여하기</button>
+             <button class="btn btn-primary btn-sm" id="hint-toggle-btn" style="border-radius:20px" onclick="toggleHintDetail()">참여하기</button>
            </div>
            <div id="hint-detail-area" style="display:none;margin-top:12px"></div>`}
     </div>`;
@@ -3593,6 +3594,12 @@ function toggleHintDetail() {
   if (!el) return;
   const opening = el.style.display === 'none';
   el.style.display = opening ? 'block' : 'none';
+  // "참여하기"가 펼침도 겸하는데, 펼친 뒤엔 이 버튼이 사실 접기 역할이라 라벨도
+  // 그에 맞게 바꿔줌 — 접을 때 손을 다른 데로 옮길 필요 없이 같은 자리에서
+  // 바로 닫을 수 있게(목업 비교 후 유저 확정, 2026-07-29 — 제목 옆 별도 화살표
+  // 안은 손이 위로 이동해야 해서 기각됨).
+  const btn = document.getElementById('hint-toggle-btn');
+  if (btn) btn.textContent = opening ? '접기 ▴' : '참여하기';
   if (opening && !el.dataset.loaded) {
     el.dataset.loaded = '1';
     el.innerHTML = `

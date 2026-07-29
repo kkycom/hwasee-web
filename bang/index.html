@@ -1718,7 +1718,7 @@ function renderSeedCard() {
   }
   area.innerHTML = `
     <p style="font-family:var(--serif);font-size:16px;line-height:1.9;color:#9a8070;text-align:center;margin-bottom:28px">
-      당신의 한 문장을 기다리는<br>이야기들이 있어요.
+      한 문장 소설 실험실
     </p>
     <div class="seed-feature">
       <div class="seed-feature-label">이런 이야기는 어때요?</div>
@@ -3458,12 +3458,16 @@ function renderSpotlight() {
       // 제출수 생략.
       const _curEp = (slot.open_eps || []).slice().sort((a, b) => b.step - a.step)[0];
       // 초스피드는 "제출 N개"(경쟁 후보 수) 개념이 없음(즉시확정이라 항상 1개) —
-      // 대신 100단계 중 몇 단계인지를 보여줌
+      // 대신 100단계 중 몇 단계인지를 보여줌. 결말고정도 max_steps가 고정(10)이라
+      // 결말까지 얼마나 남았는지 카드에서부터 보이는 게 좋겠다는 유저 판단(2026-07-28)
+      // — 제출 수는 그대로 두고 분모만 덧붙임.
       const _stepLabel = slot.mode === 'speedrun'
         ? `${(Number(slot.current_step) || 0)}/${slot.max_steps || 100}단계`
-        : _curEp
-          ? `${calcDisplayStep(slot, _curEp.step)}단계 · 제출 ${_curEp.sub_count}개`
-          : `${(Number(slot.current_step) || 0) + 1}단계`;
+        : slot.mode === 'fixed_ending' && slot.max_steps
+          ? (_curEp ? `${calcDisplayStep(slot, _curEp.step)}/${slot.max_steps}단계 · 제출 ${_curEp.sub_count}개` : `${(Number(slot.current_step) || 0) + 1}/${slot.max_steps}단계`)
+          : _curEp
+            ? `${calcDisplayStep(slot, _curEp.step)}단계 · 제출 ${_curEp.sub_count}개`
+            : `${(Number(slot.current_step) || 0) + 1}단계`;
       // 오늘의 단어 챌린지가 별도 페이지로 분리되면서(2026-07-15) 이 슬롯(과거
       // 챌린지 우승작으로 시작된 이야기)에서 진행 중인 챌린지로 바로 갈 수 있는
       // 통로가 없어지지 않게 버튼을 붙여둠. 색+아이콘으로 "참여하기"(이 이야기 계속
@@ -3509,7 +3513,7 @@ function renderSpotlight() {
   area.innerHTML = `
     ${newSummaryBannerHtml()}
     <p style="font-family:var(--serif);font-size:16px;line-height:1.9;color:#9a8070;text-align:center;margin-bottom:20px">
-      당신의 한 문장을 기다리는 이야기들이 있어요.
+      한 문장 소설 실험실
     </p>
     ${cardHtml('word')}
     <div id="hint-card-area"></div>

@@ -3902,10 +3902,24 @@ exports.cleanupAbandonedSeeds = functions
   .onRun(async () => {
     const db = admin.firestore();
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    // vote_threshold 유무로 "스포트라이트 슬롯 이야기라 건드리면 안 됨"을 가려내던
+    // 기존 방식은 새 콘텐츠 모드가 추가될 때마다 재발하는 구조적 결함이었음 —
+    // 초스피드(_serverCreateSpeedrunSeedStory)는 투표가 없어 vote_threshold를 아예
+    // 안 만들고, speedrunSubmit도 participant_count를 안 올려서 "1시간 넘은 AI
+    // 씨앗+참여자 0명" 조건을 계속 만족해버림. 실제로 17단계나 진행된 초스피드
+    // 스포트라이트 이야기가 이 로직에 의해 status:inactive로 잘못 마킹된 걸
+    // 라이브 데이터에서 확인함(디버그방, 2026-07-29). vote_threshold 유무를 보는
+    // 대신 스포트라이트 슬롯 포인터를 직접 조회해서 예외 없이 제외 — 앞으로
+    // vote_threshold 없는 모드가 또 추가돼도 이 버그가 재발하지 않음.
+    const ptrSnap = await db.collection('config').doc('spotlight_slots').get();
+    const slotStoryIds = new Set(
+      ptrSnap.exists ? Object.values(ptrSnap.data()).map(v => v && v.story_id).filter(Boolean) : []
+    );
     const storiesSnap = await db.collection('stories').where('status', '==', 'active').get();
     const abandoned = storiesSnap.docs.filter(d => {
       const s = d.data();
-      return s.is_ai_seed === true && !s.vote_threshold && (s.participant_count || 0) === 0 && (s.created_at || '') < oneHourAgo;
+      return s.is_ai_seed === true && !s.vote_threshold && (s.participant_count || 0) === 0
+        && (s.created_at || '') < oneHourAgo && !slotStoryIds.has(d.id);
     });
     if (!abandoned.length) return null;
 

@@ -13,6 +13,7 @@ const admin = require('firebase-admin');
 const ROOT = path.join(__dirname, '..');
 const BANG_DIR = path.join(ROOT, 'bang');
 const INDEX_HTML_PATH = path.join(BANG_DIR, 'index.html');
+const ROOT_INDEX_HTML_PATH = path.join(ROOT, 'index.html');
 const OUT_DIR = path.join(BANG_DIR, 'story');
 const SITEMAP_PATH = path.join(BANG_DIR, 'sitemap.xml');
 const SITE_ORIGIN = 'https://hwasee.me';
@@ -297,6 +298,32 @@ function renderArchiveIndex(entries) {
 `;
 }
 
+// 루트 홈(hwasee.me/) 콘텐츠 밀도 보강 — 애드센스가 "가치가 별로 없는 콘텐츠"로
+// 반려(2026-07-29)했는데, curl로 직접 찍어보니 루트 페이지 실제 본문이 601자짜리
+// 링크 허브뿐이었음(디버그방 확인, /bang/은 SSG로 이미 4만자 넘게 정상). 이미
+// 만들어둔 완결작 데이터를 재사용해서 루트 페이지 자체에도 실제 이야기 미리보기를
+// 심어 넣음 — 크롤러가 도메인 대표 얼굴(루트)에서부터 실질적인 텍스트를 보게 함.
+function renderRootArchivePreview(entries) {
+  if (!entries.length) return '';
+  const items = entries.map(e => {
+    const preview = e.preview.length > 220 ? e.preview.slice(0, 220) + '…' : e.preview;
+    return `
+    <a class="archive-item" href="/bang/story/${e.id}/">
+      <div class="archive-title">${esc(e.title)}</div>
+      <div class="archive-preview">${esc(preview)}</div>
+      ${e.lastmod ? `<div class="archive-date">완결 ${esc(e.lastmod.slice(0, 10))}</div>` : ''}
+    </a>`;
+  }).join('');
+
+  return `
+  <section class="archive">
+    <h2>화씨.방에서 완성된 이야기</h2>
+    <p class="archive-lede">여러 사람이 한 문장씩 이어 써서 완성한 이야기들이에요. 전체 목록은 <a href="/bang/story/">완결작 아카이브</a>에서 볼 수 있어요.</p>
+    <div class="archive-list">${items}
+    </div>
+  </section>`;
+}
+
 // ── 메인 ──
 
 async function main() {
@@ -342,7 +369,8 @@ async function main() {
       const dir = path.join(OUT_DIR, story.story_id);
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, 'index.html'), html);
-      sitemapEntries.push({ id: story.story_id, lastmod, title, description });
+      const preview = [story.opening, ...lines].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      sitemapEntries.push({ id: story.story_id, lastmod, title, description, preview });
       ok++;
     } catch (e) {
       console.error(`이야기 처리 실패(${story.story_id}):`, e.message);
@@ -355,9 +383,19 @@ async function main() {
   fs.writeFileSync(SITEMAP_PATH, renderSitemap(sitemapEntries));
   fs.writeFileSync(path.join(OUT_DIR, 'index.html'), renderArchiveIndex(sitemapEntries));
   console.log(`정적 페이지 ${ok}/${stories.length}건 생성 완료, 아카이브 목록·sitemap.xml 갱신됨`);
+
+  const ROOT_PREVIEW_COUNT = 15;
+  const rootHtmlSrc = fs.readFileSync(ROOT_INDEX_HTML_PATH, 'utf8');
+  const MARKER = '<!-- STORY_ARCHIVE_PLACEHOLDER -->';
+  if (!rootHtmlSrc.includes(MARKER)) {
+    throw new Error('루트 index.html에서 STORY_ARCHIVE_PLACEHOLDER 마커를 못 찾음 — index.html 구조가 바뀌었을 수 있음');
+  }
+  const rootPreviewHtml = renderRootArchivePreview(sitemapEntries.slice(0, ROOT_PREVIEW_COUNT));
+  fs.writeFileSync(ROOT_INDEX_HTML_PATH, rootHtmlSrc.replace(MARKER, rootPreviewHtml));
+  console.log(`루트 페이지(index.html)에 완결작 미리보기 ${Math.min(ROOT_PREVIEW_COUNT, sitemapEntries.length)}편 삽입 완료`);
 }
 
-module.exports = { getEpisodeTree, buildCanonicalPath, collectLines, proseHtml, renderStoryPage, renderSitemap, renderArchiveIndex, esc };
+module.exports = { getEpisodeTree, buildCanonicalPath, collectLines, proseHtml, renderStoryPage, renderSitemap, renderArchiveIndex, renderRootArchivePreview, esc };
 
 if (require.main === module) {
   main().catch(e => {

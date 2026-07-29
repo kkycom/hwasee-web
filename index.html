@@ -43,6 +43,20 @@
     border-radius: 10px; margin-left: 8px; vertical-align: middle;
   }
   .tag-live { background: #3a3020; color: #e8d5b0; }
+  .archive { margin-top: 56px; }
+  .archive h2 { font-size: 18px; color: #f3e7cf; margin: 0 0 8px; }
+  .archive-lede { font-size: 13px; color: #9a8a6c; margin: 0 0 20px; }
+  .archive-lede a { color: #c8823a; }
+  .archive-list { display: grid; gap: 12px; }
+  .archive-item {
+    display: block; text-decoration: none; color: inherit;
+    border: 1px solid #2a2620; border-radius: 10px; padding: 14px 16px;
+    transition: border-color .2s, background .2s;
+  }
+  .archive-item:hover { border-color: #e8d5b0; background: #141210; }
+  .archive-title { font-size: 14px; font-weight: 700; color: #f3e7cf; margin-bottom: 4px; }
+  .archive-preview { font-size: 12.5px; color: #9a8a6c; line-height: 1.6; margin-bottom: 6px; }
+  .archive-date { font-size: 11px; color: #6b5f48; }
   footer { margin-top: 64px; font-size: 12px; color: #5a5040; }
   footer a { color: #9a8a6c; }
 </style>
@@ -78,6 +92,8 @@
       <div class="card-desc">영상 작가·감독 김기역의 단편·장편·시리즈 작업을 소개합니다.</div>
     </a>
   </div>
+
+  <!-- STORY_ARCHIVE_PLACEHOLDER -->
 
   <footer>
     <a href="/">화씨 홈</a> &nbsp;|&nbsp;

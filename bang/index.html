@@ -2059,22 +2059,27 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
   // 전 29px 여백) 안에 겹쳐 넣는 방식으로 바꿔서, 높이를 하나도 더 차지하지
   // 않으면서도 문장 바로 아래 붙어 보이게 함 — .prose-line-meta가 쓰던 것과
   // 같은 기법.
-  const linesHtml = lines.map(({ sub, points }) => `
+  const linesHtml = lines.map(({ sub, points }) => {
+    // is_invalidated(구 비추 3표 무효화)/is_deleted(신 신고 3표 삭제) 둘 다
+    // 같은 "삭제됨" 표시로 통일 — 신고 방식으로 전환(2026-07-29)했지만 예전
+    // 데이터로 이미 무효 처리된 문장도 그대로 자연스럽게 보이게 함.
+    const removed = sub.is_invalidated || sub.is_deleted;
+    return `
     <div class="prose-line" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-      <span class="prose-sentence"${sub.is_invalidated ? ' style="text-decoration:line-through;color:var(--muted)"' : ''}>${esc(sub.content)}</span>
+      <span class="prose-sentence"${removed ? ' style="text-decoration:line-through;color:var(--muted)"' : ''}>${esc(sub.content)}</span>
       <div class="sr-line-meta">
-        <span class="sr-point-tag${sub.is_invalidated ? ' sr-void' : ''}">${sub.is_invalidated ? '무효' : '+' + points + 'P'}</span>
+        <span class="sr-point-tag${removed ? ' sr-void' : ''}">${removed ? '삭제됨' : '+' + points + 'P'}</span>
         <button class="sr-flag-btn" onclick="doSpeedrunUpvote('${sub.sub_id}', this)"${(user && sub.author_id === user.user_id) ? ' disabled' : ''}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
           ${sub.upvote_count || 0}
         </button>
-        <button class="sr-flag-btn" onclick="doSpeedrunDownvote('${sub.sub_id}', this)"${(user && sub.author_id === user.user_id) ? ' disabled' : ''}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>
-          ${sub.downvote_count || 0}
+        <button class="sr-flag-btn" title="신고" onclick="doSpeedrunReport('${sub.sub_id}', this)"${(user && sub.author_id === user.user_id) ? ' disabled' : ''}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
         </button>
       </div>
       <span class="prose-author visible" style="position:absolute;left:0;right:0;top:100%;margin-top:2px;line-height:14px">— ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   document.getElementById('app').innerHTML = `
     <div class="story-toolbar" style="display:flex;align-items:center;gap:0">
@@ -2119,17 +2124,20 @@ async function doSpeedrunUpvote(sub_id, btnEl) {
   if (btnEl) btnEl.disabled = true;
   const res = await api('speedrunUpvote', { sub_id });
   if (!res.ok) { toast(res.error, true); if (btnEl) btnEl.disabled = false; return; }
-  if (res.bonused) toast('순추천 3표 달성! 포인트가 2배가 됐어요.');
+  if (res.bonused) toast('추천 3표 달성! 포인트가 2배가 됐어요.');
   const sid = window._storyData && window._storyData.story ? window._storyData.story.story_id : '';
   if (sid) _lsc.del('story_' + sid);
   story();
 }
 
-async function doSpeedrunDownvote(sub_id, btnEl) {
+// 비추/무효화 대신 신고 방식으로 전환(유저 확정, 2026-07-29) — "무효가 한 번
+// 뜨면 표가 바뀌어도 안 풀린다"는 규칙이 직관적이지 않아 혼란을 줬음. 추천은
+// 순수 보상, 신고는 순수 제재로 역할을 나눠서 그 혼란 자체를 없앰.
+async function doSpeedrunReport(sub_id, btnEl) {
   if (btnEl) btnEl.disabled = true;
-  const res = await api('speedrunDownvote', { sub_id });
+  const res = await api('speedrunReport', { sub_id });
   if (!res.ok) { toast(res.error, true); if (btnEl) btnEl.disabled = false; return; }
-  if (res.invalidated) toast('포인트가 무효화됐어요.');
+  toast(res.deleted ? '신고 누적으로 삭제 처리됐어요.' : '신고했어요.');
   const sid = window._storyData && window._storyData.story ? window._storyData.story.story_id : '';
   if (sid) _lsc.del('story_' + sid);
   story();
@@ -3262,7 +3270,7 @@ const SPOTLIGHT_META = {
   sentence: { icon: '✍️', title: '사람들이 뽑은 시작 문장',   info: '사람들이 직접 제안하고 투표해서 뽑은 문장으로 이야기가 시작돼요. (1~3등에게 각 50p)' },
   ai:       { icon: '🤖', title: 'AI가 고른 뜻밖의 시작',     info: 'AI가 골라준 첫 문장으로 이야기가 시작돼요.' },
   fairytale: { icon: '📖', title: '동화를 각색한 이야기', info: '누구나 아는 동화의 첫 장면으로 시작해요. 기존 등장인물을 최대한 활용해주세요! 여기서부턴 자유롭게 새로운 이야기로 이어써 보세요.' },
-  speedrun: { icon: '⚡', title: '초스피드 초장편', info: '투표 없이, 쓰는 순간 바로 채택돼요. 15자 이내 한 문장씩 100단계까지 빠르게 이어써요. 각 단계마다 1~100P가 무작위로 걸려있어요. 다른 사람 글에 추천·비추를 남길 수 있는데, 순추천(추천-비추)이 3을 넘으면 받은 포인트가 2배가 되고, 순비추가 3을 넘으면 포인트가 무효화돼요.' },
+  speedrun: { icon: '⚡', title: '초스피드 초장편', info: '투표 없이, 쓰는 순간 바로 채택돼요. 15자 이내 한 문장씩 100단계까지 빠르게 이어써요. 각 단계마다 1~100P가 무작위로 걸려있어요. 다른 사람 글에 추천을 남길 수 있는데, 3표를 넘으면 받은 포인트가 2배가 돼요. 스팸·의미없는 문장은 신고할 수 있고, 신고 3표가 모이면 그 문장은 삭제 처리돼요.' },
   fixed_ending: { icon: '🎯', title: '결말이 정해진 이야기', info: '마지막 문장이 미리 정해져 있어요. 그 결말까지 자유롭게 이어써 보세요.' },
   genre_switch: { icon: '🎭', title: '장르 강제 전환', info: '매 단계마다 장르가 랜덤으로 바뀌어요. 문장은 50자로 써주세요.' },
 };

@@ -2810,9 +2810,9 @@ async function fbSpeedrunSubmit(episode_id, content, author_id) {
     return r.data;
   } catch (e) { return { ok: false, error: e.message || '제출에 실패했습니다.' }; }
 }
-async function fbSpeedrunDownvote(sub_id, voter_id) {
+async function fbSpeedrunReport(sub_id, voter_id) {
   try {
-    const r = await functionsRegion.httpsCallable('speedrunDownvote')({ sub_id, user_id: voter_id, token: localStorage.getItem('hwasee_token') });
+    const r = await functionsRegion.httpsCallable('speedrunReport')({ sub_id, user_id: voter_id, token: localStorage.getItem('hwasee_token') });
     return r.data;
   } catch (e) { return { ok: false, error: e.message || '처리에 실패했습니다.' }; }
 }
@@ -3078,7 +3078,7 @@ async function firebaseApi(action, params = {}) {
     case 'createSubmission':   return fbCreateSubmission(params.episode_id, params.content, await requireUid(), params.derived_from, params.closing);
     case 'vote':               return fbVote(params.episode_id, params.sub_ids, await requireUid());
     case 'speedrunSubmit':     return fbSpeedrunSubmit(params.episode_id, params.content, await requireUid());
-    case 'speedrunDownvote':   return fbSpeedrunDownvote(params.sub_id, await requireUid());
+    case 'speedrunReport':     return fbSpeedrunReport(params.sub_id, await requireUid());
     case 'speedrunUpvote':     return fbSpeedrunUpvote(params.sub_id, await requireUid());
     case 'getHintRound':       return fbGetHintRound();
     case 'hintGuess':          return fbHintGuess(params.round_id, params.guess, await requireUid());

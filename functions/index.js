@@ -2273,7 +2273,7 @@ exports.speedrunSubmit = functions
         author_badge: uData.badge || '',
         derived_from: '', vote_count: 0, is_adopted: true,
         created_at: new Date().toISOString(), is_closing: false,
-        downvote_count: 0, is_invalidated: false,
+        report_count: 0, is_deleted: false,
       });
       tx.update(epRef, { status: 'closed', closed_at: new Date().toISOString() });
 
@@ -2324,83 +2324,97 @@ exports.speedrunSubmit = functions
     return result;
   });
 
-// 정식 "신고"(reports 컬렉션, 운영자 검토용)와는 별개의 경량 자정 장치 — 투표
-// 필터가 없는 초스피드 특성상 스팸/의미없는 문장을 커뮤니티가 자체적으로
-// 걸러내게 함. 결정적 doc ID(sub_id_voter_id)로 중복 방지를 트랜잭션 안의
-// 단일 읽기로 처리(reports의 query-then-write보다 원자성이 강함).
-// 비추/추천을 독립 카운터로 각각 3표 도달 시 발동시키면, 한 글에 비추도 3표
-// 추천도 3표가 동시에 쌓이는 경우 "무효화"와 "포인트 2배"가 둘 다 발동되는
-// 모순이 생길 수 있음(유저 지적, 2026-07-29) — 순추천(추천-비추)을 단일 점수로
-// 계산해서 +3이면 보너스, -3이면 무효화로 통일. 한 사람이 같은 글에 추천과
-// 비추를 둘 다 남길 수 없게(먼저 누른 방향에 고정) submission_votes 하나의
-// 컬렉션/결정적 doc ID로 방향 불문 중복 방지. downvote_count/upvote_count는
-// 화면에 각각 몇 표 받았는지 보여주기 위한 표시용 누적치로 별도 유지(순점수
-// 계산에만 서로 상쇄해서 씀, 카운트 자체는 안 깎임).
-async function _serverSpeedrunVote(data, direction) {
-  const sub_id = data.sub_id;
-  const voter_id = data.user_id;
-  if (!sub_id || !voter_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
-  await _requireUser(voter_id, data.token);
-  const db = admin.firestore();
-  const subRef = db.collection('submissions').doc(sub_id);
-  const voteRef = db.collection('submission_votes').doc(`${sub_id}_${voter_id}`);
-
-  const result = await db.runTransaction(async tx => {
-    const [subSnap, voteSnap] = await Promise.all([tx.get(subRef), tx.get(voteRef)]);
-    if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
-    if (voteSnap.exists) return { ok: false, error: '이미 표시했어요.' };
-    const sub = subSnap.data();
-    if (sub.author_id === voter_id) return { ok: false, error: '본인 글에는 표시할 수 없습니다.' };
-    // speedrunSubmit과 동일한 이유로 방어 — 범위 밖(일반 이야기) 문서에 쓰기가
-    // 들어가지 않게 막아둠.
-    const storySnap = await tx.get(db.collection('stories').doc(sub.story_id));
-    if (!storySnap.exists || storySnap.data().mode !== 'speedrun') return { ok: false, error: '잘못된 요청입니다.' };
-
-    const newUpCount = (Number(sub.upvote_count) || 0) + (direction === 'up' ? 1 : 0);
-    const newDownCount = (Number(sub.downvote_count) || 0) + (direction === 'down' ? 1 : 0);
-    const netScore = newUpCount - newDownCount;
-    tx.set(voteRef, { sub_id, voter_id, direction, created_at: new Date().toISOString() });
-    const update = { upvote_count: newUpCount, downvote_count: newDownCount };
-    // 각각 !sub.is_invalidated/!sub.upvote_bonus_given 가드로 한 번 발동된 뒤엔
-    // 순점수가 등락해도 다시 발동 안 함(무효화는 영구, 보너스도 1회성).
-    const willInvalidate = netScore <= -3 && !sub.is_invalidated;
-    const willBonus = netScore >= 3 && !sub.upvote_bonus_given && !sub.is_invalidated;
-    if (willInvalidate) update.is_invalidated = true;
-    if (willBonus) update.upvote_bonus_given = true;
-    tx.update(subRef, update);
-    return {
-      ok: true, upvote_count: newUpCount, downvote_count: newDownCount,
-      invalidated: willInvalidate, bonused: willBonus,
-      // 보너스 지급 이후에 순점수가 -3까지 떨어져 뒤늦게 무효화되는 경우, 이미
-      // 나간 보너스도 같이 회수해야 함(원래 채택 포인트만 회수하면 보너스만큼
-      // 유저에게 남아버림)
-      reverseBonus: willInvalidate && sub.upvote_bonus_given === true,
-    };
-  });
-
-  if (result.ok && result.invalidated) {
-    const db2 = admin.firestore();
-    try { await _serverReverseSpeedrunPoints(db2, sub_id, 'speedrun_adopt', 'speedrun_invalidate'); } catch (e) { console.error('speedrun point reversal error:', e.message); }
-    if (result.reverseBonus) {
-      try { await _serverReverseSpeedrunPoints(db2, sub_id, 'speedrun_upvote_bonus', 'speedrun_invalidate'); } catch (e) { console.error('speedrun bonus reversal error:', e.message); }
-    }
-  }
-  if (result.ok && result.bonused) {
-    try { await _serverBonusSpeedrunPoints(admin.firestore(), sub_id); } catch (e) { console.error('speedrun upvote bonus error:', e.message); }
-  }
-  return result;
-}
-
-exports.speedrunDownvote = functions
-  .region('asia-northeast3')
-  .https.onCall(async (data) => _serverSpeedrunVote(data, 'down'));
-
-// 비추(신고성 자정 장치)와 대칭되는 추천 — "이어쓰기 센스가 좋았던 글"을 커뮤니티가
-// 직접 더 보상해줄 수 있게 함(유저 제안, 2026-07-29). 순점수 +3 도달 시 원래 받은
-// 포인트만큼 한 번 더 지급해서 총 2배가 되게 함.
+// 초스피드 문장 추천 — "이어쓰기 센스가 좋았던 글"을 커뮤니티가 직접 더
+// 보상해줄 수 있게 함(유저 제안, 2026-07-29). 3표 도달 시 원래 받은 포인트만큼
+// 한 번 더 지급해서 총 2배가 되게 함(1회성).
+// 원래는 비추 누적 시 "무효화"도 같이 있었는데, "무효가 한 번 뜨면 나중에
+// 표가 바뀌어도 안 풀린다"는 규칙이 직관적이지 않아 혼란을 줌(유저 재지적,
+// 2026-07-29 — 순추천 -2인데 여전히 무효로 표시된 걸 이상하게 여김). "추천은
+// 보상, 신고는 제재"로 역할을 아예 분리하는 쪽으로 정리 — 비추/무효화 대신
+// 아래 speedrunReport로 대체.
 exports.speedrunUpvote = functions
   .region('asia-northeast3')
-  .https.onCall(async (data) => _serverSpeedrunVote(data, 'up'));
+  .https.onCall(async (data) => {
+    const sub_id = data.sub_id;
+    const voter_id = data.user_id;
+    if (!sub_id || !voter_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(voter_id, data.token);
+    const db = admin.firestore();
+    const subRef = db.collection('submissions').doc(sub_id);
+    const voteRef = db.collection('submission_votes').doc(`${sub_id}_${voter_id}`);
+
+    const result = await db.runTransaction(async tx => {
+      const [subSnap, voteSnap] = await Promise.all([tx.get(subRef), tx.get(voteRef)]);
+      if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
+      if (voteSnap.exists) return { ok: false, error: '이미 표시했어요.' };
+      const sub = subSnap.data();
+      if (sub.author_id === voter_id) return { ok: false, error: '본인 글에는 표시할 수 없습니다.' };
+      // speedrunSubmit과 동일한 이유로 방어 — 범위 밖(일반 이야기) 문서에 쓰기가
+      // 들어가지 않게 막아둠.
+      const storySnap = await tx.get(db.collection('stories').doc(sub.story_id));
+      if (!storySnap.exists || storySnap.data().mode !== 'speedrun') return { ok: false, error: '잘못된 요청입니다.' };
+
+      const newUpCount = (Number(sub.upvote_count) || 0) + 1;
+      tx.set(voteRef, { sub_id, voter_id, created_at: new Date().toISOString() });
+      const willBonus = newUpCount >= 3 && !sub.upvote_bonus_given;
+      const update = { upvote_count: newUpCount };
+      if (willBonus) update.upvote_bonus_given = true;
+      tx.update(subRef, update);
+      return { ok: true, upvote_count: newUpCount, bonused: willBonus };
+    });
+
+    if (result.ok && result.bonused) {
+      try { await _serverBonusSpeedrunPoints(admin.firestore(), sub_id); } catch (e) { console.error('speedrun upvote bonus error:', e.message); }
+    }
+    return result;
+  });
+
+// 문장 단위 신고(스토리 전체가 아니라 그 한 줄만) — 투표 필터가 없는 초스피드
+// 특성상 스팸/의미없는 문장을 커뮤니티가 자체적으로 걸러내게 함. 신고 3표
+// 누적 시 그 문장만 삭제 처리(is_deleted) — 예전 "비추 3표=무효화"와 동일한
+// 임계값/그리는 방식(취소선+상태 배지)을 그대로 재사용하되, 방향성 있는
+// 투표가 아니라 신고 전용이라 더 이상 "표가 바뀌면 풀릴 수 있는지" 자체가
+// 헷갈릴 일이 없음. 결정적 doc ID(sub_id_voter_id)로 중복 신고 방지.
+const SPEEDRUN_REPORT_THRESHOLD = 3;
+exports.speedrunReport = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const sub_id = data.sub_id;
+    const voter_id = data.user_id;
+    if (!sub_id || !voter_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(voter_id, data.token);
+    const db = admin.firestore();
+    const subRef = db.collection('submissions').doc(sub_id);
+    const reportRef = db.collection('submission_reports').doc(`${sub_id}_${voter_id}`);
+
+    const result = await db.runTransaction(async tx => {
+      const [subSnap, reportSnap] = await Promise.all([tx.get(subRef), tx.get(reportRef)]);
+      if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
+      if (reportSnap.exists) return { ok: false, error: '이미 신고했어요.' };
+      const sub = subSnap.data();
+      if (sub.author_id === voter_id) return { ok: false, error: '본인 글은 신고할 수 없습니다.' };
+      if (sub.is_deleted) return { ok: false, error: '이미 삭제된 문장이에요.' };
+      const storySnap = await tx.get(db.collection('stories').doc(sub.story_id));
+      if (!storySnap.exists || storySnap.data().mode !== 'speedrun') return { ok: false, error: '잘못된 요청입니다.' };
+
+      const newReportCount = (Number(sub.report_count) || 0) + 1;
+      tx.set(reportRef, { sub_id, voter_id, created_at: new Date().toISOString() });
+      const willDelete = newReportCount >= SPEEDRUN_REPORT_THRESHOLD;
+      const update = { report_count: newReportCount };
+      if (willDelete) update.is_deleted = true;
+      tx.update(subRef, update);
+      return { ok: true, report_count: newReportCount, deleted: willDelete, hadBonus: sub.upvote_bonus_given === true };
+    });
+
+    if (result.ok && result.deleted) {
+      const db2 = admin.firestore();
+      try { await _serverReverseSpeedrunPoints(db2, sub_id, 'speedrun_adopt', 'speedrun_report_delete'); } catch (e) { console.error('speedrun report point reversal error:', e.message); }
+      if (result.hadBonus) {
+        try { await _serverReverseSpeedrunPoints(db2, sub_id, 'speedrun_upvote_bonus', 'speedrun_report_delete'); } catch (e) { console.error('speedrun report bonus reversal error:', e.message); }
+      }
+    }
+    return result;
+  });
 
 // 무효화(-3)/보너스클로백 공용 — 강제 회수라 실패해선 안 되므로 잔액부족시
 // throw하는 _fbSpendPoints와 달리 0으로 클램프(유저 확정: "이미 다른 데 써버렸어도

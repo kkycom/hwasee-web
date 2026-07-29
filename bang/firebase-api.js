@@ -2774,6 +2774,19 @@ async function fbAdminBackfillWordSlotChallengeWords(admin_id) {
   }
 }
 
+// 1회성 관리자 콜러블 — 신고 전환 이전 비추 무효화로 지워졌던 초스피드
+// 문장을 유저 요청으로 복구할 때 콘솔에서 api('adminReviveSpeedrunSubmission',
+// {sub_id:'...'})로 직접 호출(2026-07-29).
+async function fbAdminReviveSpeedrunSubmission(admin_id, sub_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  try {
+    const res = await functionsRegion.httpsCallable('adminReviveSpeedrunSubmission')({ user_id: admin_id, sub_id, token: localStorage.getItem('hwasee_token') });
+    return res.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
+  }
+}
+
 // 동화 각색 슬롯 씨앗 풀 관리 — spotlight_fairytale_pool은 firestore.rules에서
 // 클라이언트 접근이 막혀있어(저작권 큐레이션 목적) word_challenge_sets 관리
 // 함수들처럼 클라이언트 직접 write가 아니라 전부 Admin SDK 콜러블 경유.
@@ -3142,6 +3155,7 @@ async function firebaseApi(action, params = {}) {
     case 'setClaudeKey':          return fbSetClaudeKey(await requireUid(), params.key);
     case 'setKakaoKey':           return fbSetKakaoKey(await requireUid(), params.key, params.secret);
     case 'adminBackfillWordSlotChallengeWords': return fbAdminBackfillWordSlotChallengeWords(await requireUid());
+    case 'adminReviveSpeedrunSubmission': return fbAdminReviveSpeedrunSubmission(await requireUid(), params.sub_id);
     case 'adminAddFairytalePoolEntries':  return fbAdminAddFairytalePoolEntries(await requireUid(), params.raw_text);
     case 'adminGetFairytalePoolQueue':    return fbAdminGetFairytalePoolQueue(await requireUid());
     case 'adminDeleteFairytalePoolEntry': return fbAdminDeleteFairytalePoolEntry(await requireUid(), params.entry_id);

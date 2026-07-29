@@ -2451,6 +2451,48 @@ async function _serverBonusSpeedrunPoints(db, sub_id) {
   await _serverAddPoints(db, entry.user_id, amount, 'speedrun_upvote_bonus', sub_id);
 }
 
+// 1회성 관리자 콜러블 — 신고 방식 전환(2026-07-29) 이전, 비추 3표 무효화
+// 규칙이 직관적이지 않다는 유저 지적으로 그 규칙 자체를 없앴는데, 이미 그
+// 규칙 때문에 무효 처리됐던 문장을 유저가 직접 복구해달라고 요청함. is_
+// invalidated/is_deleted 둘 다(구 무효화·신 신고삭제) 되돌리고, 그때 회수됐던
+// 채택 포인트/추천 보너스를 point_ledger에서 찾아 다시 지급(감사기록 남김).
+exports.adminReviveSpeedrunSubmission = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const sub_id = data.sub_id;
+    if (!sub_id) return { ok: false, error: 'sub_id가 필요합니다.' };
+    const db = admin.firestore();
+    const subRef = db.collection('submissions').doc(sub_id);
+    const subSnap = await subRef.get();
+    if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
+    const sub = subSnap.data();
+    if (!sub.is_invalidated && !sub.is_deleted) return { ok: false, error: '이미 정상 상태예요.' };
+
+    await subRef.update({ is_invalidated: false, is_deleted: false });
+
+    const reversalSnap = await db.collection('point_ledger')
+      .where('sub_id', '==', sub_id).where('reason', 'in', ['speedrun_invalidate', 'speedrun_report_delete']).get();
+    let restored = 0;
+    for (const doc of reversalSnap.docs) {
+      const entry = doc.data();
+      const amount = Math.abs(Number(entry.points) || 0);
+      if (amount <= 0) continue;
+      const uRef = db.collection('users').doc(entry.user_id);
+      await db.runTransaction(async tx => {
+        const uSnap = await tx.get(uRef);
+        if (!uSnap.exists) return;
+        const newTotal = (Number(uSnap.data().total_points) || 0) + amount;
+        tx.update(uRef, { total_points: newTotal, badge: _serverCalcBadge(newTotal) });
+        tx.set(db.collection('point_ledger').doc(), {
+          user_id: entry.user_id, points: amount, reason: 'speedrun_invalidate_revert', sub_id, created_at: new Date().toISOString(),
+        });
+      });
+      restored += amount;
+    }
+    return { ok: true, restored_points: restored };
+  });
+
 // 초스피드 전용 씨앗 생성 — _serverCreateSeedStory는 max_steps:10/vote_threshold:5가
 // 하드코딩돼 있어 그대로 못 씀. point_values는 1~100 셔플(Fisher–Yates)로 스토리
 // 생성 시 한 번만 만들어서 저장 — 매 단계 랜덤이 아니라 스토리당 고정 배정.

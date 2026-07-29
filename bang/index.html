@@ -2050,6 +2050,15 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
   const openEp = episodes.find(e => e.status === 'open');
   const myCooldown = !!(user && (s.cooldown_winners || []).includes(user.user_id));
 
+  // 문장 아래 닉네임을 별도 sibling 블록으로 두면 그 블록도 줄무늬 배경 리듬(29px
+  // 단위)에 맞는 높이를 가져야 해서(안 그러면 그 아래 모든 줄이 누적으로
+  // 밀림 — 2026-07-28에 다른 모드에서 겪은 문제), 높이를 줄이는 쪽으로 접근하면
+  // 결국 다시 29px로 되돌아가 문장-닉네임 사이가 항상 "한 줄 비어있는" 느낌이었음
+  // (유저 재지적, 2026-07-29 — "일반 산문뷰도 산문 집중뷰도 난리났다"). 닉네임을
+  // 문서 흐름에서 아예 빼서(position:absolute) .prose-line 자신의 여백(다음 줄
+  // 전 29px 여백) 안에 겹쳐 넣는 방식으로 바꿔서, 높이를 하나도 더 차지하지
+  // 않으면서도 문장 바로 아래 붙어 보이게 함 — .prose-line-meta가 쓰던 것과
+  // 같은 기법.
   const linesHtml = lines.map(({ sub, points }) => `
     <div class="prose-line" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
       <span class="prose-sentence"${sub.is_invalidated ? ' style="text-decoration:line-through;color:var(--muted)"' : ''}>${esc(sub.content)}</span>
@@ -2064,8 +2073,8 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
           ${sub.downvote_count || 0}
         </button>
       </div>
-    </div>
-    <span class="prose-author visible" style="line-height:16px;margin-top:2px">— ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>`).join('');
+      <span class="prose-author visible" style="position:absolute;left:0;right:0;top:100%;margin-top:2px;line-height:14px">— ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${esc(sub.author_nickname || '익명')}</span>
+    </div>`).join('');
 
   document.getElementById('app').innerHTML = `
     <div class="story-toolbar" style="display:flex;align-items:center;gap:0">

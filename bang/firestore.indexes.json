@@ -58,6 +58,14 @@
         { "fieldPath": "hot_score",  "order": "DESCENDING" },
         { "fieldPath": "created_at", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "stories",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status",           "order": "ASCENDING" },
+        { "fieldPath": "participant_count", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

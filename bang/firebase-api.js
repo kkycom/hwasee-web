@@ -3401,6 +3401,96 @@ async function fbAdminDeleteWordChallengeSet(admin_id, set_id) {
 // 슬롯 리필(완결 감지→다음 이야기 시작)은 전부 functions/index.js에서 서버로
 // 처리함(_serverRefillSpotlightSlot 등) — 여기 클라이언트 함수들은 조회/제안/투표만 담당.
 
+// story_id 하나를 스포트라이트 카드 페이로드로 변환 — 원래 fbGetSpotlight
+// 안에 인라인돼 있던 로직을 그대로 뽑아냄. 'hot'(인기 자유 이야기) 슬롯이
+// story_id 포인터(config/spotlight_slots) 없이 매번 다른 스토리를 가리킬 수
+// 있게 되면서(2026-07-28), 포인터 기반 슬롯과 동일한 방식으로 재사용하기 위함.
+async function _fbBuildSpotlightStoryPayload(story_id, mySubsAll, viewer_id) {
+  const storySnap = await db.collection('stories').doc(story_id).get();
+  if (!storySnap.exists) return { state: 'empty' };
+  const story = storySnap.data();
+
+  const mySubsForStory = mySubsAll.filter(sub => sub.story_id === story_id);
+  const epIds = mySubsForStory.length ? [...new Set(mySubsForStory.map(sub => sub.episode_id))] : [];
+
+  // 서로 독립적인 조회 3가지(내 제출 단계 조회용 에피소드들/NEW 배지용
+  // 방문기록/장르 확률)를 순차로 하나씩 기다리지 않고 병렬 처리. 열린
+  // 에피소드 목록+제출개수는 예전엔 매번 episodes/submissions를 조인해서
+  // 계산했는데(자유 이야기 탭과 동일한 문제, "최초 로그인 후 오늘의 이야기
+  // 로딩 3~4초" 유저 제보로 확인, 2026-07-22) — 자유 이야기 탭 고칠 때
+  // story 문서에 이미 만들어둔 open_steps 필드를 이 함수는 못 쓰고 있었음.
+  // story는 위에서 이미 읽어뒀으니 바로 재사용.
+  const [epSnaps, visitSnap, genreSnap] = await Promise.all([
+    epIds.length ? Promise.all(epIds.map(id => db.collection('episodes').doc(id).get())) : Promise.resolve([]),
+    // NEW 배지 — fbGetMyStories와 동일한 story_visits 대조. 슬롯당 스토리가
+    // 하나뿐이라 단건 조회로 충분.
+    viewer_id ? db.collection('story_visits').doc(`${viewer_id}_${story_id}`).get() : Promise.resolve(null),
+    // 장르 확률 상위 태그 — _classifyStoryGenre(functions/index.js)가 에피소드
+    // 마감마다 채워둔 것. 아직 첫 마감 전이면 문서가 없어 null(카드에서 패널 자체를 숨김).
+    db.collection('story_genre_probs').doc(story_id).get(),
+  ]);
+
+  let my_submissions = [];
+  if (mySubsForStory.length) {
+    const epMap = {};
+    epSnaps.forEach(d => { if (d.exists) epMap[d.id] = d.data(); });
+    my_submissions = mySubsForStory
+      .map(sub => ({
+        content: sub.content,
+        step: epMap[sub.episode_id] ? Number(epMap[sub.episode_id].step) : 0,
+        vote_count: Number(sub.vote_count) || 0,
+        is_adopted: sub.is_adopted === true || sub.is_adopted === 'TRUE',
+        ep_status: epMap[sub.episode_id]?.status || 'closed',
+      }))
+      .sort((a, b) => a.step - b.step);
+  }
+
+  const open_eps = Object.values(story.open_steps || {})
+    .map(e => ({ step: Number(e.step) || 0, sub_count: Number(e.sub_count) || 0 }))
+    .sort((a, b) => a.step - b.step);
+
+  let is_new = false;
+  if (viewer_id && visitSnap && visitSnap.exists) {
+    const v = visitSnap.data();
+    is_new = Number(story.current_step || 0) > (v.seen_step || 0)
+      || Number(story.participant_count || 0) > (v.seen_activity_count || 0);
+  }
+
+  const genre_probs = genreSnap.exists ? genreSnap.data().top : null;
+
+  // 초스피드 카드는 오프닝이 아니라 최근 채택된 문장을 보여줌(오프닝은
+  // 100단계 진행되는 사이 낡은 정보가 됨, 2026-07-22 논의) — 지금 열린
+  // 에피소드의 parent_sub_id(직전 채택 문장)를 따라가서 가져옴. 별도 쿼리
+  // 없이 open_steps에 이미 있는 episode_id로 단건 조회 2번(에피소드→제출)만.
+  let speedrun_latest_line = null;
+  if (story.mode === 'speedrun') {
+    const openEpId = Object.keys(story.open_steps || {})[0];
+    if (openEpId) {
+      const openEpSnap = await db.collection('episodes').doc(openEpId).get();
+      const parentSubId = openEpSnap.exists ? openEpSnap.data().parent_sub_id : '';
+      if (parentSubId) {
+        const parentSubSnap = await db.collection('submissions').doc(parentSubId).get();
+        if (parentSubSnap.exists) speedrun_latest_line = parentSubSnap.data().content;
+      }
+    }
+  }
+
+  return {
+    state: 'story', story_id, opening: story.opening, current_step: story.current_step || 0,
+    has_branch: !!story.has_branch, branch_from_step: story.branch_from_step || null,
+    branch_display_offset: story.branch_display_offset ?? null,
+    participant_count: story.participant_count || 0,
+    open_eps, is_new, genre_probs,
+    challenge_words: story.challenge_words || null,
+    my_submissions,
+    mode: story.mode || null, max_steps: story.max_steps || null, speedrun_latest_line,
+    fixed_ending: story.fixed_ending || null, genre_sequence: story.genre_sequence || null,
+    // 초스피드 쿨다운 중인지 카드 단계에서부터 보여주기 위함(안 그러면
+    // 들어가서야 알 수 있어 참여율이 저조하다는 유저 지적, 2026-07-28)
+    my_in_cooldown: (story.mode === 'speedrun' && viewer_id) ? (story.cooldown_winners || []).includes(viewer_id) : false,
+  };
+}
+
 async function fbGetSpotlight(viewer_id) {
   const ptrSnap = await db.collection('config').doc('spotlight_slots').get();
   if (!ptrSnap.exists) return { ok: true, initialized: false, slots: {} };
@@ -3414,7 +3504,7 @@ async function fbGetSpotlight(viewer_id) {
         .docs.map(d => ({ sub_id: d.id, ...d.data() }))
     : [];
 
-  // 슬롯 3개를 순차로 하나씩 기다리지 않고 병렬로 조회 — 홈 첫 화면이라
+  // 슬롯 3개를 순차로 하나씩 기다리지 않고 병렬로 조회 — 홈의 첫 화면이라
   // 진입 빈도가 가장 높은 만큼 왕복 1번(가장 느린 슬롯 기준)으로 줄임
   // sentence/ai 슬롯 폐지(2026-07-28, 원래 계획대로 초스피드+동화각색 완성
   // 시점에 한꺼번에 교체 실행) — 더는 조회/노출하지 않음. 진행 중이던 두
@@ -3423,89 +3513,7 @@ async function fbGetSpotlight(viewer_id) {
   const slotResults = await Promise.all(keys.map(async key => {
     const s = ptr[key] || {};
     if (s.story_id) {
-      const storySnap = await db.collection('stories').doc(s.story_id).get();
-      if (!storySnap.exists) return { state: 'empty' };
-      const story = storySnap.data();
-
-      const mySubsForStory = mySubsAll.filter(sub => sub.story_id === s.story_id);
-      const epIds = mySubsForStory.length ? [...new Set(mySubsForStory.map(sub => sub.episode_id))] : [];
-
-      // 서로 독립적인 조회 3가지(내 제출 단계 조회용 에피소드들/NEW 배지용
-      // 방문기록/장르 확률)를 순차로 하나씩 기다리지 않고 병렬 처리. 열린
-      // 에피소드 목록+제출개수는 예전엔 매번 episodes/submissions를 조인해서
-      // 계산했는데(자유 이야기 탭과 동일한 문제, "최초 로그인 후 오늘의 이야기
-      // 로딩 3~4초" 유저 제보로 확인, 2026-07-22) — 자유 이야기 탭 고칠 때
-      // story 문서에 이미 만들어둔 open_steps 필드를 이 함수는 못 쓰고 있었음.
-      // story는 위에서 이미 읽어뒀으니 바로 재사용.
-      const [epSnaps, visitSnap, genreSnap] = await Promise.all([
-        epIds.length ? Promise.all(epIds.map(id => db.collection('episodes').doc(id).get())) : Promise.resolve([]),
-        // NEW 배지 — fbGetMyStories와 동일한 story_visits 대조. 슬롯당 스토리가
-        // 하나뿐이라 단건 조회로 충분.
-        viewer_id ? db.collection('story_visits').doc(`${viewer_id}_${s.story_id}`).get() : Promise.resolve(null),
-        // 장르 확률 상위 태그 — _classifyStoryGenre(functions/index.js)가 에피소드
-        // 마감마다 채워둔 것. 아직 첫 마감 전이면 문서가 없어 null(카드에서 패널 자체를 숨김).
-        db.collection('story_genre_probs').doc(s.story_id).get(),
-      ]);
-
-      let my_submissions = [];
-      if (mySubsForStory.length) {
-        const epMap = {};
-        epSnaps.forEach(d => { if (d.exists) epMap[d.id] = d.data(); });
-        my_submissions = mySubsForStory
-          .map(sub => ({
-            content: sub.content,
-            step: epMap[sub.episode_id] ? Number(epMap[sub.episode_id].step) : 0,
-            vote_count: Number(sub.vote_count) || 0,
-            is_adopted: sub.is_adopted === true || sub.is_adopted === 'TRUE',
-            ep_status: epMap[sub.episode_id]?.status || 'closed',
-          }))
-          .sort((a, b) => a.step - b.step);
-      }
-
-      const open_eps = Object.values(story.open_steps || {})
-        .map(e => ({ step: Number(e.step) || 0, sub_count: Number(e.sub_count) || 0 }))
-        .sort((a, b) => a.step - b.step);
-
-      let is_new = false;
-      if (viewer_id && visitSnap && visitSnap.exists) {
-        const v = visitSnap.data();
-        is_new = Number(story.current_step || 0) > (v.seen_step || 0)
-          || Number(story.participant_count || 0) > (v.seen_activity_count || 0);
-      }
-
-      const genre_probs = genreSnap.exists ? genreSnap.data().top : null;
-
-      // 초스피드 카드는 오프닝이 아니라 최근 채택된 문장을 보여줌(오프닝은
-      // 100단계 진행되는 사이 낡은 정보가 됨, 2026-07-22 논의) — 지금 열린
-      // 에피소드의 parent_sub_id(직전 채택 문장)를 따라가서 가져옴. 별도 쿼리
-      // 없이 open_steps에 이미 있는 episode_id로 단건 조회 2번(에피소드→제출)만.
-      let speedrun_latest_line = null;
-      if (story.mode === 'speedrun') {
-        const openEpId = Object.keys(story.open_steps || {})[0];
-        if (openEpId) {
-          const openEpSnap = await db.collection('episodes').doc(openEpId).get();
-          const parentSubId = openEpSnap.exists ? openEpSnap.data().parent_sub_id : '';
-          if (parentSubId) {
-            const parentSubSnap = await db.collection('submissions').doc(parentSubId).get();
-            if (parentSubSnap.exists) speedrun_latest_line = parentSubSnap.data().content;
-          }
-        }
-      }
-
-      return {
-        state: 'story', story_id: s.story_id, opening: story.opening, current_step: story.current_step || 0,
-        has_branch: !!story.has_branch, branch_from_step: story.branch_from_step || null,
-        branch_display_offset: story.branch_display_offset ?? null,
-        participant_count: story.participant_count || 0,
-        open_eps, is_new, genre_probs,
-        challenge_words: story.challenge_words || null,
-        my_submissions,
-        mode: story.mode || null, max_steps: story.max_steps || null, speedrun_latest_line,
-        fixed_ending: story.fixed_ending || null, genre_sequence: story.genre_sequence || null,
-        // 초스피드 쿨다운 중인지 카드 단계에서부터 보여주기 위함(안 그러면
-        // 들어가서야 알 수 있어 참여율이 저조하다는 유저 지적, 2026-07-28)
-        my_in_cooldown: (story.mode === 'speedrun' && viewer_id) ? (story.cooldown_winners || []).includes(viewer_id) : false,
-      };
+      return _fbBuildSpotlightStoryPayload(s.story_id, mySubsAll, viewer_id);
     } else if (key === 'sentence' && s.state === 'proposing' && s.round_id) {
       const roundData = await _fbGetSentenceRoundData(s.round_id, viewer_id);
       return { state: 'proposing', ...roundData };
@@ -3515,6 +3523,25 @@ async function fbGetSpotlight(viewer_id) {
   }));
   const slots = {};
   keys.forEach((key, i) => { slots[key] = slotResults[i]; });
+
+  // 🔥 지금 인기 자유 이야기 — 다른 슬롯처럼 완결돼야만 교체되는 고정 포인터가
+  // 아니라, 매번 "지금 활성 상태인 진짜 자유 이야기(vote_threshold 없음 —
+  // 스포트라이트 출신이 아님, cardStickersHtml의 '✦ 오늘' 판별과 동일 기준) 중
+  // 참여자 수 최고"를 실시간으로 뽑음(유저 설계 확정, 2026-07-28 — 참여율 낮은
+  // 지금은 갱신주기를 신경 쓸 만큼 변동이 없을 거라 실시간 계산 그대로 채택).
+  // participant_count 내림차순 인덱스(firestore.indexes.json) 활용.
+  let hotSlot = { state: 'empty' };
+  try {
+    const hotSnap = await db.collection('stories')
+      .where('status', '==', 'active')
+      .orderBy('participant_count', 'desc')
+      .limit(10)
+      .get();
+    const hotDoc = hotSnap.docs.find(d => !d.data().vote_threshold);
+    if (hotDoc) hotSlot = await _fbBuildSpotlightStoryPayload(hotDoc.id, mySubsAll, viewer_id);
+  } catch (e) { console.error('hot slot query error:', e.message); }
+  slots.hot = hotSlot;
+
   return { ok: true, initialized: true, slots };
 }
 

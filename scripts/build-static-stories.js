@@ -329,7 +329,8 @@ function renderRootArchivePreview(entries) {
 async function main() {
   const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!serviceAccountRaw) throw new Error('FIREBASE_SERVICE_ACCOUNT 환경변수가 없습니다.');
-  admin.initializeApp({ credential: admin.credential.cert(JSON.parse(serviceAccountRaw)) });
+  const svcJson = JSON.parse(serviceAccountRaw);
+  admin.initializeApp({ credential: admin.credential.cert(svcJson) });
   const db = admin.firestore();
 
   const indexHtmlSrc = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
@@ -337,6 +338,17 @@ async function main() {
   const storiesSnap = await db.collection('stories').where('status', '==', 'completed').get();
   const stories = storiesSnap.docs.map(d => ({ story_id: d.id, ...d.data() }));
   console.log(`완결 이야기 ${stories.length}건 발견`);
+
+  // TEMP DEBUG(2026-07-29, 디버그방) — /bang/story/ 아카이브가 계속 "완결작 0건"으로
+  // 나오는 원인 진단용. GitHub Actions 로그에 접근 권한이 없어서 결과를 정적
+  // 파일로 남겨 curl로 직접 확인. 원인 파악되는 대로 이 블록은 제거함.
+  try {
+    fs.writeFileSync(path.join(ROOT, 'debug-ssg.json'), JSON.stringify({
+      completedStoriesCount: stories.length,
+      serviceAccountProjectId: svcJson.project_id || null,
+      timestamp: new Date().toISOString(),
+    }, null, 2));
+  } catch (e) {}
 
   fs.rmSync(OUT_DIR, { recursive: true, force: true });
   fs.mkdirSync(OUT_DIR, { recursive: true });

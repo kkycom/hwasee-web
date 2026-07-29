@@ -3412,16 +3412,16 @@ function openNewStoriesPopup() {
   document.body.appendChild(modal);
 }
 
-function renderSpotlight() {
-  const area = document.getElementById('spotlight-area');
-  if (!area || !window._spotlightData) return;
-  clearInterval(_srCountdownTimer);
-  const { slots } = window._spotlightData;
-
-  const cardHtml = (key) => {
-    const meta = SPOTLIGHT_META[key];
-    const slot = slots[key] || { state: 'empty' };
-    let bodyHtml;
+// 카드 하나를 렌더 — 원래 renderSpotlight() 안의 클로저였는데, 🔥 인기 자유
+// 이야기 카드의 "다음/이전 이야기" 넘겨보기가 renderSpotlight() 전체를 다시
+// 그리지 않고 그 카드 하나만 갱신해야 해서(스크롤 위치/다른 카드 상태 보존)
+// 최상위 함수로 뽑아냄 — window._spotlightData를 직접 읽음(다른 최상위
+// 함수들의 window._storyData 참조 패턴과 동일).
+function cardHtml(key) {
+  const { slots } = window._spotlightData || { slots: {} };
+  const meta = SPOTLIGHT_META[key];
+  const slot = slots[key] || { state: 'empty' };
+  let bodyHtml;
     if (slot.state === 'story') {
       // 참여 이력이 있을 때만 참여하기 버튼을 알약 2등분(참여/펼치기)으로 —
       // 없는 사람에겐 지금처럼 버튼 하나만 보이게 해서 괜히 지저분해지지 않게 함
@@ -3484,6 +3484,17 @@ function renderSpotlight() {
       const genreSwitchTeaserHtml = key === 'genre_switch' && _curEp
         ? genreSwitchBannerHtml((slot.genre_sequence || [])[Number(_curEp.step) - 1], (slot.genre_sequence || [])[Number(_curEp.step)])
         : '';
+      // 🔥 인기 자유 이야기: "지금 마음에 안 들면 끝"이라 활성화에 도움이
+      // 안 된다는 유저 지적(2026-07-28) — 참여자 순으로 다음/이전 이야기를
+      // 넘겨볼 수 있게 함(후보는 fbGetSpotlight가 이미 참여자 순으로 정렬해서 내려줌).
+      const hotCandidates = window._hotCandidateIds || [];
+      const hotIdx = window._hotIndex || 0;
+      const hotPagerHtml = key === 'hot' && hotCandidates.length > 1 ? `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;font-size:12px;color:var(--muted)">
+          <button class="btn btn-ghost btn-sm"${hotIdx === 0 ? ' disabled' : ''} onclick="_navigateHotCard(-1)">◀ 이전</button>
+          <span>${hotIdx + 1} / ${hotCandidates.length}</span>
+          <button class="btn btn-ghost btn-sm"${hotIdx >= hotCandidates.length - 1 ? ' disabled' : ''} onclick="_navigateHotCard(1)">다음 이야기 ▶</button>
+        </div>` : '';
       bodyHtml = `
         <div class="story-prose" style="padding:28px 18px 28px 20px;margin:12px 0;cursor:pointer" onclick="openStoryProseModal('${esc(slot.story_id)}')" role="button" aria-label="지금까지의 이야기 보기">
           <div class="prose-opening">${slot.mode === 'speedrun' ? esc(slot.speedrun_latest_line || slot.opening) : slot.challenge_words && slot.challenge_words.length ? boldChallengeWords(slot.opening, slot.challenge_words) : esc(slot.opening)}</div>
@@ -3494,14 +3505,14 @@ function renderSpotlight() {
           <span class="step-pill"><span class="step-dot"></span>${_stepLabel}</span>
           <div style="display:flex;gap:6px;flex-shrink:0">${wcLinkBtn}${ctaHtml}</div>
         </div>
-        ${hasHistory ? `<div id="sp-hist-${key}" style="display:none;margin-top:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">${histHtml}</div>` : ''}`;
+        ${hasHistory ? `<div id="sp-hist-${key}" style="display:none;margin-top:10px;padding:10px 12px;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent2)">${histHtml}</div>` : ''}${hotPagerHtml}`;
     } else if (key === 'sentence' && slot.state === 'proposing') {
       bodyHtml = renderSentenceRoundInner(slot);
     } else {
       bodyHtml = `<div style="font-size:12px;color:var(--muted);padding:16px 0;text-align:center">다음 이야기 준비 중</div>`;
     }
     return `
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;position:relative">
+      <div id="spotlight-card-${key}" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;position:relative">
         ${slot.state === 'story' ? cardStickersHtml(slot, false) : ''}
         <div style="display:flex;align-items:center;gap:4px">
           <span style="font-size:14px;font-weight:700">${meta.icon} ${meta.titleHtml || esc(meta.title)}</span>
@@ -3509,7 +3520,21 @@ function renderSpotlight() {
         </div>
         ${bodyHtml}
       </div>`;
-  };
+}
+
+function renderSpotlight() {
+  const area = document.getElementById('spotlight-area');
+  if (!area || !window._spotlightData) return;
+  clearInterval(_srCountdownTimer);
+  const { slots } = window._spotlightData;
+
+  // 🔥 인기 자유 이야기 "다음/이전 이야기" 넘겨보기 상태 — 매 렌더마다
+  // 1페이지(참여자 최고)로 리셋(캐시 재검증으로 renderSpotlight()가 여러 번
+  // 불릴 수 있는데, 그때마다 넘겨본 위치를 정확히 보존하려면 서버 재조회가
+  // 더 필요해서 — 지금 트래픽 규모에서는 과한 복잡도라 판단, 유저와 동일한
+  // 실용주의로 단순하게 감).
+  window._hotCandidateIds = slots.hot_candidate_ids || [];
+  window._hotIndex = 0;
 
   area.innerHTML = `
     ${newSummaryBannerHtml()}
@@ -3540,6 +3565,24 @@ function renderSpotlight() {
     if (_hintRoundData.status === 'closed') _startHintRoundCountdown();
   }
   loadHintCard();
+}
+
+// 🔥 인기 자유 이야기 카드의 "다음/이전 이야기" — renderSpotlight() 전체를
+// 다시 그리면 스크롤 위치/다른 카드 상태(내역 펼침 등)가 날아가므로, 이
+// 카드 하나만 교체(id="spotlight-card-hot" 대상 outerHTML 치환).
+async function _navigateHotCard(delta) {
+  const ids = window._hotCandidateIds || [];
+  const newIndex = (window._hotIndex || 0) + delta;
+  if (newIndex < 0 || newIndex >= ids.length) return;
+  const cardEl = document.getElementById('spotlight-card-hot');
+  if (cardEl) cardEl.style.opacity = '0.5';
+  const res = await api('getHotCandidateCard', { story_id: ids[newIndex] });
+  if (cardEl) cardEl.style.opacity = '1';
+  if (!res.ok || !window._spotlightData) { toast(res.error || '불러오지 못했어요.', true); return; }
+  window._hotIndex = newIndex;
+  window._spotlightData.slots.hot = res.card;
+  const freshEl = document.getElementById('spotlight-card-hot');
+  if (freshEl) freshEl.outerHTML = cardHtml('hot');
 }
 
 // ─── 초성 힌트 (정시 이벤트 — 스토리 아님, 카드+아코디언) ───────────────

@@ -3211,6 +3211,7 @@ async function firebaseApi(action, params = {}) {
     case 'adminDeleteWordChallengeSet': return fbAdminDeleteWordChallengeSet(await requireUid(), params.set_id);
 
     case 'getSpotlight':           return fbGetSpotlight(uid || null);
+    case 'getHotCandidateCard':    return fbGetHotCandidateCard(params.story_id, uid || null);
     case 'submitSentenceProposal': return fbSubmitSentenceProposal(params.round_id, await requireUid(), params.text);
     case 'editSentenceProposal':   return fbEditSentenceProposal(params.round_id, await requireUid(), params.text);
     case 'deleteSentenceProposal': return fbDeleteSentenceProposal(params.round_id, await requireUid());
@@ -3530,19 +3531,38 @@ async function fbGetSpotlight(viewer_id) {
   // 참여자 수 최고"를 실시간으로 뽑음(유저 설계 확정, 2026-07-28 — 참여율 낮은
   // 지금은 갱신주기를 신경 쓸 만큼 변동이 없을 거라 실시간 계산 그대로 채택).
   // participant_count 내림차순 인덱스(firestore.indexes.json) 활용.
+  // 다음/이전 이야기로 넘겨볼 수 있게(2026-07-28, 유저 제안 — "지금 마음에
+  // 안 들면 끝"이라 활성화에 도움 안 됨) 후보 story_id 목록도 같이 내려줌.
+  // 첫 번째 카드 페이로드만 여기서 만들고, 나머지는 넘겨볼 때만
+  // getHotCandidateCard로 그때그때 조회(전부 미리 만들면 낭비).
   let hotSlot = { state: 'empty' };
+  let hotCandidateIds = [];
   try {
     const hotSnap = await db.collection('stories')
       .where('status', '==', 'active')
       .orderBy('participant_count', 'desc')
       .limit(10)
       .get();
-    const hotDoc = hotSnap.docs.find(d => !d.data().vote_threshold);
-    if (hotDoc) hotSlot = await _fbBuildSpotlightStoryPayload(hotDoc.id, mySubsAll, viewer_id);
+    hotCandidateIds = hotSnap.docs.filter(d => !d.data().vote_threshold).map(d => d.id);
+    if (hotCandidateIds.length) hotSlot = await _fbBuildSpotlightStoryPayload(hotCandidateIds[0], mySubsAll, viewer_id);
   } catch (e) { console.error('hot slot query error:', e.message); }
   slots.hot = hotSlot;
+  slots.hot_candidate_ids = hotCandidateIds;
 
   return { ok: true, initialized: true, slots };
+}
+
+// 🔥 인기 자유 이야기 카드의 "다음/이전 이야기" 넘겨보기용 — mySubsAll을
+// 전부 다시 조회하지 않고 이 스토리 하나에 대한 내 제출만 좁혀서 조회
+// (fbGetSpotlight의 300건 전체조회보다 훨씬 가벼움).
+async function fbGetHotCandidateCard(story_id, viewer_id) {
+  if (!story_id) return { ok: false, error: '잘못된 요청입니다.' };
+  const mySubs = viewer_id
+    ? (await db.collection('submissions').where('story_id', '==', story_id).where('author_id', '==', viewer_id).get())
+        .docs.map(d => ({ sub_id: d.id, ...d.data() }))
+    : [];
+  const card = await _fbBuildSpotlightStoryPayload(story_id, mySubs, viewer_id);
+  return { ok: true, card };
 }
 
 async function _fbGetSentenceRoundData(round_id, viewer_id) {

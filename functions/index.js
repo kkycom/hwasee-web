@@ -3727,11 +3727,12 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
   }
 }
 
-// slotKey('word'|'sentence')의 풀에 새 항목이 막 쌓였을 때, 그 슬롯이 마침 비어있는
+// slotKey('word'|'fairytale')의 풀에 새 항목이 막 쌓였을 때, 그 슬롯이 마침 비어있는
 // 상태(story_id==null)였다면 바로 채워줌 — _serverCloseWordChallenge(슬롯1 풀 적재
-// 직후)와 closeSentenceRounds(슬롯2 라운드 마감 직후)에서 호출. 이 두 호출 시점엔
-// 슬롯이 이미 story_id==null 상태로 놓여 있었을 때만 의미가 있어(그 외엔 손대지
-// 않고 조용히 반환), _serverRefillSpotlightSlot과 트랜잭션이 겹칠 일이 없음.
+// 직후)에서 호출. 이 호출 시점엔 슬롯이 이미 story_id==null 상태로 놓여 있었을
+// 때만 의미가 있어(그 외엔 손대지 않고 조용히 반환), _serverRefillSpotlightSlot과
+// 트랜잭션이 겹칠 일이 없음. ('sentence' 분기는 slotKey 폐지(2026-07-28)와
+// closeSentenceRounds 삭제(2026-07-29)로 더는 호출되지 않는 죽은 코드.)
 async function _serverRefillSlotFromPoolIfEmpty(db, slotKey) {
   const ptrRef = db.collection('config').doc('spotlight_slots');
   let newlyCreatedStoryId = null;
@@ -3810,85 +3811,6 @@ async function _serverRefillSlotFromPoolIfEmpty(db, slotKey) {
     await _classifyStoryGenre(db, newlyCreatedStoryId, 0).catch(e => console.error('genre classify(seed) error:', e.message));
   }
 }
-
-// 슬롯2(✍️) 24시간 제안+투표 라운드 마감 — word_challenge는 "매일 00시 시작→21시
-// 마감" 고정 cron이지만, 이 라운드는 "슬롯 스토리가 완결되는 시점"이 이벤트
-// 트리거라 고정 시각 cron을 못 씀. 대신 aiParticipate(828행~)처럼 주기적으로
-// end_at 지난 라운드를 찾아 정산 + sendBatchedPushNotifications(107행~)의
-// 트랜잭션 claim 관용구로 중복 마감 방지.
-exports.closeSentenceRounds = functions
-  .region('asia-northeast3')
-  .pubsub.schedule('every 30 minutes')
-  .timeZone('Asia/Seoul')
-  .onRun(async () => {
-    const db = admin.firestore();
-    const MAX_ROUND_CLOSES_PER_RUN = 5;
-    const activeSnap = await db.collection('sentence_rounds').where('status', '==', 'active').limit(MAX_ROUND_CLOSES_PER_RUN).get();
-    const now = Date.now();
-
-    for (const doc of activeSnap.docs) {
-      const round = doc.data();
-      if (new Date(round.end_at).getTime() > now) continue;
-
-      const claimed = await db.runTransaction(async tx => {
-        const snap = await tx.get(doc.ref);
-        if (!snap.exists || snap.data().status !== 'active') return false;
-        tx.update(doc.ref, { status: 'closed', closed_at: new Date().toISOString() });
-        return true;
-      });
-      if (!claimed) continue;
-
-      const subsSnap = await db.collection('sentence_round_submissions').where('round_id', '==', doc.id).get();
-      const allSubs = subsSnap.docs.map(d => ({ submission_id: d.id, ...d.data() }));
-      // 1등뿐 아니라 1~3등까지 채택 — 슬롯이 빌 때 마침 새 라운드가 끝나있으리란
-      // 보장이 없어 여유분을 확보하는 목적
-      const top = allSubs
-        .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0) || new Date(a.created_at) - new Date(b.created_at))
-        .slice(0, 3);
-
-      if (top.length) {
-        const nickCache = {};
-        for (const w of top) {
-          if (!nickCache[w.user_id]) {
-            const uSnap = await db.collection('users').doc(w.user_id).get();
-            nickCache[w.user_id] = uSnap.exists ? (uSnap.data().display_name || uSnap.data().nickname) : '익명';
-          }
-        }
-        const winners = top.map(w => ({
-          user_id: w.user_id, submission_id: w.submission_id, text: w.text,
-          nickname: nickCache[w.user_id], vote_count: w.vote_count || 0,
-        }));
-        await doc.ref.update({ winners });
-
-        for (let i = 0; i < top.length; i++) {
-          const w = top[i];
-          await db.collection('spotlight_sentence_pool').doc().set({
-            text: w.text, proposer_id: w.user_id, round_id: doc.id, used: false,
-            created_at: new Date().toISOString(),
-          });
-          // 채택 포인트는 실제로 문장이 풀에서 소진돼 쓰일 때가 아니라 라운드
-          // 마감 시 즉시 지급(유저 확정, 2026-07-12) — word_challenge 마감과
-          // 같은 코드 경로에 붙어 있어 일관되고, 선정됐는데 나중에 안 쓰인다고
-          // 보상을 못 받는 경우가 없음.
-          await _serverAddPoints(db, w.user_id, 50, 'spotlight_sentence_pick', w.submission_id);
-          try { await _serverBumpAchievementCounter(db, w.user_id, 'spotlight_sentence_picks'); } catch (e) {}
-          // 채택 자체를 알려줄 방법이 없었음(제보로 발견) — 실제로 풀에서 소진돼
-          // 화면에 뜨는 건 순서가 밀리면 한참 뒤일 수 있어서, 그 시점이 아니라
-          // 채택이 확정되는 지금 바로 알려줌
-          try {
-            await db.collection('notifications').doc().set({
-              user_id: w.user_id, type: 'spotlight_sentence_pick', story_id: '',
-              message: `✍️ 오늘의 이야기 시작 문장 ${i + 1}등으로 채택됐어요! +50p (순서대로 다음 슬롯에 사용돼요)`,
-              is_read: false, created_at: new Date().toISOString(), push_sent: false,
-            });
-          } catch (e) {}
-        }
-      }
-
-      try { await _serverRefillSlotFromPoolIfEmpty(db, 'sentence'); } catch (e) {}
-    }
-    return null;
-  });
 
 // 방치된 AI 씨앗 이야기 자동 정리 — 원래 클라이언트(자유 이야기 탭 로딩 시점)에서
 // 실행했는데, 캐시된 구버전 클라이언트 JS가 계속 떠돌면서 그 로직이 스포트라이트

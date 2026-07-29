@@ -2127,9 +2127,19 @@ async function doSpeedrunUpvote(sub_id, btnEl) {
   const res = await api('speedrunUpvote', { sub_id });
   if (!res.ok) { toast(res.error, true); if (btnEl) btnEl.disabled = false; return; }
   if (res.bonused) toast('추천 3표 달성! 포인트가 2배가 됐어요.');
-  const sid = window._storyData && window._storyData.story ? window._storyData.story.story_id : '';
-  if (sid) _lsc.del('story_' + sid);
-  story();
+  const sd = window._storyData;
+  const sid = sd && sd.story ? sd.story.story_id : '';
+  if (sid) _lsc.del('story_' + sid); // 다음 재방문 때 캐시가 낡은 값 안 보여주게
+  // story()로 스토리 전체(최대 100단계 에피소드+제출물)를 통째로 재조회하지 않고,
+  // 서버가 이미 돌려준 정확한 upvote_count로 로컬에서 그 문장 하나만 갱신 후
+  // 다시 그림 — 초스피드는 진행될수록 이 재조회 페이로드가 계속 커져서 단계가
+  // 깊어질수록(50~90단계) 버튼 반응이 눈에 띄게 느려지는 문제였음(유저 제보,
+  // 2026-07-29). _renderSpeedrunStory는 window._storyData만으로 그려지므로
+  // 네트워크 왕복 자체가 필요 없음.
+  if (currentParam !== sid || !sd) return;
+  const sub = sd.submissions.find(s => s.sub_id === sub_id);
+  if (sub) sub.upvote_count = res.upvote_count;
+  _renderSpeedrunStory(sd.story, sd.episodes, sd.submissions, sid);
 }
 
 // 신고는 되돌릴 수 없는(자정 임계값 도달 시 삭제) 액션이라, 실수로 누르는 걸
@@ -2155,9 +2165,14 @@ async function doSpeedrunReport(sub_id, btnEl) {
   const res = await api('speedrunReport', { sub_id });
   if (!res.ok) { toast(res.error, true); if (btnEl) btnEl.disabled = false; return; }
   toast(res.deleted ? '신고 누적으로 삭제 처리됐어요.' : '신고했어요.');
-  const sid = window._storyData && window._storyData.story ? window._storyData.story.story_id : '';
+  const sd = window._storyData;
+  const sid = sd && sd.story ? sd.story.story_id : '';
   if (sid) _lsc.del('story_' + sid);
-  story();
+  // doSpeedrunUpvote와 동일한 이유(주석 참고) — 전체 재조회 대신 로컬 patch
+  if (currentParam !== sid || !sd) return;
+  const sub = sd.submissions.find(s => s.sub_id === sub_id);
+  if (sub) { sub.report_count = res.report_count; if (res.deleted) sub.is_deleted = true; }
+  _renderSpeedrunStory(sd.story, sd.episodes, sd.submissions, sid);
 }
 
 function _applyStoryData(res, story_id) {

@@ -155,31 +155,18 @@ function renderStoryPage(indexHtmlSrc, { id, title, description, url, bodyHtml, 
     '<link rel="canonical" href="https://hwasee.me/bang/">',
     `<link rel="canonical" href="${url}">`
   );
-  // 정규식 대신 정확한 리터럴 블록으로 치환(중첩 객체 때문에 정규식은 깨지기 쉬움) —
-  // bang/index.html의 WebApplication JSON-LD 블록이 바뀌면 이 문자열도 같이 고쳐야 함.
-  const WEB_APP_JSONLD = `<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "WebApplication",
-  "name": "화씨.방",
-  "alternateName": "Hwasee Bang",
-  "url": "https://hwasee.me/bang/",
-  "description": "한 문장씩 이어 쓰는 릴레이 소설 공동창작 플랫폼. 씨앗 이야기에 문장을 더해 여러 사람이 함께 이야기를 완성합니다.",
-  "applicationCategory": "SocialNetworkingApplication",
-  "operatingSystem": "Web",
-  "inLanguage": "ko",
-  "isAccessibleForFree": true,
-  "publisher": {
-    "@type": "Organization",
-    "name": "화씨 (Hwasee)",
-    "url": "https://hwasee.me"
-  }
-}
-</script>`;
-  if (!html.includes(WEB_APP_JSONLD)) {
+  // 예전엔 JSON-LD 내용 전체를 문자열로 그대로 박아넣어 정확히 일치해야만
+  // 치환됐음 — bang/index.html 쪽 JSON-LD 필드(alternateName 등)가 나중에
+  // 바뀌면서 두 사본이 어긋났고, 그 결과 이 매칭이 계속 실패해 완결작 SSG
+  // 정적 페이지가 전부(25/25) 조용히 생성 실패하고 있었음(디버그방 발견,
+  // 2026-07-29 — 애드센스 콘텐츠 반려의 실제 원인). 내부 필드 값과 무관하게
+  // "WebApplication JSON-LD 스크립트 블록"이라는 구조만 정규식으로 찾도록 바꿔서
+  // 같은 문제가 재발하지 않게 함.
+  const webAppJsonLdMatch = html.match(/<script type="application\/ld\+json">\s*\{\s*"@context":\s*"https:\/\/schema\.org",\s*"@type":\s*"WebApplication"[\s\S]*?<\/script>/);
+  if (!webAppJsonLdMatch) {
     throw new Error(`WebApplication JSON-LD 블록을 못 찾음(story ${id}) — bang/index.html이 바뀌었을 수 있음`);
   }
-  html = html.replace(WEB_APP_JSONLD, `<script type="application/ld+json">\n${jsonLd}\n</script>`);
+  html = html.replace(webAppJsonLdMatch[0], `<script type="application/ld+json">\n${jsonLd}\n</script>`);
   html = html.replace('<meta property="og:type"        content="website">', '<meta property="og:type"        content="article">');
   html = html.replace(/<meta property="og:url"\s+content="[^"]*">/, `<meta property="og:url"         content="${url}">`);
   html = html.replace(/<meta property="og:title"\s+content="[^"]*">/, `<meta property="og:title"       content="${esc(title)}">`);

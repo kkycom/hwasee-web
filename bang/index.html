@@ -2066,14 +2066,16 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
     const removed = sub.is_invalidated || sub.is_deleted;
     return `
     <div class="prose-line" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-      <span class="prose-sentence"${removed ? ' style="text-decoration:line-through;color:var(--muted)"' : ''}>${esc(sub.content)}</span>
-      <div class="sr-line-meta">
+      <span style="min-width:0">
+        <span class="prose-sentence"${removed ? ' style="text-decoration:line-through;color:var(--muted)"' : ''}>${esc(sub.content)}</span>
         <span class="sr-point-tag${removed ? ' sr-void' : ''}">${removed ? '삭제됨' : '+' + points + 'P'}</span>
+      </span>
+      <div class="sr-line-meta">
         <button class="sr-flag-btn" onclick="doSpeedrunUpvote('${sub.sub_id}', this)"${(user && sub.author_id === user.user_id) ? ' disabled' : ''}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
           ${sub.upvote_count || 0}
         </button>
-        <button class="sr-flag-btn" title="신고" onclick="doSpeedrunReport('${sub.sub_id}', this)"${(user && sub.author_id === user.user_id) ? ' disabled' : ''}>
+        <button class="sr-flag-btn" title="신고" onclick="confirmSpeedrunReport('${sub.sub_id}', this)"${(user && sub.author_id === user.user_id) ? ' disabled' : ''}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
         </button>
       </div>
@@ -2128,6 +2130,21 @@ async function doSpeedrunUpvote(sub_id, btnEl) {
   const sid = window._storyData && window._storyData.story ? window._storyData.story.story_id : '';
   if (sid) _lsc.del('story_' + sid);
   story();
+}
+
+// 신고는 되돌릴 수 없는(자정 임계값 도달 시 삭제) 액션이라, 실수로 누르는 걸
+// 막기 위해 확인창을 거침(유저 요청, 2026-07-29 — "신곤지 알아야 할테니").
+function confirmSpeedrunReport(sub_id, btnEl) {
+  _modalCallbacks['speedrun-report-modal'] = async (mid) => {
+    document.getElementById(mid)?.remove(); delete _modalCallbacks[mid];
+    await doSpeedrunReport(sub_id, btnEl);
+  };
+  showConfirmModal({
+    id: 'speedrun-report-modal',
+    title: '🚩 신고하시겠어요?',
+    desc: '스팸이거나 의미 없는 문장일 때 신고해주세요.<br>신고가 일정 수 모이면 그 문장은 삭제 처리돼요.',
+    confirmLabel: '신고하기',
+  });
 }
 
 // 비추/무효화 대신 신고 방식으로 전환(유저 확정, 2026-07-29) — "무효가 한 번

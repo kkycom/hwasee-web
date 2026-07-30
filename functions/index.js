@@ -2551,9 +2551,18 @@ function _serverRandomFixedEnding() {
 // 장르 강제 전환 이야기 — 매 단계 장르가 랜덤으로 바뀜. speedrun의
 // point_values와 동일하게 스토리 생성 시 1회만 만들어서 고정 배정(매 단계
 // 라이브로 뽑지 않음 — 완결까지 일관되게 조회 가능해야 함).
+// 완전 무작위(매 단계 독립 추첨)였더니 8개 장르 중 하나라 바로 앞 단계와
+// 우연히 같은 장르가 뽑히는 경우가 꽤 흔했음(1/8 확률, 10단계면 한 번 이상
+// 겹칠 확률이 더 높음) — "장르 전환"이 취지인 콘텐츠인데 안 바뀐 것처럼
+// 보여서 유저 지적(2026-07-29). 직전 단계와 같은 장르는 후보에서 제외하고
+// 뽑아서 인접 단계끼리는 항상 다른 장르가 되게 함.
 function _serverRandomGenreSequence(steps) {
   const arr = [];
-  for (let i = 0; i < steps; i++) arr.push(SPOTLIGHT_GENRES[Math.floor(Math.random() * SPOTLIGHT_GENRES.length)]);
+  for (let i = 0; i < steps; i++) {
+    const prev = arr[i - 1];
+    const pool = prev ? SPOTLIGHT_GENRES.filter(g => g !== prev) : SPOTLIGHT_GENRES;
+    arr.push(pool[Math.floor(Math.random() * pool.length)]);
+  }
   return arr;
 }
 

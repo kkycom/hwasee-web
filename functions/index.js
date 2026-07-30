@@ -4153,6 +4153,23 @@ exports.startHintRound14 = functions.region('asia-northeast3').pubsub.schedule('
 exports.startHintRound16 = functions.region('asia-northeast3').pubsub.schedule('every day 16:00').timeZone('Asia/Seoul').onRun(async () => { await _serverStartHintRound(admin.firestore()); return null; });
 exports.startHintRound18 = functions.region('asia-northeast3').pubsub.schedule('every day 18:00').timeZone('Asia/Seoul').onRun(async () => { await _serverStartHintRound(admin.firestore()); return null; });
 
+// 아무도 못 맞힌 라운드는 다음 라운드가 시작되는 순간(_serverStartHintRound가
+// 같은 트랜잭션에서 옛 라운드 닫기+새 라운드 열기를 동시에 함) 곧바로
+// 새 라운드에 가려져서 정답을 아무도 못 보고 지나가고 있었음(유저 지적,
+// 2026-07-29 — "정답자 없을 때 룰 안 정했지 우리?"). 다음 라운드 10분
+// 전에 먼저 "실패" 처리해서, 그 10분 동안은 정답이 공개된 채로 보이게 함.
+async function _serverFailHintRoundIfUnsolved(db) {
+  const snap = await db.collection('hint_rounds').where('status', '==', 'active').limit(1).get();
+  if (snap.empty) return; // 이미 누군가 맞혀서 닫혔거나(정상 종료), 애초에 라운드가 없음
+  await snap.docs[0].ref.update({ status: 'closed', closed_at: new Date().toISOString(), failed: true });
+}
+exports.failHintRound0750 = functions.region('asia-northeast3').pubsub.schedule('every day 07:50').timeZone('Asia/Seoul').onRun(async () => { await _serverFailHintRoundIfUnsolved(admin.firestore()); return null; });
+exports.failHintRound0950 = functions.region('asia-northeast3').pubsub.schedule('every day 09:50').timeZone('Asia/Seoul').onRun(async () => { await _serverFailHintRoundIfUnsolved(admin.firestore()); return null; });
+exports.failHintRound1150 = functions.region('asia-northeast3').pubsub.schedule('every day 11:50').timeZone('Asia/Seoul').onRun(async () => { await _serverFailHintRoundIfUnsolved(admin.firestore()); return null; });
+exports.failHintRound1350 = functions.region('asia-northeast3').pubsub.schedule('every day 13:50').timeZone('Asia/Seoul').onRun(async () => { await _serverFailHintRoundIfUnsolved(admin.firestore()); return null; });
+exports.failHintRound1550 = functions.region('asia-northeast3').pubsub.schedule('every day 15:50').timeZone('Asia/Seoul').onRun(async () => { await _serverFailHintRoundIfUnsolved(admin.firestore()); return null; });
+exports.failHintRound1750 = functions.region('asia-northeast3').pubsub.schedule('every day 17:50').timeZone('Asia/Seoul').onRun(async () => { await _serverFailHintRoundIfUnsolved(admin.firestore()); return null; });
+
 // 테스트/부트스트랩용 — 콘솔에서 수동 트리거
 exports.adminForceStartHintRound = functions
   .region('asia-northeast3')
@@ -4184,7 +4201,7 @@ exports.getHintRound = functions
     const participant_count = r.participant_count || 0;
     const base = { round_id: doc.id, hint: r.hint, status: r.status, start_at: r.start_at, points: r.points, participant_count };
     if (r.status === 'closed') {
-      return { ok: true, round: { ...base, text: r.text, winner_user_id: r.winner_user_id, winner_nickname: r.winner_nickname, winner_text: r.winner_text } };
+      return { ok: true, round: { ...base, text: r.text, winner_user_id: r.winner_user_id, winner_nickname: r.winner_nickname, winner_text: r.winner_text, failed: r.failed || false } };
     }
     return { ok: true, round: base }; // text는 절대 안 내려줌
   });

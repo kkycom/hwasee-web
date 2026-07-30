@@ -848,7 +848,7 @@
   <div class="nav-right" id="nav-right"></div>
 </header>
 
-<main id="app"><div class="loading">
+<main id="app"><div>
   <div style="max-width:640px;margin:0 auto;padding:8px 16px 40px;line-height:1.9;color:var(--text);text-align:left">
     <h1 style="font-family:var(--serif);font-size:22px;margin:0 0 16px">화씨.방 — 여러 사람이 한 문장씩 이어 쓰는 이야기</h1>
     <p style="font-size:14px;color:var(--muted);margin:0 0 16px">
@@ -1323,7 +1323,7 @@ function renderNav() {
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-patchnotes')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> 패치 내역</button>
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-wordchallenge')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><circle cx="16" cy="16" r="1"/><circle cx="12" cy="12" r="1"/></svg> 단어 챌린지</button>
           <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-fairytale')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> 동화 각색</button>
-          <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-hint')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> 초성 힌트</button>
+          <button class="admin-menu-item" onclick="closeAdminMenu();nav('admin-hint')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> 초성 문장 퀴즈</button>
           <a class="admin-menu-item" href="/bang/analytics.html" target="_blank" rel="noopener" style="text-decoration:none" onclick="closeAdminMenu()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> 분석 대시보드</a>
         </div>
       </div>` : ''}
@@ -2066,10 +2066,7 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
     const removed = sub.is_invalidated || sub.is_deleted;
     return `
     <div class="prose-line" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-      <span style="min-width:0">
-        <span class="prose-sentence"${removed ? ' style="text-decoration:line-through;color:var(--muted)"' : ''}>${esc(sub.content)}</span>
-        <span class="sr-point-tag${removed ? ' sr-void' : ''}">${removed ? '삭제됨' : '+' + points + 'P'}</span>
-      </span>
+      <span class="prose-sentence"${removed ? ' style="text-decoration:line-through;color:var(--muted)"' : ''}>${esc(sub.content)} <span class="sr-point-tag${removed ? ' sr-void' : ''}" style="text-decoration:none">${removed ? '삭제됨' : '+' + points + 'P'}</span></span>
       <div class="sr-line-meta">
         <button class="sr-flag-btn" onclick="doSpeedrunUpvote('${sub.sub_id}', this)"${(user && sub.author_id === user.user_id) ? ' disabled' : ''}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
@@ -3592,8 +3589,26 @@ async function _navigateHotCard(delta) {
 }
 
 // ─── 초성 힌트 (정시 이벤트 — 스토리 아님, 카드+아코디언) ───────────────
+// renderSpotlight()가 캐시 렌더 한 번 + 네트워크 갱신 렌더 한 번, 한 방문에
+// 최소 두 번 불리고 그때마다 이 함수도 꼬리에서 다시 호출됨 — 두 호출이
+// 겹치면(뒤 호출의 getHintRound가 앞 호출보다 먼저 끝나는 등) 어느 쪽 응답이
+// _hintRoundData/DOM을 최종적으로 쓰는지 순서가 들쭉날쭉해져서, 두 번째
+// renderSpotlight()의 prefill이 아직 못 채운 그 사이 카드가 비었다가 나중에
+// 채워지는 걸로 보였음("안 보였다가 갑자기 나타난다", 유저 재지적,
+// 2026-07-29) — _spotlightFetching과 동일한 패턴으로 중복 호출 자체를
+// 막아서 항상 한 번에 하나의 조회만 진행되게 함.
+let _hintCardFetching = false;
 async function loadHintCard() {
   if (!document.getElementById('hint-card-area')) return;
+  if (_hintCardFetching) return;
+  _hintCardFetching = true;
+  try {
+    await _loadHintCardInner();
+  } finally {
+    _hintCardFetching = false;
+  }
+}
+async function _loadHintCardInner() {
   const res = await api('getHintRound', {});
   // 알림 패널/댓글-MVP 섹션과 동일한 stale DOM 참조 버그 — await로 기다리는
   // 사이 renderSpotlight()가 다시 불려서 #hint-card-area 전체가 새 엘리먼트로
@@ -3661,7 +3676,7 @@ function renderHintCardHtml(round) {
   return `
     <div class="card" style="margin-top:14px" id="hint-card-inner">
       <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
-        <span style="font-size:14px;font-weight:700">🧩 초성 힌트${solved ? ' · 정답 공개!' : ''}</span>
+        <span style="font-size:14px;font-weight:700">🧩 초성 문장 퀴즈${solved ? (round.failed ? ' · 아쉽게 실패' : ' · 정답 공개!') : ''}</span>
         ${solved ? `<span style="font-size:11px;color:var(--muted);font-weight:400">(다음 라운드까지 <span id="hint-countdown"></span>)</span>` : ''}
       </div>
       <div class="story-prose" style="padding:28px 18px;margin:10px 0;position:relative${solved ? ';cursor:pointer' : ''}"${solved ? ' onclick="revealHintAnswer()"' : ''}>
@@ -3670,7 +3685,7 @@ function renderHintCardHtml(round) {
       </div>
       ${solved
         ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-             <span style="font-size:12px;color:var(--muted)">${round.winner_nickname ? `${esc(round.winner_nickname)}님이 <b style="color:var(--accent2)">+${round.points}P</b> 획득!` : '아직 정답자가 없어요'}</span>
+             <span style="font-size:12px;color:var(--muted)">${round.winner_nickname ? `${esc(round.winner_nickname)}님이 <b style="color:var(--accent2)">+${round.points}P</b> 획득!` : '이번엔 아무도 못 맞혔어요'}</span>
              <button class="btn btn-ghost btn-sm" style="flex-shrink:0;border-radius:20px" onclick="toggleHintHistory('${round.round_id}')">참여 과정 보기</button>
            </div>
            <div id="hint-history-area" style="display:none;margin-top:12px"></div>`
@@ -6666,7 +6681,7 @@ function _adminNav(current) {
         ${btn('패치 내역','patchnotes','admin-patchnotes')}${sep}
         ${btn('단어 챌린지','wordchallenge','admin-wordchallenge')}${sep}
         ${btn('동화 각색','fairytale','admin-fairytale')}${sep}
-        ${btn('초성 힌트','hint','admin-hint')}
+        ${btn('초성 문장 퀴즈','hint','admin-hint')}
       </div>
     </div>`;
 }
@@ -7286,7 +7301,7 @@ async function adminHintPool() {
   if (!res.ok) { document.getElementById('app').innerHTML = _adminNav('hint') + `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="adminHintPool()">다시 시도</button></div>`; return; }
   document.getElementById('app').innerHTML = `
     ${_adminNav('hint')}
-    <h2 style="margin:0 0 12px">🧩 초성 힌트 관리</h2>
+    <h2 style="margin:0 0 12px">🧩 초성 문장 퀴즈 관리</h2>
     <div class="card" style="margin-bottom:20px">
       <div class="form-group">
         <label>정답 문장 추가 (한 줄에 하나씩, 짧고 유추하기 쉬운 문장으로)</label>

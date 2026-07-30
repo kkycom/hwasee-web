@@ -191,7 +191,7 @@ function _kpiCardsHtml(series) {
     ['투표 유저', last.voter_count, prev && prev.voter_count],
     ['총 투표수', last.vote_count, prev && prev.vote_count],
     ['단어챌린지 작성', last.wc_writer_count, prev && prev.wc_writer_count],
-    ['초성힌트 참여자', last.hint_participant_count, prev && prev.hint_participant_count],
+    ['초성 문장 퀴즈 참여자', last.hint_participant_count, prev && prev.hint_participant_count],
     ['활성 유저(DAU)', last.active_user_count, prev && prev.active_user_count],
   ];
   return `
@@ -454,7 +454,7 @@ function _renderDashboard(res) {
   const sectionChart = _svgStackedBarChart(dates, [
     { label: '단어챌린지 응모', color: 'var(--success)', values: res.series.map(d => d.section_word_challenge) },
     { label: '단어챌린지 선정작 이어쓰기', color: 'var(--accent)', values: res.series.map(d => d.section_word_challenge_story) },
-    { label: '초성힌트 시도', color: '#4a4364', values: res.series.map(d => d.hint_guess_count) },
+    { label: '초성 문장 퀴즈 시도', color: '#4a4364', values: res.series.map(d => d.hint_guess_count) },
     { label: '초스피드', color: '#7a4030', values: res.series.map(d => d.section_speedrun) },
     { label: '장르전환', color: '#4a4a8a', values: res.series.map(d => d.section_genre_switch) },
     { label: '결말고정', color: '#2e5f66', values: res.series.map(d => d.section_fixed_ending) },

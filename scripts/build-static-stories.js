@@ -174,7 +174,13 @@ function renderStoryPage(indexHtmlSrc, { id, title, description, url, bodyHtml, 
   html = html.replace(/<meta name="twitter:title"\s+content="[^"]*">/, `<meta name="twitter:title"      content="${esc(title)}">`);
   html = html.replace(/<meta name="twitter:description" content="[^"]*">/, `<meta name="twitter:description" content="${esc(description)}">`);
 
-  const appMarker = /<main id="app"><div class="loading">[\s\S]*?<\/div><\/main>/;
+  // 예전엔 <div class="loading"> 리터럴까지 포함해서 찾았는데, .loading 클래스는
+  // ::after로 "불러오는 중입니다"를 자동 삽입하는 CSS라 안에 진짜 콘텐츠를 채운
+  // 채로 그 클래스를 쓰면 로딩 문구가 중복 표시되는 버그가 있었음(유저 지적,
+  // 2026-07-29) — bang/index.html 쪽에서 그 클래스를 뺐더니 이 리터럴 매칭이
+  // 깨졌을 것(WebApplication JSON-LD 때와 같은 종류의 함정). 내부 구조와
+  // 무관하게 <main id="app"> ~ </main> 전체를 구조로만 찾도록 완화.
+  const appMarker = /<main id="app">[\s\S]*?<\/main>/;
   if (!appMarker.test(html)) throw new Error(`#app 마커를 못 찾음(story ${id}) — bang/index.html 구조가 바뀌었을 수 있음`);
   html = html.replace(appMarker, `<main id="app">${bodyHtml}</main>`);
 

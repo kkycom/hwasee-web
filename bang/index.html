@@ -3599,6 +3599,17 @@ function renderSpotlight() {
   const prevHistoryEl = document.getElementById('hint-history-area');
   const historyWasOpen = prevHistoryEl && prevHistoryEl.style.display !== 'none' && prevHistoryEl.dataset.loaded === '1';
   const savedHistoryHtml = historyWasOpen ? prevHistoryEl.innerHTML : null;
+  // _hintRoundData는 순수 메모리 변수라 새로고침/앱 재실행 등 이 세션의 첫
+  // renderSpotlight()에선 항상 null — 그동안은 이 prefill이 아예 스킵되고
+  // #hint-card-area가 빈 채로 그려진 뒤 loadHintCard()의 네트워크 응답이
+  // 와야만 카드가 나타나서, "탭 뜰 때마다 꼭 카드가 사라졌다 늦게 나타난다"는
+  // 문제가 남아있었음(디버그방에서 이미 두 차례 지적, 2026-07-30) — 이전
+  // 재렌더 대응(ca2910f)은 "같은 세션 안에서 이미 데이터가 있는데 또 그리는"
+  // 경우만 고쳤을 뿐, 세션 첫 렌더 자체의 공백은 못 건드렸던 것. localStorage
+  // 캐시(_lsc, spotlight/wordChallenge와 동일한 stale-while-revalidate 패턴)에서
+  // 지난 라운드를 즉시 끌어와 첫 렌더부터 채워두고, 진짜 응답이 오면 같은
+  // 라운드/상태일 때 그대로 유지(위 로직)돼 재차 안 깜빡임.
+  if (!_hintRoundData) _hintRoundData = _lsc.getStale('hintRound');
   if (hintArea && _hintRoundData) {
     hintArea.innerHTML = renderHintCardHtml(_hintRoundData);
     // renderHintCardHtml은 #hint-countdown을 빈 채로만 그려두고 실제 숫자는
@@ -3666,7 +3677,13 @@ async function _loadHintCardInner() {
   // 최신 엘리먼트를 다시 조회.
   const area = document.getElementById('hint-card-area');
   if (!area) return; // 그 사이 탭 이동
-  if (!res.ok || !res.round) { clearInterval(_hintCountdownTimer); area.innerHTML = ''; _hintRoundData = null; return; }
+  if (!res.ok || !res.round) { clearInterval(_hintCountdownTimer); area.innerHTML = ''; _hintRoundData = null; _lsc.del('hintRound'); return; }
+
+  // 다음 세션의 첫 renderSpotlight()가 즉시 프리필할 수 있게 localStorage에도
+  // 저장(위 prefill 주석 참고) — 라운드가 정답자 등장으로 언제든 조기 마감될
+  // 수 있어 TTL은 짧게(스포트라이트와 동일 20초), getStale의 유예(1시간) 안에서만
+  // "즉시 표시용 stale 데이터"로 쓰이고 실제 응답이 오면 바로 검증됨
+  _lsc.set('hintRound', res.round, 20);
 
   // renderSpotlight()는 탭 재방문·백그라운드 복귀·캐시→네트워크 재렌더마다 이
   // 함수를 다시 부르는데, 매번 카드를 통째로 다시 그리면 내용이 하나도 안

@@ -7494,6 +7494,13 @@ function startProseEdit(sub_id, ep_id) {
   const content = sentenceClone?.textContent.trim() || '';
   const editor = document.createElement('div');
   editor.className = 'prose-inline-editor';
+  // .story-prose 래퍼에 onclick="handleProseWrapClick(event)"(탭하면 집중 산문뷰
+  // 열림)이 걸려있는데, 그 핸들러는 button/a 태그만 예외로 봐서 textarea를 탭해
+  // 입력하려는 클릭이 그대로 버블링돼 집중뷰가 열려버렸음 — 편집창은 실제 라이브
+  // 엘리먼트가 아니라 복제본이 뜨는 거라 입력이 아예 안 먹히고, 다시 탭하면 또
+  // 열리고 닫히길 반복하는 것처럼 보였음(유저 지적, 2026-07-30). 편집창 자체를
+  // 탭했을 땐 절대 버블링 안 되게 막음.
+  editor.onclick = e => e.stopPropagation();
   editor.dataset.subId = sub_id;
   editor.dataset.epId = ep_id;
   editor.dataset.oldContent = content;

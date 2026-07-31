@@ -91,13 +91,18 @@
 </style>
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-<script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<script defer src="https://t1.kakaocdn.net/kakao_js_sdk/2.8.1/kakao.min.js"
-  onload="Kakao.init('ff14936c489716ee8800abc48379201b')"
-  onerror="console.error('Kakao SDK 스크립트 로드 실패')"></script>
-<script defer src="firebase-api.js?v=3"></script>
+<!-- FCM 메시징 SDK(firebase-messaging-compat.js)와 카카오 SDK는 여기서 미리
+     받지 않고 실제 필요한 시점(_ensureMessagingLoaded/_ensureKakaoLoaded,
+     firebase-api.js)에 동적으로 로드함 — window.onload는 defer 스크립트가
+     전부 끝나야 발동되는데, 이 둘은 부팅 직후가 아니라 각각 "알림 권한 허용
+     후"/"카카오 로그인·공유 클릭 시"에만 실제로 쓰여서 부팅 필수 자원이
+     아니었음. 그런데도 매 방문마다 gstatic.com/kakaocdn.net 두 도메인을 더
+     열어야 해서, #app에 미리 넣어둔 애드센스용 소개 정적 텍스트가 실제 홈
+     화면(오늘의 이야기 탭)으로 바뀌는 시점(=window.onload)이 그만큼 늦어지고
+     있었음(유저 제보 "홈화면 자체가 늦게 뜬다", 2026-07-29). -->
+<script defer src="firebase-api.js?v=4"></script>
 <style>
   :root {
     --bg:      #f0ead8;
@@ -1214,6 +1219,28 @@ function saveUser(u) {
     localStorage.removeItem('hwasee_uid');
   }
   renderNav();
+}
+
+// ─── 카카오 SDK 지연 로드 ───────────────────────────────────
+// 예전엔 <head>에서 defer로 항상 미리 받아뒀는데, 실제로 쓰이는 곳은 카카오
+// 로그인 버튼/공유 모달뿐이라(둘 다 유저가 직접 눌러야 발생) 대부분의 방문
+// (그냥 둘러보기)에선 전혀 필요 없는 스크립트였음. window.onload가 defer
+// 스크립트 전부 끝나야 발동되는데, 이게 그 목록에 껴있어서 #app의 애드센스용
+// 정적 소개 텍스트가 실제 홈 화면으로 바뀌는 시점이 그만큼 늦어지고 있었음
+// (유저 제보 "홈화면 자체가 늦게 뜬다", 2026-07-29) — 실제 필요 시점에만 로드.
+let _kakaoLoadPromise = null;
+function _ensureKakaoLoaded() {
+  if (window.Kakao && Kakao.isInitialized()) return Promise.resolve();
+  if (!_kakaoLoadPromise) {
+    _kakaoLoadPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://t1.kakaocdn.net/kakao_js_sdk/2.8.1/kakao.min.js';
+      s.onload = () => { Kakao.init('ff14936c489716ee8800abc48379201b'); resolve(); };
+      s.onerror = () => { _kakaoLoadPromise = null; reject(new Error('카카오 SDK 로드 실패')); };
+      document.head.appendChild(s);
+    });
+  }
+  return _kakaoLoadPromise;
 }
 
 // ─── 토스트 ───────────────────────────────────────────────
@@ -4996,13 +5023,16 @@ async function doGoogleAuth() {
 // _handleKakaoRedirectIfPresent()(아래, window.onload에서 호출)가 담당.
 const KAKAO_REDIRECT_URI = 'https://hwasee.me/bang/';
 
-function doKakaoAuth() {
-  if (!(window.Kakao && Kakao.isInitialized())) { toast('카카오 로그인을 사용할 수 없어요. 새로고침 후 다시 시도해주세요.', true); return; }
+async function doKakaoAuth() {
   // loginWithKakao도 콜드스타트 가능한 Cloud Function — 카카오 로그인 화면으로
   // 완전히 페이지를 떠났다가 돌아오는 방식이라 복귀 직후엔 워밍업할 틈이 없음.
   // 떠나기 직전인 지금 미리 한 번 호출해둠(더미 code라 즉시 실패하지만, 요청
-  // 자체는 이미 서버로 전송된 뒤라 페이지 이동과 무관하게 인스턴스는 깨어남)
+  // 자체는 이미 서버로 전송된 뒤라 페이지 이동과 무관하게 인스턴스는 깨어남).
+  // 카카오 SDK 로딩과 무관하게 바로 쏨(둘이 병렬로 진행돼도 문제없음)
   functionsRegion.httpsCallable('loginWithKakao')({ code: '', redirectUri: KAKAO_REDIRECT_URI }).catch(() => {});
+  // 카카오 SDK를 이제 부팅 시 미리 안 받아두고 여기서 처음 필요할 때 로드함
+  // (2026-07-29, 부팅 지연 개선) — 로드 실패 시에만 예전과 같은 안내
+  try { await _ensureKakaoLoaded(); } catch (e) { toast('카카오 로그인을 사용할 수 없어요. 새로고침 후 다시 시도해주세요.', true); return; }
   // scope 생략 시 콘솔에서 "선택 동의"로 설정된 항목(닉네임)은 자동으로 요청되지
   // 않고 넘어가버림 — 명시적으로 요청해서 동의창에 뜨게 함. account_email은 이 앱에
   // "권한 없음"(비즈 앱 인증 필요) 상태라 스코프에 넣으면 KOE205로 아예 거부되므로
@@ -6613,13 +6643,15 @@ function shareStory() {
   modal.id = 'share-modal';
   modal.className = 'modal-overlay';
   modal.onclick = e => { if (e.target === modal) modal.remove(); };
-  const kakaoAvailable = !!(window.Kakao && Kakao.isInitialized());
+  // 카카오 SDK를 이제 부팅 시 미리 안 받아두므로(2026-07-29, 부팅 지연 개선)
+  // 여기서 로드 여부로 버튼을 숨기면 사실상 항상 안 보이게 됨 — 버튼은
+  // 항상 보여주고, 실제로 눌렀을 때(_shareStoryKakao) 그 시점에 로드함
   modal.innerHTML = `
     <div class="modal-box" style="max-width:320px;text-align:center">
       <div style="font-size:16px;font-weight:700;margin-bottom:16px;font-family:var(--serif)">이야기 공유</div>
       <div style="display:flex;flex-direction:column;gap:8px">
         <button class="btn btn-ghost" style="display:flex;align-items:center;justify-content:center;gap:6px" onclick="document.getElementById('share-modal').remove();_shareStoryCopyLink()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>링크 복사</button>
-        ${kakaoAvailable ? `<button class="btn btn-ghost" style="display:flex;align-items:center;justify-content:center;gap:6px" onclick="document.getElementById('share-modal').remove();_shareStoryKakao()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>카카오톡 공유</button>` : ''}
+        <button class="btn btn-ghost" style="display:flex;align-items:center;justify-content:center;gap:6px" onclick="document.getElementById('share-modal').remove();_shareStoryKakao()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>카카오톡 공유</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -6659,7 +6691,10 @@ function _shareStoryCopyLink() {
     .catch(() => toast('복사 실패 — 브라우저 권한을 확인해주세요.', true));
 }
 
-function _shareStoryKakao() {
+async function _shareStoryKakao() {
+  // 카카오 SDK를 이제 부팅 시 미리 안 받아두므로(2026-07-29, 부팅 지연 개선)
+  // 여기서 처음 필요할 때 로드함
+  try { await _ensureKakaoLoaded(); } catch (e) { toast('카카오 공유를 사용할 수 없어요. 새로고침 후 다시 시도해주세요.', true); return; }
   const { lines, opening } = _shareStoryLines();
   const url = location.href;
   const snippet = lines.length ? lines[0] : '';
@@ -8347,8 +8382,10 @@ window.onload = async () => {
         if (perm !== 'granted') return;
       }
 
-      // 권한 확보 후 FCM 토큰 발급
+      // 권한 확보 후 FCM 토큰 발급 — 메시징 SDK를 이제 부팅 시 미리 안 받아두므로
+      // (2026-07-29, 부팅 지연 개선) 여기서 처음 필요할 때 로드함
       try {
+        await _ensureMessagingLoaded();
         const messaging = firebase.messaging();
         const token = await messaging.getToken({
           vapidKey: 'BDcmPonXJ1kYTThhICDRDEE4g8oCntlur6d1Dmv0Q-iAOo3cbK20jI9nBW-FKgGdElWXcpoSvQz13YOiqJ9qMs4',

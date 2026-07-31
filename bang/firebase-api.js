@@ -15,6 +15,27 @@ firebase.initializeApp(FB_CONFIG);
 const db = firebase.firestore();
 const functionsRegion = firebase.app().functions('asia-northeast3');
 
+// ─── FCM 메시징 SDK 지연 로드 ─────────────────────────────
+// 예전엔 <head>에서 defer로 항상 미리 받아뒀는데, 실제 사용 시점(firebase.messaging()
+// 호출)이 이미 "서비스워커 등록 → 알림 권한 허용" 다 끝난 한참 뒤라 부팅 필수
+// 자원이 아니었음. window.onload가 defer 스크립트 전부 끝나야 발동되는데
+// 이게 그 목록에 껴있어서 홈 화면 첫 표시가 그만큼 늦어지고 있었음(유저 제보,
+// 2026-07-29) — 실제 필요 시점(FCM 토큰 발급 직전)에만 동적으로 로드.
+let _messagingLoadPromise = null;
+function _ensureMessagingLoaded() {
+  if (window.firebase && firebase.messaging) return Promise.resolve();
+  if (!_messagingLoadPromise) {
+    _messagingLoadPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js';
+      s.onload = resolve;
+      s.onerror = () => { _messagingLoadPromise = null; reject(new Error('메시징 SDK 로드 실패')); };
+      document.head.appendChild(s);
+    });
+  }
+  return _messagingLoadPromise;
+}
+
 // ─── 익명 인증 (Auth 마이그레이션 1단계) ──────────────────
 // 브라우저마다 진짜 Firebase Auth 신원을 부여해두는 준비 작업 — 아직 Firestore
 // 규칙은 이 값을 검사하지 않으므로 지금 당장 접근 제어에 영향은 없음.

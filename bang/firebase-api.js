@@ -422,9 +422,19 @@ async function _fbCheckDailyBonus(user_id, uRef, prefetchedUser) {
     if (gapDays >= COMEBACK_GAP_DAYS) comeback_bonus = COMEBACK_BONUS;
   }
 
-  // 재바인딩 실패 등으로 auth_uid가 여전히 안 맞으면 이 쓰기가 소유권 규칙에
-  // 막힐 수 있음 — 출석 보너스 하나 때문에 로그인/세션 전체가 깨지면 안 되므로
-  // 안전망으로 감싸고, 실패하면 이번엔 보너스 없이 넘어감(다음 로그인에서 재시도됨)
+  // firebase.auth()의 익명 인증은 지연 초기화라(46행), 콜드스타트 직후
+  // 이 함수가 곧바로 불리면 request.auth가 아직 null이라 소유권 규칙에
+  // 막혀 이 쓰기가 조용히 실패하고 있었음 — "그날 첫 접속에서만 출석
+  // 점수가 안 뜨고 재접속하면(그땐 이미 인증 복구가 끝나있어서) 뜬다"는
+  // 유저 재제보(2026-07-30, 2026-07-15에도 같은 증상 제보)와 정확히
+  // 일치. 쓰기 전에 익명 인증이 끝나길 먼저 기다려서 이 경합 자체를 없앰
+  // (이미 로그인된 세션이면 즉시 반환되는 메모이즈된 프라미스라 비용 없음).
+  await fbGetAuthUid();
+
+  // 그래도 재바인딩 실패 등으로 auth_uid가 여전히 안 맞으면 이 쓰기가 소유권
+  // 규칙에 막힐 수 있음 — 출석 보너스 하나 때문에 로그인/세션 전체가 깨지면
+  // 안 되므로 안전망으로 감싸고, 실패하면 이번엔 보너스 없이 넘어감(다음
+  // 로그인에서 재시도됨)
   try {
     await ref.update({ last_daily_bonus_date: today, login_streak: streak });
     await _fbAddPoints(user_id, 10, 'daily_login', '');

@@ -822,6 +822,17 @@ async function _serverSpinOffOrphan(db, orphanEp, story, epById, subsByEp, subBy
     // vote_total 0으로 시작하므로 hot_score 0 (firebase-api.js fbCreateStory 참고).
     hot_score: 0,
     open_steps: openSteps,
+    // 콘텐츠 모드별 필드를 안 물려주고 있었음 — 결말고정/장르전환 이야기가
+    // 동률 분기로 스핀오프되면 mode/fixed_ending/genre_sequence가 통째로
+    // 빠져서, 분기된 새 스토리가 조용히 "그냥 자유 이야기"로 되돌아가
+    // 강제 결말·강제 장르 보장이 다 풀리고 있었음(디버그방 감사 발견,
+    // 2026-07-30). 원본에 있던 것만 그대로 이어받게 함.
+    ...(story.mode ? { mode: story.mode } : {}),
+    ...(story.fixed_ending ? { fixed_ending: story.fixed_ending } : {}),
+    ...(story.genre_sequence ? { genre_sequence: story.genre_sequence } : {}),
+    ...(story.vote_threshold ? { vote_threshold: story.vote_threshold } : {}),
+    ...(story.challenge_words ? { challenge_words: story.challenge_words } : {}),
+    ...(story.is_ai_seed ? { is_ai_seed: story.is_ai_seed } : {}),
   });
   spinBatch.update(db.collection('episodes').doc(orphanEp.episode_id), { story_id: newStoryId });
   await spinBatch.commit();
@@ -3381,6 +3392,21 @@ async function _serverStartWordChallenge(db) {
 async function _serverCloseWordChallenge(db) {
   const activeSnap = await db.collection('word_challenges').where('status', '==', 'active').limit(5).get();
   for (const doc of activeSnap.docs) {
+    // 시작 쪽(_serverStartWordChallenge)엔 "이미 진행 중이면 중복 생성 방지"
+    // 트랜잭션 가드가 있는데(2026-07-09 관리자 중복클릭 실사고로 추가됨),
+    // 마감 쪽엔 이 가드가 없었음 — 21시 스케줄과 관리자 강제마감이 겹치거나
+    // Cloud Functions 재시도가 겹치면 같은 라운드가 두 번 마감돼 포인트가
+    // 중복 지급될 수 있었음(디버그방 감사 발견, 2026-07-30). 무거운 집계(투표
+    // 계산·닉네임 조회) 전에 먼저 소유권을 트랜잭션으로 확정 —
+    // closeSentenceRounds와 동일한 claim 관용구.
+    const claimed = await db.runTransaction(async tx => {
+      const snap = await tx.get(doc.ref);
+      if (!snap.exists || snap.data().status !== 'active') return false;
+      tx.update(doc.ref, { status: 'closed', closed_at: new Date().toISOString() });
+      return true;
+    });
+    if (!claimed) continue;
+
     const challenge_id = doc.id;
     const subsSnap = await db.collection('word_challenge_submissions')
       .where('challenge_id', '==', challenge_id).get();
@@ -3396,7 +3422,7 @@ async function _serverCloseWordChallenge(db) {
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)) : [];
     const share = tiedWinners.length ? Math.round(100 / tiedWinners.length) : 0;
 
-    const patch = { status: 'closed', closed_at: new Date().toISOString(), submission_count: subsSnap.size, winners: [] };
+    const patch = { submission_count: subsSnap.size, winners: [] };
     if (tiedWinners.length) {
       const nickCache = {};
       for (const w of tiedWinners) {

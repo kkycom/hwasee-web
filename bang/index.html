@@ -1327,6 +1327,12 @@ function renderNav() {
   // 클릭이 열기 대신 닫기로 처리돼 한 번 더 눌러야 하는 문제가 있었음
   // (2026-07-26 유저 제보 — "알림창이 갑자기 꺼진다")
   _notifOpen = false;
+  // 프로필 드롭다운도 알림 패널과 같은 이유로 문제가 있었음 — 포인트/뱃지가
+  // 바뀔 때마다(백그라운드 활동 등) saveUser()가 renderNav()를 다시 부르는데,
+  // 하필 유저가 막 열어둔 드롭다운과 겹치면 새로 그려진(기본값=닫힘) 드롭다운이
+  // 열려있던 걸 지워버려서 눈앞에서 도로 닫히고 다시 눌러야 하는 것처럼 보였음
+  // (유저 지적, 2026-07-30). 열려있던 상태면 다시 그린 뒤에도 그대로 유지.
+  const _profileMenuWasOpen = document.getElementById('profile-dropdown')?.classList.contains('open');
   const el = document.getElementById('nav-right');
   const trophySvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/></svg>`;
   const bellSvg   = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`;
@@ -1371,6 +1377,10 @@ function renderNav() {
           <button class="profile-dropdown-item danger" onclick="closeProfileMenu();logout()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> 로그아웃</button>
         </div>
       </div>`;
+    if (_profileMenuWasOpen) {
+      document.getElementById('profile-menu-btn')?.classList.add('open');
+      document.getElementById('profile-dropdown')?.classList.add('open');
+    }
     loadNotifCount();
   } else {
     el.innerHTML = `
@@ -6002,12 +6012,13 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
 
   // 장르 강제 전환 이야기: 이 단계가 어떤 장르로 강제됐었는지 채택 후에도
   // 산문뷰에서 계속 보이게(안 그러면 채택되고 나면 그 줄이 무슨 장르였는지
-  // 알 방법이 없음, 유저 지적 2026-07-28) — 예전에 만든 genreTagHtml(색깔
-  // 뱃지)이 어디에도 실제로 안 쓰이고 있었음(유저 재지적, 2026-07-29). 닉네임
-  // 줄에 "#장르"로 붙여서 더 명확하게.
+  // 알 방법이 없음, 유저 지적 2026-07-28) — 처음엔 닉네임 줄(.prose-author)에
+  // 붙였는데, 그 줄은 기본 숨김 상태라 "공감현황" 모드를 켜야만 보여서
+  // 사실상 안 보이는 거나 마찬가지였음(유저 재지적, 2026-07-30 — "공감현황
+  // 눌러서 보면 의미가 없잖아"). 항상 보이는 .prose-sentence 쪽에 붙임.
   const _gsStory = window._storyData && window._storyData.story;
   const _gsGenre = (_gsStory && _gsStory.mode === 'genre_switch') ? (_gsStory.genre_sequence || [])[Number(ep.step) - 1] : null;
-  const genreTagHtml = _gsGenre ? ` · <span style="color:var(--accent2)">#${esc(_gsGenre)}</span>` : '';
+  const genreTagHtml = _gsGenre ? ` <span style="font-size:11px;color:var(--accent2);font-weight:600">#${esc(_gsGenre)}</span>` : '';
 
   // 외부 분기: 이 에피소드가 분기의 실제 단절 지점(branch_leaf_episode_id)이면 포크 표시
   const extBranch = (branches || []).find(b => b.branch_leaf_episode_id === ep.episode_id);
@@ -6031,10 +6042,10 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
     return `
       <div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">
         ${mvpBadge}
-        <span class="prose-sentence">${esc(sub.content)}</span>
+        <span class="prose-sentence">${esc(sub.content)}${genreTagHtml}</span>
         <div class="prose-line-meta">${editBtnHtml}</div>
       </div>
-      <span class="prose-author">— ${sub.author_badge?`<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>`:''}${sub.is_ai ? esc(sub.author_nickname || '익명') : `<span style="cursor:pointer" onclick="event.stopPropagation();goToUserProfile('${sub.author_id}', event)">${esc(sub.author_nickname || '익명')}</span>`}${genreTagHtml}</span>
+      <span class="prose-author">— ${sub.author_badge?`<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>`:''}${sub.is_ai ? esc(sub.author_nickname || '익명') : `<span style="cursor:pointer" onclick="event.stopPropagation();goToUserProfile('${sub.author_id}', event)">${esc(sub.author_nickname || '익명')}</span>`}</span>
       ${forkHtml}${childHtml}`;
   }
 
@@ -6045,7 +6056,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
     const chosenChild = children.find(c => c.ep.parent_sub_id === chosenSubId);
     const isForkChosen = forkSub && chosenSub && chosenSub.sub_id === forkSub.sub_id;
     const _editBtn = isAdmin() && chosenSub ? `<button class="prose-edit-btn" data-sub="${chosenSub.sub_id}" data-ep="${ep.episode_id}" onclick="event.stopPropagation();startProseEdit(this.dataset.sub,this.dataset.ep)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>` : '';
-    const _proseDiv = `<div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">${mvpBadge}<span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}</span><div class="prose-line-meta">${_editBtn}</div></div><span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(chosenSub.author_badge)}</span>`:''}${chosenSub ? (chosenSub.is_ai ? esc(chosenSub.author_nickname || '익명') : `<span style="cursor:pointer" onclick="event.stopPropagation();goToUserProfile('${chosenSub.author_id}', event)">${esc(chosenSub.author_nickname || '익명')}</span>`) : ''}${genreTagHtml}</span>`;
+    const _proseDiv = `<div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">${mvpBadge}<span class="prose-sentence">${esc(chosenSub ? chosenSub.content : '')}${genreTagHtml}</span><div class="prose-line-meta">${_editBtn}</div></div><span class="prose-author">— ${chosenSub&&chosenSub.author_badge?`<span class="badge badge-${chosenSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(chosenSub.author_badge)}</span>`:''}${chosenSub ? (chosenSub.is_ai ? esc(chosenSub.author_nickname || '익명') : `<span style="cursor:pointer" onclick="event.stopPropagation();goToUserProfile('${chosenSub.author_id}', event)">${esc(chosenSub.author_nickname || '익명')}</span>`) : ''}</span>`;
     // isForkChosen: 포크 갈래 선택 시 분기 이야기 자체 내용을 이어서 표시
     const _nextHtml = isForkChosen
       ? (!hideTabs ? renderExtBranchInline(extBranch) : '')
@@ -6078,7 +6089,7 @@ function renderEpisodeTreeHtml(node, choices, mvpMap, branches, myMvpEpId, hideT
     if (autoSub) {
       const autoChild = children.find(c => c.ep.parent_sub_id === autoSub.sub_id);
       const childHtml = autoChild ? renderEpisodeTreeHtml(autoChild, choices, mvpMap, branches, myMvpEpId, hideTabs, tabEpId) : '';
-      return `<div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">${mvpBadge}<span class="prose-sentence">${esc(autoSub.content)}</span><div class="prose-line-meta"></div></div><span class="prose-author">— ${autoSub.author_badge?`<span class="badge badge-${autoSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(autoSub.author_badge)}</span>`:''}${autoSub.is_ai ? esc(autoSub.author_nickname || '익명') : `<span style="cursor:pointer" onclick="event.stopPropagation();goToUserProfile('${autoSub.author_id}', event)">${esc(autoSub.author_nickname || '익명')}</span>`}${genreTagHtml}</span>${childHtml}`;
+      return `<div class="prose-line" data-episode-id="${ep.episode_id}" onclick="onPrseLineClick('${ep.episode_id}')">${mvpBadge}<span class="prose-sentence">${esc(autoSub.content)}${genreTagHtml}</span><div class="prose-line-meta"></div></div><span class="prose-author">— ${autoSub.author_badge?`<span class="badge badge-${autoSub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(autoSub.author_badge)}</span>`:''}${autoSub.is_ai ? esc(autoSub.author_nickname || '익명') : `<span style="cursor:pointer" onclick="event.stopPropagation();goToUserProfile('${autoSub.author_id}', event)">${esc(autoSub.author_nickname || '익명')}</span>`}</span>${childHtml}`;
     }
   }
 

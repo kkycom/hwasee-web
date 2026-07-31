@@ -5415,12 +5415,16 @@ async function profile() {
     </div>`;
 
 
+  // doChangeDisplayName()의 확인창 문구(20p vs 무료)에서 재사용 — settingsTab은
+  // 이 함수 스코프 안이라 전역에서 참조할 수 있게 따로 저장.
+  window._nicknameChangeFree = u.nickname_change_free;
+
   const settingsTab = `
     <div class="card" style="margin-bottom:16px">
       <div style="font-size:13px;color:var(--muted);margin-bottom:4px">아이디 (로그인용, 변경 불가)</div>
       <div style="font-size:18px;font-weight:700">${esc(u.nickname)}</div>
     </div>
-    <h2 style="margin-bottom:12px">닉네임 변경 <span style="font-size:12px;color:var(--accent);font-weight:400">— 20p 차감</span></h2>
+    <h2 style="margin-bottom:12px">닉네임 변경 <span style="font-size:12px;color:var(--accent);font-weight:400">${u.nickname_change_free ? '— 최초 1회 무료' : '— 20p 차감'}</span></h2>
     <div class="card" style="margin-bottom:24px">
       <div class="form-group">
         <label>새 닉네임</label>
@@ -5429,7 +5433,7 @@ async function profile() {
           <span id="dn-profile-status" style="font-size:11px;align-self:center;min-width:48px;text-align:right"></span>
         </div>
       </div>
-      <button class="btn btn-primary" style="width:100%" ontouchend="event.preventDefault();doChangeDisplayName()" onclick="doChangeDisplayName()">닉네임 변경 (20p)</button>
+      <button class="btn btn-primary" style="width:100%" ontouchend="event.preventDefault();doChangeDisplayName()" onclick="doChangeDisplayName()">닉네임 변경${u.nickname_change_free ? ' (무료)' : ' (20p)'}</button>
     </div>
     <h2 style="margin-bottom:12px">이메일 <span style="font-size:12px;color:var(--muted);font-weight:400">— 아이디·비밀번호를 잊었을 때 필요해요</span></h2>
     <div class="card" style="margin-bottom:24px">
@@ -7717,7 +7721,9 @@ function doChangeDisplayName() {
   showConfirmModal({
     id: 'dn-change-modal',
     title: '닉네임 변경',
-    desc: `"${esc(val)}"(으)로 변경합니다.<br><strong style="color:var(--accent2)">20P</strong>가 차감됩니다.`,
+    desc: window._nicknameChangeFree
+      ? `"${esc(val)}"(으)로 변경합니다.<br><strong style="color:var(--accent)">최초 1회는 무료</strong>예요.`
+      : `"${esc(val)}"(으)로 변경합니다.<br><strong style="color:var(--accent2)">20P</strong>가 차감됩니다.`,
     confirmLabel: '변경하기',
   });
 }

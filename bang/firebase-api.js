@@ -2425,7 +2425,7 @@ async function fbGetProfile(user_id) {
 
   return {
     ok: true,
-    user: { user_id, nickname: u.nickname, display_name: u.display_name || u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed', avatar: u.avatar || null, owned_avatars: u.owned_avatars || [], created_at: u.created_at },
+    user: { user_id, nickname: u.nickname, display_name: u.display_name || u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed', avatar: u.avatar || null, owned_avatars: u.owned_avatars || [], created_at: u.created_at, nickname_change_free: !(u.name_history && u.name_history.length) },
     history, writings,
   };
 }
@@ -2548,7 +2548,12 @@ async function fbChangeDisplayName(user_id, new_display_name) {
   const uSnap = await db.collection('users').doc(user_id).get();
   if (!uSnap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
   const u = uSnap.data();
-  if ((u.total_points || 0) < 20) return { ok: false, error: '포인트가 부족합니다. 닉네임 변경에는 20p가 필요해요.' };
+  // 간편가입(구글/카카오)은 "카카오유저6439"류 자동 생성 닉네임으로 시작하는데,
+  // 이걸 원하는 이름으로 바꾸는 첫 시도부터 포인트를 걷으면 신규 유저 입장에서
+  // 강제 비용처럼 느껴짐(유저 지적, 2026-07-30) — 최초 1회(name_history가
+  // 비어있을 때)는 무료로 바꾸고, 그 다음부터는 기존대로 20p.
+  const isFirstChange = !u.name_history || u.name_history.length === 0;
+  if (!isFirstChange && (u.total_points || 0) < 20) return { ok: false, error: '포인트가 부족합니다. 닉네임 변경에는 20p가 필요해요.' };
 
   const old_name = u.display_name || u.nickname;
   await db.collection('users').doc(user_id).update({
@@ -2556,8 +2561,10 @@ async function fbChangeDisplayName(user_id, new_display_name) {
     name_history: firebase.firestore.FieldValue.arrayUnion({ name: old_name, changed_at: fbNow() }),
   });
 
-  const spendRes = await _fbSpendPoints(user_id, 20, 'nickname_change');
-  if (!spendRes.ok) return spendRes;
+  if (!isFirstChange) {
+    const spendRes = await _fbSpendPoints(user_id, 20, 'nickname_change');
+    if (!spendRes.ok) return spendRes;
+  }
 
   // 과거 제출 문장 닉네임 일괄 업데이트
   const subsSnap = await db.collection('submissions').where('author_id', '==', user_id).get();

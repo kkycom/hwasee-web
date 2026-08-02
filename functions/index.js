@@ -1964,6 +1964,14 @@ exports.verifySession = functions
     const u = snap.data();
     const sec = secSnap.data();
     if (sec.token !== token) return { ok: false };
+    // 커밋 메시지엔 "verifySession도 체크해서 이미 로그인된 세션도 다음
+    // 재검증 때 걸린다"고 돼있었는데 실제로는 이 함수가 _activeBan을 호출한
+    // 적이 없어서, 정지 전에 이미 로그인해둔 세션은 토큰이 안 만료되는 한
+    // 계속 정상 이용이 가능한 상태였음(디버그방 감사 발견, 2026-08-02) —
+    // 클라이언트(fbGetSession)는 이미 result.banned를 받을 준비가 돼있었으므로
+    // 서버만 실제로 채워주면 됨.
+    const ban = _activeBan(u);
+    if (ban) return { ok: false, banned: true, banned_until: ban.banned_until };
     if (new Date(sec.token_exp) < new Date()) {
       const new_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
       await secSnap.ref.update({ token_exp: new_exp });

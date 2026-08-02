@@ -8268,6 +8268,15 @@ document.addEventListener('visibilitychange', async () => {
     // 계약(null=확실한 만료, undefined=네트워크 오류→그대로 둠).
     if (user) {
       const token = localStorage.getItem('hwasee_token');
+      // fbGetSession()은 내부적으로 _ensureSessionVerified()를 거치는데, 이게
+      // (uid,token) 쌍이 안 바뀌면 서버를 다시 안 부르고 최초 1회 검증 결과를
+      // 탭이 살아있는 내내 그대로 재사용하는 구조(성능 목적, 214행)라 — 바로
+      // 위 주석이 말하는 "복귀 즉시 재검증"이 실제로는 한 번도 서버를 다시 안
+      // 부르고 예전 결과만 돌려주고 있었음. 그래서 다른 기기 재로그인이든
+      // 이번에 추가된 이용정지든, 탭을 안 껐다 켜는 한 절대 안 걸렸음(디버그방
+      // 감사 발견, 2026-08-02). 이 재진입 시점만 강제로 초기화해서 진짜 서버
+      // 재검증이 일어나게 함 — 그 외의 흔한 api() 호출 경로는 그대로 메모이즈 유지.
+      _resetSessionVerify();
       const session = await fbGetSession(token);
       if (session === null || (session && session.banned)) {
         saveUser(null); renderNav(); render();

@@ -63,6 +63,14 @@
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7828331174769963" crossorigin="anonymous"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- 파이어베이스 SDK/실제 데이터 채널/Cloud Functions 콜러블 도메인은 지금까지
+     preconnect가 아예 없어서, 각 도메인의 DNS+TLS 연결 수립이 실제 요청이
+     나가는 시점에야 시작되고 있었음 — 지연이 유독 크게 느껴지는 모바일
+     네트워크(4G/5G, 연결당 왕복이 더 비쌈)에서 특히 아까운 부분이라 미리 열어둠
+     (2026-07-30, 모바일 콜드부팅 체감 개선). -->
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://asia-northeast3-hwasee-bang.cloudfunctions.net" crossorigin>
 <!-- font-display:optional은 폰트별로 "제때 로딩되면 그 폰트, 늦으면 폴백 유지,
      이후 다시 안 바꿈"을 각 요소가 자기 페인트 시점 기준으로 개별 결정함 —
      이 앱처럼 카드/문장이 시차를 두고 계속 새로 그려지는 SPA에서는 어떤 글자는

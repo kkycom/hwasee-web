@@ -1913,6 +1913,7 @@ async function fbGetReports(admin_id) {
       reporter_nickname: nickMap[r.reporter_id] || '?',
       sub_content: s.content || '(삭제됨)',
       sub_author:  nickMap[s.author_id] || '?',
+      sub_author_id: s.author_id || '',
       created_at:  r.created_at,
     };
   });
@@ -1924,6 +1925,7 @@ async function fbGetReports(admin_id) {
       reporter_nickname: '-',
       sub_content: s.content || '(내용 없음)',
       sub_author: nickMap[s.author_id] || '?',
+      sub_author_id: s.author_id || '',
       created_at: s.deleted_at || s.created_at,
     };
   });
@@ -2850,6 +2852,27 @@ async function fbAdminReviveSpeedrunSubmission(admin_id, sub_id) {
   }
 }
 
+// 신고 내역 페이지에서 바로 정지시킬 수 있게(2026-08-02) — 콘솔에서 user_id
+// 찾아 수동 호출하던 걸 버튼 하나로.
+async function fbAdminBanUser(admin_id, target_user_id, days, reason) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  try {
+    const res = await functionsRegion.httpsCallable('adminBanUser')({ user_id: admin_id, target_user_id, days, reason, token: localStorage.getItem('hwasee_token') });
+    return res.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
+  }
+}
+async function fbAdminUnbanUser(admin_id, target_user_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  try {
+    const res = await functionsRegion.httpsCallable('adminUnbanUser')({ user_id: admin_id, target_user_id, token: localStorage.getItem('hwasee_token') });
+    return res.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
+  }
+}
+
 // 동화 각색 슬롯 씨앗 풀 관리 — spotlight_fairytale_pool은 firestore.rules에서
 // 클라이언트 접근이 막혀있어(저작권 큐레이션 목적) word_challenge_sets 관리
 // 함수들처럼 클라이언트 직접 write가 아니라 전부 Admin SDK 콜러블 경유.
@@ -3219,6 +3242,8 @@ async function firebaseApi(action, params = {}) {
     case 'setKakaoKey':           return fbSetKakaoKey(await requireUid(), params.key, params.secret);
     case 'adminBackfillWordSlotChallengeWords': return fbAdminBackfillWordSlotChallengeWords(await requireUid());
     case 'adminReviveSpeedrunSubmission': return fbAdminReviveSpeedrunSubmission(await requireUid(), params.sub_id);
+    case 'adminBanUser':   return fbAdminBanUser(await requireUid(), params.target_user_id, params.days, params.reason);
+    case 'adminUnbanUser': return fbAdminUnbanUser(await requireUid(), params.target_user_id);
     case 'adminAddFairytalePoolEntries':  return fbAdminAddFairytalePoolEntries(await requireUid(), params.raw_text);
     case 'adminGetFairytalePoolQueue':    return fbAdminGetFairytalePoolQueue(await requireUid());
     case 'adminDeleteFairytalePoolEntry': return fbAdminDeleteFairytalePoolEntry(await requireUid(), params.entry_id);

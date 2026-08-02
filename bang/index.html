@@ -7196,9 +7196,39 @@ async function adminReports() {
                   onclick="adminDeleteFromReport('${esc(r.sub_id)}','${esc(r.report_id)}')">글 삭제</button>
                 <button class="admin-btn" style="background:var(--surface);color:var(--muted)"
                   onclick="dismissReportItem('${esc(r.report_id)}')">무시</button>`}
+              ${r.sub_author_id ? `
+                <button class="admin-btn" style="background:#7a2020;color:#fff"
+                  onclick="confirmBanUser('${esc(r.sub_author_id)}','${esc(r.sub_author).replace(/'/g,"\\'")}', this)">계정 정지</button>` : ''}
             </div>
           </div>
         </div>`).join('')}`;
+}
+
+// 신고 내역 페이지에서 바로 정지시킬 수 있게(2026-08-02, 유저 요청) — 콘솔에서
+// user_id 찾아 adminBanUser를 수동 호출하던 걸 버튼 하나로 대체.
+function confirmBanUser(user_id, nickname, btnEl) {
+  const mid = 'ban-user-modal';
+  _modalCallbacks[mid] = async (id) => {
+    const days = Math.max(1, Number(document.getElementById('ban-days-input')?.value) || 7);
+    const reason = document.getElementById('ban-reason-input')?.value.trim() || '어뷰징 신고 누적';
+    document.getElementById(id)?.remove(); delete _modalCallbacks[id];
+    if (btnEl) btnEl.disabled = true;
+    const res = await api('adminBanUser', { target_user_id: user_id, days, reason });
+    if (!res.ok) { toast(res.error, true); if (btnEl) btnEl.disabled = false; return; }
+    toast(`${nickname}님 계정을 ${days}일간 정지했어요.`);
+  };
+  showConfirmModal({
+    id: mid,
+    title: `🚫 ${esc(nickname)}님 계정 정지`,
+    desc: `
+      <div style="text-align:left;margin-bottom:4px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">정지 기간(일)</label>
+        <input id="ban-days-input" type="number" value="7" min="1" style="width:100%;margin-bottom:10px;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);box-sizing:border-box">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">사유</label>
+        <input id="ban-reason-input" type="text" value="어뷰징 신고 누적" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);box-sizing:border-box">
+      </div>`,
+    confirmLabel: '정지하기',
+  });
 }
 
 async function adminReviveSpeedrunFromReportPage(sub_id, btnEl) {

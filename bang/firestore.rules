@@ -32,6 +32,14 @@ service cloud.firestore {
     // 있었음. auth_uid는 "자기 자신의 현재 실제 세션으로만" 갱신 허용(레거시
     // 백필 패턴과 일치), google_uid/kakao_uid는 클라이언트가 값 자체를 아예
     // 못 건드리게 함(전부 Cloud Function 전용 필드).
+    //
+    // 🚨 2026-08-03 긴급 보강(보안방 전수조사 중 발견, 실제로 curl 재현해 확인함):
+    // banned_until/ban_reason(2026-08-02 도입, adminBanUser/adminUnbanUser 전용
+    // 필드)이 이 보호 목록에 없어서, 정지된 유저가 자기 문서 소유권(auth_uid
+    // 일치)을 그대로 갖고 있는 걸 이용해 직접 Firestore 쓰기로 banned_until을
+    // 지워 스스로 정지를 해제할 수 있었음(로그인/verifySession의 _activeBan
+    // 체크를 완전히 우회) — 실제 합성 계정으로 자가-정지 후 자가-해제까지
+    // 재현 성공한 뒤 즉시 잠금.
     match /users/{uid} {
       allow read: if true;
       allow create: if false;
@@ -39,7 +47,9 @@ service cloud.firestore {
         (resource.data.auth_uid == null || resource.data.auth_uid == request.auth.uid) &&
         (request.resource.data.auth_uid == resource.data.auth_uid || request.resource.data.auth_uid == request.auth.uid) &&
         request.resource.data.get('google_uid', null) == resource.data.get('google_uid', null) &&
-        request.resource.data.get('kakao_uid', null) == resource.data.get('kakao_uid', null);
+        request.resource.data.get('kakao_uid', null) == resource.data.get('kakao_uid', null) &&
+        request.resource.data.get('banned_until', null) == resource.data.get('banned_until', null) &&
+        request.resource.data.get('ban_reason', null) == resource.data.get('ban_reason', null);
       allow delete: if request.auth != null &&
         (resource.data.auth_uid == null || resource.data.auth_uid == request.auth.uid);
     }
@@ -84,6 +94,12 @@ service cloud.firestore {
     match /episodes/{docId} { allow read, write: if true; }
     match /submissions/{docId} { allow read, write: if true; }
     match /votes/{docId} { allow read, write: if true; }
+    // 초스피드 추천/신고 — speedrunUpvote/speedrunReport(Cloud Function) 전용,
+    // 클라이언트가 직접 읽거나 쓸 이유 없음(보안방 전수조사 중 규칙 누락 발견,
+    // 2026-08-03 — Admin SDK는 이 규칙과 무관하게 이미 정상 동작 중이었어서
+    // 실제 노출은 없었지만, 명시적으로 잠가 규칙 목록을 코드와 일치시킴).
+    match /submission_votes/{docId} { allow read, write: if false; }
+    match /submission_reports/{docId} { allow read, write: if false; }
     match /comments/{docId} { allow read, write: if true; }
     match /bookmarks/{docId} { allow read, write: if true; }
     match /notifications/{docId} { allow read, write: if true; }

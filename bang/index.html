@@ -1283,6 +1283,32 @@ function showPatchNoteModal(msg) {
   document.body.appendChild(modal);
 }
 
+// 이용정지(어뷰징 대응) 안내 팝업 — 로그인 시도/세션 재검증 어느 경로로 걸리든
+// 동일하게 이 팝업으로 안내(2026-08-02). 토스트 대신 팝업인 이유: 관리자
+// 메일 주소를 같이 보여줘야 해서 몇 초 만에 사라지는 토스트로는 부족함.
+function showBannedModal(banned_until) {
+  const existing = document.getElementById('banned-modal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'banned-modal';
+  modal.className = 'modal-overlay';
+  const untilStr = banned_until
+    ? new Date(banned_until).toLocaleString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : '';
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:340px;text-align:center">
+      <div style="font-size:16px;font-weight:700;margin-bottom:10px">이용이 중단된 계정입니다</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.9;margin-bottom:18px">
+        어뷰징 제보로 인해 이용이 중단됐습니다.${untilStr ? `<br>재개 예정: ${untilStr}` : ''}<br>
+        이의가 있으시면 관리자 메일로 문의해주세요.<br>
+        <strong style="color:var(--text)">kkycokr@gmail.com</strong>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="document.getElementById('banned-modal').remove()">확인</button>
+    </div>`;
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
+}
+
 let _patchCheckDone = false;
 async function checkPatchNoteAnnouncement() {
   // 온보딩이 아직 안 끝난 유저는 온보딩 모달과 겹쳐 뜨는 걸 막기 위해 건너뜀 (다음 접속 때 노출)
@@ -5007,6 +5033,7 @@ async function doLogin() {
   showBusy();
   const res = await api('login', { nickname, password });
   hideBusy();
+  if (res.banned) { showBannedModal(res.banned_until); return; }
   if (!res.ok) { toast(res.error, true); return; }
   saveUser(res);
   const dn = res.display_name || res.nickname;
@@ -5044,6 +5071,7 @@ async function doGoogleAuth() {
   showBusy();
   const res = await api('loginWithGoogle', {});
   hideBusy();
+  if (res.banned) { showBannedModal(res.banned_until); return; }
   if (!res.ok) { toast(res.error, true); return; }
   if (res.action === 'needs_merge_decision') { _showSocialMergeModal('google', res.existing_nickname); return; }
   await _finishSocialAuth('google', res);
@@ -5085,6 +5113,7 @@ async function _handleKakaoRedirectIfPresent() {
   history.replaceState(null, '', location.pathname + location.hash);
   showBusy();
   const res = await api('loginWithKakao', { code, redirectUri: KAKAO_REDIRECT_URI });
+  if (res.banned) { hideBusy(); showBannedModal(res.banned_until); return; }
   if (!res.ok || !res.customToken) {
     hideBusy();
     console.error('loginWithKakao failed:', res);
@@ -8240,9 +8269,10 @@ document.addEventListener('visibilitychange', async () => {
     if (user) {
       const token = localStorage.getItem('hwasee_token');
       const session = await fbGetSession(token);
-      if (session === null) {
+      if (session === null || (session && session.banned)) {
         saveUser(null); renderNav(); render();
-        toast('세션이 만료됐습니다. 다시 로그인해주세요.', true);
+        if (session && session.banned) showBannedModal(session.banned_until);
+        else toast('세션이 만료됐습니다. 다시 로그인해주세요.', true);
       }
     }
   }
@@ -8310,9 +8340,11 @@ window.onload = async () => {
   if (user) {
     const token = localStorage.getItem('hwasee_token');
     const [session] = await Promise.all([fbGetSession(token), _loadBmIds()]);
-    if (session === null) {
+    if (session === null || (session && session.banned)) {
       // null = 토큰 불일치/유저 없음 → 확실한 만료, 로그아웃
+      // banned = 이용정지된 계정 — 마찬가지로 로그아웃하고 정지 안내 팝업 표시
       saveUser(null); renderNav(); render();
+      if (session && session.banned) showBannedModal(session.banned_until);
     } else {
       // undefined = 네트워크 오류 → 로그인 유지
       if (session && session.badge) {

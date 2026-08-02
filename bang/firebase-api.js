@@ -262,7 +262,10 @@ async function _ensureSessionVerified() {
 async function fbGetSession(token) {
   const result = await _ensureSessionVerified();
   if (result === undefined) return undefined;
-  if (!result.ok) return null;
+  // 이용정지(banned) 계정 — 세션이 이미 열려있는 상태에서 정지당한 경우, 부팅/
+  // 백그라운드 복귀 시 재검증에서 걸림. null(단순 무효)과 구분해서 호출부가
+  // 정지 안내 팝업을 띄울 수 있게 전달(2026-08-02, 어뷰징 대응).
+  if (!result.ok) return result.banned ? { banned: true, banned_until: result.banned_until } : null;
   return { user_id: result.user_id, nickname: result.nickname, display_name: result.display_name, total_points: result.total_points, badge: result.badge, email: result.email };
 }
 

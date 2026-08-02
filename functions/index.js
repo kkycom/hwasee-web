@@ -1230,6 +1230,12 @@ ${isClosing ? '이 문장이 이야기의 마지막 문장이 되어야 합니�
             if (votable.length === 0) continue;
 
             const storyText = await _buildStoryContext(db, story_id, story);
+            // "가장 재밌고 참신한"만 기준이었을 때, 이야기 흐름과 무관하게 튀는
+            // 뜬금없는 비유(뜻밖의 이미지를 던지는 AI 특유의 문체)가 참신함
+            // 점수만으로 계속 선택돼 이야기 맥락이 무너지는 문제가 있었음(유저
+            // 제보, 2026-08-02). 참신함 자체는 나쁜 게 아니라 "이야기에 맞는지"를
+            // 아예 기준에서 안 물어봤던 게 문제라, 맥락 적합성을 1차 기준으로
+            // 두고 그 안에서 재미/참신함을 보도록 순서를 명시.
             const votePrompt = `다음은 릴레이 소설 한 단계에 제출된 문장들입니다.
 
 이야기 앞부분:
@@ -1238,7 +1244,10 @@ ${storyText}
 제출된 문장 목록:
 ${votable.map((s, i) => `[${i + 1}] sub_id=${s.id} | ${s.content}`).join('\n')}
 
-가장 재밌고 참신한 문장 하나를 골라 해당 sub_id 값만 출력하세요. 다른 텍스트 없이.`;
+위 "이야기 앞부분"의 흐름·톤·설정과 자연스럽게 이어지는 문장들 중에서, 가장
+재밌고 참신한 문장 하나를 골라 해당 sub_id 값만 출력하세요.
+이야기 전개에서 벗어나거나 맥락과 무관하게 뜬금없는 문장은 아무리 참신해도
+고르지 마세요. 다른 텍스트 없이.`;
 
             let chosenId = null;
             try {
@@ -1417,6 +1426,43 @@ function _verifyPw(password, sec) {
   return _hashPwLegacy(password) === sec.pw_hash;
 }
 
+// ── 계정 이용 정지(어뷰징 대응) ──────────────────────────────
+// users.banned_until(ISO)이 미래 시점이면 로그인/세션 재검증을 전부 막음 —
+// "글쓰기만 막기"는 제출/투표/댓글 등 쓰기 경로가 너무 많이 흩어져 있어(수십 곳)
+// 일부만 막고 놓치는 경로가 남을 위험이 커서, 로그인 자체를 막는 더 단순하고
+// 확실한 방식으로 감(2026-08-02, 어뷰징 제보 대응 — 유저 확정).
+function _activeBan(u) {
+  if (!u.banned_until) return null;
+  if (new Date(u.banned_until) <= new Date()) return null;
+  return { banned: true, banned_until: u.banned_until, error: '어뷰징 제보로 이용이 중단된 계정입니다.' };
+}
+
+exports.adminBanUser = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const target_id = data.target_user_id;
+    const days = Number(data.days) || 0;
+    if (!target_id || days <= 0) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    const banned_until = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+    await admin.firestore().collection('users').doc(target_id).update({
+      banned_until, ban_reason: data.reason || '',
+    });
+    return { ok: true, banned_until };
+  });
+
+exports.adminUnbanUser = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const target_id = data.target_user_id;
+    if (!target_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await admin.firestore().collection('users').doc(target_id).update({
+      banned_until: admin.firestore.FieldValue.delete(), ban_reason: admin.firestore.FieldValue.delete(),
+    });
+    return { ok: true };
+  });
+
 // ── 관리자 인증: admin_id 문자열 비교 → 실제 세션 토큰 검증으로 강화 (2026-07-13) ──
 // 예전엔 클라이언트가 보내는 admin_id 문자열을 FB_ADMIN_ID 상수와 그대로 비교했는데,
 // 그 상수 자체가 공개 배포되는 firebase-api.js 소스에 하드코딩돼 있어 누구나
@@ -1544,6 +1590,8 @@ exports.login = functions
     const secSnap = await db.collection('user_secrets').doc(doc.id).get();
     const sec = secSnap.exists ? secSnap.data() : {};
     if (!_verifyPw(password, sec)) return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
+    const ban = _activeBan(u);
+    if (ban) return { ok: false, ...ban };
 
     const token = _genSecretId();
     const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -1669,6 +1717,8 @@ exports.loginWithGoogle = functions
     if (!byGoogle.empty) {
       const doc = byGoogle.docs[0];
       const u = doc.data();
+      const ban = _activeBan(u);
+      if (ban) return { ok: false, ...ban };
       const token = _genSecretId();
       const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
       const writes = [db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true })];
@@ -1838,6 +1888,8 @@ exports.loginWithKakao = functions
     if (!byKakao.empty) {
       const doc = byKakao.docs[0];
       const u = doc.data();
+      const ban = _activeBan(u);
+      if (ban) return { ok: false, ...ban };
       const token = _genSecretId();
       const token_exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
       const writes = [db.collection('user_secrets').doc(doc.id).set({ token, token_exp }, { merge: true })];

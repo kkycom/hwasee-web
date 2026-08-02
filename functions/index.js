@@ -1583,6 +1583,47 @@ exports.register = functions
     };
   });
 
+// ── 로그인 brute-force 방어 (2026-08-03, 보안방) ──
+// login이 비밀번호 시도 횟수에 아무 제한이 없어서, 익명 세션 하나로 특정
+// 닉네임을 대상으로 무제한 비밀번호 대입이 가능했음. 정답 비밀번호는 절대
+// 막지 않는(계정 소유자가 락아웃당하지 않는) 쿨다운 방식 — 하드 락아웃은
+// 공격자가 일부러 틀린 비밀번호를 반복 입력해 피해자를 강제로 못 들어오게
+// 만드는 역공격에 악용될 수 있어 피함. email_rate_limits와 동일한 트랜잭션
+// 패턴 재사용.
+const LOGIN_FAIL_THRESHOLD = 5;   // 이 실패 횟수부터 쿨다운 발동
+const LOGIN_COOLDOWN_MS = 5 * 60 * 1000; // 쿨다운 5분, 실패 카운트 창도 동일
+
+async function _checkLoginRateLimit(db, nickname) {
+  const snap = await db.collection('login_attempts').doc(nickname).get();
+  if (!snap.exists) return { allowed: true };
+  const d = snap.data();
+  if (d.locked_until && Date.now() < new Date(d.locked_until).getTime()) {
+    return { allowed: false };
+  }
+  return { allowed: true };
+}
+
+async function _recordLoginFailure(db, nickname) {
+  const ref = db.collection('login_attempts').doc(nickname);
+  await db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    const now = Date.now();
+    let fails = 1;
+    if (snap.exists) {
+      const d = snap.data();
+      const withinWindow = d.last_fail_at && now - new Date(d.last_fail_at).getTime() < LOGIN_COOLDOWN_MS;
+      fails = withinWindow ? (d.fail_count || 0) + 1 : 1;
+    }
+    const patch = { fail_count: fails, last_fail_at: new Date().toISOString() };
+    if (fails >= LOGIN_FAIL_THRESHOLD) patch.locked_until = new Date(now + LOGIN_COOLDOWN_MS).toISOString();
+    tx.set(ref, patch, { merge: true });
+  });
+}
+
+async function _clearLoginFailures(db, nickname) {
+  await db.collection('login_attempts').doc(nickname).delete().catch(() => {});
+}
+
 exports.login = functions
   .region('asia-northeast3')
   .https.onCall(async (data, context) => {
@@ -1595,11 +1636,18 @@ exports.login = functions
     const snap = await db.collection('users').where('nickname', '==', nickname).limit(1).get();
     if (snap.empty) return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
 
+    const rl = await _checkLoginRateLimit(db, nickname);
+    if (!rl.allowed) return { ok: false, error: '로그인 시도가 너무 많아요. 5분 후 다시 시도해주세요.' };
+
     const doc = snap.docs[0];
     const u = doc.data();
     const secSnap = await db.collection('user_secrets').doc(doc.id).get();
     const sec = secSnap.exists ? secSnap.data() : {};
-    if (!_verifyPw(password, sec)) return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
+    if (!_verifyPw(password, sec)) {
+      await _recordLoginFailure(db, nickname).catch(e => console.error('login rate limit record error:', e.message));
+      return { ok: false, error: '닉네임 또는 비밀번호가 틀렸습니다.' };
+    }
+    await _clearLoginFailures(db, nickname);
     const ban = _activeBan(u);
     if (ban) return { ok: false, ...ban };
 

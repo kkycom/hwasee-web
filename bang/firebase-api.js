@@ -3577,20 +3577,6 @@ async function fbGetSpotlight(viewer_id) {
   // 시점에 한꺼번에 교체 실행) — 더는 조회/노출하지 않음. 진행 중이던 두
   // 스토리는 사라지지 않고 자유 이야기 탭에서 그대로 이어씀(24h 주목 부여).
   const keys = ['word', 'fairytale', 'speedrun', 'fixed_ending', 'genre_switch'];
-  const slotResults = await Promise.all(keys.map(async key => {
-    const s = ptr[key] || {};
-    if (s.story_id) {
-      return _fbBuildSpotlightStoryPayload(s.story_id, mySubsAll, viewer_id);
-    } else if (key === 'sentence' && s.state === 'proposing' && s.round_id) {
-      const roundData = await _fbGetSentenceRoundData(s.round_id, viewer_id);
-      return { state: 'proposing', ...roundData };
-    } else {
-      return { state: 'empty' };
-    }
-  }));
-  const slots = {};
-  keys.forEach((key, i) => { slots[key] = slotResults[i]; });
-
   // 🔥 지금 인기 자유 이야기 — 다른 슬롯처럼 완결돼야만 교체되는 고정 포인터가
   // 아니라, 매번 "지금 활성 상태인 진짜 자유 이야기(vote_threshold 없음 —
   // 스포트라이트 출신이 아님, cardStickersHtml의 '✦ 오늘' 판별과 동일 기준) 중
@@ -3601,19 +3587,43 @@ async function fbGetSpotlight(viewer_id) {
   // 안 들면 끝"이라 활성화에 도움 안 됨) 후보 story_id 목록도 같이 내려줌.
   // 첫 번째 카드 페이로드만 여기서 만들고, 나머지는 넘겨볼 때만
   // getHotCandidateCard로 그때그때 조회(전부 미리 만들면 낭비).
-  let hotSlot = { state: 'empty' };
-  let hotCandidateIds = [];
-  try {
-    const hotSnap = await db.collection('stories')
-      .where('status', '==', 'active')
-      .orderBy('participant_count', 'desc')
-      .limit(10)
-      .get();
-    hotCandidateIds = hotSnap.docs.filter(d => !d.data().vote_threshold).map(d => d.id);
-    if (hotCandidateIds.length) hotSlot = await _fbBuildSpotlightStoryPayload(hotCandidateIds[0], mySubsAll, viewer_id);
-  } catch (e) { console.error('hot slot query error:', e.message); }
-  slots.hot = hotSlot;
-  slots.hot_candidate_ids = hotCandidateIds;
+  //
+  // 이 hot 슬롯이 원래 위 5개 슬롯의 Promise.all이 끝난 "뒤"에 순차로 조회되고
+  // 있었음 — 홈 탭 진입 시 가장 느린 슬롯 기준으로 왕복 1번에 끝내려고 5개를
+  // 병렬화해뒀던 취지가 hot 슬롯 추가로 도로 깨져서, 실질 대기시간이 거의
+  // 두 배로 늘어나 있었음(전체 성능 점검 중 발견, 2026-08-03). 5개 슬롯과
+  // 같은 Promise.all 안에 넣어서 전부 한 번에 병렬 조회되게 함.
+  const [slotResults, hotOutcome] = await Promise.all([
+    Promise.all(keys.map(async key => {
+      const s = ptr[key] || {};
+      if (s.story_id) {
+        return _fbBuildSpotlightStoryPayload(s.story_id, mySubsAll, viewer_id);
+      } else if (key === 'sentence' && s.state === 'proposing' && s.round_id) {
+        const roundData = await _fbGetSentenceRoundData(s.round_id, viewer_id);
+        return { state: 'proposing', ...roundData };
+      } else {
+        return { state: 'empty' };
+      }
+    })),
+    (async () => {
+      let hotSlot = { state: 'empty' };
+      let hotCandidateIds = [];
+      try {
+        const hotSnap = await db.collection('stories')
+          .where('status', '==', 'active')
+          .orderBy('participant_count', 'desc')
+          .limit(10)
+          .get();
+        hotCandidateIds = hotSnap.docs.filter(d => !d.data().vote_threshold).map(d => d.id);
+        if (hotCandidateIds.length) hotSlot = await _fbBuildSpotlightStoryPayload(hotCandidateIds[0], mySubsAll, viewer_id);
+      } catch (e) { console.error('hot slot query error:', e.message); }
+      return { hotSlot, hotCandidateIds };
+    })(),
+  ]);
+  const slots = {};
+  keys.forEach((key, i) => { slots[key] = slotResults[i]; });
+  slots.hot = hotOutcome.hotSlot;
+  slots.hot_candidate_ids = hotOutcome.hotCandidateIds;
 
   return { ok: true, initialized: true, slots };
 }

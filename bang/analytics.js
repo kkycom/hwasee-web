@@ -161,14 +161,32 @@ function _svgStackedBarChart(dates, series) {
 
 // 차트 카드 하나(제목 + AI 분석 자리 + SVG)를 공통 마크업으로 생성.
 // insightKey가 있으면 "AI 분석 보기" 클릭 시 #insight-{key} 자리에 문장이 채워짐.
+// 차트 본문(SVG+범례)은 클릭하면 모달로 확대해서 볼 수 있게 감싸둠 — viewBox
+// 기반 SVG라 큰 컨테이너에 그대로 다시 넣기만 해도 글자까지 선명하게 커짐.
 function _chartCardHtml(title, insightKey, bodyHtml) {
+  const hasSvg = /<svg[\s>]/.test(bodyHtml);
   return `
     <div class="card">
       <div class="chart-title">${_esc(title)}</div>
       ${insightKey ? `<div class="insight" id="insight-${insightKey}" style="display:none"></div>` : ''}
-      ${bodyHtml}
+      <div${hasSvg ? ` class="chart-zoomable" data-chart-title="${_esc(title)}" onclick="_openChartModal(this)" title="클릭하면 크게 보기"` : ''}>${bodyHtml}</div>
     </div>`;
 }
+
+function _openChartModal(el) {
+  const modal = document.getElementById('chart-modal');
+  const body = document.getElementById('chart-modal-body');
+  const titleEl = document.getElementById('chart-modal-title');
+  if (!modal || !body || !el.querySelector('svg')) return; // 데이터 없음 등 SVG가 없는 카드는 확대 안 함
+  body.innerHTML = el.innerHTML;
+  if (titleEl) titleEl.textContent = el.dataset.chartTitle || '';
+  modal.classList.add('open');
+}
+function _closeChartModal() {
+  const modal = document.getElementById('chart-modal');
+  if (modal) modal.classList.remove('open');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') _closeChartModal(); });
 
 // ── KPI 카드 ──────────────────────────────────────────────
 function _kpiCardsHtml(series) {
@@ -489,12 +507,12 @@ function _renderDashboard(res) {
     <div class="card">
       <div class="chart-title">⏱️ 일별 평균 체류시간 (Google Analytics)</div>
       <div class="insight" id="insight-dwell_time" style="display:none"></div>
-      <div id="ga4-chart-body"><div class="loading" style="padding:16px 0">불러오는 중...</div></div>
+      <div id="ga4-chart-body" class="chart-zoomable" data-chart-title="⏱️ 일별 평균 체류시간 (Google Analytics)" onclick="_openChartModal(this)" title="클릭하면 크게 보기"><div class="loading" style="padding:16px 0">불러오는 중...</div></div>
     </div>
     <div class="card">
       <div class="chart-title">🔂 방문자 1인당 하루 평균 방문 횟수 (Google Analytics, 그날 온 사람 기준)</div>
       <div class="insight" id="insight-visit_frequency" style="display:none"></div>
-      <div id="ga4-freq-chart-body"><div class="loading" style="padding:16px 0">불러오는 중...</div></div>
+      <div id="ga4-freq-chart-body" class="chart-zoomable" data-chart-title="🔂 방문자 1인당 하루 평균 방문 횟수" onclick="_openChartModal(this)" title="클릭하면 크게 보기"><div class="loading" style="padding:16px 0">불러오는 중...</div></div>
     </div>
     ${_lifetimeCardHtml(res.lifetime)}
     <div class="card">

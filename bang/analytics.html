@@ -11,7 +11,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script defer src="firebase-api.js?v=3"></script>
-<script defer src="analytics.js?v=7"></script>
+<script defer src="analytics.js?v=8"></script>
 <style>
   :root {
     --bg:      #f0ead8;
@@ -55,6 +55,12 @@
   input[type=date], input[type=text], textarea { padding: 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: var(--font); }
   details summary::-webkit-details-marker { color: var(--muted); }
   details[open] summary { margin-bottom: 4px; }
+  .chart-zoomable { cursor: zoom-in; border-radius: 8px; transition: background .1s; }
+  .chart-zoomable:hover { background: var(--surface); }
+  .chart-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 1000; align-items: center; justify-content: center; padding: 20px; }
+  .chart-modal.open { display: flex; }
+  .chart-modal-inner { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; max-width: min(1100px, 95vw); width: 100%; max-height: 90vh; overflow: auto; }
+  .chart-modal-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 18px; font-weight: 700; font-size: 15px; }
 </style>
 </head>
 <body>
@@ -62,6 +68,15 @@
   <a class="back-link" href="/bang/">← 화씨.방으로 돌아가기</a>
   <h1>📊 애널리틱스 대시보드</h1>
   <div id="app"><div class="loading">불러오는 중...</div></div>
+</div>
+<div id="chart-modal" class="chart-modal" onclick="if(event.target===this)_closeChartModal()">
+  <div class="chart-modal-inner">
+    <div class="chart-modal-header">
+      <span id="chart-modal-title"></span>
+      <button class="btn btn-ghost btn-sm" onclick="_closeChartModal()">닫기 ✕</button>
+    </div>
+    <div id="chart-modal-body"></div>
+  </div>
 </div>
 </body>
 </html>

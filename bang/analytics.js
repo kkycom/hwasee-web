@@ -723,11 +723,15 @@ async function _loadGa4Chart(startDate, endDate) {
       return;
     }
     const gDates = data.series.map(d => d.date);
+    // GA4 averageSessionDuration은 초 단위로 옴 — 수백~수천이라 감이 안 와서
+    // 분 단위(소수 1자리)로 변환해서 보여줌. 트래픽이 적은 날은 탭을 오래
+    // 켜둔 사람 한둘 때문에 그날 평균이 확 튈 수 있음(표본이 작을 때 흔함).
+    const minutesVals = data.series.map(d => d.avg_engagement_seconds != null ? +(d.avg_engagement_seconds / 60).toFixed(1) : null);
     el.innerHTML = _svgLineChart([
-      { label: '평균 체류시간(초)', color: 'var(--success)', values: data.series.map(d => d.avg_engagement_seconds) },
+      { label: '평균 체류시간(분)', color: 'var(--success)', values: minutesVals },
     ], gDates);
     _chartRegistry.dwell_time = () => _svgLineChart([
-      { label: '평균 체류시간(초)', color: 'var(--success)', values: data.series.map(d => d.avg_engagement_seconds) },
+      { label: '평균 체류시간(분)', color: 'var(--success)', values: minutesVals },
     ], gDates, null, true);
     if (freqEl) {
       freqEl.innerHTML = _svgLineChart([

@@ -3831,9 +3831,13 @@ const SPOTLIGHT_AI_OPENINGS = [
 // 마감 시점에 끝났으므로, 스토리 자체의 창작자 귀속은 기존 AI씨앗과 동일 취급).
 // 이 함수는 스포트라이트 슬롯(오늘의 이야기) 전용 씨앗 생성에만 쓰임(호출부
 // 전부 _serverRefillSpotlightSlot/_serverRefillSlotFromPoolIfEmpty/
-// adminInitSpotlight) — 그래서 vote_threshold:5를 고정으로 넣어도 안전함.
-// 관심이 몰려 표가 너무 빨리 차서 한 단계가 순식간에 지나가버리는 걸 막기
-// 위해 일반 이야기(기본 3표, FB_VOTE_THRESHOLD/AI_VOTE_THRESHOLD)보다 높게 잡음.
+// adminInitSpotlight) — 그래서 vote_threshold를 고정으로 넣어도 안전함.
+// 원래 5였던 이유: 관심이 몰려 표가 너무 빨리 차서 한 단계가 순식간에
+// 지나가버리는 걸 막기 위해 일반 이야기(기본 3표, FB_VOTE_THRESHOLD/
+// AI_VOTE_THRESHOLD)보다 높게 잡았던 것. 그런데 지금은 반대로 3표조차
+// 잘 안 채워질 만큼 투표량이 적어서, 5로 두면 오히려 진행이 지나치게
+// 느려짐 — 유저 판단으로 3으로 되돌림(2026-08-03). 나중에 투표량이 다시
+// 늘어나면 5로 재조정 검토.
 function _serverCreateSeedStory(db, writer, opening, extraFields) {
   const story_id = db.collection('stories').doc().id;
   const episode_id = db.collection('episodes').doc().id;
@@ -3841,7 +3845,7 @@ function _serverCreateSeedStory(db, writer, opening, extraFields) {
     story_id, opening: opening.trim(), max_steps: 10, current_step: 0,
     status: 'active', creator_id: FB_AI_ID, creator_nickname: '익명', creator_badge: '',
     created_at: new Date().toISOString(), batch: '', participant_count: 0, like_count: 0,
-    is_ai_seed: true, vote_threshold: 5,
+    is_ai_seed: true, vote_threshold: 3,
     // 자유 이야기 탭 정렬/카드 표시용 (firebase-api.js fbCreateStory 참고)
     hot_score: 0,
     open_steps: { [episode_id]: { step: 1, sub_count: 0 } },

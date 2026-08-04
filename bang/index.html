@@ -541,8 +541,8 @@
   }
   .prose-line { margin-top: 29px; position: relative; }
   .prose-sentence { font-family: var(--serif); font-size: 16px; line-height: 29px; display: block; color: #2c1a0e; }
-  /* line-height를 29px 한 줄에 맞춰야 .prose-author가 보이는 곳(초스피드 등)에서
-     산문뷰 줄무늬 배경과 어긋나지 않음 — margin-top(4px)+기본 line-height일 땐
+  /* line-height를 29px 한 줄에 맞춰야 .prose-author가 보이는 일반 산문뷰(공감현황
+     토글)에서 줄무늬 배경과 어긋나지 않음 — margin-top(4px)+기본 line-height일 땐
      한 줄(29px)의 배수가 아니라서 그 아래 모든 줄이 누적으로 밀렸었음(유저 지적,
      2026-07-28) */
   .prose-author { font-size: 11px; color: #9a7060; display: none; text-align: right; line-height: 29px; }
@@ -552,6 +552,15 @@
   .sr-point-tag { font-size: 10px; font-weight: 700; color: var(--accent2); background: rgba(200,130,58,.12); padding: 1px 7px; border-radius: 8px; }
   .sr-point-tag.sr-void { text-decoration: line-through; color: var(--muted); background: none; }
   .sr-flag-btn { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 8px; padding: 2px 7px; cursor: pointer; font-family: var(--font); }
+  /* 초스피드는 최대 100단계라, 컨테이너 전체에 걸친 repeating-linear-gradient
+     29px 주기 배경(일반 산문뷰가 쓰는 방식)에 기대면 누적 오차로 장편에서
+     줄이 어긋남(유저 지적, 2026-08-04) — 줄무늬 배경을 끄고 줄마다 실제
+     DOM 요소(닉네임 줄 + 구분선)를 흘려보내 각 줄이 항상 바로 앞 요소를
+     기준으로만 위치하게 함 */
+  .sr-story-prose { background-image: none; }
+  .sr-prose-line { margin-top: 18px; }
+  .sr-author-row { font-size: 11px; color: #9a7060; text-align: right; margin-top: 3px; }
+  .sr-rule { height: 1px; background: rgba(160,130,80,.18); margin-top: 10px; }
   .sr-flag-btn:disabled { opacity: .4; cursor: default; }
   .prose-branch { font-size: 10px; font-weight: 700; color: #b07040; flex-shrink: 0; }
   .prose-divider {
@@ -2130,13 +2139,24 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
   // 전 29px 여백) 안에 겹쳐 넣는 방식으로 바꿔서, 높이를 하나도 더 차지하지
   // 않으면서도 문장 바로 아래 붙어 보이게 함 — .prose-line-meta가 쓰던 것과
   // 같은 기법.
+  // 초스피드는 최대 100단계까지 가는 유일한 모드라, 산문뷰 배경의 "줄무늬"가
+  // .story-prose 컨테이너 하나에 통째로 그려지는 repeating-linear-gradient(29px
+  // 주기 반복) 방식에 의존하면 문제가 생김 — 그 방식은 그 아래 모든 줄이 "정확히
+  // 29px의 배수" 높이여야 줄이 안 어긋나는데, 수십~백 단계가 쌓이면 미세한
+  // 서브픽셀 오차가 누적되어 어느 지점부터 눈에 띄게 밀림(유저 지적,
+  // 2026-08-04 — "초장편, 단계가 엄청 길어지니까 줄이 어느부분부터 안맞는데").
+  // 이건 미세조정으로 고칠 수 있는 문제가 아니라 방식 자체의 구조적 한계라,
+  // 초스피드만 컨테이너 배경 줄무늬를 끄고(.sr-story-prose) 줄마다 실제 DOM
+  // 요소(닉네임 줄 + 구분선)를 순서대로 흘려보내는 방식으로 바꿈 — 각 줄의
+  // 위치가 전역 배경 좌표가 아니라 바로 앞 요소의 실제 렌더링 높이에서만
+  // 계산되므로 몇 단계든 절대 어긋날 수 없음.
   const linesHtml = lines.map(({ sub, points }) => {
     // is_invalidated(구 비추 3표 무효화)/is_deleted(신 신고 3표 삭제) 둘 다
     // 같은 "삭제됨" 표시로 통일 — 신고 방식으로 전환(2026-07-29)했지만 예전
     // 데이터로 이미 무효 처리된 문장도 그대로 자연스럽게 보이게 함.
     const removed = sub.is_invalidated || sub.is_deleted;
     return `
-    <div class="prose-line" data-episode-id="${sub.episode_id}" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+    <div class="prose-line sr-prose-line" data-episode-id="${sub.episode_id}" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:0">
       <span class="prose-sentence"${removed ? ' style="text-decoration:line-through;color:var(--muted)"' : ''}>${esc(sub.content)} <span class="sr-point-tag${removed ? ' sr-void' : ''}" style="text-decoration:none">${removed ? '삭제됨' : '+' + points + 'P'}</span></span>
       <div class="sr-line-meta">
         ${isAdmin() ? `<button class="sr-flag-btn" title="수정" onclick="event.stopPropagation();startProseEdit('${sub.sub_id}','${sub.episode_id}')">
@@ -2150,8 +2170,9 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
         </button>
       </div>
-      <span class="prose-author visible" style="position:absolute;left:0;right:0;top:100%;margin-top:2px;line-height:14px">— ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${sub.is_ai ? esc(sub.author_nickname || '익명') : `<span style="cursor:pointer" onclick="event.stopPropagation();goToUserProfile('${sub.author_id}', event)">${esc(sub.author_nickname || '익명')}</span>`}</span>
-    </div>`;
+    </div>
+    <div class="sr-author-row">— ${sub.author_badge ? `<span class="badge badge-${sub.author_badge}" style="font-size:9px;padding:1px 4px;margin-right:2px">${badgeEmoji(sub.author_badge)}</span>` : ''}${sub.is_ai ? esc(sub.author_nickname || '익명') : `<span style="cursor:pointer" onclick="event.stopPropagation();goToUserProfile('${sub.author_id}', event)">${esc(sub.author_nickname || '익명')}</span>`}</div>
+    <div class="sr-rule"></div>`;
   }).join('');
 
   document.getElementById('app').innerHTML = `
@@ -2159,8 +2180,9 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
       <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="nav(window._prevRoute || 'home')">← 목록으로</button>
     </div>
     <div style="margin:12px 0"><span class="step-pill"><span class="step-dot"></span>⚡ ${isFinished ? '완결' : (Number(s.current_step) || 0) + '/' + (s.max_steps || 100) + '단계'}</span></div>
-    <div class="story-prose" id="story-prose-wrap" onclick="handleProseWrapClick(event)">
+    <div class="story-prose sr-story-prose" id="story-prose-wrap" onclick="handleProseWrapClick(event)">
       <div class="prose-opening">${esc(s.opening)}</div>
+      <div class="sr-rule"></div>
       ${linesHtml}
     </div>
     ${!isFinished ? `
@@ -6215,7 +6237,12 @@ function openImmersiveProse() {
   const overlay = document.createElement('div');
   overlay.id = 'immersive-prose-overlay';
   overlay.className = 'immersive-prose-overlay';
-  overlay.innerHTML = `<div class="story-prose immersive-prose-inner">${wrap.innerHTML}</div>`;
+  // sr-story-prose(초스피드 줄무늬 배경 끔)는 몰입모드에도 그대로 옮겨야 장편
+  // 줄밀림 버그가 재발하지 않음 — selecting/viewvotes-active 같은 일시적
+  // 상호작용 모드 클래스는 기존대로 몰입모드엔 안 들어가게(원래 의도 유지) 이
+  // 클래스 하나만 골라서 옮김
+  const srClass = wrap.classList.contains('sr-story-prose') ? ' sr-story-prose' : '';
+  overlay.innerHTML = `<div class="story-prose${srClass} immersive-prose-inner">${wrap.innerHTML}</div>`;
   // 집중모드는 글 자체에만 몰입하자는 취지라, 분기/연장 점선 구분선과 "The End"
   // 연출까지 걷어냄(유저 요청 2026-07-20) — 둘 다 일반 상세페이지에선 그대로 유지.
   overlay.querySelectorAll('.branch-side-indicator, .ext-branch-fork, .prose-fork-divider, #story-ending-fx').forEach(el => el.remove());

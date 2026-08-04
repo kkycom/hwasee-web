@@ -66,7 +66,9 @@ async function _refresh() {
 }
 
 // ── SVG 라인차트 (bang/index.html의 _genreChartBodyHtml 패턴을 일반화) ──
-function _svgLineChart(series, dates) {
+// markerDates(선택): [{date:'YYYY-MM-DD', label:'...'}] — 배포일 등 특정 날짜를
+// 점선 세로줄+라벨로 표시해 전후 비교를 눈으로 바로 할 수 있게 함.
+function _svgLineChart(series, dates, markerDates) {
   const n = dates.length;
   if (!n) return '<div class="empty" style="padding:24px 0">데이터가 없습니다.</div>';
 
@@ -106,9 +108,17 @@ function _svgLineChart(series, dates) {
   const legendHtml = series.length > 1 ? `<div class="chart-legend">${series.map(s =>
     `<span class="li"><span class="dot" style="background:${s.color}"></span>${_esc(s.label)}</span>`).join('')}</div>` : '';
 
+  const markersHtml = (markerDates || []).map(m => {
+    const idx = dates.indexOf(m.date);
+    if (idx === -1) return '';
+    const x = xAt(idx).toFixed(1);
+    return `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" stroke="var(--accent2)" stroke-width="1.5" stroke-dasharray="3 3"/>
+      <text x="${x}" y="${(padT - 3).toFixed(1)}" font-size="8.5" text-anchor="middle" fill="var(--accent2)" font-weight="700">${_esc(m.label)}</text>`;
+  }).join('');
+
   return `
     <svg viewBox="0 0 ${W} ${H}" width="100%" height="auto" role="img" aria-label="${_esc(series.map(s => s.label).join(', '))} 차트">
-      ${gridHtml}${linesHtml}${xLabelsHtml}
+      ${gridHtml}${linesHtml}${markersHtml}${xLabelsHtml}
     </svg>${legendHtml}`;
 }
 
@@ -439,9 +449,15 @@ function _applyInsights(insights) {
 // ── 전체 렌더 ─────────────────────────────────────────────
 function _renderDashboard(res) {
   const dates = res.series.map(d => d.date);
+  // 대규모 콘텐츠 업그레이드(초성힌트/초스피드/장르전환/결말고정/동화각색 5종)
+  // 배포일 — 관련 지표 차트에 점선 기준선으로 표시해 전후 비교를 눈으로 바로 함.
+  const CONTENT_UPGRADE_MARKERS = [{ date: '2026-07-28', label: '콘텐츠 업그레이드' }];
   const cumulativeChart = _svgLineChart([
     { label: '누적 가입자 수', color: 'var(--accent2)', values: res.series.map(d => d.cumulative_users) },
-  ], dates);
+  ], dates, CONTENT_UPGRADE_MARKERS);
+  const conversionChart = _svgLineChart([
+    { label: '방문자→가입 전환율(%)', color: 'var(--success)', values: res.series.map(d => d.visitor_signup_conversion_pct) },
+  ], dates, CONTENT_UPGRADE_MARKERS);
   const visitorsChart = _svgLineChart([
     { label: '순방문', color: 'var(--accent)', values: res.series.map(d => d.visitors_unique) },
     { label: '총접속', color: 'var(--accent2)', values: res.series.map(d => d.visitors_total) },
@@ -495,6 +511,7 @@ function _renderDashboard(res) {
     ${_missingRangeHtml(res.series)}
     <div id="ga4-setup-wrap"></div>
     ${_chartCardHtml('📈 누적 가입자 수 추이 (우상향 폭으로 성장 속도 확인)', 'cumulative_users', cumulativeChart)}
+    ${_chartCardHtml('🔀 일별 방문자→가입 전환율 (그날 방문자 대비 그날 신규가입, %)', 'conversion', conversionChart)}
     ${_chartCardHtml('📈 일별 방문자 추이 (순방문 · 총접속)', 'visitors', visitorsChart)}
     ${_chartCardHtml('✍️ 일별 글 작성 현황 (작성 유저수 · 제출글 수, AI 제외)', 'writers', writerChart)}
     ${_chartCardHtml('🗳️ 일별 투표 현황 (투표 유저수 · 총 투표수, AI 제외)', 'votes', voteChart)}

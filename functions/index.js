@@ -3126,6 +3126,12 @@ exports.getAnalyticsDashboard = functions
         section_free: v.section_free || 0,
         hint_guess_count: v.hint_guess_count || 0,
         hint_participant_count: v.hint_participant_count || 0,
+        // 방문자→가입 전환율 — 그날 순방문자(visitors_unique, localStorage 기반이라
+        // 기기/브라우저 바뀌면 중복 집계될 수 있는 근사치) 대비 그날 신규가입자 비율.
+        // 같은 사람이 방문한 날과 가입한 날이 다를 수 있어 완벽한 코호트 전환율은
+        // 아니지만, 이미 있는 두 값의 비율이라 별도 계측 없이 추이 파악엔 충분함.
+        visitor_signup_conversion_pct: v.visitors_unique
+          ? +((v.new_users_count || 0) / v.visitors_unique * 100).toFixed(2) : null,
         has_data: !!byDate[d],
       };
     });
@@ -3297,6 +3303,7 @@ exports.getAnalyticsInsights = functions
       '부문별_참여_레거시스포트라이트(문장제안+AI픽,신규발생없음)': _trendSummary(dates, series.map(d => d.section_spotlight_other)),
       부문별_참여_자유이야기: _trendSummary(dates, series.map(d => d.section_free)),
       일별_업적달성건수: _trendSummary((data.achievements || []).map(d => d.date), (data.achievements || []).map(d => d.count)),
+      일별_방문자_가입전환율_퍼센트: _trendSummary(dates, series.map(d => d.visitor_signup_conversion_pct || 0)),
       최근_신규가입_리텐션_코호트: cohorts.slice(-4),
       최근_가입후_첫활동_전환_코호트: activationCohorts.slice(-4),
       최근_이야기_완주_코호트: storyCohorts.slice(-4),
@@ -3304,12 +3311,12 @@ exports.getAnalyticsInsights = functions
       누적_가입자_대비_글쓴유저_및_완주율_및_누적업적수: lifetime,
     };
 
-    const prompt = `다음은 협업 릴레이소설 서비스 "화씨.방" 관리자 애널리틱스 대시보드의 최근 추이 요약(JSON)입니다. 운영자가 참고할 수 있도록 지표별로 간결한 한국어 분석 의견을 1~2문장씩 작성해주세요. 숫자를 그대로 반복하지 말고, 증가/감소 흐름과 그 의미, 주목할 점, 필요하면 짧은 제안을 담아주세요. change_pct가 null이거나 표본(n)이 작은 지표는 그 한계도 짧게 언급하세요. "가입후_첫활동_전환"은 리텐션(다시 돌아오는지)과 다르게 "애초에 한 번이라도 참여해봤는지"를 뜻합니다. "부문별_참여"는 최근 대규모 콘텐츠 업그레이드로 추가된 초성힌트/초스피드/장르전환/결말고정/동화각색을 포함해 그날 참여가 어디에 몰렸는지를 뜻합니다(레거시 스포트라이트는 옛 슬롯 방식으로 지금은 신규 발생이 없음). "일별_업적달성건수"는 유저들이 뱃지(업적)를 새로 획득한 건수 추이입니다.
+    const prompt = `다음은 협업 릴레이소설 서비스 "화씨.방" 관리자 애널리틱스 대시보드의 최근 추이 요약(JSON)입니다. 운영자가 참고할 수 있도록 지표별로 간결한 한국어 분석 의견을 1~2문장씩 작성해주세요. 숫자를 그대로 반복하지 말고, 증가/감소 흐름과 그 의미, 주목할 점, 필요하면 짧은 제안을 담아주세요. change_pct가 null이거나 표본(n)이 작은 지표는 그 한계도 짧게 언급하세요. "가입후_첫활동_전환"은 리텐션(다시 돌아오는지)과 다르게 "애초에 한 번이라도 참여해봤는지"를 뜻합니다. "부문별_참여"는 최근 대규모 콘텐츠 업그레이드로 추가된 초성힌트/초스피드/장르전환/결말고정/동화각색을 포함해 그날 참여가 어디에 몰렸는지를 뜻합니다(레거시 스포트라이트는 옛 슬롯 방식으로 지금은 신규 발생이 없음). "일별_업적달성건수"는 유저들이 뱃지(업적)를 새로 획득한 건수 추이입니다. "일별_방문자_가입전환율_퍼센트"는 그날 방문자 수 대비 그날 신규가입자 비율로, 2026-07-28에 있었던 대규모 콘텐츠 업그레이드(초성힌트/초스피드/장르전환/결말고정/동화각색 5종 신설) 전후로 변화가 있었는지 특히 주목해서 언급해주세요.
 
 ${JSON.stringify(summary)}
 
 다른 설명 없이 아래 키를 가진 JSON 객체 하나만 출력하세요:
-{"overall":"...", "visitors":"...", "cumulative_users":"...", "writers":"...", "votes":"...", "word_challenge":"...", "dau":"...", "stickiness":"...", "retention":"...", "cohorts":"...", "activation":"...", "story_completion":"...", "referral":"...", "sections":"...", "achievements":"..."}`;
+{"overall":"...", "visitors":"...", "cumulative_users":"...", "writers":"...", "votes":"...", "word_challenge":"...", "dau":"...", "stickiness":"...", "retention":"...", "cohorts":"...", "activation":"...", "story_completion":"...", "referral":"...", "sections":"...", "achievements":"...", "conversion":"..."}`;
 
     let raw;
     try { raw = await _callClaude(claudeKey, prompt, 1400); }

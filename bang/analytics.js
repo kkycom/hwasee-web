@@ -68,11 +68,15 @@ async function _refresh() {
 // ── SVG 라인차트 (bang/index.html의 _genreChartBodyHtml 패턴을 일반화) ──
 // markerDates(선택): [{date:'YYYY-MM-DD', label:'...'}] — 배포일 등 특정 날짜를
 // 점선 세로줄+라벨로 표시해 전후 비교를 눈으로 바로 할 수 있게 함.
-function _svgLineChart(series, dates, markerDates) {
+// detailed(선택): true면 확대 모달용 — x축 라벨을 훨씬 촘촘히 보여주고(최대
+// 24개), 단일 시리즈일 땐 각 점 위에 실제 값을 직접 찍어줌(다중 시리즈는
+// 겹쳐서 안 씀 — 툴팁으로 대신 확인).
+function _svgLineChart(series, dates, markerDates, detailed) {
   const n = dates.length;
   if (!n) return '<div class="empty" style="padding:24px 0">데이터가 없습니다.</div>';
 
-  const W = 640, H = 200, padL = 34, padR = 12, padT = 14, padB = 26;
+  const H = detailed ? 320 : 200;
+  const W = 640, padL = 34, padR = 12, padT = detailed ? 26 : 14, padB = 26;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const allVals = series.flatMap(s => s.values).filter(v => v != null);
   const maxV = Math.max(1, ...allVals);
@@ -93,16 +97,19 @@ function _svgLineChart(series, dates, markerDates) {
     const dots = s.values.map((v, i) => {
       const cx = xAt(i).toFixed(1), cy = yAt(v || 0).toFixed(1);
       const r = i === lastIdx ? 4 : 2.5;
-      return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${s.color}"><title>${_esc(dates[i])}: ${v ?? '-'}</title></circle>`;
+      const valueLabel = (detailed && series.length === 1 && v != null)
+        ? `<text x="${cx}" y="${(+cy - 7).toFixed(1)}" font-size="9" text-anchor="middle" fill="${s.color}" font-weight="700">${v}</text>` : '';
+      return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${s.color}"><title>${_esc(dates[i])}: ${v ?? '-'}</title></circle>${valueLabel}`;
     }).join('');
     return `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>${dots}`;
   }).join('');
 
-  const labelCount = Math.min(6, n);
+  const labelCount = detailed ? Math.min(24, n) : Math.min(6, n);
   const labelIdxs = [...new Set(Array.from({ length: labelCount }, (_, k) => Math.round(k * (n - 1) / Math.max(1, labelCount - 1))))];
   const xLabelsHtml = labelIdxs.map(i => {
-    const anchor = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle';
-    return `<text x="${xAt(i).toFixed(1)}" y="${H - 4}" font-size="9" text-anchor="${anchor}">${_esc(dates[i].slice(5))}</text>`;
+    const anchor = detailed ? 'end' : (i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle');
+    const transform = detailed ? ` transform="rotate(-55 ${xAt(i).toFixed(1)} ${H - 4})"` : '';
+    return `<text x="${xAt(i).toFixed(1)}" y="${H - 4}" font-size="${detailed ? 8 : 9}" text-anchor="${anchor}"${transform}>${_esc(dates[i].slice(5))}</text>`;
   }).join('');
 
   const legendHtml = series.length > 1 ? `<div class="chart-legend">${series.map(s =>
@@ -125,11 +132,12 @@ function _svgLineChart(series, dates, markerDates) {
 // 막대(좌축)+꺾은선(우축) 콤보 차트 — 두 지표의 규모 차이가 커도(예: 일별
 // 신규가입 수십 명 vs 누적가입자 수백 명) 각자 축을 따로 스케일링해서 같은
 // x축(날짜) 위에 겹쳐 보여줌. barSeries/lineSeries는 각각 {label,color,values}.
-function _svgComboChart(dates, barSeries, lineSeries, markerDates) {
+function _svgComboChart(dates, barSeries, lineSeries, markerDates, detailed) {
   const n = dates.length;
   if (!n) return '<div class="empty" style="padding:24px 0">데이터가 없습니다.</div>';
 
-  const W = 640, H = 200, padL = 34, padR = 34, padT = 14, padB = 26;
+  const H = detailed ? 320 : 200;
+  const W = 640, padL = 34, padR = 34, padT = detailed ? 26 : 14, padB = 26;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const barMax = Math.max(1, ...barSeries.values.filter(v => v != null));
   const lineMax = Math.max(1, ...lineSeries.values.filter(v => v != null));
@@ -152,7 +160,9 @@ function _svgComboChart(dates, barSeries, lineSeries, markerDates) {
     const x = (xAt(i) - barW / 2).toFixed(1);
     const yTop = yAtFrac(val / barMax);
     const h = (padT + plotH - yTop).toFixed(1);
-    return `<rect x="${x}" y="${yTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${h}" fill="${barSeries.color}" opacity=".55"><title>${_esc(dates[i])} ${_esc(barSeries.label)}: ${val}</title></rect>`;
+    const valueLabel = (detailed && val > 0)
+      ? `<text x="${xAt(i).toFixed(1)}" y="${(yTop - 4).toFixed(1)}" font-size="8" text-anchor="middle" fill="${barSeries.color}" font-weight="700">${val}</text>` : '';
+    return `<rect x="${x}" y="${yTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${h}" fill="${barSeries.color}" opacity=".55"><title>${_esc(dates[i])} ${_esc(barSeries.label)}: ${val}</title></rect>${valueLabel}`;
   }).join('');
 
   const lastIdx = n - 1;
@@ -164,11 +174,12 @@ function _svgComboChart(dates, barSeries, lineSeries, markerDates) {
   }).join('');
   const lineHtml = `<polyline points="${pts}" fill="none" stroke="${lineSeries.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>${dots}`;
 
-  const labelCount = Math.min(6, n);
+  const labelCount = detailed ? Math.min(24, n) : Math.min(6, n);
   const labelIdxs = [...new Set(Array.from({ length: labelCount }, (_, k) => Math.round(k * (n - 1) / Math.max(1, labelCount - 1))))];
   const xLabelsHtml = labelIdxs.map(i => {
-    const anchor = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle';
-    return `<text x="${xAt(i).toFixed(1)}" y="${H - 4}" font-size="9" text-anchor="${anchor}">${_esc(dates[i].slice(5))}</text>`;
+    const anchor = detailed ? 'end' : (i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle');
+    const transform = detailed ? ` transform="rotate(-55 ${xAt(i).toFixed(1)} ${H - 4})"` : '';
+    return `<text x="${xAt(i).toFixed(1)}" y="${H - 4}" font-size="${detailed ? 8 : 9}" text-anchor="${anchor}"${transform}>${_esc(dates[i].slice(5))}</text>`;
   }).join('');
 
   const markersHtml = (markerDates || []).map(m => {
@@ -192,11 +203,12 @@ function _svgComboChart(dates, barSeries, lineSeries, markerDates) {
 
 // 100%-누적 막대차트 — 하루 총 참여량이 들쭉날쭉해도 "그날 무엇에 참여가 몰렸는지
 // 비율"만 일정한 높이로 비교할 수 있게 함(절대량은 title 툴팁에서 확인).
-function _svgStackedBarChart(dates, series) {
+function _svgStackedBarChart(dates, series, detailed) {
   const n = dates.length;
   if (!n) return '<div class="empty" style="padding:24px 0">데이터가 없습니다.</div>';
 
-  const W = 640, H = 220, padL = 14, padR = 12, padT = 14, padB = 26;
+  const H = detailed ? 340 : 220;
+  const W = 640, padL = 14, padR = 12, padT = 14, padB = 26;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const totals = dates.map((_, i) => series.reduce((sum, s) => sum + (s.values[i] || 0), 0));
   const gap = plotW / n;
@@ -220,12 +232,13 @@ function _svgStackedBarChart(dates, series) {
     if (!total) barsHtml += `<rect x="${x}" y="${(padT + plotH - 1).toFixed(1)}" width="${barW.toFixed(1)}" height="1" fill="var(--border)"/>`;
   }
 
-  const labelCount = Math.min(6, n);
+  const labelCount = detailed ? Math.min(24, n) : Math.min(6, n);
   const labelIdxs = [...new Set(Array.from({ length: labelCount }, (_, k) => Math.round(k * (n - 1) / Math.max(1, labelCount - 1))))];
   const xLabelsHtml = labelIdxs.map(i => {
-    const anchor = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle';
     const cx = xAt(i) + barW / 2;
-    return `<text x="${cx.toFixed(1)}" y="${H - 4}" font-size="9" text-anchor="${anchor}">${_esc(dates[i].slice(5))}</text>`;
+    const anchor = detailed ? 'end' : (i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle');
+    const transform = detailed ? ` transform="rotate(-55 ${cx.toFixed(1)} ${H - 4})"` : '';
+    return `<text x="${cx.toFixed(1)}" y="${H - 4}" font-size="${detailed ? 8 : 9}" text-anchor="${anchor}"${transform}>${_esc(dates[i].slice(5))}</text>`;
   }).join('');
 
   const legendHtml = `<div class="chart-legend">${series.map(s =>
@@ -237,17 +250,23 @@ function _svgStackedBarChart(dates, series) {
     </svg>${legendHtml}`;
 }
 
+// 확대 모달에서 "그냥 크게"가 아니라 실제로 더 촘촘한(x축 라벨 다수+값 라벨)
+// 버전을 보여주기 위한 레지스트리 — insightKey별로 "detailed:true로 다시
+// 그려주는 함수"를 등록해두고, 모달을 열 때 그 함수를 호출해 재렌더링함.
+let _chartRegistry = {};
+
 // 차트 카드 하나(제목 + AI 분석 자리 + SVG)를 공통 마크업으로 생성.
 // insightKey가 있으면 "AI 분석 보기" 클릭 시 #insight-{key} 자리에 문장이 채워짐.
-// 차트 본문(SVG+범례)은 클릭하면 모달로 확대해서 볼 수 있게 감싸둠 — viewBox
-// 기반 SVG라 큰 컨테이너에 그대로 다시 넣기만 해도 글자까지 선명하게 커짐.
-function _chartCardHtml(title, insightKey, bodyHtml) {
+// detailedRenderFn(선택): 확대 모달 전용으로 더 촘촘하게 다시 그리는 0-인자 함수.
+// 안 주면 그냥 지금 보이는 SVG를 크기만 키워서 보여줌(기존 동작 유지).
+function _chartCardHtml(title, insightKey, bodyHtml, detailedRenderFn) {
   const hasSvg = /<svg[\s>]/.test(bodyHtml);
+  if (hasSvg && insightKey && detailedRenderFn) _chartRegistry[insightKey] = detailedRenderFn;
   return `
     <div class="card">
       <div class="chart-title">${_esc(title)}</div>
       ${insightKey ? `<div class="insight" id="insight-${insightKey}" style="display:none"></div>` : ''}
-      <div${hasSvg ? ` class="chart-zoomable" data-chart-title="${_esc(title)}" onclick="_openChartModal(this)" title="클릭하면 크게 보기"` : ''}>${bodyHtml}</div>
+      <div${hasSvg ? ` class="chart-zoomable" data-chart-title="${_esc(title)}" data-chart-key="${_esc(insightKey || '')}" onclick="_openChartModal(this)" title="클릭하면 크게+자세히 보기"` : ''}>${bodyHtml}</div>
     </div>`;
 }
 
@@ -255,8 +274,16 @@ function _openChartModal(el) {
   const modal = document.getElementById('chart-modal');
   const body = document.getElementById('chart-modal-body');
   const titleEl = document.getElementById('chart-modal-title');
-  if (!modal || !body || !el.querySelector('svg')) return; // 데이터 없음 등 SVG가 없는 카드는 확대 안 함
-  body.innerHTML = el.innerHTML;
+  if (!modal || !body) return;
+  const key = el.dataset.chartKey;
+  const detailedFn = key && _chartRegistry[key];
+  if (detailedFn) {
+    body.innerHTML = detailedFn();
+  } else if (el.querySelector('svg')) {
+    body.innerHTML = el.innerHTML; // 등록된 상세 렌더러가 없으면 기존처럼 그대로 확대만
+  } else {
+    return; // 데이터 없음/로딩 중 등 SVG 자체가 없는 카드는 확대 안 함
+  }
   if (titleEl) titleEl.textContent = el.dataset.chartTitle || '';
   modal.classList.add('open');
 }
@@ -581,26 +608,63 @@ function _renderDashboard(res) {
     ${_kpiCardsHtml(res.series)}
     ${_missingRangeHtml(res.series)}
     <div id="ga4-setup-wrap"></div>
-    ${_chartCardHtml('📈 누적 가입자 수 추이 (막대: 일별 신규가입 · 선: 누적, 콘텐츠 업그레이드 기준선 포함)', 'cumulative_users', cumulativeChart)}
-    ${_chartCardHtml('🔀 일별 방문자→가입 전환율 (그날 방문자 대비 그날 신규가입, %)', 'conversion', conversionChart)}
-    ${_chartCardHtml('📈 일별 방문자 추이 (순방문 · 총접속)', 'visitors', visitorsChart)}
-    ${_chartCardHtml('✍️ 일별 글 작성 현황 (작성 유저수 · 제출글 수, AI 제외)', 'writers', writerChart)}
-    ${_chartCardHtml('🗳️ 일별 투표 현황 (투표 유저수 · 총 투표수, AI 제외)', 'votes', voteChart)}
-    ${_chartCardHtml('🎲 오늘의 단어챌린지 작성 유저수 추이', 'word_challenge', wcChart)}
-    ${_chartCardHtml('🔥 일별 활성 유저 (DAU, 출석 기준)', 'dau', dauChart)}
-    ${_chartCardHtml('🔁 재방문 빈도 (Stickiness: DAU/WAU · DAU/MAU, %)', 'stickiness', stickinessChart)}
-    ${_chartCardHtml('📊 주간 잔존율 추이 (지난주 WAU 대비 이번주 잔존율, %)', 'retention', retentionChart)}
-    ${_chartCardHtml('🧭 일별 부문 참여 비율 (그날 참여가 어디에 몰렸는지, 100% 기준)', 'sections', sectionChart)}
-    ${_chartCardHtml('🏆 일별 업적(뱃지) 달성 건수', 'achievements', achievementChart)}
+    ${_chartCardHtml('📈 누적 가입자 수 추이 (막대: 일별 신규가입 · 선: 누적, 콘텐츠 업그레이드 기준선 포함)', 'cumulative_users', cumulativeChart, () => _svgComboChart(
+      dates,
+      { label: '일별 신규가입', color: 'var(--accent)', values: res.series.map(d => d.new_users_count) },
+      { label: '누적 가입자 수', color: 'var(--accent2)', values: res.series.map(d => d.cumulative_users) },
+      CONTENT_UPGRADE_MARKERS, true
+    ))}
+    ${_chartCardHtml('🔀 일별 방문자→가입 전환율 (그날 방문자 대비 그날 신규가입, %)', 'conversion', conversionChart, () => _svgLineChart([
+      { label: '방문자→가입 전환율(%)', color: 'var(--success)', values: res.series.map(d => d.visitor_signup_conversion_pct) },
+    ], dates, CONTENT_UPGRADE_MARKERS, true))}
+    ${_chartCardHtml('📈 일별 방문자 추이 (순방문 · 총접속)', 'visitors', visitorsChart, () => _svgLineChart([
+      { label: '순방문', color: 'var(--accent)', values: res.series.map(d => d.visitors_unique) },
+      { label: '총접속', color: 'var(--accent2)', values: res.series.map(d => d.visitors_total) },
+    ], dates, null, true))}
+    ${_chartCardHtml('✍️ 일별 글 작성 현황 (작성 유저수 · 제출글 수, AI 제외)', 'writers', writerChart, () => _svgLineChart([
+      { label: '글쓴 유저', color: 'var(--accent2)', values: res.series.map(d => d.writer_count) },
+      { label: '제출글 수', color: 'var(--accent)', values: res.series.map(d => d.submission_count) },
+    ], dates, null, true))}
+    ${_chartCardHtml('🗳️ 일별 투표 현황 (투표 유저수 · 총 투표수, AI 제외)', 'votes', voteChart, () => _svgLineChart([
+      { label: '투표 유저', color: 'var(--accent2)', values: res.series.map(d => d.voter_count) },
+      { label: '총 투표수', color: 'var(--accent)', values: res.series.map(d => d.vote_count) },
+    ], dates, null, true))}
+    ${_chartCardHtml('🎲 오늘의 단어챌린지 작성 유저수 추이', 'word_challenge', wcChart, () => _svgLineChart([
+      { label: '단어챌린지 작성 유저', color: 'var(--success)', values: res.series.map(d => d.wc_writer_count) },
+    ], dates, null, true))}
+    ${_chartCardHtml('🔥 일별 활성 유저 (DAU, 출석 기준)', 'dau', dauChart, () => _svgLineChart([
+      { label: 'DAU', color: 'var(--success)', values: res.series.map(d => d.active_user_count) },
+    ], dates, null, true))}
+    ${_chartCardHtml('🔁 재방문 빈도 (Stickiness: DAU/WAU · DAU/MAU, %)', 'stickiness', stickinessChart, () => _svgLineChart([
+      { label: 'DAU/WAU(%)', color: 'var(--accent2)', values: res.stickiness.map(d => d.dau_wau_pct) },
+      { label: 'DAU/MAU(%)', color: 'var(--accent)', values: res.stickiness.map(d => d.dau_mau_pct) },
+    ], stickinessDates, null, true))}
+    ${_chartCardHtml('📊 주간 잔존율 추이 (지난주 WAU 대비 이번주 잔존율, %)', 'retention', retentionChart, () => _svgLineChart([
+      { label: '주간 잔존율(%)', color: 'var(--accent2)', values: res.retention.map(d => d.retention_pct) },
+    ], retentionDates, null, true))}
+    ${_chartCardHtml('🧭 일별 부문 참여 비율 (그날 참여가 어디에 몰렸는지, 100% 기준)', 'sections', sectionChart, () => _svgStackedBarChart(dates, [
+      { label: '단어챌린지 응모', color: 'var(--success)', values: res.series.map(d => d.section_word_challenge) },
+      { label: '단어챌린지 선정작 이어쓰기', color: 'var(--accent)', values: res.series.map(d => d.section_word_challenge_story) },
+      { label: '초성 문장 퀴즈 시도', color: '#4a4364', values: res.series.map(d => d.hint_guess_count) },
+      { label: '초스피드', color: '#7a4030', values: res.series.map(d => d.section_speedrun) },
+      { label: '장르전환', color: '#4a4a8a', values: res.series.map(d => d.section_genre_switch) },
+      { label: '결말고정', color: '#2e5f66', values: res.series.map(d => d.section_fixed_ending) },
+      { label: '동화각색', color: '#8a4a5c', values: res.series.map(d => d.section_fairytale) },
+      { label: '스포트라이트(레거시, 문장제안+AI픽)', color: 'var(--accent2)', values: res.series.map(d => d.section_spotlight_other) },
+      { label: '자유 이야기', color: '#8a6420', values: res.series.map(d => d.section_free) },
+    ], true))}
+    ${_chartCardHtml('🏆 일별 업적(뱃지) 달성 건수', 'achievements', achievementChart, () => _svgLineChart([
+      { label: '업적 달성 건수', color: 'var(--accent2)', values: (res.achievements || []).map(d => d.count) },
+    ], achievementDates, null, true))}
     <div class="card">
       <div class="chart-title">⏱️ 일별 평균 체류시간 (Google Analytics)</div>
       <div class="insight" id="insight-dwell_time" style="display:none"></div>
-      <div id="ga4-chart-body" class="chart-zoomable" data-chart-title="⏱️ 일별 평균 체류시간 (Google Analytics)" onclick="_openChartModal(this)" title="클릭하면 크게 보기"><div class="loading" style="padding:16px 0">불러오는 중...</div></div>
+      <div id="ga4-chart-body" class="chart-zoomable" data-chart-title="⏱️ 일별 평균 체류시간 (Google Analytics)" data-chart-key="dwell_time" onclick="_openChartModal(this)" title="클릭하면 크게+자세히 보기"><div class="loading" style="padding:16px 0">불러오는 중...</div></div>
     </div>
     <div class="card">
       <div class="chart-title">🔂 방문자 1인당 하루 평균 방문 횟수 (Google Analytics, 그날 온 사람 기준)</div>
       <div class="insight" id="insight-visit_frequency" style="display:none"></div>
-      <div id="ga4-freq-chart-body" class="chart-zoomable" data-chart-title="🔂 방문자 1인당 하루 평균 방문 횟수" onclick="_openChartModal(this)" title="클릭하면 크게 보기"><div class="loading" style="padding:16px 0">불러오는 중...</div></div>
+      <div id="ga4-freq-chart-body" class="chart-zoomable" data-chart-title="🔂 방문자 1인당 하루 평균 방문 횟수" data-chart-key="visit_frequency" onclick="_openChartModal(this)" title="클릭하면 크게+자세히 보기"><div class="loading" style="padding:16px 0">불러오는 중...</div></div>
     </div>
     ${_lifetimeCardHtml(res.lifetime)}
     <div class="card">
@@ -655,10 +719,16 @@ async function _loadGa4Chart(startDate, endDate) {
     el.innerHTML = _svgLineChart([
       { label: '평균 체류시간(초)', color: 'var(--success)', values: data.series.map(d => d.avg_engagement_seconds) },
     ], gDates);
+    _chartRegistry.dwell_time = () => _svgLineChart([
+      { label: '평균 체류시간(초)', color: 'var(--success)', values: data.series.map(d => d.avg_engagement_seconds) },
+    ], gDates, null, true);
     if (freqEl) {
       freqEl.innerHTML = _svgLineChart([
         { label: '1인당 하루 평균 방문(세션) 횟수', color: 'var(--accent2)', values: data.series.map(d => d.sessions_per_user) },
       ], gDates);
+      _chartRegistry.visit_frequency = () => _svgLineChart([
+        { label: '1인당 하루 평균 방문(세션) 횟수', color: 'var(--accent2)', values: data.series.map(d => d.sessions_per_user) },
+      ], gDates, null, true);
     }
   } catch (e) {
     const msg = `<div class="empty" style="padding:16px 0">불러오지 못했습니다: ${_esc(e.message || '알 수 없는 오류')}</div>`;

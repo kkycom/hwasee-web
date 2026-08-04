@@ -122,6 +122,74 @@ function _svgLineChart(series, dates, markerDates) {
     </svg>${legendHtml}`;
 }
 
+// 막대(좌축)+꺾은선(우축) 콤보 차트 — 두 지표의 규모 차이가 커도(예: 일별
+// 신규가입 수십 명 vs 누적가입자 수백 명) 각자 축을 따로 스케일링해서 같은
+// x축(날짜) 위에 겹쳐 보여줌. barSeries/lineSeries는 각각 {label,color,values}.
+function _svgComboChart(dates, barSeries, lineSeries, markerDates) {
+  const n = dates.length;
+  if (!n) return '<div class="empty" style="padding:24px 0">데이터가 없습니다.</div>';
+
+  const W = 640, H = 200, padL = 34, padR = 34, padT = 14, padB = 26;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const barMax = Math.max(1, ...barSeries.values.filter(v => v != null));
+  const lineMax = Math.max(1, ...lineSeries.values.filter(v => v != null));
+  const gap = plotW / n;
+  const barW = Math.max(1, gap * 0.55);
+  const xAt = i => (n <= 1 ? padL + plotW / 2 : padL + i * (plotW / (n - 1)));
+  const yAtFrac = frac => padT + (1 - frac) * plotH;
+
+  const gridSteps = 4;
+  const gridHtml = Array.from({ length: gridSteps + 1 }, (_, k) => {
+    const frac = k / gridSteps;
+    const y = yAtFrac(frac).toFixed(1);
+    return `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="var(--border)" stroke-width="1"${k === 0 ? '' : ' stroke-dasharray="2 3"'}/>
+      <text x="4" y="${(+y + 3).toFixed(1)}" font-size="9" fill="${barSeries.color}">${Math.round(barMax * frac)}</text>
+      <text x="${W - 4}" y="${(+y + 3).toFixed(1)}" font-size="9" text-anchor="end" fill="${lineSeries.color}">${Math.round(lineMax * frac)}</text>`;
+  }).join('');
+
+  const barsHtml = barSeries.values.map((v, i) => {
+    const val = v || 0;
+    const x = (xAt(i) - barW / 2).toFixed(1);
+    const yTop = yAtFrac(val / barMax);
+    const h = (padT + plotH - yTop).toFixed(1);
+    return `<rect x="${x}" y="${yTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${h}" fill="${barSeries.color}" opacity=".55"><title>${_esc(dates[i])} ${_esc(barSeries.label)}: ${val}</title></rect>`;
+  }).join('');
+
+  const lastIdx = n - 1;
+  const pts = lineSeries.values.map((v, i) => `${xAt(i).toFixed(1)},${yAtFrac((v || 0) / lineMax).toFixed(1)}`).join(' ');
+  const dots = lineSeries.values.map((v, i) => {
+    const cx = xAt(i).toFixed(1), cy = yAtFrac((v || 0) / lineMax).toFixed(1);
+    const r = i === lastIdx ? 4 : 2.5;
+    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${lineSeries.color}"><title>${_esc(dates[i])} ${_esc(lineSeries.label)}: ${v ?? '-'}</title></circle>`;
+  }).join('');
+  const lineHtml = `<polyline points="${pts}" fill="none" stroke="${lineSeries.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>${dots}`;
+
+  const labelCount = Math.min(6, n);
+  const labelIdxs = [...new Set(Array.from({ length: labelCount }, (_, k) => Math.round(k * (n - 1) / Math.max(1, labelCount - 1))))];
+  const xLabelsHtml = labelIdxs.map(i => {
+    const anchor = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle';
+    return `<text x="${xAt(i).toFixed(1)}" y="${H - 4}" font-size="9" text-anchor="${anchor}">${_esc(dates[i].slice(5))}</text>`;
+  }).join('');
+
+  const markersHtml = (markerDates || []).map(m => {
+    const idx = dates.indexOf(m.date);
+    if (idx === -1) return '';
+    const x = xAt(idx).toFixed(1);
+    return `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" stroke="var(--text)" stroke-width="1.5" stroke-dasharray="3 3" opacity=".55"/>
+      <text x="${x}" y="${(padT - 3).toFixed(1)}" font-size="8.5" text-anchor="middle" fill="var(--text)" font-weight="700">${_esc(m.label)}</text>`;
+  }).join('');
+
+  const legendHtml = `<div class="chart-legend">
+    <span class="li"><span class="dot" style="background:${barSeries.color}"></span>${_esc(barSeries.label)} (좌축)</span>
+    <span class="li"><span class="dot" style="background:${lineSeries.color}"></span>${_esc(lineSeries.label)} (우축)</span>
+  </div>`;
+
+  return `
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="auto" role="img" aria-label="${_esc(barSeries.label)}+${_esc(lineSeries.label)} 콤보 차트">
+      ${gridHtml}${barsHtml}${lineHtml}${markersHtml}${xLabelsHtml}
+    </svg>${legendHtml}`;
+}
+
 // 100%-누적 막대차트 — 하루 총 참여량이 들쭉날쭉해도 "그날 무엇에 참여가 몰렸는지
 // 비율"만 일정한 높이로 비교할 수 있게 함(절대량은 title 툴팁에서 확인).
 function _svgStackedBarChart(dates, series) {
@@ -452,9 +520,12 @@ function _renderDashboard(res) {
   // 대규모 콘텐츠 업그레이드(초성힌트/초스피드/장르전환/결말고정/동화각색 5종)
   // 배포일 — 관련 지표 차트에 점선 기준선으로 표시해 전후 비교를 눈으로 바로 함.
   const CONTENT_UPGRADE_MARKERS = [{ date: '2026-07-28', label: '콘텐츠 업그레이드' }];
-  const cumulativeChart = _svgLineChart([
+  const cumulativeChart = _svgComboChart(
+    dates,
+    { label: '일별 신규가입', color: 'var(--accent)', values: res.series.map(d => d.new_users_count) },
     { label: '누적 가입자 수', color: 'var(--accent2)', values: res.series.map(d => d.cumulative_users) },
-  ], dates, CONTENT_UPGRADE_MARKERS);
+    CONTENT_UPGRADE_MARKERS
+  );
   const conversionChart = _svgLineChart([
     { label: '방문자→가입 전환율(%)', color: 'var(--success)', values: res.series.map(d => d.visitor_signup_conversion_pct) },
   ], dates, CONTENT_UPGRADE_MARKERS);
@@ -510,7 +581,7 @@ function _renderDashboard(res) {
     ${_kpiCardsHtml(res.series)}
     ${_missingRangeHtml(res.series)}
     <div id="ga4-setup-wrap"></div>
-    ${_chartCardHtml('📈 누적 가입자 수 추이 (우상향 폭으로 성장 속도 확인)', 'cumulative_users', cumulativeChart)}
+    ${_chartCardHtml('📈 누적 가입자 수 추이 (막대: 일별 신규가입 · 선: 누적, 콘텐츠 업그레이드 기준선 포함)', 'cumulative_users', cumulativeChart)}
     ${_chartCardHtml('🔀 일별 방문자→가입 전환율 (그날 방문자 대비 그날 신규가입, %)', 'conversion', conversionChart)}
     ${_chartCardHtml('📈 일별 방문자 추이 (순방문 · 총접속)', 'visitors', visitorsChart)}
     ${_chartCardHtml('✍️ 일별 글 작성 현황 (작성 유저수 · 제출글 수, AI 제외)', 'writers', writerChart)}

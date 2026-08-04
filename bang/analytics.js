@@ -309,6 +309,7 @@ function _kpiCardsHtml(series) {
     ['방문자(순)', last.visitors_unique, prev && prev.visitors_unique],
     ['방문자(총)', last.visitors_total, prev && prev.visitors_total],
     ['신규가입', last.new_users_count, prev && prev.new_users_count],
+    ['└ 친구추천 가입', last.referred_new_users_count, prev && prev.referred_new_users_count],
     ['글쓴 유저', last.writer_count, prev && prev.writer_count],
     ['제출글', last.submission_count, prev && prev.submission_count],
     ['투표 유저', last.voter_count, prev && prev.voter_count],
@@ -556,6 +557,9 @@ function _renderDashboard(res) {
   const conversionChart = _svgLineChart([
     { label: '방문자→가입 전환율(%)', color: 'var(--success)', values: res.series.map(d => d.visitor_signup_conversion_pct) },
   ], dates, CONTENT_UPGRADE_MARKERS);
+  const womChart = _svgLineChart([
+    { label: '친구추천 가입 비율(%)', color: 'var(--accent2)', values: res.series.map(d => d.referred_signup_pct) },
+  ], dates, CONTENT_UPGRADE_MARKERS);
   const visitorsChart = _svgLineChart([
     { label: '순방문', color: 'var(--accent)', values: res.series.map(d => d.visitors_unique) },
     { label: '총접속', color: 'var(--accent2)', values: res.series.map(d => d.visitors_total) },
@@ -616,6 +620,9 @@ function _renderDashboard(res) {
     ))}
     ${_chartCardHtml('🔀 일별 방문자→가입 전환율 (그날 방문자 대비 그날 신규가입, %)', 'conversion', conversionChart, () => _svgLineChart([
       { label: '방문자→가입 전환율(%)', color: 'var(--success)', values: res.series.map(d => d.visitor_signup_conversion_pct) },
+    ], dates, CONTENT_UPGRADE_MARKERS, true))}
+    ${_chartCardHtml('🗣️ 일별 친구추천 가입 비율 (검증된 지인추천, 홍보 없는 입소문 신호)', 'word_of_mouth', womChart, () => _svgLineChart([
+      { label: '친구추천 가입 비율(%)', color: 'var(--accent2)', values: res.series.map(d => d.referred_signup_pct) },
     ], dates, CONTENT_UPGRADE_MARKERS, true))}
     ${_chartCardHtml('📈 일별 방문자 추이 (순방문 · 총접속)', 'visitors', visitorsChart, () => _svgLineChart([
       { label: '순방문', color: 'var(--accent)', values: res.series.map(d => d.visitors_unique) },

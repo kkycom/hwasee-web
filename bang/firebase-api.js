@@ -1220,9 +1220,42 @@ async function _fbGetStoryParticipants(story_id) {
 
 // ─── 제출 ────────────────────────────────────────────────
 
+// 제출 속도 제한(어뷰징 대응, 2026-08-04) — 에피소드당 상한(최대 2개)은 있었지만
+// 사이트 전체 시간당/일일 제출 횟수엔 아무 제한이 없어서, 여러 이야기에 걸쳐
+// 하루 200여 개를 제출하는 어뷰징이 가능했음(제출 1건마다 채택 여부 무관하게
+// 10p가 붙어서 물량 자체가 포인트 파밍이 되기도 함). 정상적으로 몰입해서 쓰는
+// 유저도 시간당 30개·하루 60개는 절대 넘기지 않는 수준이라, 이 문턱은 정상
+// 사용엔 전혀 안 걸리고 이번 같은 이상치만 걸러냄. .count() 집계 쿼리라 문서
+// 본문은 안 읽고 개수만 셈(이미 있는 author_id+created_at 복합 인덱스 재사용).
+// ⚠️ 이 컬렉션(submissions)은 클라이언트가 직접 쓰는 완전 개방 구조라, 앱을
+// 거치지 않고 Firestore에 직접 쓰기를 시도하는 작정한 공격자는 이 체크 자체를
+// 우회할 수 있음(client-side best-effort) — 완전한 강제력을 원하면 이 경로를
+// speedrunSubmit처럼 Cloud Function으로 옮겨야 함(범위가 커서 보류, 유저 확인).
+const SUBMIT_RATE_HOURLY_MAX = 30;
+const SUBMIT_RATE_DAILY_MAX  = 60;
+
+async function _checkSubmitRateLimit(author_id) {
+  const now = Date.now();
+  const hourAgo = new Date(now - 60 * 60 * 1000).toISOString();
+  const dayAgo  = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+  // orderBy('created_at','desc')를 명시해야 기존 author_id+created_at(DESC) 복합
+  // 인덱스를 그대로 탐 — 명시 안 하면 Firestore가 암묵적으로 오름차순 인덱스를
+  // 요구해서 새 인덱스가 필요해짐(실제로 배포 전 REST로 재현해서 확인함).
+  const [hourSnap, daySnap] = await Promise.all([
+    db.collection('submissions').where('author_id', '==', author_id).where('created_at', '>', hourAgo).orderBy('created_at', 'desc').count().get(),
+    db.collection('submissions').where('author_id', '==', author_id).where('created_at', '>', dayAgo).orderBy('created_at', 'desc').count().get(),
+  ]);
+  if (hourSnap.data().count >= SUBMIT_RATE_HOURLY_MAX) return { ok: false, error: '너무 빠르게 많이 작성하고 있어요. 잠시 후 다시 시도해주세요.' };
+  if (daySnap.data().count >= SUBMIT_RATE_DAILY_MAX) return { ok: false, error: '오늘 작성 가능한 횟수를 다 채웠어요. 내일 다시 시도해주세요.' };
+  return { ok: true };
+}
+
 async function fbCreateSubmission(episode_id, content, author_id, derived_from, closing) {
   const text = (content || '').trim();
   if (!text) return { ok: false, error: '내용을 입력해주세요.' };
+
+  const rl = await _checkSubmitRateLimit(author_id);
+  if (!rl.ok) return rl;
 
   const epSnap = await db.collection('episodes').doc(episode_id).get();
   if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };

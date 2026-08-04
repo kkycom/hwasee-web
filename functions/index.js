@@ -1000,6 +1000,22 @@ async function _serverCloseEpisode(db, episode_id, ep) {
     });
     await finalBatch.commit();
     try { await _serverRefillSpotlightSlot(db, ep.story_id); } catch (e) { console.error('spotlight refill error:', e.message); }
+
+    // 이 스토리에 더 앞선 단계에서 동률로 갈렸던 미완주 분기가 남아있으면,
+    // 일반 완결 경로(anyClose)와 동일하게 독립 스토리로 분리 — 안 그러면
+    // 부모 스토리가 completed로 바뀌면서 그 분기가 투표를 못 받는 고아
+    // 상태로 방치됨(유저 지적, 2026-07-29). _serverSpinOffOrphan은 mode/
+    // fixed_ending을 그대로 물려주므로, 분리된 분기도 같은 결말로 마저
+    // 완결될 수 있음(유저 확정 — "포기"가 아니라 "독립적으로 마저 완결").
+    const orphanSnap = await db.collection('episodes')
+      .where('story_id', '==', ep.story_id).where('status', '==', 'open').get();
+    if (!orphanSnap.empty) {
+      const { epById, subsByEp, subById } = await _serverBuildEpisodeMaps(db, ep.story_id);
+      for (const orphanDoc of orphanSnap.docs) {
+        await _serverSpinOffOrphan(db, { episode_id: orphanDoc.id, ...orphanDoc.data() }, st, epById, subsByEp, subById, null);
+      }
+    }
+
     console.log(`serverCloseEpisode: ${episode_id} → fixed_ending 완결 (step ${nextStep + 1})`);
     return;
   }
@@ -1049,6 +1065,12 @@ async function _serverCloseEpisode(db, episode_id, ep) {
     const newEpIds = winners.map(() => db.collection('episodes').doc().id);
     const storyUpdate = { current_step: nextStep, hot_score: 0 };
     if (winners.length > 1) storyUpdate.has_branch = true;
+    // 장르전환은 강제완결이 없어 max_steps(10)를 넘어서도 계속 진행될 수
+    // 있는데 genre_sequence가 정확히 10개짜리라 새 단계가 배열 길이를
+    // 넘어서면 미리 늘려서 저장(유저 지적, 2026-07-29).
+    if (st.mode === 'genre_switch' && (Number(st.genre_sequence?.length) || 0) < nextStep + 1) {
+      storyUpdate.genre_sequence = _serverExtendGenreSequence(st.genre_sequence, nextStep + 1);
+    }
     newEpIds.forEach(newEpId => {
       storyUpdate[`open_steps.${newEpId}`] = { step: nextStep + 1, sub_count: 0 };
     });
@@ -2689,6 +2711,22 @@ function _serverRandomGenreSequence(steps) {
   const arr = [];
   for (let i = 0; i < steps; i++) {
     const prev = arr[i - 1];
+    const pool = prev ? SPOTLIGHT_GENRES.filter(g => g !== prev) : SPOTLIGHT_GENRES;
+    arr.push(pool[Math.floor(Math.random() * pool.length)]);
+  }
+  return arr;
+}
+
+// 장르전환은 fixed_ending과 달리 max_steps(10) 도달 시 강제완결이 없어서
+// (유저가 "완결하기"를 눌러야만 끝남) 아무도 안 누르면 10단계 넘어서도
+// 계속 진행될 수 있는데, genre_sequence가 정확히 10개짜리라 11단계부터는
+// 장르가 undefined로 새서 조용히 기본값(미스터리)으로 표시되던 문제가
+// 있었음(유저 지적, 2026-07-29) — 필요한 만큼 그때그때 늘려서 저장.
+// 이어붙이는 규칙(직전 장르와 안 겹치게)은 _serverRandomGenreSequence와 동일.
+function _serverExtendGenreSequence(seq, uptoLength) {
+  const arr = (seq || []).slice();
+  while (arr.length < uptoLength) {
+    const prev = arr[arr.length - 1];
     const pool = prev ? SPOTLIGHT_GENRES.filter(g => g !== prev) : SPOTLIGHT_GENRES;
     arr.push(pool[Math.floor(Math.random() * pool.length)]);
   }

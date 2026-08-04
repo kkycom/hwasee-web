@@ -5955,7 +5955,7 @@ function buildStoryActionHtml(openEp) {
   const curGenre = isGenreSwitch ? (story.genre_sequence || [])[Number(openEp.step) - 1] : null;
   const subMax = isGenreSwitch ? FB_GENRE_SWITCH_MAX_CHARS : 50;
   const subMin = isGenreSwitch ? FB_GENRE_SWITCH_MIN_CHARS : 0;
-  const subPlaceholder = isGenreSwitch && curGenre ? `${curGenre} 분위기로 이어서, ${subMax}자로…` : '한 문장으로 이어가세요';
+  const subPlaceholder = isGenreSwitch && curGenre ? `${curGenre} 분위기로 이어서, ${subMax}자 이내로…` : '한 문장으로 이어가세요';
   const genreSuffix = isGenreSwitch ? (GENRE_META[curGenre] || 'mystery') : null;
   // 카드에 --g/--wash 커스텀 프로퍼티(장르 톤)와 margin-bottom 등 일반 스타일을
   // 별개의 style 속성 두 개로 나눠 넣었더니, HTML 파서가 중복 속성 중 첫

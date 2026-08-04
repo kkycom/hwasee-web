@@ -3444,6 +3444,57 @@ exports.getGa4EngagementTrend = functions
     return { ok: true, series, generated_at: new Date().toISOString() };
   });
 
+// 일별 기기 종류(모바일/PC/태블릿) 분포 — 자체 데이터엔 기기 정보가 전혀
+// 없어서 GA4의 자동 수집 dimension(deviceCategory)을 그대로 씀. GA4는
+// (date, deviceCategory) 조합별로 한 행씩 반환하므로 날짜별로 다시 묶어줌.
+exports.getGa4DeviceTrend = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const secretsSnap = await db.collection('config').doc('secrets').get();
+    const s = secretsSnap.exists ? secretsSnap.data() : {};
+    if (!s.ga4_service_account_json || !s.ga4_property_id) {
+      return { ok: false, error: 'GA4 연동이 아직 설정되지 않았어요.' };
+    }
+
+    const start_date = data.start_date, end_date = data.end_date;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start_date) || !/^\d{4}-\d{2}-\d{2}$/.test(end_date)) {
+      throw new functions.https.HttpsError('invalid-argument', '날짜 형식이 올바르지 않습니다.');
+    }
+
+    let credentials;
+    try { credentials = JSON.parse(s.ga4_service_account_json); }
+    catch (e) { return { ok: false, error: '저장된 GA4 서비스 계정 키가 손상됐어요. 애널리틱스 대시보드에서 다시 저장해주세요.' }; }
+
+    const byDate = {};
+    try {
+      const { BetaAnalyticsDataClient } = require('@google-analytics/data');
+      const client = new BetaAnalyticsDataClient({ credentials });
+      const [reportResponse] = await client.runReport({
+        property: `properties/${s.ga4_property_id}`,
+        dateRanges: [{ startDate: start_date, endDate: end_date }],
+        dimensions: [{ name: 'date' }, { name: 'deviceCategory' }],
+        metrics: [{ name: 'activeUsers' }],
+        orderBys: [{ dimension: { dimensionName: 'date' } }],
+      });
+      (reportResponse.rows || []).forEach(row => {
+        const raw = row.dimensionValues[0].value; // 'YYYYMMDD'
+        const dateStr = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+        const device = (row.dimensionValues[1].value || 'other').toLowerCase(); // mobile/desktop/tablet/(그 외 smart tv 등은 other로)
+        const users = Number(row.metricValues[0].value) || 0;
+        if (!byDate[dateStr]) byDate[dateStr] = { date: dateStr, mobile: 0, desktop: 0, tablet: 0, other: 0 };
+        if (device in byDate[dateStr]) byDate[dateStr][device] += users;
+        else byDate[dateStr].other += users;
+      });
+    } catch (e) {
+      return { ok: false, error: 'GA4 조회 실패: ' + e.message };
+    }
+
+    const series = Object.values(byDate).sort((a, b) => (a.date < b.date ? -1 : 1));
+    return { ok: true, series, generated_at: new Date().toISOString() };
+  });
+
 // ── 오늘의 단어 챌린지: 안 어울리는 단어 3개를 매일 던져주고 그걸로 문장을
 //    지어 투표받는 이벤트. 씨앗 탭의 "명예의 전당" 자리를 대체함(2026-07-09).
 //    라운드는 매일 00:00(KST) 시작 ~ 21:00(KST) 마감, 우승자(최다 득표, 동점이면

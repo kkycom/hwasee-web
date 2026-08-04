@@ -673,6 +673,11 @@ function _renderDashboard(res) {
       <div class="insight" id="insight-visit_frequency" style="display:none"></div>
       <div id="ga4-freq-chart-body" class="chart-zoomable" data-chart-title="🔂 방문자 1인당 하루 평균 방문 횟수" data-chart-key="visit_frequency" onclick="_openChartModal(this)" title="클릭하면 크게+자세히 보기"><div class="loading" style="padding:16px 0">불러오는 중...</div></div>
     </div>
+    <div class="card">
+      <div class="chart-title">📱 일별 기기 종류 분포 (모바일 · PC · 태블릿, Google Analytics, 100% 기준)</div>
+      <div class="insight" id="insight-device" style="display:none"></div>
+      <div id="ga4-device-chart-body" class="chart-zoomable" data-chart-title="📱 일별 기기 종류 분포" data-chart-key="device" onclick="_openChartModal(this)" title="클릭하면 크게+자세히 보기"><div class="loading" style="padding:16px 0">불러오는 중...</div></div>
+    </div>
     ${_lifetimeCardHtml(res.lifetime)}
     <div class="card">
       <div class="chart-title">🧮 신규가입 주차별 D1/D7/D30 잔존율 (참고용, 표본 적을 수 있음)</div>
@@ -703,6 +708,7 @@ function _renderDashboard(res) {
   // 차트 렌더링에 영향 없음.
   const startDate = dates[0], endDate = dates[dates.length - 1];
   _loadGa4Chart(startDate, endDate);
+  _loadGa4DeviceChart(startDate, endDate);
   _loadGa4SetupCard();
 }
 
@@ -745,6 +751,36 @@ async function _loadGa4Chart(startDate, endDate) {
     const msg = `<div class="empty" style="padding:16px 0">불러오지 못했습니다: ${_esc(e.message || '알 수 없는 오류')}</div>`;
     el.innerHTML = msg;
     if (freqEl) freqEl.innerHTML = msg;
+  }
+}
+
+async function _loadGa4DeviceChart(startDate, endDate) {
+  const el = document.getElementById('ga4-device-chart-body');
+  const auth = window._analyticsAuth;
+  if (!el || !auth) return;
+  try {
+    const fn = functionsRegion.httpsCallable('getGa4DeviceTrend');
+    const r = await fn({ user_id: auth.user_id, token: auth.token, start_date: startDate, end_date: endDate });
+    const data = r.data;
+    if (!data || !data.ok) {
+      el.innerHTML = `<div class="empty" style="padding:16px 0">${_esc((data && data.error) || 'GA4 연동이 설정되지 않았어요.')}</div>`;
+      return;
+    }
+    const dDates = data.series.map(d => d.date);
+    const hasOther = data.series.some(d => d.other > 0);
+    const buildSeries = () => {
+      const s = [
+        { label: '모바일', color: 'var(--accent2)', values: data.series.map(d => d.mobile) },
+        { label: 'PC', color: 'var(--accent)', values: data.series.map(d => d.desktop) },
+        { label: '태블릿', color: 'var(--success)', values: data.series.map(d => d.tablet) },
+      ];
+      if (hasOther) s.push({ label: '기타(스마트TV 등)', color: '#7a5c40', values: data.series.map(d => d.other) });
+      return s;
+    };
+    el.innerHTML = _svgStackedBarChart(dDates, buildSeries());
+    _chartRegistry.device = () => _svgStackedBarChart(dDates, buildSeries(), true);
+  } catch (e) {
+    el.innerHTML = `<div class="empty" style="padding:16px 0">불러오지 못했습니다: ${_esc(e.message || '알 수 없는 오류')}</div>`;
   }
 }
 

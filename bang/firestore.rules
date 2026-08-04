@@ -40,6 +40,18 @@ service cloud.firestore {
     // 지워 스스로 정지를 해제할 수 있었음(로그인/verifySession의 _activeBan
     // 체크를 완전히 우회) — 실제 합성 계정으로 자가-정지 후 자가-해제까지
     // 재현 성공한 뒤 즉시 잠금.
+    // 🚨🚨 2026-08-03 추가 긴급 보강(같은 전수조사 연장선 — 유저의 어뷰징 제보를
+    // 계기로 total_points 자체를 재점검하다 발견, curl로 999999999 덮어쓰기 성공
+    // 재현함): total_points/badge는 그동안 보호 목록에 전혀 없어서 문서 소유자가
+    // 원하는 값으로 직접 덮어쓸 수 있었음 — point_ledger(감사 로그)만 잠겨있고
+    // 정작 실제 잔액 필드는 안 잠겨있던 맹점. total_points는 한 번의 쓰기에서
+    // 늘어나는 폭을 정상 자기지급 최대치(연속출석 마일스톤 100p)보다 넉넉하게,
+    // 줄어드는 폭은 최고가 아바타 구매(15000p)보다 넉넉하게 잡아 델타를 제한 —
+    // "정상 액션 하나만큼만 매번 조금씩 바뀔 수 있다"로 좁혀서 잭팟형 위조를 막음
+    // (여러 번 걸쳐 조금씩 부정 적립하는 것까지는 이 규칙만으론 못 막지만, 그건
+    // 이번에 발견된 "즉시 무한 포인트" 위험도와는 차원이 다름). badge는 유일하게
+    // 실제 권한(버그 제보함 열람, fbGetBugReports)을 여는 'treeguard' 값으로
+    // 새로 자가승격하는 것만 차단 — 그 외 포인트 등급 표시용 값은 계속 허용.
     match /users/{uid} {
       allow read: if true;
       allow create: if false;
@@ -49,7 +61,11 @@ service cloud.firestore {
         request.resource.data.get('google_uid', null) == resource.data.get('google_uid', null) &&
         request.resource.data.get('kakao_uid', null) == resource.data.get('kakao_uid', null) &&
         request.resource.data.get('banned_until', null) == resource.data.get('banned_until', null) &&
-        request.resource.data.get('ban_reason', null) == resource.data.get('ban_reason', null);
+        request.resource.data.get('ban_reason', null) == resource.data.get('ban_reason', null) &&
+        request.resource.data.get('total_points', 0) - resource.data.get('total_points', 0) <= 150 &&
+        request.resource.data.get('total_points', 0) - resource.data.get('total_points', 0) >= -15000 &&
+        (request.resource.data.get('badge', '') == resource.data.get('badge', '') ||
+         request.resource.data.get('badge', '') != 'treeguard');
       allow delete: if request.auth != null &&
         (resource.data.auth_uid == null || resource.data.auth_uid == request.auth.uid);
     }

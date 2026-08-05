@@ -4262,9 +4262,7 @@ async function submitSubInStory(episode_id, closing = false) {
   if (!content) { toast('문장을 입력해주세요.', true); return; }
   const _storyMode = window._storyData && window._storyData.story ? window._storyData.story.mode : null;
   const _subMax = _storyMode === 'genre_switch' ? FB_GENRE_SWITCH_MAX_CHARS : 50;
-  const _subMin = _storyMode === 'genre_switch' ? FB_GENRE_SWITCH_MIN_CHARS : 0;
   if (content.length > _subMax) { toast('조금 더 짧게 써주세요.', true); return; }
-  if (content.length < _subMin) { toast(`최소 ${_subMin}자 이상 써주세요.`, true); return; }
   _submitSubInStoryInFlight = true;
   // 응답이 느릴 때(콜드스타트 등) 눌렀는지 안 눌렸는지 알 길이 없어서 여러 번
   // 누르다가 "이미 제출하셨습니다" 오류를 보는 혼란이 있었음(2026-07-19 유저
@@ -5976,7 +5974,6 @@ function buildStoryActionHtml(openEp) {
   const isFixedEnding = story && story.mode === 'fixed_ending';
   const curGenre = isGenreSwitch ? (story.genre_sequence || [])[Number(openEp.step) - 1] : null;
   const subMax = isGenreSwitch ? FB_GENRE_SWITCH_MAX_CHARS : 50;
-  const subMin = isGenreSwitch ? FB_GENRE_SWITCH_MIN_CHARS : 0;
   const subPlaceholder = isGenreSwitch && curGenre ? `${curGenre} 분위기로 이어서, ${subMax}자 이내로…` : '한 문장으로 이어가세요';
   const genreSuffix = isGenreSwitch ? (GENRE_META[curGenre] || 'mystery') : null;
   // 카드에 --g/--wash 커스텀 프로퍼티(장르 톤)와 margin-bottom 등 일반 스타일을
@@ -5993,7 +5990,7 @@ function buildStoryActionHtml(openEp) {
         <div style="font-size:13px;font-weight:700;margin-bottom:8px">✏️ 이어 쓰기</div>
         <div id="polish-indicator" style="display:none;font-size:12px;color:var(--accent2);margin-bottom:8px;padding:6px 10px;background:var(--surface);border-radius:6px;border-left:2px solid var(--accent2)"></div>
         <div id="typing-indicator" style="font-size:12px;color:var(--muted)"></div>
-        <input type="text" id="sub-input" maxlength="${subMax}" placeholder="${esc(subPlaceholder)}" oninput="updateCount('sub-input','sub-cc',${subMax},${subMin});_pingTyping('${esc(openEp.episode_id)}')">
+        <input type="text" id="sub-input" maxlength="${subMax}" placeholder="${esc(subPlaceholder)}" oninput="updateCount('sub-input','sub-cc',${subMax});_pingTyping('${esc(openEp.episode_id)}')">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px">
           <div id="sub-submit-actions" style="display:flex;gap:8px;flex-wrap:wrap">
             ${effectiveClosedCount >= 1 && !isFixedEnding

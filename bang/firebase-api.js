@@ -75,9 +75,10 @@ const FB_ADMIN_ID        = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
 const FB_AI_ID           = '578873e7-47b7-48d3-9cd8-894546196205'; // AI 자동참여 전용 봇 계정 (관리자 계정과 분리)
 var FB_VOTE_THRESHOLD  = 3;
 const FB_WORD_CHALLENGE_MAX_CHARS = 50;
-// 장르 강제 전환 이야기 전용 글자수 범위 — 50자 고정(유저 확정, 2026-07-28.
-// 구현 중 제가 임의로 100자까지 늘렸었는데 그런 지시는 없었음 — 원복).
-const FB_GENRE_SWITCH_MIN_CHARS = 50;
+// 장르 강제 전환 이야기 전용 최대 글자수 — 50자 고정(유저 확정, 2026-07-28.
+// 구현 중 제가 임의로 100자까지 늘렸었는데 그런 지시는 없었음 — 원복). 최소
+// 글자수는 두지 않음(유저 확정, 2026-08-04 — 문장 품질은 투표로 가려지니
+// 별도 최소 기준 불필요).
 const FB_GENRE_SWITCH_MAX_CHARS = 50;
 const _closingEpisodes = new Set(); // 동시 중복 마감 방지
 
@@ -1262,15 +1263,15 @@ async function fbCreateSubmission(episode_id, content, author_id, derived_from, 
   const ep = epSnap.data();
   if (ep.status !== 'open') return { ok: false, error: '제출이 마감됐습니다.' };
 
-  // 장르 강제 전환 이야기는 글자수 제한이 다름(최소 50~최대 100) — fbVote가
-  // vote_threshold를 읽는 것과 동일하게, 무거운 트랜잭션 전에 story를 한 번
-  // 먼저 읽어서 모드만 확인
+  // 장르 강제 전환 이야기는 글자수 제한이 다름(50자) — fbVote가 vote_threshold를
+  // 읽는 것과 동일하게, 무거운 트랜잭션 전에 story를 한 번 먼저 읽어서 모드만 확인.
+  // 최소 글자수는 따로 두지 않음 — 문장의 좋고 나쁨은 사람들 투표로 가려지니
+  // 별도 최소 기준을 강제할 필요가 없음(유저 확정, 2026-08-04. 이전엔 최소=최대=50으로
+  // 잘못 박혀있어서 정확히 50자가 아니면 전부 막히는 버그가 있었음).
   const storySnap0 = await db.collection('stories').doc(ep.story_id).get();
   const story0 = storySnap0.exists ? storySnap0.data() : {};
   const maxChars = story0.mode === 'genre_switch' ? FB_GENRE_SWITCH_MAX_CHARS : 50;
-  const minChars = story0.mode === 'genre_switch' ? FB_GENRE_SWITCH_MIN_CHARS : 0;
   if (text.length > maxChars) return { ok: false, error: `${maxChars}자 이내로 작성해주세요.` };
-  if (text.length < minChars) return { ok: false, error: `최소 ${minChars}자 이상 작성해주세요.` };
 
   const prevSubsSnap = await db.collection('submissions').where('episode_id','==',episode_id).get();
   const myPrevCount = prevSubsSnap.docs.filter(d => d.data().author_id === author_id && !d.data().is_ai).length;

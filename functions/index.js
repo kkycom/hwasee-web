@@ -2645,6 +2645,34 @@ exports.adminReviveSpeedrunSubmission = functions
     return { ok: true, restored_points: restored };
   });
 
+// 1회성 관리자 콜러블 — adminReviveSpeedrunSubmission의 반대 방향. 신고 3표가
+// 자연 누적되길 기다릴 필요 없이 관리자가 즉시 삭제 처리하고 포인트도 회수할 때
+// 콘솔에서 api('adminForceDeleteSpeedrunSubmission', {sub_id:'...'})로 직접
+// 호출(2026-08-05, 테스트 목적으로 실수 게재된 초스피드 문장 처리 계기). 이미
+// 회수된 건에 다시 걸면 중복 차감될 수 있어 point_ledger에 회수 기록이 있으면
+// 막음.
+exports.adminForceDeleteSpeedrunSubmission = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const sub_id = data.sub_id;
+    if (!sub_id) return { ok: false, error: 'sub_id가 필요합니다.' };
+    const db = admin.firestore();
+    const subRef = db.collection('submissions').doc(sub_id);
+    const subSnap = await subRef.get();
+    if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
+    const sub = subSnap.data();
+    const alreadyReversed = await db.collection('point_ledger')
+      .where('sub_id', '==', sub_id).where('reason', '==', 'speedrun_report_delete').limit(1).get();
+    if (!alreadyReversed.empty) return { ok: false, error: '이미 포인트가 회수됐어요.' };
+    if (!sub.is_deleted) await subRef.update({ is_deleted: true, deleted_at: new Date().toISOString() });
+    await _serverReverseSpeedrunPoints(db, sub_id, 'speedrun_adopt', 'speedrun_report_delete');
+    if (sub.upvote_bonus_given === true) {
+      await _serverReverseSpeedrunPoints(db, sub_id, 'speedrun_upvote_bonus', 'speedrun_report_delete');
+    }
+    return { ok: true };
+  });
+
 // 초스피드 전용 씨앗 생성 — _serverCreateSeedStory는 max_steps:10/vote_threshold:5가
 // 하드코딩돼 있어 그대로 못 씀. point_values는 1~100 셔플(Fisher–Yates)로 스토리
 // 생성 시 한 번만 만들어서 저장 — 매 단계 랜덤이 아니라 스토리당 고정 배정.

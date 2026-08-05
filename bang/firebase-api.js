@@ -2892,6 +2892,18 @@ async function fbAdminReviveSpeedrunSubmission(admin_id, sub_id) {
   }
 }
 
+// 1회성 관리자 콜러블 — fbAdminReviveSpeedrunSubmission의 반대 방향. 콘솔에서
+// api('adminForceDeleteSpeedrunSubmission', {sub_id:'...'})로 직접 호출(2026-08-05).
+async function fbAdminForceDeleteSpeedrunSubmission(admin_id, sub_id) {
+  if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
+  try {
+    const res = await functionsRegion.httpsCallable('adminForceDeleteSpeedrunSubmission')({ user_id: admin_id, sub_id, token: localStorage.getItem('hwasee_token') });
+    return res.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
+  }
+}
+
 // 신고 내역 페이지에서 바로 정지시킬 수 있게(2026-08-02) — 콘솔에서 user_id
 // 찾아 수동 호출하던 걸 버튼 하나로.
 async function fbAdminBanUser(admin_id, target_user_id, days, reason) {
@@ -3282,6 +3294,7 @@ async function firebaseApi(action, params = {}) {
     case 'setKakaoKey':           return fbSetKakaoKey(await requireUid(), params.key, params.secret);
     case 'adminBackfillWordSlotChallengeWords': return fbAdminBackfillWordSlotChallengeWords(await requireUid());
     case 'adminReviveSpeedrunSubmission': return fbAdminReviveSpeedrunSubmission(await requireUid(), params.sub_id);
+    case 'adminForceDeleteSpeedrunSubmission': return fbAdminForceDeleteSpeedrunSubmission(await requireUid(), params.sub_id);
     case 'adminBanUser':   return fbAdminBanUser(await requireUid(), params.target_user_id, params.days, params.reason);
     case 'adminUnbanUser': return fbAdminUnbanUser(await requireUid(), params.target_user_id);
     case 'adminAddFairytalePoolEntries':  return fbAdminAddFairytalePoolEntries(await requireUid(), params.raw_text);

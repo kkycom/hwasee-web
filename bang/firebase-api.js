@@ -1242,12 +1242,18 @@ async function _checkSubmitRateLimit(author_id) {
   // orderBy('created_at','desc')를 명시해야 기존 author_id+created_at(DESC) 복합
   // 인덱스를 그대로 탐 — 명시 안 하면 Firestore가 암묵적으로 오름차순 인덱스를
   // 요구해서 새 인덱스가 필요해짐(실제로 배포 전 REST로 재현해서 확인함).
+  // .count() 집계 쿼리는 이 프로젝트가 쓰는 Firebase SDK(9.23.0, compat 모드)에서
+  // 이 체이닝 방식이 지원되지 않아 "count is not a function"으로 터져서 이 체크
+  // 아래의 모든 제출이 통째로 막히는 사이트 전체 장애였음(유저 제보, 2026-08-04).
+  // 문서 개수만 필요하니 limit(threshold)+get()의 size로 동일한 판정을 함 —
+  // 어차피 임계값을 넘는지만 보면 되므로 그 이상은 안 읽어서 count()보다 결과도
+  // 똑같고 호환성 문제도 없음.
   const [hourSnap, daySnap] = await Promise.all([
-    db.collection('submissions').where('author_id', '==', author_id).where('created_at', '>', hourAgo).orderBy('created_at', 'desc').count().get(),
-    db.collection('submissions').where('author_id', '==', author_id).where('created_at', '>', dayAgo).orderBy('created_at', 'desc').count().get(),
+    db.collection('submissions').where('author_id', '==', author_id).where('created_at', '>', hourAgo).orderBy('created_at', 'desc').limit(SUBMIT_RATE_HOURLY_MAX).get(),
+    db.collection('submissions').where('author_id', '==', author_id).where('created_at', '>', dayAgo).orderBy('created_at', 'desc').limit(SUBMIT_RATE_DAILY_MAX).get(),
   ]);
-  if (hourSnap.data().count >= SUBMIT_RATE_HOURLY_MAX) return { ok: false, error: '너무 빠르게 많이 작성하고 있어요. 잠시 후 다시 시도해주세요.' };
-  if (daySnap.data().count >= SUBMIT_RATE_DAILY_MAX) return { ok: false, error: '오늘 작성 가능한 횟수를 다 채웠어요. 내일 다시 시도해주세요.' };
+  if (hourSnap.size >= SUBMIT_RATE_HOURLY_MAX) return { ok: false, error: '너무 빠르게 많이 작성하고 있어요. 잠시 후 다시 시도해주세요.' };
+  if (daySnap.size >= SUBMIT_RATE_DAILY_MAX) return { ok: false, error: '오늘 작성 가능한 횟수를 다 채웠어요. 내일 다시 시도해주세요.' };
   return { ok: true };
 }
 

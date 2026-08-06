@@ -8387,10 +8387,20 @@ window.onload = async () => {
   // 그걸 막기 위해 결과가 필요 없는 최소 read를 무조건 먼저 날려 채널을 미리 열어둠.
   firebase.firestore().collection('config').doc('stats').get().catch(() => {});
 
-  // 오늘의 이야기·자유 탭 프리페치 (캐시 없을 때만)
+  // 오늘의 이야기·자유 탭 프리페치 (캐시 없고, 지금 그 탭이 아닐 때만) —
+  // currentRoute가 이미 'spotlight'/'free'면 home()→loadHomeTab()이 이미 그
+  // 탭 데이터를 직접 불러오는 중(재시도 로직까지 포함)이라, 이 프리페치가
+  // 캐시 없는 상태에서 300ms 뒤에도 아직 안 끝났으면 똑같은 조회를 하나 더
+  // 날리는 중복 fetch였음 — 특히 콜드/저속 연결일수록(300ms 안에 못 끝날
+  // 가능성이 높음) 정작 화면에 뜨는 그 요청과 Firestore 커넥션을 나눠 쓰게
+  // 돼서 가장 느려야 할 때 더 느려지는 역효과가 있었음(전체 성능 점검 중
+  // 발견, 2026-08-03). '자유 이야기' 쪽은 _freeFetching 플래그로 이미
+  // 우연히 막혀있었지만 '오늘의 이야기' 쪽엔 그런 가드가 없었음.
   setTimeout(() => {
-    if (!_lsc.get('spotlight')) api('getSpotlight').then(r => { if (r.ok && r.initialized) _lsc.set('spotlight', r, 20); });
-    if (!_lsc.get('free') && !_freeFetching) {
+    if (currentRoute !== 'spotlight' && !_lsc.get('spotlight')) {
+      api('getSpotlight').then(r => { if (r.ok && r.initialized) _lsc.set('spotlight', r, 20); });
+    }
+    if (currentRoute !== 'free' && !_lsc.get('free') && !_freeFetching) {
       const _fp = [api('getStories', { page: 1 })];
       if (user) _fp.push(api('getMyStories'));
       Promise.all(_fp).then(([r, myR]) => {

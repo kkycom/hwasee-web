@@ -17,6 +17,9 @@ const ROOT_INDEX_HTML_PATH = path.join(ROOT, 'index.html');
 const OUT_DIR = path.join(BANG_DIR, 'story');
 const SITEMAP_PATH = path.join(BANG_DIR, 'sitemap.xml');
 const SITE_ORIGIN = 'https://hwasee.me';
+const FB_ADMIN_ID = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
+const FB_AI_ID    = '578873e7-47b7-48d3-9cd8-894546196205'; // functions/index.js와 동일한 값(AI 자동참여 전용 봇 계정)
+const _isRealAuthor = id => id && id !== FB_ADMIN_ID && id !== FB_AI_ID;
 
 function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -84,6 +87,47 @@ function collectLines(node, choices) {
   return [sub.content, ...collectLines(child, choices)];
 }
 
+// collectLines와 동일한 경로를 따라가되 문자열이 아니라 제출 객체 전체를 반환 —
+// 참여자 수/투표수 등 부가정보를 계산하려면 author_id/vote_count가 필요해서 추가함.
+function collectSubs(node, choices) {
+  if (!node || node.ep.status !== 'closed' || !node.adoptedSubs.length) return [];
+  const chosenId = (choices || {})[node.ep.episode_id];
+  const sub = (chosenId && node.adoptedSubs.find(s => s.sub_id === chosenId)) || node.adoptedSubs[0];
+  const child = node.children.find(c => c.ep.parent_sub_id === sub.sub_id);
+  return [sub, ...collectSubs(child, choices)];
+}
+
+function _daysBetween(startIso, endIso) {
+  if (!startIso || !endIso) return null;
+  const ms = new Date(endIso) - new Date(startIso);
+  if (!isFinite(ms) || ms < 0) return null;
+  return Math.max(1, Math.round(ms / 86400000));
+}
+
+// 완결까지 채택된 문장들 각각에 대해, 같은 지점에서 채택되지 않은 후보 중 가장
+// 표를 많이 받은 것("가장 접전이었던 후보")을 뽑음 — 작품마다 완전히 고유한
+// 데이터라 다른 완결작 페이지와 중복될 위험이 없음. 채택 문장과의 표차가 작은
+// 순(접전 순)으로 정렬해 상위 max개만 노출.
+function pickRejectedCandidates(subs, allSubmissions, max) {
+  const races = [];
+  for (const chosen of subs) {
+    const rivals = allSubmissions.filter(s =>
+      s.episode_id === chosen.episode_id && s.sub_id !== chosen.sub_id &&
+      s.is_adopted !== true && s.is_adopted !== 'TRUE' &&
+      !s.is_deleted && s.content && s.content.trim() && _isRealAuthor(s.author_id)
+    );
+    if (!rivals.length) continue;
+    const top = rivals.reduce((a, b) => (Number(b.vote_count) || 0) > (Number(a.vote_count) || 0) ? b : a);
+    races.push({
+      content: top.content,
+      voteCount: Number(top.vote_count) || 0,
+      winnerVoteCount: Number(chosen.vote_count) || 0,
+    });
+  }
+  races.sort((a, b) => (a.winnerVoteCount - a.voteCount) - (b.winnerVoteCount - b.voteCount));
+  return races.slice(0, max);
+}
+
 // ── Firestore 조회 ──
 
 async function fetchStoryData(db, story_id) {
@@ -111,11 +155,49 @@ function proseHtml(opening, lines) {
   const lineHtml = lines.map(l =>
     `<div class="prose-line"><span class="prose-sentence">${esc(l)}</span></div>`
   ).join('\n      ');
-  return `<div style="max-width:640px;margin:0 auto;padding:24px 16px 40px">
-    <div class="story-prose">
+  return `<div class="story-prose">
       <div class="prose-opening">${esc(opening)}</div>
       ${lineHtml}
-    </div>
+    </div>`;
+}
+
+function storyMetaHtml({ participantCount, sentenceCount, days }) {
+  const parts = [`참여자 ${participantCount}명`, `${sentenceCount}문장`];
+  if (days != null) parts.push(`${days}일 만에 완결`);
+  return `<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--muted)">
+    <strong style="color:var(--text);font-size:13px">이 이야기가 만들어진 과정</strong><br>${esc(parts.join(' · '))}
+  </div>`;
+}
+
+function candidatesHtml(candidates) {
+  if (!candidates.length) return '';
+  const items = candidates.map(c => `
+    <div style="margin-top:10px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:13.5px;line-height:1.6">
+      ${esc(c.content)}
+      <div style="margin-top:4px;font-size:11.5px;color:var(--accent2)">${c.voteCount}표 · 채택 문장은 ${c.winnerVoteCount}표</div>
+    </div>`).join('');
+  return `<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+    <strong style="color:var(--text);font-size:13px">갈림길이 되었던 문장</strong>${items}
+  </div>`;
+}
+
+function relatedStoriesHtml(related) {
+  if (!related.length) return '';
+  const items = related.map(r =>
+    `<li style="margin-top:6px"><a href="/bang/story/${r.id}/" style="color:var(--accent2);text-decoration:none">${esc(r.title)}</a></li>`
+  ).join('');
+  return `<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+    <strong style="color:var(--text);font-size:13px">다른 완결작</strong>
+    <ul style="list-style:none;margin-top:8px;font-size:13.5px;padding:0">${items}</ul>
+  </div>`;
+}
+
+function storyPageBodyHtml({ opening, lines, meta, candidates, related }) {
+  return `<div style="max-width:640px;margin:0 auto;padding:24px 16px 40px">
+    ${proseHtml(opening, lines)}
+    ${storyMetaHtml(meta)}
+    ${candidatesHtml(candidates)}
+    ${relatedStoriesHtml(related)}
     <a href="/bang/" style="display:inline-block;margin-top:24px;padding:10px 20px;background:var(--accent2);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600">화씨.방에서 계속 둘러보기 →</a>
   </div>`;
 }
@@ -351,9 +433,10 @@ async function main() {
   fs.rmSync(OUT_DIR, { recursive: true, force: true });
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
-  const sitemapEntries = [];
-  let ok = 0;
-
+  // 1차 패스: 파일은 아직 안 쓰고 데이터만 계산 — "관련 작품" 링크를 고르려면
+  // 전체 완결작 목록이 먼저 확정돼 있어야 해서 두 단계로 나눔(2026-08-09,
+  // 콘텐츠 밀도 보강 — [[project_hwasee_bang_adsense_content_gap]] 참고).
+  const processed = [];
   for (const story of stories) {
     try {
       const { episodes, submissions } = await fetchStoryData(db, story.story_id);
@@ -362,32 +445,62 @@ async function main() {
       if (!tree) { console.error(`스킵(마감된 에피소드 없음): ${story.story_id}`); continue; }
 
       const canonicalPath = buildCanonicalPath(closedEps, submissions);
-      const lines = collectLines(tree, canonicalPath);
-      if (!lines.length) { console.error(`스킵(채택 문장 없음): ${story.story_id}`); continue; }
+      const subs = collectSubs(tree, canonicalPath);
+      if (!subs.length) { console.error(`스킵(채택 문장 없음): ${story.story_id}`); continue; }
+      const lines = subs.map(s => s.content);
 
       const lastmod = closedEps.reduce((max, e) => (e.closed_at && e.closed_at > max ? e.closed_at : max), '');
       const title = story.opening.length > 40 ? story.opening.slice(0, 40) + '…' : story.opening;
       const description = (lines[0] || '').length > 80 ? lines[0].slice(0, 80) + '…' : (lines[0] || '화씨.방에서 함께 완성한 이야기');
       const url = `${SITE_ORIGIN}/bang/story/${story.story_id}/`;
-      const bodyHtml = proseHtml(story.opening, lines);
 
-      const html = renderStoryPage(indexHtmlSrc, {
-        id: story.story_id, title, description, url, bodyHtml, lastmod,
+      const participantCount = new Set(subs.map(s => s.author_id).filter(_isRealAuthor)).size;
+
+      processed.push({
+        id: story.story_id, lastmod, title, description, url,
+        opening: story.opening, lines,
         creatorNickname: story.creator_nickname,
+        meta: {
+          participantCount,
+          sentenceCount: lines.length,
+          days: _daysBetween(story.created_at, lastmod),
+        },
+        candidates: pickRejectedCandidates(subs, submissions, 4),
       });
-
-      const dir = path.join(OUT_DIR, story.story_id);
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, 'index.html'), html);
-      sitemapEntries.push({ id: story.story_id, lastmod, title, description });
-      ok++;
     } catch (e) {
       console.error(`이야기 처리 실패(${story.story_id}):`, e.message);
     }
   }
 
-  // 최신순으로 정렬해서 아카이브 목록에 최근 완결작이 먼저 보이게
-  sitemapEntries.sort((a, b) => (b.lastmod || '').localeCompare(a.lastmod || ''));
+  // 최신순으로 정렬 — 아카이브 목록과 "관련 작품" 선정 둘 다 이 순서를 기준으로 씀
+  processed.sort((a, b) => (b.lastmod || '').localeCompare(a.lastmod || ''));
+
+  // 2차 패스: 관련 작품(자기 다음 최신순 3편, 끝까지 가면 처음부터 순환) 확정 후 실제 파일 생성
+  const sitemapEntries = [];
+  let ok = 0;
+  for (let i = 0; i < processed.length; i++) {
+    const item = processed[i];
+    const related = [];
+    for (let k = 1; k <= processed.length - 1 && related.length < 3; k++) {
+      related.push(processed[(i + k) % processed.length]);
+    }
+
+    const bodyHtml = storyPageBodyHtml({
+      opening: item.opening, lines: item.lines, meta: item.meta,
+      candidates: item.candidates, related,
+    });
+
+    const html = renderStoryPage(indexHtmlSrc, {
+      id: item.id, title: item.title, description: item.description, url: item.url,
+      bodyHtml, lastmod: item.lastmod, creatorNickname: item.creatorNickname,
+    });
+
+    const dir = path.join(OUT_DIR, item.id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'index.html'), html);
+    sitemapEntries.push({ id: item.id, lastmod: item.lastmod, title: item.title, description: item.description });
+    ok++;
+  }
 
   fs.writeFileSync(SITEMAP_PATH, renderSitemap(sitemapEntries));
   fs.writeFileSync(path.join(OUT_DIR, 'index.html'), renderArchiveIndex(sitemapEntries));
@@ -404,7 +517,11 @@ async function main() {
   console.log(`루트 페이지(index.html)에 완결작 미리보기 ${Math.min(ROOT_PREVIEW_COUNT, sitemapEntries.length)}편 삽입 완료`);
 }
 
-module.exports = { getEpisodeTree, buildCanonicalPath, collectLines, proseHtml, renderStoryPage, renderSitemap, renderArchiveIndex, renderRootArchivePreview, esc };
+module.exports = {
+  getEpisodeTree, buildCanonicalPath, collectLines, collectSubs, pickRejectedCandidates,
+  proseHtml, storyMetaHtml, candidatesHtml, relatedStoriesHtml, storyPageBodyHtml,
+  renderStoryPage, renderSitemap, renderArchiveIndex, renderRootArchivePreview, esc,
+};
 
 if (require.main === module) {
   main().catch(e => {

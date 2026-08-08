@@ -143,18 +143,28 @@ function renderStoryPage(indexHtmlSrc, { id, title, description, url, bodyHtml, 
   // 전부 LF 기준이라 먼저 정규화(출력 파일이 LF가 돼도 브라우저/크롤러엔 무해함)
   let html = indexHtmlSrc.replace(/\r\n/g, '\n');
 
-  html = html.replace(
-    '<title>화씨.방 — 릴레이 소설 공동창작 플랫폼</title>',
-    `<title>${esc(title)} — 화씨.방</title>`
-  );
+  // 2026-07-27 네이버 노출 개선(커밋 0ec9ca3)으로 bang/index.html의 실제
+  // <title> 문구가 "화씨.방 — ..."에서 "화씨.방(화씨방) — ..."로 바뀌면서
+  // 아래 있던 리터럴 문자열 매칭이 조용히 실패하기 시작함(.replace()는 매치 실패해도
+  // 에러 없이 원본을 그대로 반환) — 그 결과 완결작 정적 페이지 전부가 실제 이야기
+  // 제목 대신 사이트 제네릭 타이틀을 그대로 달고 나갔고, 30개 페이지의 <title>이
+  // 전부 바이트 단위로 동일해져서 구글이 중복 콘텐츠로 묶고 canonical을 무시하는
+  // 결과로 이어짐(색인 급감 + 애드센스 저가치콘텐츠 재반려, 2026-08-08 발견).
+  // JSON-LD/#app 마커처럼 구조 기반 정규식 + 못 찾으면 즉시 throw로 바꿔서
+  // bang/index.html의 타이틀 문구가 또 바뀌어도 조용히 깨지지 않게 함.
+  const titleMatch = html.match(/<title>[^<]*<\/title>/);
+  if (!titleMatch) throw new Error(`<title> 태그를 못 찾음(story ${id}) — bang/index.html 구조가 바뀌었을 수 있음`);
+  html = html.replace(titleMatch[0], `<title>${esc(title)} — 화씨.방</title>`);
+
   html = html.replace(
     /<meta name="description" content="[^"]*">/,
     `<meta name="description" content="${esc(description)}">`
   );
-  html = html.replace(
-    '<link rel="canonical" href="https://hwasee.me/bang/">',
-    `<link rel="canonical" href="${url}">`
-  );
+
+  // canonical도 같은 부류의 리터럴 매칭 취약점이라 함께 정규식+하드체크로 교체
+  const canonicalMatch = html.match(/<link rel="canonical" href="[^"]*">/);
+  if (!canonicalMatch) throw new Error(`canonical 태그를 못 찾음(story ${id}) — bang/index.html 구조가 바뀌었을 수 있음`);
+  html = html.replace(canonicalMatch[0], `<link rel="canonical" href="${url}">`);
   // 예전엔 JSON-LD 내용 전체를 문자열로 그대로 박아넣어 정확히 일치해야만
   // 치환됐음 — bang/index.html 쪽 JSON-LD 필드(alternateName 등)가 나중에
   // 바뀌면서 두 사본이 어긋났고, 그 결과 이 매칭이 계속 실패해 완결작 SSG

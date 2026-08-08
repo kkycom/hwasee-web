@@ -306,14 +306,20 @@ function renderArchiveIndex(entries) {
 // 링크 허브뿐이었음(디버그방 확인, /bang/은 SSG로 이미 4만자 넘게 정상). 이미
 // 만들어둔 완결작 데이터를 재사용해서 루트 페이지 자체에도 실제 이야기 미리보기를
 // 심어 넣음 — 크롤러가 도메인 대표 얼굴(루트)에서부터 실질적인 텍스트를 보게 함.
+//
+// 2026-08-08 정정: 220자까지 자르던 이전 방식은, 완결작 본문이 대부분 100~450자라
+// 사실상 이야기 전문을 루트 페이지에 그대로 재게시하는 꼴이었음(구글이 루트와
+// 개별 작품 URL을 유사 콘텐츠로 묶어 canonical을 다르게 선택하는 원인 후보로 확인,
+// [[project_hwasee_bang_adsense_content_gap]] 참고). 아카이브 목록(story/index.html)에서
+// 이미 쓰고 있던 첫 문장 한 줄짜리 description으로 통일 — 루트에서는 "맛보기"만
+// 보여주고 전문은 반드시 작품 URL에만 존재하게 함.
 function renderRootArchivePreview(entries) {
   if (!entries.length) return '';
   const items = entries.map(e => {
-    const preview = e.preview.length > 220 ? e.preview.slice(0, 220) + '…' : e.preview;
     return `
     <a class="archive-item" href="/bang/story/${e.id}/">
       <div class="archive-title">${esc(e.title)}</div>
-      <div class="archive-preview">${esc(preview)}</div>
+      <div class="archive-preview">${esc(e.description)}</div>
       ${e.lastmod ? `<div class="archive-date">완결 ${esc(e.lastmod.slice(0, 10))}</div>` : ''}
     </a>`;
   }).join('');
@@ -373,8 +379,7 @@ async function main() {
       const dir = path.join(OUT_DIR, story.story_id);
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, 'index.html'), html);
-      const preview = [story.opening, ...lines].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
-      sitemapEntries.push({ id: story.story_id, lastmod, title, description, preview });
+      sitemapEntries.push({ id: story.story_id, lastmod, title, description });
       ok++;
     } catch (e) {
       console.error(`이야기 처리 실패(${story.story_id}):`, e.message);

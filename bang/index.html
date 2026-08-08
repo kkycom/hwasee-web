@@ -903,54 +903,6 @@
   </svg>
 </div>
 
-<div id="onboarding-overlay">
-  <div class="ob-card">
-    <button class="ob-skip" onclick="closeOnboarding()">건너뛰기</button>
-    <div class="ob-page active">
-      <div class="ob-icon">🌱</div>
-      <div class="ob-title">와주셔서 정말 감사합니다.</div>
-      <div class="ob-body">어렵게 생각하지 마세요!<br>아무 말이라도 괜찮습니다.<br><strong>열심히 하겠습니다. 지켜봐주세요!</strong></div>
-    </div>
-    <div class="ob-page">
-      <img class="ob-img" src="/bang/ob1.png" alt="" onerror="this.style.display='none'">
-      <div class="ob-icon">✍️</div>
-      <div class="ob-title">한 문장씩 이어가는 이야기</div>
-      <div class="ob-body">첫 화면 '오늘의 이야기'에는 초스피드, 장르전환, 결말고정 등<br>서로 다른 방식의 이야기들이 있어요.<br>마음에 드는 걸 골라 한 문장을 더해보세요.<br><strong>채택되면 포인트가 쌓여요!</strong></div>
-    </div>
-    <div class="ob-page">
-      <img class="ob-img" src="/bang/ob2.png" alt="" onerror="this.style.display='none'">
-      <div class="ob-icon">👍</div>
-      <div class="ob-title">공감으로 이야기가 완성돼요</div>
-      <div class="ob-body">다른 사람들이 쓴 문장에 공감을 보낼 수 있어요.<br><strong>가장 많은 공감을 받은 문장이 채택되어</strong><br>다음 이야기로 이어져요.</div>
-    </div>
-    <div class="ob-page">
-      <div class="ob-icon">🖋️</div>
-      <div class="ob-title">자유롭게 이야기를 써보세요</div>
-      <div class="ob-body">자유 이야기 탭에서 직접 첫 문장을 써서<br>자유롭게 새로운 이야기를 시작할 수도 있어요!<br>응원하는 이야기를 상단에 <strong>'주목'</strong>으로 올려줄 수도 있어요.</div>
-    </div>
-    <div class="ob-page">
-      <img class="ob-img" src="/bang/ob3.png" alt="" onerror="this.style.display='none'">
-      <div class="ob-icon">⑂</div>
-      <div class="ob-title">이야기가 여러 갈래로 나뉘기도 해요</div>
-      <div class="ob-body">투표가 동률이 되면 이야기가 자연스럽게 여러 갈래로 갈라져요.<br>마음에 드는 지점에서 직접 새 갈래를 만들 수도 있고,<br>완결된 이야기는 <strong>이어서 계속 쓸 수도</strong> 있어요.</div>
-    </div>
-    <div class="ob-page">
-      <div class="ob-icon">🎲</div>
-      <div class="ob-title">오늘의 단어 챌린지</div>
-      <div class="ob-body">매일 새로운 세 단어가 주어져요.<br>이 단어를 모두 넣어 짧은 문장을 지어보세요.<br>우승작은 <strong>다음 날 새 이야기의 시작 문장</strong>이 돼요! (1등 100P)</div>
-    </div>
-    <div class="ob-dots">
-      <span class="ob-dot active" id="ob-dot-0"></span>
-      <span class="ob-dot" id="ob-dot-1"></span>
-      <span class="ob-dot" id="ob-dot-2"></span>
-      <span class="ob-dot" id="ob-dot-3"></span>
-      <span class="ob-dot" id="ob-dot-4"></span>
-      <span class="ob-dot" id="ob-dot-5"></span>
-    </div>
-    <div id="ob-actions"></div>
-  </div>
-</div>
-
 <script>
 console.log('HWASEE BANG v156');
 // ═══════════════════════════════════════════════════════════
@@ -6513,33 +6465,68 @@ function enterProseSelMode(mode, story_id) {
 }
 
 // ─── 온보딩 ───────────────────────────────────────────────
-let _obPage = 0, _obTouchX = null, _obMouseX = null, _obMouseDrag = false;
+// 2026-08-08: 정적 마크업으로 미리 박혀있으면 완결작 SSG 페이지 30개 전부에
+// 이 카드 5장 분량 텍스트(600자+)가 그대로 복제돼서, 실제 이야기 본문(짧게는
+// 100~200자)보다 훨씬 큰 "모든 페이지 공통 텍스트" 덩어리가 됨 — 구글이 서로
+// 다른 이야기 페이지를 유사 콘텐츠로 묶어 canonical을 다르게 선택하는 원인으로
+// 확인됨([[project_hwasee_bang_adsense_content_gap]] 참고, GPT/Gemini 교차검증).
+// showOnboarding() 호출 시점(로그인 직후 또는 유저가 메뉴에서 직접 열 때)에만
+// DOM을 만들어 붙이는 방식으로 바꿔서, 크롤러가 렌더링하는 시점(첫 로드, 비로그인
+// 상태)엔 이 마크업이 아예 존재하지 않게 함 — 실제 유저 경험은 동일.
+let _obPage = 0, _obTouchX = null, _obMouseX = null, _obMouseDrag = false, _obBuilt = false;
 
-function showOnboarding() {
-  _obPage = 0;
-  _setObPage(0);
-  document.body.style.overflow = 'hidden';
-  document.getElementById('onboarding-overlay').style.display = 'flex';
-}
-function closeOnboarding() {
-  localStorage.setItem('hwasee_onboarding_seen', '1');
-  document.getElementById('onboarding-overlay').style.display = 'none';
-  document.body.style.overflow = '';
-}
-function _setObPage(n) {
-  document.querySelectorAll('.ob-page').forEach((el, i) => {
-    el.classList.toggle('active', i === n);
-  });
-  [0,1,2,3,4,5].forEach(i => {
-    document.getElementById('ob-dot-'+i).className = 'ob-dot' + (i === n ? ' active' : '');
-  });
-  document.getElementById('ob-actions').innerHTML =
-    n === 5 ? `<button class="ob-btn-start" onclick="closeOnboarding()">시작하기</button>` : '';
-}
-function _obNext() { if (_obPage < 5) { _obPage++; _setObPage(_obPage); } else { closeOnboarding(); } }
-function _obPrev() { if (_obPage > 0) { _obPage--; _setObPage(_obPage); } }
+function _buildOnboardingOverlay() {
+  if (_obBuilt) return;
+  _obBuilt = true;
+  document.body.insertAdjacentHTML('beforeend', `
+<div id="onboarding-overlay">
+  <div class="ob-card">
+    <button class="ob-skip" onclick="closeOnboarding()">건너뛰기</button>
+    <div class="ob-page active">
+      <div class="ob-icon">🌱</div>
+      <div class="ob-title">와주셔서 정말 감사합니다.</div>
+      <div class="ob-body">어렵게 생각하지 마세요!<br>아무 말이라도 괜찮습니다.<br><strong>열심히 하겠습니다. 지켜봐주세요!</strong></div>
+    </div>
+    <div class="ob-page">
+      <img class="ob-img" src="/bang/ob1.png" alt="" onerror="this.style.display='none'">
+      <div class="ob-icon">✍️</div>
+      <div class="ob-title">한 문장씩 이어가는 이야기</div>
+      <div class="ob-body">첫 화면 '오늘의 이야기'에는 초스피드, 장르전환, 결말고정 등<br>서로 다른 방식의 이야기들이 있어요.<br>마음에 드는 걸 골라 한 문장을 더해보세요.<br><strong>채택되면 포인트가 쌓여요!</strong></div>
+    </div>
+    <div class="ob-page">
+      <img class="ob-img" src="/bang/ob2.png" alt="" onerror="this.style.display='none'">
+      <div class="ob-icon">👍</div>
+      <div class="ob-title">공감으로 이야기가 완성돼요</div>
+      <div class="ob-body">다른 사람들이 쓴 문장에 공감을 보낼 수 있어요.<br><strong>가장 많은 공감을 받은 문장이 채택되어</strong><br>다음 이야기로 이어져요.</div>
+    </div>
+    <div class="ob-page">
+      <div class="ob-icon">🖋️</div>
+      <div class="ob-title">자유롭게 이야기를 써보세요</div>
+      <div class="ob-body">자유 이야기 탭에서 직접 첫 문장을 써서<br>자유롭게 새로운 이야기를 시작할 수도 있어요!<br>응원하는 이야기를 상단에 <strong>'주목'</strong>으로 올려줄 수도 있어요.</div>
+    </div>
+    <div class="ob-page">
+      <img class="ob-img" src="/bang/ob3.png" alt="" onerror="this.style.display='none'">
+      <div class="ob-icon">⑂</div>
+      <div class="ob-title">이야기가 여러 갈래로 나뉘기도 해요</div>
+      <div class="ob-body">투표가 동률이 되면 이야기가 자연스럽게 여러 갈래로 갈라져요.<br>마음에 드는 지점에서 직접 새 갈래를 만들 수도 있고,<br>완결된 이야기는 <strong>이어서 계속 쓸 수도</strong> 있어요.</div>
+    </div>
+    <div class="ob-page">
+      <div class="ob-icon">🎲</div>
+      <div class="ob-title">오늘의 단어 챌린지</div>
+      <div class="ob-body">매일 새로운 세 단어가 주어져요.<br>이 단어를 모두 넣어 짧은 문장을 지어보세요.<br>우승작은 <strong>다음 날 새 이야기의 시작 문장</strong>이 돼요! (1등 100P)</div>
+    </div>
+    <div class="ob-dots">
+      <span class="ob-dot active" id="ob-dot-0"></span>
+      <span class="ob-dot" id="ob-dot-1"></span>
+      <span class="ob-dot" id="ob-dot-2"></span>
+      <span class="ob-dot" id="ob-dot-3"></span>
+      <span class="ob-dot" id="ob-dot-4"></span>
+      <span class="ob-dot" id="ob-dot-5"></span>
+    </div>
+    <div id="ob-actions"></div>
+  </div>
+</div>`);
 
-(function() {
   const ov = document.getElementById('onboarding-overlay');
   ov.addEventListener('touchstart', e => { _obTouchX = e.touches[0].clientX; }, { passive: true });
   ov.addEventListener('touchmove', e => { e.preventDefault(); }, { passive: false });
@@ -6565,7 +6552,32 @@ function _obPrev() { if (_obPage > 0) { _obPage--; _setObPage(_obPage); } }
     if (Math.abs(dx) < 50) return;
     if (dx < 0) _obNext(); else _obPrev();
   });
-})();
+}
+
+function showOnboarding() {
+  _buildOnboardingOverlay();
+  _obPage = 0;
+  _setObPage(0);
+  document.body.style.overflow = 'hidden';
+  document.getElementById('onboarding-overlay').style.display = 'flex';
+}
+function closeOnboarding() {
+  localStorage.setItem('hwasee_onboarding_seen', '1');
+  document.getElementById('onboarding-overlay').style.display = 'none';
+  document.body.style.overflow = '';
+}
+function _setObPage(n) {
+  document.querySelectorAll('.ob-page').forEach((el, i) => {
+    el.classList.toggle('active', i === n);
+  });
+  [0,1,2,3,4,5].forEach(i => {
+    document.getElementById('ob-dot-'+i).className = 'ob-dot' + (i === n ? ' active' : '');
+  });
+  document.getElementById('ob-actions').innerHTML =
+    n === 5 ? `<button class="ob-btn-start" onclick="closeOnboarding()">시작하기</button>` : '';
+}
+function _obNext() { if (_obPage < 5) { _obPage++; _setObPage(_obPage); } else { closeOnboarding(); } }
+function _obPrev() { if (_obPage > 0) { _obPage--; _setObPage(_obPage); } }
 
 function cancelProseSelMode() {
   document.removeEventListener('click', _proseSelOutsideClick, { capture: true });

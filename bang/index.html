@@ -7541,7 +7541,8 @@ async function _doDeleteHintPoolEntry(entry_id) {
 async function _doForceStartHintRound() {
   if (!confirm('지금 바로 새 라운드를 시작할까요? (기존 진행 중인 라운드는 마감돼요)')) return;
   try {
-    await functionsRegion.httpsCallable('adminForceStartHintRound')({ user_id: user.user_id, token: localStorage.getItem('hwasee_token') });
+    const res = await functionsRegion.httpsCallable('adminForceStartHintRound')({ user_id: user.user_id, token: localStorage.getItem('hwasee_token') });
+    if (res.data && res.data.ok === false) { toast(res.data.error, true); return; }
     toast('새 라운드가 시작됐어요.');
     adminHintPool();
   } catch (e) {

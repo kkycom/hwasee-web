@@ -4421,13 +4421,21 @@ const HINT_GUESS_POINTS = 30; // 50P였다가 30P로 하향(2026-07-28, 유저 �
 
 async function _serverStartHintRound(db) {
   const now = new Date();
-  await db.runTransaction(async tx => {
+  // 풀 소진 시 true/false를 돌려줘야(2026-08-09 유저 지적) adminForceStartHintRound가
+  // "성공"으로 잘못 표시하지 않음 — 관리자가 등록 없이 바로 시작 버튼만 눌렀다가
+  // 아무 반응 없이 조용히 실패했는데 성공 토스트가 떠서 헷갈렸던 사례로 발견.
+  return await db.runTransaction(async tx => {
     const activeSnap = await tx.get(db.collection('hint_rounds').where('status', '==', 'active').limit(1));
     activeSnap.docs.forEach(d => tx.update(d.ref, { status: 'closed', closed_at: now.toISOString() }));
 
-    const poolSnap = await tx.get(db.collection('hint_pool').orderBy('created_at', 'asc').limit(50));
-    const nextEntry = poolSnap.docs.find(d => !d.data().used);
-    if (!nextEntry) return; // 풀 소진 — 관리자가 채울 때까지 그냥 공백으로 둠(word/fairytale 슬롯과 동일 원칙)
+    // where(used==false)로 직접 걸러야 함 — orderBy(created_at)+limit(50)로 앞에서부터
+    // 훑어 client-side로 필터링하던 옛 방식은, 이 이벤트가 몇 주째 돌면서 이미 사용된
+    // 오래된 문장이 50개를 넘게 쌓이자 새로 등록한(더 최근 created_at인) 미사용 문장이
+    // 항상 그 50개 밖으로 밀려나 영영 안 보이는 버그였음(2026-08-09 — 새 문장을 등록해도
+    // "지금 바로 새 라운드 시작"이 계속 조용히 아무 일도 안 하던 원인).
+    const poolSnap = await tx.get(db.collection('hint_pool').where('used', '==', false).orderBy('created_at', 'asc').limit(1));
+    const nextEntry = poolSnap.docs[0];
+    if (!nextEntry) return false; // 풀 소진 — 관리자가 채울 때까지 그냥 공백으로 둠(word/fairytale 슬롯과 동일 원칙)
 
     tx.update(nextEntry.ref, { used: true });
     const roundRef = db.collection('hint_rounds').doc();
@@ -4438,6 +4446,7 @@ async function _serverStartHintRound(db) {
       winner_user_id: null, winner_nickname: null, winner_submission_id: null, winner_text: null,
       points: HINT_GUESS_POINTS, closed_at: null, participant_count: 0,
     });
+    return true;
   });
 }
 
@@ -4472,7 +4481,8 @@ exports.adminForceStartHintRound = functions
   .region('asia-northeast3')
   .https.onCall(async (data) => {
     await _requireAdmin(data.user_id, data.token);
-    await _serverStartHintRound(admin.firestore());
+    const started = await _serverStartHintRound(admin.firestore());
+    if (!started) return { ok: false, error: '대기 중인 씨앗 문장이 없어요. 먼저 문장을 등록해주세요.' };
     return { ok: true };
   });
 

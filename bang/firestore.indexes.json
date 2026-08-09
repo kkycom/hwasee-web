@@ -66,6 +66,14 @@
         { "fieldPath": "status",           "order": "ASCENDING" },
         { "fieldPath": "participant_count", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "hint_pool",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "used",       "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

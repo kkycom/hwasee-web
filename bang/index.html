@@ -1264,6 +1264,17 @@ function _loadKakaoAdfit() {
   s.async = true;
   document.body.appendChild(s);
 }
+// 애드핏 운영정책 5.2("채팅/메신저처럼 콘텐츠와 함께 광고를 계속 동적으로
+// 불러오는 경우" 금지)에 안전하게 걸치도록, "실제로 다른 화면으로 이동했을
+// 때"만 광고를 다시 요청하고 같은 화면 안에서의 콘텐츠 변경(문장 제출,
+// 분기 선택, 캐시→네트워크 재렌더 등)에는 재요청하지 않게 하는 게이트.
+// key가 직전과 같으면(같은 화면) 스킵, 다르면(진짜 새 화면) 로드.
+let _lastAdNavKey = null;
+function _loadKakaoAdfitOnNav(key) {
+  if (key === _lastAdNavKey) return;
+  _lastAdNavKey = key;
+  _loadKakaoAdfit();
+}
 function _kakaoAdHtml(margin = '16px 0') {
   return `<div style="text-align:center;margin:${margin}">
     <ins class="kakao_ad_area" style="display:none;"
@@ -2207,7 +2218,7 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
           <button class="btn btn-primary" id="sr-submit-btn" style="width:100%" onclick="doSpeedrunSubmit('${story_id}','${openEp ? openEp.episode_id : ''}')">제출</button>
         `}
       </div>` : `<div class="empty" style="margin-top:16px">🎉 100단계 완결!</div>`}`;
-  _loadKakaoAdfit();
+  _loadKakaoAdfitOnNav('story:' + story_id);
 }
 
 async function doSpeedrunSubmit(story_id, episode_id) {
@@ -2489,7 +2500,7 @@ function _applyStoryData(res, story_id) {
           </div>` : `<div style="font-size:13px;color:var(--muted);margin-top:12px">로그인 후 감상을 남길 수 있어요.</div>`}
       </div>` : ''}`;
 
-  if ((openEp && !_isFinishedStory) || isFinished) _loadKakaoAdfit();
+  if ((openEp && !_isFinishedStory) || isFinished) _loadKakaoAdfitOnNav('story:' + story_id);
 
   if (isFinished && !story_comments) {
     loadStoryComments(currentParam);
@@ -3225,7 +3236,7 @@ function renderWordChallenge() {
     ${_kakaoAdHtml()}
     <div>${listHtml}</div>
     ${showMoreHtml}`;
-  _loadKakaoAdfit();
+  _loadKakaoAdfitOnNav('wordChallenge');
 
   if (isActive) _startWordChallengeCountdown(challenge.end_at);
   else _startWordChallengeCountdown(_nextKstMidnightIso());
@@ -3666,7 +3677,7 @@ function renderSpotlight() {
     ${_kakaoAdHtml()}
     <div id="hint-card-area"></div>
     ${cardHtml('speedrun')}${cardHtml('genre_switch')}${cardHtml('fairytale')}${cardHtml('fixed_ending')}${cardHtml('hot')}`;
-  _loadKakaoAdfit();
+  _loadKakaoAdfitOnNav('spotlight');
 
   if (slots.sentence?.state === 'proposing' && slots.sentence.round) {
     _startSentenceRoundCountdown(slots.sentence.round.end_at);
@@ -6495,7 +6506,6 @@ function chooseBranch(episode_id, sub_id) {
   if (actionWrap && window._storyData.story.status === 'active') {
     const newOpenEp = getChosenOpenEp(episodes, submissions, window._branchChoice);
     actionWrap.innerHTML = buildStoryActionHtml(newOpenEp);
-    if (newOpenEp) _loadKakaoAdfit();
     selectedSubs = [];
     _applyVoteSelections();
   }

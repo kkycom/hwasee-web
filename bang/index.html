@@ -324,10 +324,11 @@
 
   /* ── PC 세로 광고(160x600) — 본문(max-width:720px) 오른쪽 여백에 고정.
      본문 오른쪽 끝이 뷰포트 중앙에서 +360px이므로, 거기서 24px 띄워 배치.
-     좁은 화면은 겹칠 여지가 있어 여유 있는 폭(1280px)부터만 노출. */
+     좁은 화면은 겹칠 여지가 있어 여유 있는 폭(1280px)부터만 노출.
+     top은 .pc-side-rank와 동일하게 132px — 좌우 위젯 시작 높이를 맞춤. */
   .pc-side-ad { display: none; }
   @media (min-width: 1280px) {
-    .pc-side-ad { display: block; position: fixed; top: 96px; left: calc(50% + 384px); width: 160px; z-index: 5; }
+    .pc-side-ad { display: block; position: fixed; top: 132px; left: calc(50% + 384px); width: 160px; z-index: 5; }
   }
 
   /* ── PC 세로 랭킹 위젯 — 본문 왼쪽 여백에 .pc-side-ad와 대칭 배치.
@@ -939,21 +940,27 @@
 // 시작하면 fixed를 풀고 그 시점의 푸터 바로 위 지점에 absolute로 고정.
 // SPA 라우팅으로 페이지 높이가 바뀌어도 IntersectionObserver가 레이아웃
 // 변화마다 다시 계산해주므로 별도 트리거 없이 항상 정확함.
+// ⚠️ ins가 display:none인 채로 시작해서 ba.min.js가 광고를 채우기 전엔
+// ad.offsetHeight가 0에 가까움 — 짧은 페이지에서 옵저버가 광고 로드보다
+// 먼저 발동하면 stopTop이 "빈 상태" 높이로 계산돼 실제 광고가 다 찬 뒤엔
+// 그만큼 아래로 삐져나와 푸터를 덮는 문제가 있었음. ResizeObserver로 광고
+// 박스 크기가 바뀔 때마다(로드 완료 포함) 같은 위치를 다시 계산해서 해결.
 (function () {
   const ad = document.getElementById('pc-side-ad');
   const foot = document.getElementById('site-footer');
   if (!ad || !foot || !window.IntersectionObserver) return;
+  let pinned = false;
+  function reposition() {
+    if (!pinned) return;
+    ad.style.top = (foot.getBoundingClientRect().top + window.scrollY - ad.offsetHeight - 24) + 'px';
+  }
   const io = new IntersectionObserver(([entry]) => {
-    if (entry.isIntersecting) {
-      const stopTop = foot.getBoundingClientRect().top + window.scrollY - ad.offsetHeight - 24;
-      ad.style.position = 'absolute';
-      ad.style.top = stopTop + 'px';
-    } else {
-      ad.style.position = '';
-      ad.style.top = '';
-    }
+    pinned = entry.isIntersecting;
+    if (pinned) { ad.style.position = 'absolute'; reposition(); }
+    else { ad.style.position = ''; ad.style.top = ''; }
   }, { threshold: 0 });
   io.observe(foot);
+  if (window.ResizeObserver) new ResizeObserver(reposition).observe(ad);
 })();
 </script>
 <div class="pc-side-rank" id="pc-side-rank">
@@ -972,21 +979,23 @@
 </div>
 <script>
 // PC 랭킹 위젯도 광고 레일과 동일한 푸터 회피 로직(대칭 배치라 같은 문제를 그대로 겪음).
+// loadLeaderboard() 완료 후 목록 높이가 바뀔 수 있어 ResizeObserver로 같이 보정.
 (function () {
   const rank = document.getElementById('pc-side-rank');
   const foot = document.getElementById('site-footer');
   if (!rank || !foot || !window.IntersectionObserver) return;
+  let pinned = false;
+  function reposition() {
+    if (!pinned) return;
+    rank.style.top = (foot.getBoundingClientRect().top + window.scrollY - rank.offsetHeight - 24) + 'px';
+  }
   const io = new IntersectionObserver(([entry]) => {
-    if (entry.isIntersecting) {
-      const stopTop = foot.getBoundingClientRect().top + window.scrollY - rank.offsetHeight - 24;
-      rank.style.position = 'absolute';
-      rank.style.top = stopTop + 'px';
-    } else {
-      rank.style.position = '';
-      rank.style.top = '';
-    }
+    pinned = entry.isIntersecting;
+    if (pinned) { rank.style.position = 'absolute'; reposition(); }
+    else { rank.style.position = ''; rank.style.top = ''; }
   }, { threshold: 0 });
   io.observe(foot);
+  if (window.ResizeObserver) new ResizeObserver(reposition).observe(rank);
 })();
 // loadLeaderboard()는 이후 <script>에서 정의되므로 window load 이후로 미룸.
 window.addEventListener('load', function () { loadLeaderboard(); });
@@ -8798,7 +8807,7 @@ window.onload = async () => {
     &nbsp;·&nbsp;
     <a href="/bang/contact.html" style="color:var(--muted);text-decoration:none" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">문의하기</a>
   </span>
-  <div style="text-align:center;margin-top:20px">
+  <div style="max-width:720px;margin:20px auto 0;text-align:center">
     <ins class="kakao_ad_area" style="display:none;"
     data-ad-unit = "DAN-tFQi1kE1l4fdDOhZ"
     data-ad-width = "320"

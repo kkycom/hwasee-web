@@ -314,6 +314,10 @@
   .sort-dropdown-item:hover { background: var(--surface); }
   .sort-dropdown-item.active { color: var(--accent2); font-weight: 700; }
   .sort-dropdown-item .check { width: 14px; flex-shrink: 0; }
+  /* ── 자유 이야기 참여/미참여 필터(정렬 버튼과 나란히, 2026-08-10) */
+  .free-filter-toggle { display: inline-flex; background: var(--surface); border-radius: 16px; padding: 2px; }
+  .free-filter-toggle button { border: none; background: none; padding: 5px 10px; border-radius: 14px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; transition: .15s; }
+  .free-filter-toggle button.active { background: var(--accent); color: #3a5548; }
 
   /* ── 레이아웃 */
   main { max-width: 720px; margin: 0 auto; padding: 32px 16px 48px; }
@@ -962,11 +966,15 @@ const _lsc = {
 let _renderEpoch = 0;
 
 // ─── 탭 정렬 상태 ──────────────────────────────────────────
-// 관심받는+참여중 탭이 "자유 이야기" 하나로 통합됨(3슬롯 스포트라이트 개편) —
-// 참여중 카드는 별도 탭이 아니라 mine 그룹으로 볼드+정렬 우선순위만 유지.
-let _freeSort  = 'available';
-let _freeCache = null; // { mine, others }
-let _freeLimit = 20;
+// 관심받는+참여중 탭이 "자유 이야기" 하나로 통합됨(3슬롯 스포트라이트 개편).
+// 참여중(mine)/미참여(others)는 _freeFilter로 완전히 분리된 별도 리스트로
+// 전환(2026-08-10, 유저 제보 — mine이 페이징 없이 다 나와서 "더보기" 버튼을
+// 못 보고 지나치는 문제, 참여작이 많은 유저일수록 스크롤이 끝없이 이어지는
+// 것처럼 보였음). 이제 두 목록 다 동일하게 _freeLimit+더보기로 페이징됨.
+let _freeSort   = 'activity';
+let _freeFilter = 'others'; // 'others'=미참여(기본, 새 글 찾기 우선), 'mine'=참여중
+let _freeCache  = null; // { mine, others }
+let _freeLimit  = 20;
 let _doneSort  = 'activity';
 let _doneCache = null; // { stories }
 let _doneLimit = 20;
@@ -1000,9 +1008,7 @@ function _sortDisplayStep(s) {
 
 function _sortStories(stories, key) {
   const arr = [...stories];
-  // 'available'(참여 가능 순)은 그룹(mine/others) 재배치로 처리되고, 그룹 내부
-  // 정렬은 activity와 동일 기준을 씀(가장 참여 활발한 것부터)
-  if (key === 'activity' || key === 'available') return arr.sort((a, b) => (Number(b.activity_count)||0) - (Number(a.activity_count)||0));
+  if (key === 'activity')    return arr.sort((a, b) => (Number(b.activity_count)||0) - (Number(a.activity_count)||0));
   if (key === 'step')        return arr.sort((a, b) => _sortDisplayStep(b) - _sortDisplayStep(a));
   if (key === 'likes')       return arr.sort((a, b) => (Number(b.like_count)||0)     - (Number(a.like_count)||0));
   if (key === 'submissions') return arr.sort((a, b) => _currentSubCount(b) - _currentSubCount(a));
@@ -1012,9 +1018,12 @@ function _sortStories(stories, key) {
 // 알약버튼 나열 대신 "정렬" 버튼 하나 + 드롭다운(프로필/어드민 메뉴와 같은
 // 패턴 재사용) — 옵션이 5개로 늘면서 알약을 다 펼치면 윗공간을 너무 차지해서
 // 전환(2026-07-28, 유저 지적).
-function _sortBtns(prefix, keys, current, trailingHtml = '') {
+function _sortBtns(prefix, keys, current, trailingHtml = '', extraHtml = '') {
   const currentLabel = (keys.find(([k]) => k === current) || [])[1] || '정렬';
-  return `<div style="display:flex;gap:6px;margin-bottom:14px;align-items:center">
+  // flex-wrap — 자유 이야기 탭에 정렬+참여필터+새이야기 버튼 3그룹이 한 줄에
+  // 들어가는데, 좁은 화면(360px대)에서 셋 다 넉넉하진 않아 줄바꿈으로 안전하게
+  // 흡수(목업으로 실측 확인, 2026-08-10) — 클리핑/가로스크롤보다 안전.
+  return `<div style="display:flex;gap:6px;margin-bottom:14px;align-items:center;flex-wrap:wrap;row-gap:8px">
     <div class="sort-menu-wrap" id="${prefix}-sort-wrap">
       <button class="sort-menu-btn" id="${prefix}-sort-btn" onclick="toggleSortMenu('${prefix}')">${currentLabel} <span class="caret">▾</span></button>
       <div class="sort-dropdown" id="${prefix}-sort-dropdown">
@@ -1023,6 +1032,7 @@ function _sortBtns(prefix, keys, current, trailingHtml = '') {
         ).join('')}
       </div>
     </div>
+    ${extraHtml}
     ${trailingHtml ? `<span style="margin-left:auto">${trailingHtml}</span>` : ''}
   </div>`;
 }
@@ -1060,22 +1070,30 @@ function setFreeSort(key) {
   renderFreeCards();
 }
 
-// 참여중(mine) 카드는 기본적으로 항상 볼드+맨 위 그룹으로 고정 노출(페이징
-// 없음 — 보통 개수가 적음), 그 아래로 나머지(others) 카드가 정렬+더보기
-// 페이징됨. 부스트는 mine/others 어느 쪽에서 나왔든 한 스크롤에 합쳐서 보여줌.
-// 단, '참여 가능 순'(available)일 땐 반대로 others를 먼저 보여주고 mine을
-// 맨 아래로 내림 — 이미 많이 참여한 유저가 새로 쓸 이야기를 찾으려고 매번
-// 자기 참여작들을 스크롤로 지나쳐야 했던 문제 개선(2026-07-28 유저 제보).
+function setFreeFilter(filter) {
+  if (_freeFilter === filter) return;
+  _freeFilter = filter; _freeLimit = 20;
+  renderFreeCards();
+}
+
+function _freeCardHtmlFn() {
+  return _freeFilter === 'mine' ? myStoryCardHtml : popularCardHtml;
+}
+
+// 참여중(mine)/미참여(others)를 _freeFilter로 완전히 분리된 리스트로 취급 —
+// 둘 다 동일하게 정렬+_freeLimit 더보기 페이징 적용(2026-08-10, 이전엔 mine이
+// 페이징 없이 전부 노출돼서 참여작 많은 유저일수록 "더보기" 버튼을 아예 못
+// 보고 지나치는 문제가 있었음). 부스트는 필터와 무관하게 항상 상단에 별도로 보여줌.
 function renderFreeCards() {
   const content = document.getElementById('home-content');
   if (!content || !_freeCache) return;
   const _wasSortOpen = _isSortMenuOpen('fs');
   const { mine, others } = _freeCache;
   const boosted = [...mine, ...others].filter(s => s.is_boosted);
-  const mineSorted = _sortStories(mine.filter(s => !s.is_boosted), _freeSort);
-  const othersSorted = _sortStories(others.filter(s => !s.is_boosted), _freeSort);
-  const visibleOthers = othersSorted.slice(0, _freeLimit);
-  const remaining = othersSorted.length - _freeLimit;
+  const activeList = _freeFilter === 'mine' ? mine : others;
+  const listSorted = _sortStories(activeList.filter(s => !s.is_boosted), _freeSort);
+  const visible = listSorted.slice(0, _freeLimit);
+  const remaining = listSorted.length - _freeLimit;
   const boostHtml = boosted.length ? `
     <div class="boost-section">
       <div class="boost-section-label">✦ 이런 이야기도 있어요</div>
@@ -1084,31 +1102,35 @@ function renderFreeCards() {
   const loadMoreHtml = remaining > 0
     ? `<button id="free-load-more" class="btn btn-ghost" style="width:100%;margin-top:8px;color:var(--muted)" onclick="loadMoreFree()">더 보기 (${remaining}개)</button>`
     : '';
-  const mineHtml = mineSorted.map(s => myStoryCardHtml(s)).join('');
-  const othersHtml = visibleOthers.map(s => popularCardHtml(s)).join('');
-  const cardsHtml = _freeSort === 'available'
-    ? othersHtml + loadMoreHtml + (mineSorted.length ? `<div class="boost-section-label" style="margin-top:20px">✍ 이미 참여한 이야기</div>${mineHtml}` : '')
-    : mineHtml + othersHtml + loadMoreHtml;
+  const cardHtmlFn = _freeCardHtmlFn();
+  const cardsHtml = visible.map(s => cardHtmlFn(s)).join('') + loadMoreHtml;
+  const filterToggleHtml = `<div class="free-filter-toggle">
+    <button class="${_freeFilter==='others'?'active':''}" onclick="setFreeFilter('others')">미참여</button>
+    <button class="${_freeFilter==='mine'?'active':''}" onclick="setFreeFilter('mine')">참여중</button>
+  </div>`;
+  const emptyHtml = _freeFilter === 'mine'
+    ? `<div class="empty" style="padding-top:40px">아직 참여한 이야기가 없어요.<br>오늘의 이야기에서 참여해 보세요!<br>
+        <button class="btn btn-primary btn-sm" style="margin-top:16px" onclick="switchHomeTab('spotlight')">오늘의 이야기로 가기</button>
+      </div>`
+    : `<div class="empty" style="padding-top:40px">지금은 참여 가능한 새 이야기가 없어요.<br>곧 새로운 이야기가 올라올 거예요!</div>`;
   content.innerHTML = boostHtml
-    + _sortBtns('fs', [['available','참여 가능 순'],['activity','참여도 순'],['step','진행도 순'],['submissions','제출 순'],['latest','최신 순']], _freeSort,
-        `<button class="btn btn-primary btn-sm" style="flex:none" onclick="nav('create')">+ 새 이야기</button>`)
-    + ((mineSorted.length || othersSorted.length)
-      ? cardsHtml
-      : `<div class="empty" style="padding-top:40px">아직 이야기가 없어요.<br>오늘의 이야기에서 참여해 보세요!<br>
-          <button class="btn btn-primary btn-sm" style="margin-top:16px" onclick="switchHomeTab('spotlight')">오늘의 이야기로 가기</button>
-        </div>`);
+    + _sortBtns('fs', [['activity','참여도 순'],['step','진행도 순'],['submissions','제출 순'],['latest','최신 순']], _freeSort,
+        `<button class="btn btn-primary btn-sm" style="flex:none" onclick="nav('create')">+ 새 이야기</button>`, filterToggleHtml)
+    + (listSorted.length ? cardsHtml : emptyHtml);
   _restoreSortMenuOpen('fs', _wasSortOpen);
 }
 
 function loadMoreFree() {
   if (!_freeCache) return;
-  const othersSorted = _sortStories(_freeCache.others.filter(s => !s.is_boosted), _freeSort);
-  const newItems = othersSorted.slice(_freeLimit, _freeLimit + 20);
+  const activeList = _freeFilter === 'mine' ? _freeCache.mine : _freeCache.others;
+  const listSorted = _sortStories(activeList.filter(s => !s.is_boosted), _freeSort);
+  const newItems = listSorted.slice(_freeLimit, _freeLimit + 20);
   _freeLimit += 20;
   const btn = document.getElementById('free-load-more');
   if (!btn) return;
-  const remaining = othersSorted.length - _freeLimit;
-  btn.before(document.createRange().createContextualFragment(newItems.map(s => popularCardHtml(s)).join('')));
+  const remaining = listSorted.length - _freeLimit;
+  const cardHtmlFn = _freeCardHtmlFn();
+  btn.before(document.createRange().createContextualFragment(newItems.map(s => cardHtmlFn(s)).join('')));
   if (remaining > 0) btn.textContent = `더 보기 (${remaining}개)`;
   else btn.remove();
 }

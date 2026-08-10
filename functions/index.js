@@ -1,12 +1,11 @@
 const functions   = require('firebase-functions');
 const admin       = require('firebase-admin');
 const crypto      = require('crypto');
-const nodemailer  = require('nodemailer');
-// @google-analytics/data는 여기서 top-level require 안 함 — 이 파일의 모든
-// Cloud Functions가 하나의 모듈을 공유해서 top-level require는 어떤 함수가
-// 호출되든 매 콜드스타트마다 실행됨. gRPC/protobuf를 끌고 오는 무거운 패키지를
-// 어쩌다 한 번 쓰는 관리자 전용 GA4 함수 때문에 로그인 등 나머지 함수 전체의
-// 콜드스타트가 느려지면 안 되므로, 실제로 쓰는 함수 안에서만 지연 require.
+// @google-analytics/data, nodemailer는 여기서 top-level require 안 함 — 이 파일의
+// 모든 Cloud Functions가 하나의 모듈을 공유해서 top-level require는 어떤 함수가
+// 호출되든 매 콜드스타트마다 실행됨. 어쩌다 한 번 쓰는 함수(관리자 전용 GA4,
+// 이메일 발송) 때문에 로그인 등 나머지 함수 전체의 콜드스타트가 느려지면 안
+// 되므로, 실제로 쓰는 함수 안에서만 지연 require.
 admin.initializeApp();
 
 // (CI 자동배포 워크플로 동작 확인용 트리거 — 기능 변경 없음)
@@ -289,6 +288,7 @@ exports.onEpisodeClosed = functions
 // ── 완성된 이야기 AI 교정 (2시간마다) ───────────────────────
 exports.aiReviewCompletedStories = functions
   .region('asia-northeast3')
+  .runWith({ timeoutSeconds: 300 })
   .pubsub.schedule('every 2 hours')
   .timeZone('Asia/Seoul')
   .onRun(async () => {
@@ -1102,6 +1102,7 @@ async function _serverCloseEpisode(db, episode_id, ep) {
 
 exports.aiParticipate = functions
   .region('asia-northeast3')
+  .runWith({ timeoutSeconds: 300 })
   .pubsub.schedule('every 30 minutes')
   .timeZone('Asia/Seoul')
   .onRun(async () => {
@@ -2145,6 +2146,7 @@ async function _getMailTransport(db) {
   const gmailPass = secSnap.exists ? secSnap.data().gmail_app_pass : null;
   if (!gmailUser || !gmailPass) return null;
   if (_mailTransport && _mailTransportUser === gmailUser) return _mailTransport;
+  const nodemailer = require('nodemailer');
   _mailTransport = nodemailer.createTransport({ service: 'gmail', auth: { user: gmailUser, pass: gmailPass } });
   _mailTransportUser = gmailUser;
   return _mailTransport;
@@ -3153,6 +3155,27 @@ function _computeStoryCohorts(storiesDocs) {
     .sort((a, b) => (a.cohort_week < b.cohort_week ? -1 : 1))
     .map(c => ({ ...c, completion_pct: c.started ? +(c.completed / c.started * 100).toFixed(1) : null, low_confidence: c.started < 5 }));
 }
+
+// stories/submissions 총 개수(관리자 통계용, 2026-08-10 추가). fbGetAdminStats가
+// 예전엔 두 컬렉션 전체를 .get()으로 읽어와 .size만 썼는데(스토리 266+제출 2243건,
+// 계속 커짐), users는 referral_stats 집계 때문에 어차피 문서 전체가 필요해 그대로
+// 두고, count()만으로 충분한 두 컬렉션만 이 콜러블로 분리 — compat SDK는 count()
+// 집계를 지원 안 해서(2026-07-04 검증) 클라이언트에서 직접 부를 수 없음(Admin SDK 전용).
+exports.adminGetCollectionCounts = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const [storiesCount, submissionsCount] = await Promise.all([
+      db.collection('stories').count().get(),
+      db.collection('submissions').count().get(),
+    ]);
+    return {
+      ok: true,
+      story_count: storiesCount.data().count || 0,
+      submission_count: submissionsCount.data().count || 0,
+    };
+  });
 
 // 대시보드 조회(관리자 전용). days 또는 start_date/end_date로 조회 범위를 정하고,
 // MAU(월간 활성유저, stickiness 계산용) 산출에 필요한 직전 30일치를 여유분으로

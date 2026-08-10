@@ -2002,10 +2002,13 @@ async function fbGetAdminStats(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   const today     = _kstDate(0);
   const yesterday = _kstDate(-1);
-  const [uSnap, sSnap, subSnap, statsSnap, delReasonSnap] = await Promise.all([
+  // stories/submissions는 개수만 필요해서 count() 집계 서버 콜러블로 조회 (전체
+  // 문서 안 읽어옴 — 2026-08-10, 스토리 266+제출 2243건이 계속 늘어나는 걸 보고 변경).
+  // users는 referral_stats 집계에 문서 전체가 필요해서 그대로 .get() 유지.
+  const [uSnap, countsRes, statsSnap, delReasonSnap] = await Promise.all([
     db.collection('users').get(),
-    db.collection('stories').get(),
-    db.collection('submissions').get(),
+    functionsRegion.httpsCallable('adminGetCollectionCounts')({ user_id: admin_id, token: localStorage.getItem('hwasee_token') })
+      .then(r => r.data).catch(() => ({ story_count: 0, submission_count: 0 })),
     db.collection('config').doc('stats').get(),
     db.collection('account_deletion_reasons').get(),
   ]);
@@ -2044,7 +2047,7 @@ async function fbGetAdminStats(admin_id) {
   } catch(e) { /* visits read 실패 시 0 유지 */ }
   return {
     ok: true,
-    user_count: uSnap.size, story_count: sSnap.size, submission_count: subSnap.size,
+    user_count: uSnap.size, story_count: countsRes.story_count || 0, submission_count: countsRes.submission_count || 0,
     deleted_count: statsSnap.exists ? (statsSnap.data().deleted_count || 0) : 0,
     visit_today, access_today, visit_yesterday, visit_total, referral_stats, deletion_reason_stats,
   };

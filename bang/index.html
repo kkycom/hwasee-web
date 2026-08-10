@@ -322,6 +322,14 @@
   /* ── 레이아웃 */
   main { max-width: 720px; margin: 0 auto; padding: 32px 16px 48px; }
 
+  /* ── PC 세로 광고(160x600) — 본문(max-width:720px) 오른쪽 여백에 고정.
+     본문 오른쪽 끝이 뷰포트 중앙에서 +360px이므로, 거기서 24px 띄워 배치.
+     좁은 화면은 겹칠 여지가 있어 여유 있는 폭(1280px)부터만 노출. */
+  .pc-side-ad { display: none; }
+  @media (min-width: 1280px) {
+    .pc-side-ad { display: block; position: fixed; top: 96px; left: calc(50% + 384px); width: 160px; z-index: 5; }
+  }
+
   /* ── 랭킹 (씨앗 탭 하단 인라인 + 모달 공용) */
   .lb-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 7px 0; border-bottom: 1px solid var(--border); }
   .lb-row:last-child { border-bottom: none; }
@@ -899,6 +907,13 @@
     <p style="font-size:13px;color:var(--muted);opacity:.8;margin:0">불러오는 중...</p>
   </div>
 </div></main>
+<div class="pc-side-ad">
+  <ins class="kakao_ad_area" style="display:none;"
+  data-ad-unit = "DAN-9ylORAM6xK6SUwLT"
+  data-ad-width = "160"
+  data-ad-height = "600"></ins>
+  <script type="text/javascript" src="//t1.kakaocdn.net/kas/static/ba.min.js" async></script>
+</div>
 <div class="toast" id="toast"></div>
 
 <div id="busy-overlay">
@@ -3154,10 +3169,12 @@ function renderWordChallenge() {
           </span>`).join('')}
       </div>
       <div style="display:flex;gap:8px">
-        <input id="wc-input" maxlength="${FB_WORD_CHALLENGE_MAX_CHARS}" placeholder="세 단어를 넣어 문장을 지어보세요" oninput="_wcCheckInput()" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text)">
+        <div style="position:relative;flex:1">
+          <input id="wc-input" maxlength="${FB_WORD_CHALLENGE_MAX_CHARS}" placeholder="세 단어를 넣어 문장을 지어보세요" oninput="_wcCheckInput()" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 46px 9px 12px;font-size:13px;color:var(--text)">
+          <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--muted);pointer-events:none"><span id="wc-char-count">0</span>/${FB_WORD_CHALLENGE_MAX_CHARS}</span>
+        </div>
         <button id="wc-submit-btn" class="btn btn-primary btn-sm" ontouchend="event.preventDefault();_submitWordChallenge()" onclick="_submitWordChallenge()" disabled>제출</button>
       </div>
-      <div style="text-align:right;font-size:11px;color:var(--muted);margin-top:4px"><span id="wc-char-count">0</span>/${FB_WORD_CHALLENGE_MAX_CHARS}</div>
     </div>` : '';
 
   const loginHint = isActive && !user
@@ -3203,8 +3220,10 @@ function renderWordChallenge() {
   el.innerHTML = `
     ${heroHtml}
     ${loginHint}${mySubHint}${formHtml}
+    ${_kakaoAdHtml()}
     <div>${listHtml}</div>
     ${showMoreHtml}`;
+  _loadKakaoAdfit();
 
   if (isActive) _startWordChallengeCountdown(challenge.end_at);
   else _startWordChallengeCountdown(_nextKstMidnightIso());

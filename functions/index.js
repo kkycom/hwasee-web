@@ -191,14 +191,19 @@ exports.onEpisodeClosed = functions
     if (subsSnap.empty) return null;
     const allSubs = subsSnap.docs.map(d => d.data());
 
-    // 채택 글 결정 (클라이언트와 동일 로직)
+    // 채택 글 결정 (_serverCloseEpisode와 동일 로직이어야 함 — 사람 제출 우선,
+    // 없으면 AI 포함. 예전엔 이 우선순위가 없어서 사람/AI 동률일 때 이 트리거가
+    // 계산한 승자 집합이 실제 채택 결과와 어긋날 수 있었음, 2026-08-10 디버그방 발견)
     const maxVotes = Math.max(...allSubs.map(s => Number(s.vote_count) || 0));
     let winners;
     if (maxVotes === 0) {
-      const sorted = [...allSubs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-      winners = [sorted[0]];
+      const humanSubs = allSubs.filter(s => !s.is_ai);
+      const pool = humanSubs.length > 0 ? humanSubs : allSubs;
+      winners = [pool.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0]];
     } else {
-      winners = allSubs.filter(s => (Number(s.vote_count) || 0) === maxVotes);
+      const tied = allSubs.filter(s => (Number(s.vote_count) || 0) === maxVotes);
+      const humanTied = tied.filter(s => !s.is_ai);
+      winners = humanTied.length > 0 ? humanTied : tied;
     }
 
     const storySnap = await db.collection('stories').doc(story_id).get();
@@ -209,7 +214,10 @@ exports.onEpisodeClosed = functions
     // 있음(그 +2 표시 버그가 실제로 있었음) — 방금 닫힌 이 에피소드 자체의
     // step은 불변이고 정의상 항상 이 값과 같으므로, 그걸 우선 사용해 레이스를 제거
     const nextStep  = Number(after.step) || ((Number(st.current_step) || 0) + 1);
-    const anyClose  = winners.some(w => w.is_closing === true);
+    // 결말 고정 이야기는 is_closing이 실제 완결 신호가 아님(_serverCloseEpisode의
+    // 동일 무력화 참고) — 여기서도 무력화 안 하면, 그 우회 편법이 실제 완결 여부와
+    // 무관하게 "이야기가 완결됐어요!" 오알림을 전체 참여자에게 보냄.
+    const anyClose  = st.mode === 'fixed_ending' ? false : winners.some(w => w.is_closing === true);
     const snippet   = (st.opening || '').slice(0, 25) + ((st.opening || '').length > 25 ? '…' : '');
 
     // 참여자 조회 (submissions + bookmarks + comments + votes)
@@ -899,11 +907,25 @@ async function _serverCloseEpisode(db, episode_id, ep) {
     winners = humanTied.length > 0 ? humanTied : tied;
   }
 
+  const storySnap = await db.collection('stories').doc(ep.story_id).get();
+  if (!storySnap.exists) return;
+  const st = storySnap.data();
+  // 결말 고정 이야기는 fbCreateSubmission이 클라이언트 직접 Firestore write라
+  // (firestore.rules에서 submissions가 전부 열려있음) 유저가 기존 "완결하기"
+  // (closing:true) 버튼으로 정해진 결말을 우회하고 조기 완결시킬 수 있음 —
+  // is_closing을 무조건 무력화해서, 아래 새로 추가한 마지막 단계 자동주입
+  // 분기가 결말 고정 이야기의 유일한 완결 경로가 되게 막음.
+  const isFixedEnding = st.mode === 'fixed_ending';
+  const anyClose = isFixedEnding ? false : winners.some(w => w.is_closing === true);
+
   for (const w of winners) {
     await db.collection('submissions').doc(w.id).update({ is_adopted: true });
     // 다듬기(derived_from) 체인 반영해서 분배 (누락되어 있던 부분 — 원작자
-    // 없이 채택자에게 20점을 무조건 몰아주고 있었음)
-    await _serverDistributePoints(db, w, allSubs);
+    // 없이 채택자에게 20점을 무조건 몰아주고 있었음). 결말 고정 이야기에선
+    // is_closing이 무력화된 것과 같은 이유로, 여기서도 완결 보너스 포인트·
+    // 업적(closing_count)이 새지 않도록 is_closing을 같이 무력화해서 넘김
+    // (2026-08-10 디버그방 발견 — 완결 자체는 막혀 있었는데 포인트/업적만 샜음).
+    await _serverDistributePoints(db, isFixedEnding ? { ...w, is_closing: false } : w, allSubs);
     // 채택 횟수 반영 (누락되어 있던 부분 — AI가 마감시킨 경우 실제 채택자의
     // adoption_count가 하나도 안 올라가고 있었음)
     if (w.author_id && w.author_id !== FB_ADMIN_ID && w.author_id !== FB_AI_ID) {
@@ -920,17 +942,6 @@ async function _serverCloseEpisode(db, episode_id, ep) {
       }
     }
   }
-
-  const storySnap = await db.collection('stories').doc(ep.story_id).get();
-  if (!storySnap.exists) return;
-
-  const st = storySnap.data();
-  // 결말 고정 이야기는 fbCreateSubmission이 클라이언트 직접 Firestore write라
-  // (firestore.rules에서 submissions가 전부 열려있음) 유저가 기존 "완결하기"
-  // (closing:true) 버튼으로 정해진 결말을 우회하고 조기 완결시킬 수 있음 —
-  // is_closing을 무조건 무력화해서, 아래 새로 추가한 마지막 단계 자동주입
-  // 분기가 결말 고정 이야기의 유일한 완결 경로가 되게 막음.
-  const anyClose = st.mode === 'fixed_ending' ? false : winners.some(w => w.is_closing === true);
 
   // ⚠️ 이 에피소드가 스토리의 "다음 정경(canonical) 단계"가 맞는지 확인.
   // 동률로 갈린 두 갈래 중 하나가 먼저 닫혀서 이미 다음 단계로 진행된 뒤,
@@ -3942,19 +3953,6 @@ async function _serverRefillSpotlightSlot(db, completed_story_id) {
     // 스토리가 완결돼도 자동 리필하지 않음(featured 노출 자체가 끝났으므로).
     const slotKey = ['word', 'fairytale', 'speedrun', 'fixed_ending', 'genre_switch'].find(k => slots[k] && slots[k].story_id === completed_story_id);
     if (!slotKey) return; // 스포트라이트 슬롯 스토리가 아님
-
-    if (slotKey === 'ai') {
-      const usedSnap = await tx.get(db.collection('config').doc('used_openings'));
-      const used = usedSnap.exists ? usedSnap.data() : {};
-      const available = SPOTLIGHT_AI_OPENINGS.filter(o => !used[o]);
-      const src = available.length ? available : SPOTLIGHT_AI_OPENINGS;
-      const opening = src[Math.floor(Math.random() * src.length)];
-      const newStoryId = _serverCreateSeedStory(db, tx, opening);
-      newlyCreatedStoryId = newStoryId;
-      tx.set(db.collection('config').doc('used_openings'), { [opening]: true }, { merge: true });
-      tx.update(ptrRef, { 'ai.story_id': newStoryId });
-      return;
-    }
 
     if (slotKey === 'speedrun') {
       // 저작권 큐레이션이 필요 없는 짧은 오프닝뿐이라 ai 슬롯과 동일하게 정적

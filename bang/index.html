@@ -1171,6 +1171,10 @@ function saveUser(u) {
   const nextUid = u?.user_id || null;
   const uidChanged = prevUid !== nextUid;
   if (uidChanged) _lsc.clearAll();
+  // 알림 패널 캐시(_notifCache)는 _lsc 밖의 별도 모듈 변수라 위 clearAll()에
+  // 안 걸림 — 계정전환 시 이전 계정 알림이 종 아이콘 클릭 즉시 잠깐 보이는
+  // 문제가 있었음, _lsc와 같은 조건으로 같이 비움
+  if (uidChanged) _notifCache = null;
   user = u;
   // 북마크 id 목록(_bmIds)은 페이지 첫 로드 때만 불러오고 있었음 — 새로고침
   // 없이 로그인/로그아웃/계정전환하면 다른 유저(또는 이전 유저)의 북마크
@@ -3838,7 +3842,7 @@ function toggleHintDetail() {
     el.innerHTML = `
       <div class="input-row" style="display:flex;gap:6px">
         <input type="text" id="hint-guess-input" placeholder="정답 문장을 입력…" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;color:var(--text)">
-        <button class="btn btn-primary btn-sm" onclick="doHintGuessSubmit()">제출</button>
+        <button class="btn btn-primary btn-sm" id="hint-guess-submit-btn" onclick="doHintGuessSubmit()" ontouchend="event.preventDefault();doHintGuessSubmit()">제출</button>
       </div>
       <div id="hint-guess-feed" style="margin-top:10px"></div>`;
     _startHintGuessListener(_hintRoundData.round_id);
@@ -3864,20 +3868,33 @@ function _startHintGuessListener(round_id) {
     }, () => { if (_hintUnsubscribe) { _hintUnsubscribe(); _hintUnsubscribe = null; } });
 }
 
+let _hintGuessInFlight = false;
 async function doHintGuessSubmit() {
+  // _submitSentenceProposal과 동일한 이유로 재진입 가드 필요 — 응답이 느릴 때
+  // 연타하면 같은 답을 중복 제출할 수 있었음
+  if (_hintGuessInFlight) return;
   const el = document.getElementById('hint-guess-input');
   const guess = (el?.value || '').trim();
   if (!guess) { toast('답을 입력해주세요.', true); return; }
   if (!_hintRoundData) return;
-  const res = await api('hintGuess', { round_id: _hintRoundData.round_id, guess });
-  if (!res.ok) { toast(res.error, true); return; }
-  if (el) el.value = '';
-  if (res.correct) {
-    toast(`정답! +${res.points}P`);
-    if (_hintUnsubscribe) { _hintUnsubscribe(); _hintUnsubscribe = null; }
-    loadHintCard();
-  } else {
-    toast(`오답 — ${res.match_count}/${res.total_length}자 일치`);
+  _hintGuessInFlight = true;
+  const btn = document.getElementById('hint-guess-submit-btn');
+  const prevText = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = '제출 중...'; }
+  try {
+    const res = await api('hintGuess', { round_id: _hintRoundData.round_id, guess });
+    if (!res.ok) { toast(res.error, true); return; }
+    if (el) el.value = '';
+    if (res.correct) {
+      toast(`정답! +${res.points}P`);
+      if (_hintUnsubscribe) { _hintUnsubscribe(); _hintUnsubscribe = null; }
+      loadHintCard();
+    } else {
+      toast(`오답 — ${res.match_count}/${res.total_length}자 일치`);
+    }
+  } finally {
+    _hintGuessInFlight = false;
+    if (btn) { btn.disabled = false; btn.textContent = prevText || '제출'; }
   }
 }
 
@@ -7426,10 +7443,19 @@ async function _doAddWordChallengeSets() {
   adminWordChallenge();
 }
 
-async function _doDeleteWordChallengeSet(set_id) {
-  const res = await api('adminDeleteWordChallengeSet', { set_id });
-  if (!res.ok) { toast(res.error, true); return; }
-  adminWordChallenge();
+function _doDeleteWordChallengeSet(set_id) {
+  const mid = 'delwcset-modal';
+  const existing = document.getElementById(mid);
+  if (existing) { existing.remove(); delete _modalCallbacks[mid]; return; }
+  _modalCallbacks[mid] = async (m) => {
+    const btn = document.getElementById(`${m}-confirm-btn`);
+    if (btn) { btn.disabled = true; btn.textContent = '삭제 중...'; }
+    const res = await api('adminDeleteWordChallengeSet', { set_id });
+    document.getElementById(m)?.remove(); delete _modalCallbacks[m];
+    if (!res.ok) { toast(res.error, true); return; }
+    adminWordChallenge();
+  };
+  showConfirmModal({ id: mid, title: '세트 삭제', desc: '이 단어챌린지 세트를 삭제할까요?', confirmLabel: '삭제하기' });
 }
 
 async function _doForceStartWordChallenge() {
@@ -7487,10 +7513,19 @@ async function _doAddFairytalePoolEntries() {
   toast(`${res.added}개 등록됐어요.`);
   adminFairytalePool();
 }
-async function _doDeleteFairytalePoolEntry(entry_id) {
-  const res = await api('adminDeleteFairytalePoolEntry', { entry_id });
-  if (!res.ok) { toast(res.error, true); return; }
-  adminFairytalePool();
+function _doDeleteFairytalePoolEntry(entry_id) {
+  const mid = 'delftentry-modal';
+  const existing = document.getElementById(mid);
+  if (existing) { existing.remove(); delete _modalCallbacks[mid]; return; }
+  _modalCallbacks[mid] = async (m) => {
+    const btn = document.getElementById(`${m}-confirm-btn`);
+    if (btn) { btn.disabled = true; btn.textContent = '삭제 중...'; }
+    const res = await api('adminDeleteFairytalePoolEntry', { entry_id });
+    document.getElementById(m)?.remove(); delete _modalCallbacks[m];
+    if (!res.ok) { toast(res.error, true); return; }
+    adminFairytalePool();
+  };
+  showConfirmModal({ id: mid, title: '씨앗 문장 삭제', desc: '이 씨앗 문장을 삭제할까요?', confirmLabel: '삭제하기' });
 }
 
 // ─── 초성힌트 씨앗 풀 관리 ─────────────────────────────────
@@ -7533,10 +7568,19 @@ async function _doAddHintPoolEntries() {
   toast(`${res.added}개 등록됐어요.`);
   adminHintPool();
 }
-async function _doDeleteHintPoolEntry(entry_id) {
-  const res = await api('adminDeleteHintPoolEntry', { entry_id });
-  if (!res.ok) { toast(res.error, true); return; }
-  adminHintPool();
+function _doDeleteHintPoolEntry(entry_id) {
+  const mid = 'delhpentry-modal';
+  const existing = document.getElementById(mid);
+  if (existing) { existing.remove(); delete _modalCallbacks[mid]; return; }
+  _modalCallbacks[mid] = async (m) => {
+    const btn = document.getElementById(`${m}-confirm-btn`);
+    if (btn) { btn.disabled = true; btn.textContent = '삭제 중...'; }
+    const res = await api('adminDeleteHintPoolEntry', { entry_id });
+    document.getElementById(m)?.remove(); delete _modalCallbacks[m];
+    if (!res.ok) { toast(res.error, true); return; }
+    adminHintPool();
+  };
+  showConfirmModal({ id: mid, title: '정답 문장 삭제', desc: '이 정답 문장을 삭제할까요?', confirmLabel: '삭제하기' });
 }
 async function _doForceStartHintRound() {
   if (!confirm('지금 바로 새 라운드를 시작할까요? (기존 진행 중인 라운드는 마감돼요)')) return;

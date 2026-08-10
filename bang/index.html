@@ -330,6 +330,20 @@
     .pc-side-ad { display: block; position: fixed; top: 96px; left: calc(50% + 384px); width: 160px; z-index: 5; }
   }
 
+  /* ── PC 세로 랭킹 위젯 — 본문 왼쪽 여백에 .pc-side-ad와 대칭 배치 */
+  .pc-side-rank { display: none; }
+  @media (min-width: 1280px) {
+    .pc-side-rank { display: block; position: fixed; top: 96px; left: calc(50% - 384px - 200px); width: 200px; z-index: 5; }
+  }
+  .pc-side-rank-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 14px; }
+  .pc-side-rank-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .pc-side-rank-title { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .5px; }
+  .pc-side-rank-arrow { background: none; border: 1px solid var(--border); border-radius: 6px; width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); padding: 0; font-size: 13px; line-height: 1; }
+  .pc-side-rank-arrow:hover { color: var(--text); border-color: var(--muted); }
+  .pc-side-rank-dots { display: flex; gap: 4px; justify-content: center; margin-top: 10px; }
+  .pc-side-rank-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--border); }
+  .pc-side-rank-dot.active { background: var(--accent2); }
+
   /* ── 랭킹 (씨앗 탭 하단 인라인 + 모달 공용) */
   .lb-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 7px 0; border-bottom: 1px solid var(--border); }
   .lb-row:last-child { border-bottom: none; }
@@ -936,6 +950,41 @@
   }, { threshold: 0 });
   io.observe(foot);
 })();
+</script>
+<div class="pc-side-rank" id="pc-side-rank">
+  <div class="pc-side-rank-card">
+    <div class="pc-side-rank-head">
+      <button class="pc-side-rank-arrow" type="button" aria-label="이전 랭킹" onclick="pcSideRankSwipe(-1)">‹</button>
+      <span class="pc-side-rank-title" id="pc-side-rank-title">포인트 랭킹</span>
+      <button class="pc-side-rank-arrow" type="button" aria-label="다음 랭킹" onclick="pcSideRankSwipe(1)">›</button>
+    </div>
+    <div id="pc-side-rank-body"><div style="font-size:12px;color:var(--muted);padding:12px 0;text-align:center">불러오는 중...</div></div>
+    <div class="pc-side-rank-dots">
+      <span class="pc-side-rank-dot active"></span>
+      <span class="pc-side-rank-dot"></span>
+    </div>
+  </div>
+</div>
+<script>
+// PC 랭킹 위젯도 광고 레일과 동일한 푸터 회피 로직(대칭 배치라 같은 문제를 그대로 겪음).
+(function () {
+  const rank = document.getElementById('pc-side-rank');
+  const foot = document.getElementById('site-footer');
+  if (!rank || !foot || !window.IntersectionObserver) return;
+  const io = new IntersectionObserver(([entry]) => {
+    if (entry.isIntersecting) {
+      const stopTop = foot.getBoundingClientRect().top + window.scrollY - rank.offsetHeight - 24;
+      rank.style.position = 'absolute';
+      rank.style.top = stopTop + 'px';
+    } else {
+      rank.style.position = '';
+      rank.style.top = '';
+    }
+  }, { threshold: 0 });
+  io.observe(foot);
+})();
+// loadLeaderboard()는 이후 <script>에서 정의되므로 window load 이후로 미룸.
+window.addEventListener('load', function () { loadLeaderboard(); });
 </script>
 <div class="toast" id="toast"></div>
 
@@ -2987,7 +3036,7 @@ let _lbData = null;
 
 async function loadLeaderboard(targetId) {
   if (!_lbData) _lbData = _lsc.get('lb');
-  if (_lbData && targetId) renderLbInto(targetId);
+  if (_lbData) { if (targetId) renderLbInto(targetId); renderPcSideRank(); }
   const _refresh = async (retry = false) => {
     try {
       const res = await api('getLeaderboard', {});
@@ -2995,11 +3044,12 @@ async function loadLeaderboard(targetId) {
       _lbData = res;
       _lsc.set('lb', res, 360);
       if (targetId) renderLbInto(targetId);
+      renderPcSideRank();
       const modal = document.getElementById('modal-lb-body');
       if (modal) modal.innerHTML = lbBodyHtml(10);
     } catch(e) {
       if (!retry) setTimeout(() => _refresh(true), 4000);
-      else if (targetId) renderLbInto(targetId);
+      else { if (targetId) renderLbInto(targetId); renderPcSideRank(); }
     }
   };
   if (!_lbData) await _refresh(); else _refresh();
@@ -3013,32 +3063,23 @@ function renderLbInto(containerId) {
     : '<div style="font-size:12px;color:var(--muted)">랭킹을 불러올 수 없습니다.</div>';
 }
 
+function _lbRowsHtml(rows, suffix) {
+  const emptyHtml = '<div style="font-size:12px;color:var(--muted);padding:12px 0;text-align:center">아직 기록이 없어요.</div>';
+  if (!rows.length) return emptyHtml;
+  return rows.map((r, i) => `
+    <div class="lb-row">
+      <span class="lb-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</span>
+      <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;flex-shrink:0">${badgeEmoji(r.badge||'seed')}</span>
+      <span class="lb-name" style="cursor:pointer" onclick="goToUserProfile('${r.user_id}',event)">${esc(r.nickname)}</span>
+      <span class="lb-value">${r.value||0}${suffix}</span>
+    </div>`).join('');
+}
+
 function lbBodyHtml(limit) {
   if (!_lbData) return '<div style="font-size:12px;color:var(--muted)">아직 기록이 없어요.</div>';
   const n = limit || 10;
-  const emptyHtml = '<div style="font-size:12px;color:var(--muted);padding:12px 0;text-align:center">아직 기록이 없어요.</div>';
-
-  const pointRows = (_lbData.points || []).slice(0, n);
-  const pointHtml = pointRows.length
-    ? pointRows.map((r, i) => `
-        <div class="lb-row">
-          <span class="lb-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</span>
-          <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;flex-shrink:0">${badgeEmoji(r.badge||'seed')}</span>
-          <span class="lb-name" style="cursor:pointer" onclick="goToUserProfile('${r.user_id}',event)">${esc(r.nickname)}</span>
-          <span class="lb-value">${r.value||0}p</span>
-        </div>`).join('')
-    : emptyHtml;
-
-  const adoptRows = (_lbData.adoptions || []).slice(0, n);
-  const adoptHtml = adoptRows.length
-    ? adoptRows.map((r, i) => `
-        <div class="lb-row">
-          <span class="lb-rank ${i===0?'r1':i===1?'r2':i===2?'r3':''}">${i+1}</span>
-          <span class="badge badge-${r.badge||'seed'}" style="font-size:9px;padding:1px 4px;flex-shrink:0">${badgeEmoji(r.badge||'seed')}</span>
-          <span class="lb-name" style="cursor:pointer" onclick="goToUserProfile('${r.user_id}',event)">${esc(r.nickname)}</span>
-          <span class="lb-value">${r.value||0}편</span>
-        </div>`).join('')
-    : emptyHtml;
+  const pointHtml = _lbRowsHtml((_lbData.points || []).slice(0, n), 'p');
+  const adoptHtml = _lbRowsHtml((_lbData.adoptions || []).slice(0, n), '편');
 
   return `<div style="display:flex">
     <div style="flex:1;padding:0 14px;border-right:1px solid var(--border)">
@@ -3050,6 +3091,23 @@ function lbBodyHtml(limit) {
       ${adoptHtml}
     </div>
   </div>`;
+}
+
+// ─── PC 세로 랭킹 위젯 (좌측 광고 여백, 포인트/채택 스와이프) ───
+let _pcRankTab = 0;
+function renderPcSideRank() {
+  const body = document.getElementById('pc-side-rank-body');
+  if (!body) return;
+  const title = document.getElementById('pc-side-rank-title');
+  title.textContent = _pcRankTab === 0 ? '포인트 랭킹' : '채택 랭킹';
+  body.innerHTML = _lbData
+    ? _lbRowsHtml((_pcRankTab === 0 ? (_lbData.points || []) : (_lbData.adoptions || [])).slice(0, 8), _pcRankTab === 0 ? 'p' : '편')
+    : '<div style="font-size:12px;color:var(--muted);padding:12px 0;text-align:center">불러오는 중...</div>';
+  document.querySelectorAll('.pc-side-rank-dot').forEach((d, i) => d.classList.toggle('active', i === _pcRankTab));
+}
+function pcSideRankSwipe(dir) {
+  _pcRankTab = (_pcRankTab + dir + 2) % 2;
+  renderPcSideRank();
 }
 
 function switchLbTab() {}

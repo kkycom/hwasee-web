@@ -907,13 +907,36 @@
     <p style="font-size:13px;color:var(--muted);opacity:.8;margin:0">불러오는 중...</p>
   </div>
 </div></main>
-<div class="pc-side-ad">
+<div class="pc-side-ad" id="pc-side-ad">
   <ins class="kakao_ad_area" style="display:none;"
   data-ad-unit = "DAN-9ylORAM6xK6SUwLT"
   data-ad-width = "160"
   data-ad-height = "600"></ins>
   <script type="text/javascript" src="//t1.kakaocdn.net/kas/static/ba.min.js" async></script>
 </div>
+<script>
+// PC 세로 광고(160x600, position:fixed)가 짧은 페이지에서 스크롤을 끝까지
+// 내렸을 때 푸터/푸터 광고를 덮어버리는 문제 — 푸터가 뷰포트에 보이기
+// 시작하면 fixed를 풀고 그 시점의 푸터 바로 위 지점에 absolute로 고정.
+// SPA 라우팅으로 페이지 높이가 바뀌어도 IntersectionObserver가 레이아웃
+// 변화마다 다시 계산해주므로 별도 트리거 없이 항상 정확함.
+(function () {
+  const ad = document.getElementById('pc-side-ad');
+  const foot = document.getElementById('site-footer');
+  if (!ad || !foot || !window.IntersectionObserver) return;
+  const io = new IntersectionObserver(([entry]) => {
+    if (entry.isIntersecting) {
+      const stopTop = foot.getBoundingClientRect().top + window.scrollY - ad.offsetHeight - 24;
+      ad.style.position = 'absolute';
+      ad.style.top = stopTop + 'px';
+    } else {
+      ad.style.position = '';
+      ad.style.top = '';
+    }
+  }, { threshold: 0 });
+  io.observe(foot);
+})();
+</script>
 <div class="toast" id="toast"></div>
 
 <div id="busy-overlay">
@@ -8698,7 +8721,7 @@ window.onload = async () => {
   }
 };
 </script>
-<footer style="text-align:center;padding:24px 16px;border-top:1px solid var(--border);margin-top:32px">
+<footer id="site-footer" style="text-align:center;padding:24px 16px;border-top:1px solid var(--border);margin-top:32px">
   <span style="font-size:12px;color:var(--muted)">© 2026 화씨 &nbsp;·&nbsp;
     <a href="https://hwasee.me/" style="color:var(--muted);text-decoration:none" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">화씨 홈</a>
     &nbsp;·&nbsp;

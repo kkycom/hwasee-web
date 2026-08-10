@@ -2445,6 +2445,7 @@ function _applyStoryData(res, story_id) {
       </div>` : ''}
       ${isFinished ? `<div class="theend-fx" id="story-ending-fx"><span class="theend-text">The End</span></div>` : ''}
     </div>
+    ${isFinished ? _kakaoAdHtml() : ''}
     ${s.mode === 'genre_switch' && openEp ? genreSwitchBannerHtml((s.genre_sequence || [])[Number(openEp.step) - 1], (s.genre_sequence || [])[Number(openEp.step)]) : ''}
     ${isAdmin() && s.status === 'active' && !s.vote_threshold ? `
     <div style="display:flex;justify-content:flex-end;margin:6px 0 2px">
@@ -2471,7 +2472,7 @@ function _applyStoryData(res, story_id) {
           </div>` : `<div style="font-size:13px;color:var(--muted);margin-top:12px">로그인 후 감상을 남길 수 있어요.</div>`}
       </div>` : ''}`;
 
-  if (openEp && !_isFinishedStory) _loadKakaoAdfit();
+  if ((openEp && !_isFinishedStory) || isFinished) _loadKakaoAdfit();
 
   if (isFinished && !story_comments) {
     loadStoryComments(currentParam);

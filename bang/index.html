@@ -330,10 +330,15 @@
     .pc-side-ad { display: block; position: fixed; top: 96px; left: calc(50% + 384px); width: 160px; z-index: 5; }
   }
 
-  /* ── PC 세로 랭킹 위젯 — 본문 왼쪽 여백에 .pc-side-ad와 대칭 배치 */
+  /* ── PC 세로 랭킹 위젯 — 본문 왼쪽 여백에 .pc-side-ad와 대칭 배치.
+     top은 96px(.pc-side-ad와 동일값)이 아니라 132px — .home-tabs가 스크롤로
+     sticky 고정되기 전, 최초 진입 시의 자연스러운 위치(헤더 56px + main
+     padding-top 32px + 홈탭 높이 약 44px)에 맞춘 값. 96px을 쓰면 페이지
+     맨 위에서 홈탭과 겹쳐 보이다가 스크롤해야만(홈탭이 sticky로 56px에
+     고정되며 위젯과의 간격이 맞아떨어짐) 제자리를 찾는 것처럼 보였음. */
   .pc-side-rank { display: none; }
   @media (min-width: 1280px) {
-    .pc-side-rank { display: block; position: fixed; top: 96px; left: calc(50% - 384px - 200px); width: 200px; z-index: 5; }
+    .pc-side-rank { display: block; position: fixed; top: 132px; left: calc(50% - 384px - 200px); width: 200px; z-index: 5; }
   }
   .pc-side-rank-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 14px; }
   .pc-side-rank-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }

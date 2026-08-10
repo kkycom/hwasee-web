@@ -2198,6 +2198,7 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
       <div class="sr-rule"></div>
       ${linesHtml}
     </div>
+    ${_kakaoAdHtml()}
     ${!isFinished ? `
       <div class="card" style="margin-top:16px">
         ${myCooldown ? `<div class="empty" style="padding:8px 0">⏳ 채택 후 5단계 이내에는 참여할 수 없어요</div>` : `
@@ -2206,6 +2207,7 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
           <button class="btn btn-primary" id="sr-submit-btn" style="width:100%" onclick="doSpeedrunSubmit('${story_id}','${openEp ? openEp.episode_id : ''}')">제출</button>
         `}
       </div>` : `<div class="empty" style="margin-top:16px">🎉 100단계 완결!</div>`}`;
+  _loadKakaoAdfit();
 }
 
 async function doSpeedrunSubmit(story_id, episode_id) {

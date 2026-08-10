@@ -1238,6 +1238,26 @@ function _ensureKakaoLoaded() {
   return _kakaoLoadPromise;
 }
 
+// ─── 카카오 애드핏(광고, 위 로그인 SDK와는 별개) ─────────────────
+// innerHTML로 넣은 <ins class="kakao_ad_area">는 그 안의 <script> 문자열이
+// 자동 실행되지 않으므로(브라우저가 innerHTML로 삽입된 script는 무시함),
+// 광고 카드를 새로 그릴 때마다 이 함수로 script 엘리먼트를 매번 새로
+// 만들어 붙여야 ba.min.js가 그 시점의 미처리 kakao_ad_area를 스캔해서 채움.
+function _loadKakaoAdfit() {
+  const s = document.createElement('script');
+  s.src = '//t1.kakaocdn.net/kas/static/ba.min.js';
+  s.async = true;
+  document.body.appendChild(s);
+}
+function _kakaoAdHtml(margin = '16px 0') {
+  return `<div style="text-align:center;margin:${margin}">
+    <ins class="kakao_ad_area" style="display:none;"
+    data-ad-unit = "DAN-XrJSiDdqNhNDEgMD"
+    data-ad-width = "320"
+    data-ad-height = "50"></ins>
+  </div>`;
+}
+
 // ─── 토스트 ───────────────────────────────────────────────
 
 let toastTimer;
@@ -2451,6 +2471,8 @@ function _applyStoryData(res, story_id) {
           </div>` : `<div style="font-size:13px;color:var(--muted);margin-top:12px">로그인 후 감상을 남길 수 있어요.</div>`}
       </div>` : ''}`;
 
+  if (openEp && !_isFinishedStory) _loadKakaoAdfit();
+
   if (isFinished && !story_comments) {
     loadStoryComments(currentParam);
   }
@@ -3619,8 +3641,10 @@ function renderSpotlight() {
       한 문장 소설 실험실
     </p>
     ${cardHtml('word')}
+    ${_kakaoAdHtml()}
     <div id="hint-card-area"></div>
     ${cardHtml('speedrun')}${cardHtml('genre_switch')}${cardHtml('fairytale')}${cardHtml('fixed_ending')}${cardHtml('hot')}`;
+  _loadKakaoAdfit();
 
   if (slots.sentence?.state === 'proposing' && slots.sentence.round) {
     _startSentenceRoundCountdown(slots.sentence.round.end_at);
@@ -6002,6 +6026,7 @@ function buildStoryActionHtml(openEp) {
       <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding:10px 14px;background:var(--surface);border-radius:8px;text-align:center">
         참여하려면 <button class="btn btn-ghost btn-sm" onclick="nav('auth','login')">로그인</button>이 필요합니다.
       </div>` : ''}
+    ${_kakaoAdHtml()}
     ${openSubs.length === 0
       ? `<div class="empty" style="padding:20px 0">아직 제출된 문장이 없습니다.</div>`
       : renderSubsWithReplies(openSubs, mySubIds, maxVotes, myVotedSet, absStep)}
@@ -6448,6 +6473,7 @@ function chooseBranch(episode_id, sub_id) {
   if (actionWrap && window._storyData.story.status === 'active') {
     const newOpenEp = getChosenOpenEp(episodes, submissions, window._branchChoice);
     actionWrap.innerHTML = buildStoryActionHtml(newOpenEp);
+    if (newOpenEp) _loadKakaoAdfit();
     selectedSubs = [];
     _applyVoteSelections();
   }

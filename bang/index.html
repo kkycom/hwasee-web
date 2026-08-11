@@ -3709,15 +3709,26 @@ function openNewStoriesPopup() {
 // 1권만 우선 오픈, 나머지는 매주 수요일 한 권씩 추가 예정(광고는 이후
 // 애널리틱스방에서 별도로 붙임).
 const DIARY_HUB_THEME_COLORS = { 1:'#c8823a', 2:'#b3536b', 3:'#9a4a35', 4:'#8a7a3a', 5:'#3a7a6a', 6:'#6a3a5a', 7:'#5a6a7a' };
+// releaseDate가 없으면 항상 공개. 있으면 KST 기준 오늘 날짜가 그 날짜
+// 이상이 되는 순간 자동으로 열림 — 매주 수요일마다 배포로 손댈 필요 없음.
 const DIARY_HUB_BOOKS = [
-  { id: 1, theme: 1, unlocked: true },
-  { id: 2, theme: 2, unlocked: false, releaseLabel: '8/12(수) 공개' },
-  { id: 3, theme: 3, unlocked: false, releaseLabel: '8/19(수) 공개' },
-  { id: 4, theme: 4, unlocked: false, releaseLabel: '8/26(수) 공개' },
-  { id: 5, theme: 5, unlocked: false, releaseLabel: '9/2(수) 공개' },
-  { id: 6, theme: 6, unlocked: false, releaseLabel: '9/9(수) 공개' },
-  { id: 7, theme: 7, unlocked: false, releaseLabel: '9/16(수) 공개' },
+  { id: 1, theme: 1, releaseDate: null },
+  { id: 2, theme: 2, releaseDate: '2026-08-12' },
+  { id: 3, theme: 3, releaseDate: '2026-08-19' },
+  { id: 4, theme: 4, releaseDate: '2026-08-26' },
+  { id: 5, theme: 5, releaseDate: '2026-09-02' },
+  { id: 6, theme: 6, releaseDate: '2026-09-09' },
+  { id: 7, theme: 7, releaseDate: '2026-09-16' },
 ];
+function _dhIsUnlocked(b) {
+  if (!b.releaseDate) return true;
+  const kstToday = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  return kstToday >= b.releaseDate;
+}
+function _dhReleaseLabel(b) {
+  const d = new Date(`${b.releaseDate}T00:00:00+09:00`);
+  return `${d.getMonth() + 1}/${d.getDate()}(${'일월화수목금토'[d.getDay()]}) 공개`;
+}
 const DIARY_STORY_DATA = {
   1: {
     title: '첫 번째 일기',
@@ -4026,11 +4037,11 @@ async function diaryHub() {
 }
 
 function _dhRenderShelf() {
-  const booksHtml = DIARY_HUB_BOOKS.map(b => b.unlocked
+  const booksHtml = DIARY_HUB_BOOKS.map(b => _dhIsUnlocked(b)
     ? `<button type="button" class="dh-spine" style="background:${DIARY_HUB_THEME_COLORS[b.theme]};color:#1c0e06" onclick="_dhSelectBook(${b.id})">${esc(DIARY_STORY_DATA[b.id].title)}</button>`
     : `<button type="button" class="dh-spine locked" disabled>🔒</button>`
   ).join('');
-  const lockedLabels = DIARY_HUB_BOOKS.filter(b => !b.unlocked).map(b => b.releaseLabel).join(' · ');
+  const lockedLabels = DIARY_HUB_BOOKS.filter(b => !_dhIsUnlocked(b)).map(_dhReleaseLabel).join(' · ');
   document.getElementById('dh-root').innerHTML = `
     <div id="dh-shelf-scene" style="transition:filter .4s ease${_dhIntroShown ? '' : ';filter:blur(6px);pointer-events:none'}">
       <div class="dh-shelf-heading">당신은 지금, 다른 사람들의 일기장 앞에 서 있다</div>

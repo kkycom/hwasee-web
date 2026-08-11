@@ -4018,6 +4018,8 @@ function _dhGetVisited() {
 function _dhAddVisited(nodeId) {
   const s = _dhGetVisited(); s.add(_dhVisitedKey(nodeId));
   localStorage.setItem('hwasee_diary_visited', JSON.stringify([...s]));
+  // 표본 100명 넘었는지 나중에 확인하려는 순수 집계 — 화면엔 영향 없음
+  api('trackDiaryEnding', { book_id: _dhBookId, node_id: nodeId }).catch(() => {});
   return s;
 }
 function _dhTotalEndings() { return Object.values(_dhStory().nodes).filter(n => n.ending).length; }

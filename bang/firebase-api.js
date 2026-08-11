@@ -1998,6 +1998,20 @@ async function fbTrackVisit(is_unique) {
   return { ok: true };
 }
 
+// 훔쳐본 일기장 결말 도달 카운트 — 지금은 표시용 rarity(%)를 실측치로
+// 바꾸는 용도가 아니라, 참여자 표본이 충분히(100+) 쌓였는지 나중에 확인하기
+// 위한 순수 집계. book_id+node_id 조합별로 하나의 카운터 문서.
+async function fbTrackDiaryEnding(book_id, node_id) {
+  if (!book_id || !node_id) return { ok: false };
+  const ref = db.collection('diary_ending_reached').doc(`${book_id}_${node_id}`);
+  await ref.set({
+    book_id, node_id,
+    count: firebase.firestore.FieldValue.increment(1),
+    updated_at: new Date().toISOString(),
+  }, { merge: true });
+  return { ok: true };
+}
+
 async function fbGetAdminStats(admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   const today     = _kstDate(0);
@@ -3311,6 +3325,7 @@ async function firebaseApi(action, params = {}) {
 
     case 'saveFcmToken':    return fbSaveFcmToken(await requireUid(), params.fcm_token);
     case 'trackVisit':      return fbTrackVisit(params.is_unique);
+    case 'trackDiaryEnding': return fbTrackDiaryEnding(params.book_id, params.node_id);
     case 'checkDailyBonus': return { ok: true, ...(await _fbCheckDailyBonus(await requireUid())) };
     case 'submitBugReport':   return fbSubmitBugReport(params.content, await requireUid());
     case 'getBugReports':     return fbGetBugReports(await requireUid());

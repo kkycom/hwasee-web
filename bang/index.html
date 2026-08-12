@@ -9450,7 +9450,14 @@ window.onload = async () => {
     const _pageLoadedAt = Date.now();
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!_swHadController) { _swHadController = true; return; }
-      if (Date.now() - _pageLoadedAt < 5000) { location.reload(); return; }
+      // 세션당 1회로 제한 — 위 등록 URL 안정화로 반복 재설치 루프는 막았지만,
+      // 혹시 모를 재발 시 무한 새로고침 대신 최소 한 번은 배너로 전환되게
+      // 하는 안전장치(2026-08-11 깜빡임 사고 재발 방지).
+      if (Date.now() - _pageLoadedAt < 5000 && !sessionStorage.getItem('sw_auto_reloaded')) {
+        try { sessionStorage.setItem('sw_auto_reloaded', '1'); } catch {}
+        location.reload();
+        return;
+      }
       if (document.getElementById('sw-update-banner')) return;
       const bar = document.createElement('div');
       bar.id = 'sw-update-banner';
@@ -9470,10 +9477,23 @@ window.onload = async () => {
     // no-cache 요청헤더)만 그 순간 CDN까지 우회해서 통했던 것(2026-08-11
     // 유저 제보: 검색 링크로 재접속하면 새 창이어도 배포 직후 한동안 옛 버전이
     // 뜨고, 탭을 완전히 닫았다 열어야만(그마저도 10분 지난 뒤에야) 최신으로
-    // 바뀜). 등록 URL 자체에 매 로드마다 바뀌는 쿼리스트링을 붙이면 CDN 입장에서
-    // "새 URL"이라 캐시 미스로 처리돼 원본까지 그대로 뚫림 — sw.js는 4KB대라
-    // 매번 새로 받아도 비용 무시할 수준.
-    navigator.serviceWorker.register('/bang/sw.js?v=' + Date.now(), { updateViaCache: 'none' }).then(async reg => {
+    // 바뀜). 등록 URL 자체에 쿼리스트링을 붙이면 CDN 입장에서 "새 URL"이라
+    // 캐시 미스로 처리돼 원본까지 그대로 뚫림 — sw.js는 4KB대라 매번 새로
+    // 받아도 비용 무시할 수준.
+    // ⚠️ 단, 이 값은 Date.now()로 매 로드마다 새로 만들면 안 됨 — 위 "5초 이내
+    // 컨트롤러 교체 시 조용히 새로고침" 로직과 맞물려서, 새로고침될 때마다
+    // 또 다른 새 타임스탬프로 재등록 → 브라우저가 매번 "다른 URL"로 보고
+    // 재설치를 돎 → 컨트롤러 교체가 또 감지돼 또 새로고침 … 이 반복되며 화면이
+    // 계속 깜빡이는 무한루프가 실제로 발생함(유저 제보 2026-08-11, "꿀렁거려").
+    // sessionStorage로 이 탭(세션) 안에서는 같은 값을 재사용 — 새로고침해도
+    // 동일 URL이라 재설치가 안 도니 루프가 끊기고, 완전히 새 탭/재접속(=새
+    // sessionStorage)일 때만 새 타임스탬프로 CDN을 실제로 우회함.
+    const _swBust = sessionStorage.getItem('sw_bust') || (() => {
+      const v = String(Date.now());
+      try { sessionStorage.setItem('sw_bust', v); } catch {}
+      return v;
+    })();
+    navigator.serviceWorker.register('/bang/sw.js?v=' + _swBust, { updateViaCache: 'none' }).then(async reg => {
       // 브라우저는 기본적으로 "페이지 이동/재접속" 시점에만 새 서비스워커가
       // 있는지 확인함 — 탭을 오래 켜두고 이동을 안 하면(자유 이야기 탭에 계속
       // 머무는 등) 배포가 끝난 지 한참 지나도 업데이트 확인 자체가 안 일어나서

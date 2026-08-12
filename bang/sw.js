@@ -47,7 +47,7 @@ self.addEventListener('notificationclick', e => {
 
 // ── 캐시 전략 ───────────────────────────────────────────────
 
-const CACHE = 'hwasee-bang-v533';
+const CACHE = 'hwasee-bang-v534';
 const PRECACHE = [
   '/bang/',
   '/bang/index.html',
@@ -89,6 +89,32 @@ self.addEventListener('fetch', e => {
       e.request.url.includes('kakaocdn.net') ||
       e.request.url.includes('pagead2') ||
       e.request.method !== 'GET') return;
+
+  // 문서(HTML 내비게이션) 요청은 네트워크 우선 — 나머지 정적 자산과 달리
+  // 이것만 캐시 우선으로 두면, install()의 PRECACHE 단계가 GitHub Pages 앞단
+  // CDN의 10분 캐시(sw.js 자체는 등록 URL 버스팅으로 우회했지만 이 fetch는
+  // 아님)에 걸려 옛 index.html을 그대로 캐싱해버리는 경우 새 서비스워커가
+  // 설치돼도 여전히 옛 화면만 나와서, 유저가 강력새로고침(no-cache 요청)을
+  // 직접 해야만 빠져나올 수 있었음(2026-08-11 실제 발생 — "꿀렁거려" 제보).
+  // 강력새로고침을 알아야만 풀리는 구조 자체가 문제라 근본적으로 바꿈: 문서는
+  // 항상 네트워크를 먼저 시도해서 그 순간의 실제 최신 HTML을 받고(성공 시
+  // 캐시도 그걸로 덮어써서 다음 오프라인 대비 최신 유지), 네트워크가 아예
+  // 안 될 때만(오프라인) 캐시로 폴백. 이미지/JS 등 정적 자산은 기존처럼
+  // 캐시 우선 유지(자주 안 바뀌고, 바뀌면 새 서비스워커 캐시버킷 자체가
+  // 갈아끼워지므로 안전).
+  const isNavigation = e.request.mode === 'navigate' || e.request.destination === 'document';
+  if (isNavigation) {
+    e.respondWith(
+      fetch(e.request).then(res => {
+        if (res && res.status === 200) {
+          const clone = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
+        }
+        return res;
+      }).catch(() => caches.match(e.request).then(c => c || caches.match('/bang/index.html')))
+    );
+    return;
+  }
 
   e.respondWith(
     caches.match(e.request).then(cached => {

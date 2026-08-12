@@ -996,23 +996,19 @@
   </div>
 </div></main>
 <div class="pc-side-ad" id="pc-side-ad">
-  <ins class="kakao_ad_area" style="display:none;"
-  data-ad-unit = "DAN-9ylORAM6xK6SUwLT"
-  data-ad-width = "160"
-  data-ad-height = "600"></ins>
-  <script type="text/javascript" src="//t1.kakaocdn.net/kas/static/ba.min.js" async></script>
+  <a href="https://link.coupang.com/a/f8UwrgGG4W" target="_blank" rel="noopener" referrerpolicy="unsafe-url">
+    <img src="https://ads-partners.coupang.com/banners/1016610?trackingCode=AF8559179&subId=&traceId=V0-301-f5c692db558def48-I1016610&w=160&h=600" alt="쿠팡 파트너스 배너" width="160" height="600" style="width:160px;height:600px;display:block;border-radius:8px">
+  </a>
+  <div style="font-size:10px;color:var(--muted);margin-top:4px;text-align:center">쿠팡 파트너스 활동으로 일정액의 수수료를 제공받을 수 있습니다.</div>
 </div>
 <script>
-// PC 세로 광고(160x600, position:fixed)가 짧은 페이지에서 스크롤을 끝까지
-// 내렸을 때 푸터/푸터 광고를 덮어버리는 문제 — 푸터가 뷰포트에 보이기
-// 시작하면 fixed를 풀고 그 시점의 푸터 바로 위 지점에 absolute로 고정.
-// SPA 라우팅으로 페이지 높이가 바뀌어도 IntersectionObserver가 레이아웃
-// 변화마다 다시 계산해주므로 별도 트리거 없이 항상 정확함.
-// ⚠️ ins가 display:none인 채로 시작해서 ba.min.js가 광고를 채우기 전엔
-// ad.offsetHeight가 0에 가까움 — 짧은 페이지에서 옵저버가 광고 로드보다
-// 먼저 발동하면 stopTop이 "빈 상태" 높이로 계산돼 실제 광고가 다 찬 뒤엔
-// 그만큼 아래로 삐져나와 푸터를 덮는 문제가 있었음. ResizeObserver로 광고
-// 박스 크기가 바뀔 때마다(로드 완료 포함) 같은 위치를 다시 계산해서 해결.
+// PC 세로 광고 자리(160x600, position:fixed)가 짧은 페이지에서 스크롤을
+// 끝까지 내렸을 때 푸터/푸터 광고를 덮어버리는 문제 — 푸터가 뷰포트에
+// 보이기 시작하면 fixed를 풀고 그 시점의 푸터 바로 위 지점에 absolute로
+// 고정. SPA 라우팅으로 페이지 높이가 바뀌어도 IntersectionObserver가
+// 레이아웃 변화마다 다시 계산해주므로 별도 트리거 없이 항상 정확함.
+// ResizeObserver도 같이 둬서 이 자리 안 콘텐츠(이미지/캡션 등) 높이가
+// 나중에 바뀌는 경우까지 항상 정확한 위치를 유지함.
 (function () {
   const ad = document.getElementById('pc-side-ad');
   const foot = document.getElementById('site-footer');
@@ -1442,8 +1438,8 @@ function _kakaoAdHtml(margin = '16px 0') {
 // 캡션은 공정위 표시광고 규정상 필수 고지 문구.
 function _coupangBannerHtml(margin = '16px 0') {
   return `<div style="text-align:center;margin:${margin}">
-    <a href="https://link.coupang.com/a/f8UjqXh3TM" target="_blank" rel="noopener" referrerpolicy="unsafe-url">
-      <img src="https://ads-partners.coupang.com/banners/1016603?trackingCode=AF8559179&subId=&traceId=V0-301-bae0f72e5e59e45f-I1016603&w=728&h=90" alt="쿠팡 파트너스 배너" style="width:100%;max-width:728px;height:auto;display:block;margin:0 auto;border-radius:8px">
+    <a href="https://link.coupang.com/a/f8UoPTupUq" target="_blank" rel="noopener" referrerpolicy="unsafe-url">
+      <img src="https://ads-partners.coupang.com/banners/1016609?trackingCode=AF8559179&subId=&traceId=V0-301-f5c692db558def48-I1016609&w=728&h=90" alt="쿠팡 파트너스 배너" width="728" height="90" style="width:100%;max-width:728px;height:auto;display:block;margin:0 auto;border-radius:8px">
     </a>
     <div style="font-size:10px;color:var(--muted);margin-top:4px">이 배너는 쿠팡 파트너스 활동의 일환으로, 이를 통해 일정액의 수수료를 제공받을 수 있습니다.</div>
   </div>`;

@@ -1423,7 +1423,12 @@ function _loadKakaoAdfit() {
 // 재요청 문제는 chooseBranch()에서 재요청 호출 자체를 아예 안 하는 방식으로
 // 대응 중(그 함수 참고) — 이 방식은 그대로 유지.
 function _kakaoAdHtml(margin = '16px 0') {
-  return `<div style="text-align:center;margin:${margin}">
+  // min-height를 광고 높이(50px)만큼 미리 잡아둠 — 캐시 렌더→네트워크 렌더로
+  // 이 영역이 두 번 다시 그려질 때마다 ins가 비었다 채워지며 자리 자체가
+  // 없어졌다 생겼다 해서 아래 콘텐츠가 밀렸다 당겨지는 "꿀렁임"이 있었음
+  // (유저 지적, 2026-08-11). 자리를 고정해두면 광고 내용만 자리 안에서
+  // 깜빡이고 주변 레이아웃은 안 흔들림.
+  return `<div style="text-align:center;margin:${margin};min-height:50px">
     <ins class="kakao_ad_area" style="display:none;"
     data-ad-unit = "DAN-XrJSiDdqNhNDEgMD"
     data-ad-width = "320"
@@ -1846,6 +1851,9 @@ async function loadHomeTab(tab, epoch) {
     window._spotlightData = res;
     _srVisibleCount = SR_PAGE_SIZE;
     renderSpotlight();
+    // 아래에서 재검증 렌더가 예정돼있지 않으면(캐시 자체가 없던 첫 진입 등)
+    // 지금 이 렌더가 이번 방문의 마지막 렌더이므로 여기서 광고 로드.
+    if (!_staleSp) _loadKakaoAdfit();
 
     // 캐시(fresh든 stale든)로 먼저 그린 경우에도 항상 백그라운드로 최신 데이터를
     // 재검증하고 화면까지 다시 그림 — 예전엔 fresh 캐시(20초 이내)면 재검증 자체를
@@ -1854,17 +1862,21 @@ async function loadHomeTab(tab, epoch) {
     // 사라지는 문제가 있었음(2026-07-14 유저 제보 — "두 번 들어가야 없어진다").
     // 단, 마침 슬롯2 제안 입력창에 타이핑 중이면 이번 재렌더는 건너뛰어서 입력
     // 내용이 날아가지 않게 함(다음 방문 때 반영됨).
+    // 광고는 이 재검증 분기의 결과와 무관하게(재렌더되든 실패하든 스킵되든)
+    // 어느 경우든 딱 한 번만 로드되게 각 경로 끝에서 호출 — 위 캐시 렌더가
+    // 이번 방문의 사실상 마지막 화면 상태로 남는 경로들이라서.
     if (_staleSp && !_spotlightFetching) {
       _spotlightFetching = true;
       api('getSpotlight').then(r => {
         _spotlightFetching = false;
-        if (!r.ok || !r.initialized) return;
+        if (!r.ok || !r.initialized) { _loadKakaoAdfit(); return; }
         _lsc.set('spotlight', r, 20);
         if (!ok()) return;
         const srInput = document.getElementById('sr-input');
         const typing = srInput && (document.activeElement === srInput || srInput.value.trim());
         if (!typing) { window._spotlightData = r; renderSpotlight(); }
-      }).catch(() => { _spotlightFetching = false; });
+        _loadKakaoAdfit();
+      }).catch(() => { _spotlightFetching = false; _loadKakaoAdfit(); });
     }
 
   } else if (tab === 'free') {
@@ -7305,7 +7317,11 @@ function renderSpotlight() {
     ${cardHtml('speedrun')}${cardHtml('genre_switch')}${cardHtml('fairytale')}${cardHtml('fixed_ending')}${cardHtml('hot')}
     ${_coupangBannerHtml()}
     ${diaryHubTeaserCardHtml()}`;
-  _loadKakaoAdfit();
+  // 광고 재요청은 여기서 안 하고 loadHomeTab()이 "이 탭 방문의 진짜 마지막
+  // 렌더" 시점에 딱 한 번만 호출함 — renderSpotlight()는 캐시→네트워크
+  // 재검증으로 방문 한 번에 두 번 불릴 수 있는데(투표/더보기 등도 이 함수를
+  // 다시 부름), 매번 여기서 로드하면 광고 태그가 매번 새로 만들어지면서
+  // 채워졌다 비워지는 게 반복돼 눈에 띄게 꿀렁거림(유저 지적, 2026-08-11).
 
   if (slots.sentence?.state === 'proposing' && slots.sentence.round) {
     _startSentenceRoundCountdown(slots.sentence.round.end_at);

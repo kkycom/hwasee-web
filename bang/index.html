@@ -3738,6 +3738,13 @@ const DIARY_HUB_BOOKS = [
   { id: 7, theme: 7, releaseDate: '2026-09-16' },
 ];
 function _dhIsUnlocked(b) {
+  // DIARY_STORY_DATA[b.id] 존재 여부도 같이 봐야 함 — 날짜만 보고 풀어주면,
+  // 콘텐츠 작성이 배포 마감(매주 수요일)을 못 맞췄을 때 날짜는 이미 지나서
+  // "공개됨"으로 판정되는데 실제 데이터가 없어 _dhRenderShelf()가
+  // DIARY_STORY_DATA[b.id].title에서 그대로 죽어버림 — 훔쳐본 이야기 진입
+  // 자체가 통째로 안 뜨는 사고로 실제 발생함(2026-08-12, 2권 콘텐츠 미완성
+  // 상태에서 releaseDate만 도래). 콘텐츠가 실제로 채워진 책만 풀리게 함.
+  if (!DIARY_STORY_DATA[b.id]) return false;
   if (!b.releaseDate) return true;
   const kstToday = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
   return kstToday >= b.releaseDate;

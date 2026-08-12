@@ -2463,7 +2463,20 @@ function _applyStoryData(res, story_id) {
   const { story: s, episodes, submissions, is_bookmarked, is_liked = false, like_count = 0, my_voted_sub_ids = [], story_comments, genre_history } = res;
   // 참여 중인 이야기 NEW 배지 판단용 "마지막으로 본 상태" 기록 — 화면 렌더를
   // 안 막는 fire-and-forget(story_visits, fbGetMyStories에서 대조)
-  if (user) api('markStoryVisited', { story_id, current_step: s.current_step, activity_count: s.participant_count }).catch(() => {});
+  if (user) {
+    api('markStoryVisited', { story_id, current_step: s.current_step, activity_count: s.participant_count }).catch(() => {});
+    // 서버 story_visits는 이걸로 갱신되지만, "참여하신 N개 이야기에 새 소식"
+    // 배너(_myNewCount)는 자체 네트워크 요청 없이 'free' 탭 로컬 캐시만 읽는
+    // 구조라(3660줄대) 방문해도 그 캐시가 안 바뀌면 배너가 계속 옛 개수를
+    // 보여줌 — 지금 확인한 이 스토리만 캐시에서 직접 is_new:false로 패치
+    // (유저 제보 2026-08-10 — "들어가서 눌렀는데도 안 꺼진다").
+    const _freeCached = _lsc.getStale('free');
+    const _visited = _freeCached?.myRes?.ok && _freeCached.myRes.stories.find(st => st.story_id === story_id);
+    if (_visited && _visited.is_new) {
+      _visited.is_new = false;
+      _lsc.set('free', _freeCached, 150);
+    }
+  }
   // 분기 이야기: fork 갈래 자동 선택 (B이야기 로드 시 B갈래가 산문뷰에 보이도록)
   if (s.branch_episode_id && s.branch_sub_id && !(s.branch_episode_id in window._branchChoice)) {
     window._branchChoice[s.branch_episode_id] = s.branch_sub_id;

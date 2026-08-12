@@ -2634,7 +2634,7 @@ function _applyStoryData(res, story_id) {
       </div>` : ''}
       ${isFinished ? `<div class="theend-fx" id="story-ending-fx"><span class="theend-text">The End</span></div>` : ''}
     </div>
-    ${isFinished ? _kakaoAdHtml() : ''}
+    ${isFinished ? _coupangBannerHtml() : ''}
     ${s.mode === 'genre_switch' && openEp ? genreSwitchBannerHtml((s.genre_sequence || [])[Number(openEp.step) - 1], (s.genre_sequence || [])[Number(openEp.step)]) : ''}
     ${isAdmin() && s.status === 'active' && !s.vote_threshold ? `
     <div style="display:flex;justify-content:flex-end;margin:6px 0 2px">
@@ -2661,7 +2661,7 @@ function _applyStoryData(res, story_id) {
           </div>` : `<div style="font-size:13px;color:var(--muted);margin-top:12px">로그인 후 감상을 남길 수 있어요.</div>`}
       </div>` : ''}`;
 
-  if ((openEp && !_isFinishedStory) || isFinished) _loadKakaoAdfitOnNav('story:' + story_id);
+  if (openEp && !_isFinishedStory) _loadKakaoAdfitOnNav('story:' + story_id);
 
   if (isFinished && !story_comments) {
     loadStoryComments(currentParam);
@@ -4152,7 +4152,7 @@ function _dhRenderReaderShell() {
         <button type="button" class="btn btn-primary btn-sm" style="border-radius:8px;padding:10px 22px" onclick="_dhOpenRewind()">다른 선택 보기</button>
         <button type="button" class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="_dhBackToShelf()">‹ 책장으로 돌아가기</button>
       </div>
-      ${_kakaoAdHtml()}
+      ${_coupangBannerHtml()}
     </div>`;
   _dhRenderDiary();
 }
@@ -4209,10 +4209,6 @@ function _dhRenderDiary() {
     document.getElementById('dh-ending-count').textContent = `결말 ${_dhVisitedCountForStory()} / ${_dhTotalEndings()}개 확인`;
     document.getElementById('dh-ending-trail').innerHTML = '당신의 선택 — ' +
       _dhChoiceTrail.map((c, i) => `<b>${esc(c)}</b>${i < _dhChoiceTrail.length - 1 ? ' → ' : ''}`).join('');
-    // 이 결말(책+도달한 노드)에 처음 도달했을 때만 광고 재요청 — 같은 결말을
-    // 다시 그리는 재렌더(마스트헤드 리타이틀 등)에는 반응 안 함, 되감기로
-    // 다른 결말에 도달하면 키가 달라져 새로 요청됨.
-    _loadKakaoAdfitOnNav('diary-end:' + _dhBookId + ':' + _dhPathNodeIds[_dhPathNodeIds.length - 1]);
   }
 
   document.getElementById('dh-page-wrap').classList.toggle('blurred', _dhEndingPhase === 'overlay');

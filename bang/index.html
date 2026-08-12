@@ -6906,7 +6906,7 @@ function _dhVisitedCountForStory() {
 async function diaryHub() {
   document.getElementById('app').innerHTML = `
     <div style="display:flex;align-items:center;margin-bottom:20px">
-      <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="nav('spotlight')">← 오늘의 이야기로</button>
+      <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600;position:relative;z-index:301" onclick="nav('spotlight')">← 오늘의 이야기로</button>
     </div>
     <div id="dh-root"></div>`;
   _dhBookId = null;
@@ -6945,6 +6945,11 @@ function _dhShowIntro() {
   modal.className = 'modal-overlay';
   modal.id = 'dh-intro-overlay';
   modal.style.background = 'rgba(20,14,8,.4)';
+  // 상단 헤더(로고/알림/프로필, 56px)까지 이 오버레이가 덮어버리면 그 자리를
+  // 탭했을 때 헤더 버튼 대신 "다음 대사로 넘기기"가 먼저 먹혀서, 화면 자체가
+  // 통째로 하나의 버튼처럼 느껴짐(유저 지적, 2026-08-12) — 헤더 높이만큼
+  // 오버레이 시작점을 내려서 헤더는 항상 그대로 클릭 가능하게 둠.
+  modal.style.top = '56px';
   modal.onclick = tap;
   document.body.appendChild(modal);
   function render() {
@@ -7124,6 +7129,8 @@ function _dhShowEndingOverlay() {
   modal.className = 'modal-overlay';
   modal.id = 'dh-ending-overlay';
   modal.style.background = 'rgba(20,14,8,.4)';
+  // dh-intro-overlay와 동일한 이유 — 헤더는 항상 클릭 가능하게 둠.
+  modal.style.top = '56px';
   modal.onclick = tap;
   document.body.appendChild(modal);
   function render() {

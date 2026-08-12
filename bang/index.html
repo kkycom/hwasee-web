@@ -9426,7 +9426,18 @@ window.onload = async () => {
       bar.querySelector('#_sw_refresh').onclick = () => location.reload();
       bar.querySelector('#_sw_dismiss').onclick = () => bar.remove();
     });
-    navigator.serviceWorker.register('/bang/sw.js', { updateViaCache: 'none' }).then(async reg => {
+    // updateViaCache:'none'은 브라우저 자체 HTTP 캐시만 우회함 — GitHub Pages
+    // 앞단 Fastly CDN은 sw.js에 Cache-Control: max-age=600(10분)을 고정으로
+    // 붙이는데(GitHub Pages는 커스텀 헤더 설정 불가), 브라우저가 "캐시 우회"
+    // 의도로 보내는 일반 요청도 CDN 입장에선 그냥 평범한 GET이라 그 10분
+    // 안에는 CDN이 여전히 옛 sw.js를 그대로 돌려줌 — 강력새로고침(진짜
+    // no-cache 요청헤더)만 그 순간 CDN까지 우회해서 통했던 것(2026-08-11
+    // 유저 제보: 검색 링크로 재접속하면 새 창이어도 배포 직후 한동안 옛 버전이
+    // 뜨고, 탭을 완전히 닫았다 열어야만(그마저도 10분 지난 뒤에야) 최신으로
+    // 바뀜). 등록 URL 자체에 매 로드마다 바뀌는 쿼리스트링을 붙이면 CDN 입장에서
+    // "새 URL"이라 캐시 미스로 처리돼 원본까지 그대로 뚫림 — sw.js는 4KB대라
+    // 매번 새로 받아도 비용 무시할 수준.
+    navigator.serviceWorker.register('/bang/sw.js?v=' + Date.now(), { updateViaCache: 'none' }).then(async reg => {
       // 브라우저는 기본적으로 "페이지 이동/재접속" 시점에만 새 서비스워커가
       // 있는지 확인함 — 탭을 오래 켜두고 이동을 안 하면(자유 이야기 탭에 계속
       // 머무는 등) 배포가 끝난 지 한참 지나도 업데이트 확인 자체가 안 일어나서

@@ -1414,17 +1414,14 @@ function _loadKakaoAdfit() {
   s.async = true;
   document.body.appendChild(s);
 }
-// 애드핏 운영정책 5.2("채팅/메신저처럼 콘텐츠와 함께 광고를 계속 동적으로
-// 불러오는 경우" 금지)에 안전하게 걸치도록, "실제로 다른 화면으로 이동했을
-// 때"만 광고를 다시 요청하고 같은 화면 안에서의 콘텐츠 변경(문장 제출,
-// 분기 선택, 캐시→네트워크 재렌더 등)에는 재요청하지 않게 하는 게이트.
-// key가 직전과 같으면(같은 화면) 스킵, 다르면(진짜 새 화면) 로드.
-let _lastAdNavKey = null;
-function _loadKakaoAdfitOnNav(key) {
-  if (key === _lastAdNavKey) return;
-  _lastAdNavKey = key;
-  _loadKakaoAdfit();
-}
+// ⚠️ 2026-08-11: "같은 화면이면 재요청 스킵"하는 키 기반 게이트를 한때
+// 도입했었으나(애드핏 운영정책 5.2 리스크 완화 목적), 이 앱의 여러 화면이
+// 방문 한 번에 캐시 렌더→네트워크 렌더로 innerHTML을 두 번 다시 그리는
+// 구조라(예: renderSpotlight, story()) 두 번째 렌더가 광고 <ins>를 완전히
+// 새로 만드는데 그 게이트가 재요청을 막아버려서 광고가 "잠깐 떴다 사라지는"
+// 회귀가 발생함(유저 제보) — 원상복구. 문장 제출/분기 선택 같은 반복 액션
+// 재요청 문제는 chooseBranch()에서 재요청 호출 자체를 아예 안 하는 방식으로
+// 대응 중(그 함수 참고) — 이 방식은 그대로 유지.
 function _kakaoAdHtml(margin = '16px 0') {
   return `<div style="text-align:center;margin:${margin}">
     <ins class="kakao_ad_area" style="display:none;"
@@ -2379,7 +2376,7 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
           <button class="btn btn-primary" id="sr-submit-btn" style="width:100%" onclick="doSpeedrunSubmit('${story_id}','${openEp ? openEp.episode_id : ''}')">제출</button>
         `}
       </div>` : `<div class="empty" style="margin-top:16px">🎉 100단계 완결!</div>`}`;
-  _loadKakaoAdfitOnNav('story:' + story_id);
+  _loadKakaoAdfit();
 }
 
 async function doSpeedrunSubmit(story_id, episode_id) {
@@ -2661,7 +2658,7 @@ function _applyStoryData(res, story_id) {
           </div>` : `<div style="font-size:13px;color:var(--muted);margin-top:12px">로그인 후 감상을 남길 수 있어요.</div>`}
       </div>` : ''}`;
 
-  if (openEp && !_isFinishedStory) _loadKakaoAdfitOnNav('story:' + story_id);
+  if (openEp && !_isFinishedStory) _loadKakaoAdfit();
 
   if (isFinished && !story_comments) {
     loadStoryComments(currentParam);
@@ -3406,7 +3403,7 @@ function renderWordChallenge() {
     ${_kakaoAdHtml()}
     <div>${listHtml}</div>
     ${showMoreHtml}`;
-  _loadKakaoAdfitOnNav('wordChallenge');
+  _loadKakaoAdfit();
 
   if (isActive) _startWordChallengeCountdown(challenge.end_at);
   else _startWordChallengeCountdown(_nextKstMidnightIso());
@@ -4449,7 +4446,7 @@ function renderSpotlight() {
     ${cardHtml('speedrun')}${cardHtml('genre_switch')}${cardHtml('fairytale')}${cardHtml('fixed_ending')}${cardHtml('hot')}
     ${_coupangBannerHtml()}
     ${diaryHubTeaserCardHtml()}`;
-  _loadKakaoAdfitOnNav('spotlight');
+  _loadKakaoAdfit();
 
   if (slots.sentence?.state === 'proposing' && slots.sentence.round) {
     _startSentenceRoundCountdown(slots.sentence.round.end_at);

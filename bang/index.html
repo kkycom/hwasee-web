@@ -4971,6 +4971,31 @@ function openRankingModal() {
   });
 }
 
+// 후원하기 (2026-08-12) — 별도 결제 연동 없이 토스 송금 QR 이미지를 그대로
+// 보여주고 스캔해서 보내는 방식. 계좌/링크를 코드에서 직접 들고 있지 않고
+// 이미지(donate-qr.JPG) 한 장으로만 처리해서, 잘못된 결제 정보가 코드에
+// 박히는 실수 자체가 구조적으로 안 생김.
+function openDonateModal() {
+  const existing = document.getElementById('donate-modal');
+  if (existing) { existing.remove(); return; }
+  const modal = document.createElement('div');
+  modal.id = 'donate-modal';
+  modal.className = 'modal-overlay';
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:340px;text-align:center">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-size:15px;font-weight:700">💌 후원하기</div>
+        <button onclick="document.getElementById('donate-modal').remove()"
+          style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1">✕</button>
+      </div>
+      <p style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:16px">화씨.방은 개인이 운영하는 서비스예요. 보내주신 후원금은 서버비 등 운영비로만 소중히 쓸게요.</p>
+      <img src="donate-qr.jpg" alt="토스 송금 QR 코드" style="width:220px;height:220px;border-radius:12px;border:1px solid var(--border)">
+      <p style="font-size:12px;color:var(--muted);margin-top:14px">토스 앱의 QR 스캔 기능으로 위 코드를 찍으면 바로 송금할 수 있어요.</p>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
 function toggleReport(sub_id) {
   const el = document.getElementById('report-' + sub_id);
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
@@ -9515,6 +9540,8 @@ window.onload = async () => {
     <a href="/bang/privacy.html" style="color:var(--muted);text-decoration:none;white-space:nowrap" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">개인정보처리방침 및 이용약관</a>
     &nbsp;·&nbsp;
     <a href="/bang/contact.html" style="color:var(--muted);text-decoration:none" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">문의하기</a>
+    &nbsp;·&nbsp;
+    <a onclick="openDonateModal()" style="cursor:pointer;color:var(--muted);text-decoration:none" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">후원하기</a>
   </span>
   <div style="max-width:720px;margin:20px auto 0;text-align:center">
     <ins class="kakao_ad_area" style="display:none;"

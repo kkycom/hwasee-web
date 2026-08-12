@@ -9413,8 +9413,19 @@ window.onload = async () => {
     // 이미 컨트롤러가 있었을 때만 "진짜 교체"로 보고, 최초 컨트롤 획득은
     // 한 번은 무시하되 이후엔 정상적으로 진짜 업데이트로 인식하게 함.
     let _swHadController = !!navigator.serviceWorker.controller;
+    // ⚠️ 서비스워커 등록은 탭을 닫아도 브라우저에 남아있어서, 방금 막
+    // 재접속한 사람도 로드 시점에 이미 "이전 컨트롤러 있음" 상태로 시작함
+    // — 위 _swHadController만으론 "한참 쓰다가 업데이트를 맞은 경우"와
+    // "재접속하자마자 업데이트를 맞은 경우"를 구분 못 해서, 후자도 똑같이
+    // 배너가 뜨고 있었음(유저 지적, 2026-08-11 — "재접속한 사람은 그냥
+    // 반영돼야 하는 거 아니냐"). 배너를 만든 이유(자동 새로고침하면 쓰던
+    // 글 날아갈까봐)는 애초에 사용자가 뭔가 하고 있을 시간이 있었던
+    // 경우에만 해당 — 로드한 지 얼마 안 된 시점(입력할 틈도 없었던
+    // 시점)에 업데이트가 오면 잃을 게 없으니 조용히 새로고침해도 안전함.
+    const _pageLoadedAt = Date.now();
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!_swHadController) { _swHadController = true; return; }
+      if (Date.now() - _pageLoadedAt < 5000) { location.reload(); return; }
       if (document.getElementById('sw-update-banner')) return;
       const bar = document.createElement('div');
       bar.id = 'sw-update-banner';

@@ -1528,7 +1528,18 @@ async function checkPatchNoteAnnouncement() {
 let currentRoute = 'home';
 let currentParam = null;
 
+// 훔쳐본 일기장 대사 오버레이(dh-intro-overlay/dh-ending-overlay)는
+// document.body에 떠있는 독립 엘리먼트라 #app을 갈아끼우는 일반 화면전환으론
+// 안 지워짐 — 헤더/뒤로가기가 눌리게 고친 뒤에도(z-index 조치) 대사를 다 안
+// 보고 다른 화면으로 넘어가면 오버레이가 새 화면까지 그대로 따라와서, 다
+// 봐야만 없어지는 것처럼 보였음(유저 지적, 2026-08-12). 실제 화면전환이
+// 일어나는 지점(nav()/popstate) 둘 다에서 정리.
+function _dhCloseFloatingOverlays() {
+  document.getElementById('dh-intro-overlay')?.remove();
+  document.getElementById('dh-ending-overlay')?.remove();
+}
 function nav(route, param) {
+  _dhCloseFloatingOverlays();
   if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; }
   if (_hintUnsubscribe) { _hintUnsubscribe(); _hintUnsubscribe = null; }
   clearInterval(_hintCountdownTimer);
@@ -12116,6 +12127,7 @@ function parsePath() {
 }
 
 window.addEventListener('popstate', () => {
+  _dhCloseFloatingOverlays();
   if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; }
   Object.keys(commentCache).forEach(k => delete commentCache[k]);
   parsePath(); render(); renderNav();

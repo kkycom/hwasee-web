@@ -1334,9 +1334,11 @@ ${criteriaText} 다른 텍스트 없이.`;
           // 걸려 재시도됨(투표 자체는 이미 끝난 상태라 voteIntervalMs 재대기 없이 감).
           // 실제로 지금 닫진 않고 후보로만 모아둠 — 아래에서 전체 후보 중 가장
           // 오래 열려있던(FIFO) 순서로 캡만큼만 실제로 닫음.
-          // 스포트라이트 슬롯 이야기(vote_threshold:5, _serverCreateSeedStory에서 지정)는
-          // 관심이 몰려 너무 빨리 넘어가는 걸 막기 위해 일반 이야기(기본 3표)보다
-          // 높은 문턱을 씀 — 필드 없으면 기존 AI_VOTE_THRESHOLD로 그대로 동작
+          // 스포트라이트 슬롯 이야기(vote_threshold, _serverCreateSeedStory에서 지정)는
+          // 원래 관심 몰림 방지로 일반 이야기(AI_VOTE_THRESHOLD=3)보다 높게(5→3) 잡았던
+          // 건데, 지금은 반대로 회전이 느리다고 판단해 2로 낮춤(2026-08-17) — 이제
+          // 일반 이야기보다도 낮은 문턱. 필드 없으면(레거시 데이터 등) 기존
+          // AI_VOTE_THRESHOLD로 폴백.
           const voteThreshold = storyDoc.data().vote_threshold || AI_VOTE_THRESHOLD;
           const maxVoteCount = subs.reduce((m, s) => Math.max(m, Number(s.vote_count) || 0), 0);
           if (maxVoteCount >= voteThreshold) {
@@ -2686,7 +2688,7 @@ exports.adminForceDeleteSpeedrunSubmission = functions
     return { ok: true };
   });
 
-// 초스피드 전용 씨앗 생성 — _serverCreateSeedStory는 max_steps:10/vote_threshold:5가
+// 초스피드 전용 씨앗 생성 — _serverCreateSeedStory는 max_steps:10/vote_threshold:2가
 // 하드코딩돼 있어 그대로 못 씀. point_values는 1~100 셔플(Fisher–Yates)로 스토리
 // 생성 시 한 번만 만들어서 저장 — 매 단계 랜덤이 아니라 스토리당 고정 배정.
 function _serverCreateSpeedrunSeedStory(db, writer, opening) {
@@ -3936,8 +3938,8 @@ const SPOTLIGHT_AI_OPENINGS = [
 // 지나가버리는 걸 막기 위해 일반 이야기(기본 3표, FB_VOTE_THRESHOLD/
 // AI_VOTE_THRESHOLD)보다 높게 잡았던 것. 그런데 지금은 반대로 3표조차
 // 잘 안 채워질 만큼 투표량이 적어서, 5로 두면 오히려 진행이 지나치게
-// 느려짐 — 유저 판단으로 3으로 되돌림(2026-08-03). 나중에 투표량이 다시
-// 늘어나면 5로 재조정 검토.
+// 느려짐 — 유저 판단으로 3으로 되돌림(2026-08-03), 그마저도 회전이 느리다고
+// 판단해 2로 추가 하향(2026-08-17). 나중에 투표량이 다시 늘어나면 재조정 검토.
 function _serverCreateSeedStory(db, writer, opening, extraFields) {
   const story_id = db.collection('stories').doc().id;
   const episode_id = db.collection('episodes').doc().id;
@@ -3945,7 +3947,7 @@ function _serverCreateSeedStory(db, writer, opening, extraFields) {
     story_id, opening: opening.trim(), max_steps: 10, current_step: 0,
     status: 'active', creator_id: FB_AI_ID, creator_nickname: '익명', creator_badge: '',
     created_at: new Date().toISOString(), batch: '', participant_count: 0, like_count: 0,
-    is_ai_seed: true, vote_threshold: 3,
+    is_ai_seed: true, vote_threshold: 2,
     // 자유 이야기 탭 정렬/카드 표시용 (firebase-api.js fbCreateStory 참고)
     hot_score: 0,
     open_steps: { [episode_id]: { step: 1, sub_count: 0 } },

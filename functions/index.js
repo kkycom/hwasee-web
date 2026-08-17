@@ -1188,6 +1188,11 @@ exports.aiParticipate = functions
 
         const lastSubAt = subs.reduce((m, s) => Math.max(m, new Date(s.created_at).getTime()), 0);
 
+        // 장르전환(genre_switch) 이야기는 매 단계 장르가 genre_sequence로 강제
+        // 지정돼있음 — 제출/투표 둘 다 이 단계가 어떤 장르여야 하는지 알아야
+        // 해서 공통으로 한 번만 계산(2026-08-17, 제출 프롬프트도 장르 인지하게 함).
+        const gsGenre = story.mode === 'genre_switch' ? (story.genre_sequence || [])[(Number(currentEp.step) || 1) - 1] : null;
+
         // ── 제출 로직
         if (subEnabled) {
           const aiSubs = subs.filter(s => s.is_ai === true);
@@ -1204,6 +1209,11 @@ exports.aiParticipate = functions
               '반전이나 의외성이 있게 (독자가 예상 못 한 방향으로)',
             ];
             const tone = tones[Math.min(aiSubs.length, 2)];
+            // 장르전환은 톤 지시보다 장르 지정이 우선 — 안 맞으면 투표 AI가 어차피
+            // 잘 안 뽑아서 헛제출이 되니, 톤은 그대로 두되 장르 제약을 덧붙임.
+            const genreInstruction = gsGenre
+              ? `\n\n⚠️ 이 이야기는 매 단계마다 장르가 강제로 바뀌는 콘셉트입니다. 이번 단계는 반드시 "${gsGenre}" 장르에 맞게 써야 합니다 — 직전 문장과 톤이 확 달라져도 괜찮습니다(오히려 의도된 특징).`
+              : '';
 
             const subPrompt = `당신은 릴레이 소설에 참여하는 작가입니다.
 
@@ -1212,7 +1222,7 @@ exports.aiParticipate = functions
 지금까지의 이야기:
 ${storyText}
 
-위 이야기에 이어지는 다음 문장 하나를 ${tone} 써주세요.
+위 이야기에 이어지는 다음 문장 하나를 ${tone} 써주세요.${genreInstruction}
 ${isClosing ? '이 문장이 이야기의 마지막 문장이 되어야 합니다. 자연스럽게 마무리해 주세요.' : '이야기가 계속 이어질 수 있도록 열린 결말로 써주세요.'}
 
 규칙:
@@ -1276,8 +1286,8 @@ ${isClosing ? '이 문장이 이야기의 마지막 문장이 되어야 합니�
             // 오히려 의도대로 잘 튄(장르에 맞게 바뀐) 좋은 문장이 "뜬금없다"고
             // 손해 보는 부작용이 생김(유저 지적, 2026-08-02) — genre_sequence에서
             // 이번 단계가 어떤 장르여야 하는지 미리 알려주고, 그 장르에 맞는지를
-            // 기준으로 판단하도록 별도 지시.
-            const gsGenre = story.mode === 'genre_switch' ? (story.genre_sequence || [])[(Number(currentEp.step) || 1) - 1] : null;
+            // 기준으로 판단하도록 별도 지시. (gsGenre는 이제 위에서 제출 로직과
+            // 공유하는 값을 그대로 씀 — 2026-08-17)
             const criteriaText = gsGenre
               ? `이 이야기는 매 단계마다 장르가 강제로 바뀌는 콘셉트입니다. 이번 단계는 "${gsGenre}" 장르여야 합니다 — 직전 톤과 안 이어지고 확 튀는 것이 오히려 의도된 정상적인 특징이니, 그 이유만으로 감점하지 마세요.
 "${gsGenre}" 장르에 실제로 잘 맞으면서, 그중에서도 가장 재밌고 참신한 문장 하나를 골라 해당 sub_id 값만 출력하세요.`

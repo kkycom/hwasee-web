@@ -1435,15 +1435,16 @@ function _kakaoAdHtml(margin = '16px 0') {
     data-ad-height = "50"></ins>
   </div>`;
 }
-// 쿠팡 파트너스 배너(728x90) — 순수 <img> 링크라 카카오처럼 script 재로드가
-// 필요 없음. img를 max-width로 눌러서 모바일에서도 안 깨지게 반응형 처리.
-// 캡션은 공정위 표시광고 규정상 필수 고지 문구.
+// 쿠팡 파트너스 다이나믹(리타겟팅) 배너로 전환(2026-08-17, 정적 이미지 배너
+// 대체) — script 버전 대신 iframe 버전 스니펫 사용. <img>와 마찬가지로
+// innerHTML에 그대로 꽂아도 정상 로드되는 순수 엘리먼트라 카카오 애드핏처럼
+// script 재주입 로직이 필요 없음. width:680 고정폭이라 모바일에서 컨테이너보다
+// 넓어질 경우를 대비해 overflow-x:auto로 감싸서 최악의 경우에도 페이지 전체
+// 가로스크롤로는 안 번지게 방어.
 function _coupangBannerHtml(margin = '16px 0') {
-  return `<div style="text-align:center;margin:${margin}">
-    <a href="https://link.coupang.com/a/f8UoPTupUq" target="_blank" rel="noopener" referrerpolicy="unsafe-url">
-      <img src="https://ads-partners.coupang.com/banners/1016609?trackingCode=AF8559179&subId=&traceId=V0-301-f5c692db558def48-I1016609&w=728&h=90" alt="쿠팡 파트너스 배너" width="728" height="90" style="width:100%;max-width:728px;height:auto;display:block;margin:0 auto;border-radius:8px">
-    </a>
-    <div style="font-size:10px;color:var(--muted);margin-top:4px">이 배너는 쿠팡 파트너스 활동의 일환으로, 이를 통해 일정액의 수수료를 제공받을 수 있습니다.</div>
+  return `<div style="margin:${margin}">
+    <div style="overflow-x:auto"><iframe src="https://ads-partners.coupang.com/widgets.html?id=1018486&template=carousel&trackingCode=AF8559179&subId=&width=680&height=140&tsource=" width="680" height="140" frameborder="0" scrolling="no" referrerpolicy="unsafe-url" browsingtopics style="display:block;margin:0 auto;max-width:100%;border:none"></iframe></div>
+    <div style="font-size:10px;color:var(--muted);margin-top:4px;text-align:center">이 배너는 쿠팡 파트너스 활동의 일환으로, 이를 통해 일정액의 수수료를 제공받을 수 있습니다.</div>
   </div>`;
 }
 

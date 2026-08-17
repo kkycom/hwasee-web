@@ -3749,6 +3749,11 @@ function openNewStoriesPopup() {
 // 1권만 우선 오픈, 나머지는 매주 수요일 한 권씩 추가 예정(광고는 이후
 // 애널리틱스방에서 별도로 붙임).
 const DIARY_HUB_THEME_COLORS = { 1:'#c8823a', 2:'#b3536b', 3:'#9a4a35', 4:'#8a7a3a', 5:'#3a7a6a', 6:'#6a3a5a', 7:'#5a6a7a' };
+// 토스 미니앱 버전(hwasee-toss, React) 책장은 책마다 굵기/높이가 달라서 실제
+// 책장처럼 보이는데, 이 SPA로 포팅할 때 색상만 옮기고 크기는 .dh-spine 공용
+// 클래스 고정값(38×140)으로 통일돼버려 전부 똑같아 보였음(유저 지적,
+// 2026-08-17) — 토스 버전 src/styles/diary-app.css의 .spine-1~7 값 그대로 이식.
+const DIARY_HUB_SPINE_SIZES = { 1:{w:42,h:150}, 2:{w:32,h:124}, 3:{w:38,h:138}, 4:{w:28,h:106}, 5:{w:36,h:118}, 6:{w:30,h:98}, 7:{w:34,h:112} };
 // releaseDate가 없으면 항상 공개. 있으면 KST 기준 오늘 날짜가 그 날짜
 // 이상이 되는 순간 자동으로 열림 — 매주 수요일마다 배포로 손댈 필요 없음.
 const DIARY_HUB_BOOKS = [
@@ -6925,10 +6930,11 @@ async function diaryHub() {
 }
 
 function _dhRenderShelf() {
-  const booksHtml = DIARY_HUB_BOOKS.map(b => _dhIsUnlocked(b)
-    ? `<button type="button" class="dh-spine" style="background:${DIARY_HUB_THEME_COLORS[b.theme]};color:#1c0e06" onclick="_dhSelectBook(${b.id})">${esc(DIARY_STORY_DATA[b.id].title)}</button>`
-    : `<button type="button" class="dh-spine locked" disabled>🔒</button>`
-  ).join('');
+  const booksHtml = DIARY_HUB_BOOKS.map(b => {
+    if (!_dhIsUnlocked(b)) return `<button type="button" class="dh-spine locked" disabled>🔒</button>`;
+    const size = DIARY_HUB_SPINE_SIZES[b.id] || {};
+    return `<button type="button" class="dh-spine" style="background:${DIARY_HUB_THEME_COLORS[b.theme]};color:#1c0e06;width:${size.w || 38}px;height:${size.h || 140}px" onclick="_dhSelectBook(${b.id})">${esc(DIARY_STORY_DATA[b.id].title)}</button>`;
+  }).join('');
   const lockedLabels = DIARY_HUB_BOOKS.filter(b => !_dhIsUnlocked(b)).map(_dhReleaseLabel).join(' · ');
   document.getElementById('dh-root').innerHTML = `
     <div id="dh-shelf-scene" style="transition:filter .4s ease${_dhIntroShown ? '' : ';filter:blur(6px);pointer-events:none'}">

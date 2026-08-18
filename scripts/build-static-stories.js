@@ -475,6 +475,32 @@ async function main() {
   // 최신순으로 정렬 — 아카이브 목록과 "관련 작품" 선정 둘 다 이 순서를 기준으로 씀
   processed.sort((a, b) => (b.lastmod || '').localeCompare(a.lastmod || ''));
 
+  // 서로 다른 완결작 두 편이 우연히 같은 오프닝 문장으로 시작하면 title이
+  // (개설 초기 시절 같은 예시 씨앗 문장이 여러 번 쓰였던 경우 등) 완전히
+  // 동일해짐 — verify-static-stories.js의 title 중복 검사가 정확히 이걸
+  // 잡아내서 배포 자체를 막은 실제 사고(2026-08-18, 완결작 31개 중 3쌍
+  // 발견). description(첫 채택 문장)도 이론상 같은 문제가 가능해서 함께
+  // 방어. 흔치 않은 경우에만 최소 개입: 두 번째 등장부터 완결일을 붙여
+  // 구분하고, 그마저 겹치면(극단적으로 드묾) 순번까지 추가.
+  function _dedupe(items, field) {
+    const count = new Map();
+    const used = new Set();
+    for (const item of items) {
+      const base = item[field];
+      const n = (count.get(base) || 0) + 1;
+      count.set(base, n);
+      if (n > 1) {
+        const d = item.lastmod ? new Date(item.lastmod) : null;
+        let candidate = (d && !isNaN(d)) ? `${base} · ${d.getMonth() + 1}/${d.getDate()} 완결` : `${base} (${n})`;
+        if (used.has(candidate)) candidate = `${base} (${n})`;
+        item[field] = candidate;
+      }
+      used.add(item[field]);
+    }
+  }
+  _dedupe(processed, 'title');
+  _dedupe(processed, 'description');
+
   // 2차 패스: 관련 작품(자기 다음 최신순 3편, 끝까지 가면 처음부터 순환) 확정 후 실제 파일 생성
   const sitemapEntries = [];
   let ok = 0;

@@ -150,6 +150,14 @@ service cloud.firestore {
     match /hint_pool/{docId} { allow read, write: if false; }
     match /hint_rounds/{docId} { allow read, write: if false; }
     match /hint_guesses/{docId} { allow read: if true; allow write: if false; }
+    // 당신의 이야기(익명 한 줄 일지, 2026-08-18) — 문서에 user_id가 그대로
+    // 들어있어서(익명 표시는 응답에서 벗겨내는 방식) hint_rounds와 동일한 이유로
+    // 컬렉션 자체를 완전히 잠그고 submitYourStory/getYourStoryFeed 등 Cloud
+    // Function(Admin SDK, user_id를 응답에서 제거)으로만 읽고 씀.
+    match /your_story_posts/{docId} { allow read, write: if false; }
+    match /your_story_hearts/{docId} { allow read, write: if false; }
+    match /your_story_reports/{docId} { allow read, write: if false; }
+    match /your_story_day_meta/{docId} { allow read, write: if false; }
     // 분석 대시보드 일별 집계 — computeAnalyticsDaily/backfillAnalyticsDaily(Admin
     // SDK)만 쓰고, getAnalyticsDashboard(_requireAdmin 게이트)를 통해서만 읽음.
     match /analytics_daily/{docId} { allow read, write: if false; }

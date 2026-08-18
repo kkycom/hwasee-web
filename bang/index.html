@@ -110,7 +110,7 @@
      열어야 해서, #app에 미리 넣어둔 애드센스용 소개 정적 텍스트가 실제 홈
      화면(오늘의 이야기 탭)으로 바뀌는 시점(=window.onload)이 그만큼 늦어지고
      있었음(유저 제보 "홈화면 자체가 늦게 뜬다", 2026-07-29). -->
-<script defer src="firebase-api.js?v=5"></script>
+<script defer src="firebase-api.js?v=6"></script>
 <style>
   :root {
     --bg:      #f0ead8;
@@ -296,19 +296,76 @@
   .boost-card-wrap { min-width:300px; max-width:300px; flex-shrink:0; }
 
   /* ── 훔쳐본 일기장 (읽기 전용 콘텐츠, 2026-08-11) ──
-     참여형 콘텐츠와 다른 노선임을 알리는 용도로 boost-glow와 같은 기법을
-     보라색으로만 바꿔 재사용. 본문(산문/잉크리빌/THE END)은 새로 안 만들고
-     기존 .story-prose/.prose-line/.ink-in/.theend-fx를 그대로 재사용함. */
-  @keyframes diary-hub-glow {
-    0%, 100% { border-color:rgba(138,111,174,.4); box-shadow:0 0 10px rgba(138,111,174,.1); }
-    50%       { border-color:rgba(138,111,174,.85); box-shadow:0 0 22px rgba(138,111,174,.22); }
-  }
-  .diary-hub-card { border:2px solid rgba(138,111,174,.4); animation:diary-hub-glow 2.2s ease-in-out infinite; }
-  @media (prefers-reduced-motion: reduce) { .diary-hub-card { animation:none; border-color:rgba(138,111,174,.7); } }
-  .diary-hub-badge { position:absolute; top:-9px; right:14px; background:#8a6fae; color:#fff; font-size:10px; font-weight:700; letter-spacing:.04em; padding:3px 9px; border-radius:10px; }
+     본문(산문/잉크리빌/THE END)은 새로 안 만들고 기존
+     .story-prose/.prose-line/.ink-in/.theend-fx를 그대로 재사용함. */
   .diary-hub-snippet { margin:12px 0; padding:14px 16px; background:#faf6ee; border:1px solid #c8b090; border-left:3px solid #8a6fae; border-radius:8px; }
   .diary-hub-snippet p { margin:0; font-family:var(--serif); font-size:13.5px; line-height:1.85; color:#2c1a0e; }
   .diary-hub-drip { font-size:11px; color:#8a6fae; font-weight:600; }
+
+  /* ── "신규 콘텐츠" 보라 글로우 — boost-glow와 같은 기법을 보라색으로 재사용.
+     특정 콘텐츠 전용이 아니라 그때그때 가장 최근에 나온 콘텐츠 카드에 붙이는
+     범용 모디파이어(2026-08-11 훔쳐본 일기장 → 2026-08-18 당신의 이야기로 이동,
+     다음 신규 콘텐츠 나오면 또 옮기면 됨). */
+  @keyframes new-content-glow {
+    0%, 100% { border-color:rgba(138,111,174,.4); box-shadow:0 0 10px rgba(138,111,174,.1); }
+    50%       { border-color:rgba(138,111,174,.85); box-shadow:0 0 22px rgba(138,111,174,.22); }
+  }
+  .card-glow-new { border:2px solid rgba(138,111,174,.4) !important; animation:new-content-glow 2.2s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) { .card-glow-new { animation:none; border-color:rgba(138,111,174,.7); } }
+  .card-glow-new-badge { position:absolute; top:-9px; right:14px; background:#8a6fae; color:#fff; font-size:10px; font-weight:700; letter-spacing:.04em; padding:3px 9px; border-radius:10px; }
+
+  /* ── 당신의 이야기 (익명 한 줄 일지, 2026-08-18) ──
+     카드는 입력을 받지 않고 상태만 보여줌(다른 콘텐츠 카드와 동일 원칙) —
+     실제 작성은 nav('yourstory') 전체 페이지에서만. 열람 박스(.ys-mine-text)는
+     기존 산문뷰 톤(#faf6ee 종이+세리프)에 맞춰 새로 만들었고, 입력은 반대로
+     세단어 챌린지 입력칸(#wc-input) 스타일을 그대로 가져와 "쓰는 중"과
+     "이미 쓰여진 것"을 시각적으로 구분함. */
+  .ys-mine-text { background:#faf6ee; border:1px solid #c8b090; border-radius:10px; padding:12px 14px; font-family:var(--serif); font-size:14.5px; line-height:1.7; color:#2c1a0e; min-height:20px; }
+  .ys-mine-text.empty { color:var(--muted); }
+  .ys-pager { display:flex; align-items:center; gap:6px; }
+  .ys-pager-date { font-size:12px; font-weight:600; color:var(--text); font-variant-numeric:tabular-nums; min-width:62px; text-align:center; }
+  .ys-pager-arrow { background:none; border:1px solid var(--border); border-radius:6px; width:22px; height:22px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--muted); padding:0; font-size:13px; }
+  .ys-pager-arrow:hover:not(:disabled) { color:var(--text); border-color:var(--accent2); }
+  .ys-pager-arrow:disabled { opacity:.3; cursor:default; }
+
+  /* 전체 페이지 — 날짜 선택 */
+  .ys-date-btn { display:inline-flex; align-items:center; gap:6px; background:var(--card); border:1px solid var(--border); border-radius:20px; padding:7px 14px; font-size:12.5px; font-weight:600; color:var(--text); cursor:pointer; }
+  .ys-date-btn:hover { border-color:var(--accent2); }
+  .ys-date-btn .caret { font-size:9px; color:var(--muted); transition:transform .15s; }
+  .ys-date-btn.open .caret { transform:rotate(180deg); }
+  .ys-cal-pop { display:none; position:absolute; top:calc(100% + 8px); right:0; z-index:50; background:#faf6ee; border:1px solid #c8b090; border-radius:12px; box-shadow:0 12px 30px rgba(28,14,6,.18); padding:14px; width:260px; }
+  .ys-cal-pop.open { display:block; }
+  .ys-cal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .ys-cal-head button { background:none; border:none; cursor:pointer; color:var(--muted); font-size:15px; padding:2px 8px; }
+  .ys-cal-head button:hover { color:var(--text); }
+  .ys-cal-month { font-family:var(--serif); font-size:13.5px; font-weight:700; }
+  .ys-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; text-align:center; }
+  .ys-cal-dow { font-size:10px; color:var(--muted); padding:4px 0; }
+  .ys-cal-day { position:relative; background:none; border:none; border-radius:8px; padding:6px 0; font-size:12px; color:var(--text); cursor:pointer; font-variant-numeric:tabular-nums; }
+  .ys-cal-day:hover { background:var(--card); }
+  .ys-cal-day.other-month, .ys-cal-day.future { color:var(--border); cursor:default; }
+  .ys-cal-day.other-month:hover, .ys-cal-day.future:hover { background:none; }
+  .ys-cal-day.selected { background:var(--accent2); color:#fff; font-weight:700; }
+  .ys-cal-day .dot { position:absolute; bottom:1px; left:50%; transform:translateX(-50%); width:4px; height:4px; border-radius:50%; background:var(--accent2); }
+  .ys-cal-day.selected .dot { background:#fff; }
+  .ys-cal-today-btn { display:block; width:100%; text-align:center; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); background:none; border-left:none; border-right:none; border-bottom:none; font-size:11.5px; color:var(--accent2); font-weight:700; cursor:pointer; }
+
+  /* 전체 페이지 — 작성/열람/피드 */
+  .ys-compose-input { width:100%; box-sizing:border-box; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:9px 48px 9px 12px; font-size:13px; color:var(--text); }
+  .ys-compose-count { position:absolute; right:12px; top:50%; transform:translateY(-50%); font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; pointer-events:none; }
+  .ys-entry-row { display:flex; align-items:flex-start; gap:12px; padding:14px 0; border-bottom:1px solid var(--border); }
+  .ys-entry-row:last-child { border-bottom:none; }
+  .ys-entry-text { flex:1; font-family:var(--serif); font-size:15px; line-height:1.7; color:var(--text); }
+  .ys-entry-text.deleted { color:var(--muted); font-family:var(--font); font-size:13px; font-style:italic; }
+  .ys-entry-meta { display:flex; align-items:center; gap:10px; flex-shrink:0; padding-top:2px; }
+  .ys-entry-time { font-size:10.5px; color:var(--muted); white-space:nowrap; }
+  .ys-heart-btn { display:inline-flex; align-items:center; gap:4px; background:none; border:none; cursor:pointer; font-size:11.5px; color:var(--muted); padding:2px; }
+  .ys-heart-btn.on { color:#b0504a; }
+  .ys-heart-btn:disabled { cursor:default; opacity:.5; }
+  .ys-report-btn { background:none; border:none; cursor:pointer; color:var(--border); padding:2px; }
+  .ys-report-btn:hover:not(:disabled) { color:#a8503f; }
+  .ys-report-btn.reported { color:#a8503f; }
+  .ys-report-btn:disabled { cursor:default; }
 
   /* 책장/표지 */
   .dh-shelf-heading { font-family:var(--serif); font-size:clamp(18px,5.4vw,22px); font-weight:700; line-height:1.5; margin:0 auto; max-width:280px; text-wrap:balance; text-align:center; }
@@ -1557,7 +1614,7 @@ function nav(route, param) {
 
 function render() {
   _renderEpoch++;
-  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, user: userProfile, create, resetpw: resetPasswordPage, wordchallenge: wordChallengePage, diary: diaryHub, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI, 'admin-patchnotes': adminPatchNotes, 'admin-wordchallenge': adminWordChallenge, 'admin-fairytale': adminFairytalePool, 'admin-hint': adminHintPool, patchnotes: userPatchNotes };
+  const routes = { home, seed: home, hot: home, mine: home, archive: home, story, episode, auth, profile, user: userProfile, create, resetpw: resetPasswordPage, wordchallenge: wordChallengePage, diary: diaryHub, yourstory: yourStoryPage, 'episode-votes': episodeVotes, 'admin-stats': adminStats, 'admin-edits': adminEdits, 'admin-reports': adminReports, 'admin-bugs': adminBugs, 'admin-ai': adminAI, 'admin-patchnotes': adminPatchNotes, 'admin-wordchallenge': adminWordChallenge, 'admin-fairytale': adminFairytalePool, 'admin-hint': adminHintPool, patchnotes: userPatchNotes };
   (routes[currentRoute] || home)();
 }
 
@@ -1743,6 +1800,11 @@ document.addEventListener('click', e => {
     const sortWrap = document.getElementById(`${p}-sort-wrap`);
     if (sortWrap && !sortWrap.contains(e.target)) closeSortMenu(p);
   });
+  const ysDateWrap = document.getElementById('ys-date-btn')?.parentElement;
+  if (ysDateWrap && !ysDateWrap.contains(e.target)) {
+    document.getElementById('ys-cal-pop')?.classList.remove('open');
+    document.getElementById('ys-date-btn')?.classList.remove('open');
+  }
 });
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -6881,8 +6943,7 @@ const DIARY_STORY_DATA = {
 
 function diaryHubTeaserCardHtml() {
   return `
-    <div class="diary-hub-card" style="background:var(--card);border-radius:14px;padding:16px;margin-bottom:14px;position:relative">
-      <span class="diary-hub-badge">NEW</span>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;position:relative">
       <div style="display:flex;align-items:center;gap:4px">
         <span style="font-size:14px;font-weight:700">📔 훔쳐본 일기장</span>
       </div>
@@ -7201,6 +7262,358 @@ function _dhPickRewind(index) {
   _dhRenderDiary();
 }
 
+// ─── 당신의 이야기 (익명 한 줄 일지, 2026-08-18) ─────────────────────────
+// 참여형이 아니라 오늘 하루를 한 줄로 남기는 콘텐츠. 훔쳐본 일기장과 달리
+// 서버(Firestore) 기반 — 다른 사람과 공유되는 공개 글이라 localStorage로는
+// 안 됨. 익명 보장을 위해 컬렉션이 완전히 잠겨있고 전부 Cloud Function
+// 경유(firestore.rules/functions/index.js 주석 참고), 그래서 이 클라이언트
+// 코드는 항상 fbXxx 호출만 하고 db.collection('your_story_*')를 직접 안 씀.
+const YS_MAX_CHARS = 30;
+function _ysKstToday() {
+  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+function _ysFmtLabel(dateKey) {
+  const d = new Date(dateKey + 'T00:00:00');
+  return `${d.getMonth() + 1}/${d.getDate()}(${'일월화수목금토'[d.getDay()]})`;
+}
+
+function yourStoryTeaserCardHtml() {
+  return `<div id="ys-teaser-card"></div>`;
+}
+
+// ── 카드(오늘의 이야기 탭) — 내가 쓴 글만 열람, 실제 작성은 카드에서 안 하고
+// 항상 nav('yourstory')로 들어가서(다른 콘텐츠 카드와 동일 원칙, 유저 확정) ──
+let _ysCardData = null; // { today: {text}|{deleted:true}|null, history: [{date,text|deleted}] }
+let _ysCardCursor = 0;
+
+async function loadYourStoryCard() {
+  if (!document.getElementById('ys-teaser-card')) return;
+  if (!user) { renderYourStoryCard(); return; } // 비로그인은 항상 기본 문구만(참여하기는 그대로 눌림)
+  if (!_ysCardData) _ysCardData = _lsc.getStale('yourStoryCard');
+  if (_ysCardData) renderYourStoryCard();
+  const res = await fbGetMyYourStoryHistory(user.user_id);
+  if (!document.getElementById('ys-teaser-card')) return; // 그 사이 탭이 바뀌었으면 무시
+  if (res.ok) {
+    _ysCardData = { today: res.today, history: res.history };
+    _lsc.set('yourStoryCard', _ysCardData, 300);
+    renderYourStoryCard();
+  } else if (!_ysCardData) {
+    renderYourStoryCard();
+  }
+}
+
+function renderYourStoryCard() {
+  const el = document.getElementById('ys-teaser-card');
+  if (!el) return;
+  const history = (_ysCardData && _ysCardData.history) || [];
+  const total = history.length;
+  if (_ysCardCursor > total) _ysCardCursor = total;
+
+  let bodyText, isEmpty = false;
+  if (_ysCardCursor === 0) {
+    const today = _ysCardData && _ysCardData.today;
+    if (today) bodyText = today.deleted ? '신고에 의해 삭제된 댓글입니다.' : esc(today.text);
+    else { bodyText = '당신의 오늘 하루를 적어주세요'; isEmpty = true; }
+  } else {
+    const item = history[_ysCardCursor - 1];
+    bodyText = item.deleted ? '신고에 의해 삭제된 댓글입니다.' : esc(item.text);
+  }
+
+  const dateLabel = _ysCardCursor === 0 ? _ysFmtLabel(_ysKstToday()) : _ysFmtLabel(history[_ysCardCursor - 1].date);
+  el.innerHTML = `
+    <div class="card-glow-new" style="background:var(--card);border-radius:14px;padding:16px;margin-bottom:14px;position:relative">
+      <span class="card-glow-new-badge">NEW</span>
+      <div style="display:flex;align-items:center;gap:4px">
+        <span style="font-size:14px;font-weight:700">💭 당신의 이야기</span>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);line-height:1.7;margin:8px 0 12px">다른 사람들과 함께 쓰는, 하루 한 줄 기록이에요.</p>
+      <div class="ys-mine-text${isEmpty ? ' empty' : ''}">${bodyText}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+        <div class="ys-pager">
+          <button type="button" class="ys-pager-arrow" ${_ysCardCursor >= total ? 'disabled' : ''} onclick="ysCardPage(1)" aria-label="이전 기록">‹</button>
+          <span class="ys-pager-date">${dateLabel}</span>
+          <button type="button" class="ys-pager-arrow" ${_ysCardCursor <= 0 ? 'disabled' : ''} onclick="ysCardPage(-1)" aria-label="다음 기록">›</button>
+        </div>
+        <button class="btn btn-primary btn-sm" style="border-radius:20px" onclick="nav('yourstory')">참여하기</button>
+      </div>
+    </div>`;
+}
+function ysCardPage(delta) {
+  _ysCardCursor += delta;
+  renderYourStoryCard();
+}
+
+// ── 전체 페이지: 날짜별 공개 피드 + 달력 + 작성 ──
+let _ysSelectedDate = null;
+let _ysCalCursor = null;
+let _ysFeedData = null;
+let _ysSubmitInFlight = false;
+let _ysMonthDotsCache = {}; // { 'YYYY-MM': Set<'YYYY-MM-DD'> }
+
+async function yourStoryPage() {
+  _ysSelectedDate = _ysKstToday();
+  _ysCalCursor = new Date(_ysSelectedDate + 'T00:00:00');
+  document.getElementById('app').innerHTML = `
+    <div style="display:flex;align-items:center;margin-bottom:20px">
+      <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="nav('spotlight')">← 오늘의 이야기로</button>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+      <div style="font-family:var(--serif);font-size:19px;font-weight:700">💭 당신의 이야기</div>
+      <div style="position:relative">
+        <button class="ys-date-btn" id="ys-date-btn" onclick="ysToggleCal()"><span id="ys-date-btn-label"></span><span class="caret">▾</span></button>
+        <div class="ys-cal-pop" id="ys-cal-pop"></div>
+      </div>
+    </div>
+    <div id="ys-compose-area"></div>
+    <div id="ys-feed-area"><div class="loading"></div></div>`;
+  ysLoadDate(_ysSelectedDate);
+}
+
+async function ysLoadDate(date) {
+  _ysSelectedDate = date;
+  const isToday = date === _ysKstToday();
+  document.getElementById('ys-date-btn-label').textContent = isToday ? `오늘 · ${_ysFmtLabel(date)}` : _ysFmtLabel(date);
+  document.getElementById('ys-compose-area').innerHTML = '';
+  document.getElementById('ys-feed-area').innerHTML = '<div class="loading"></div>';
+
+  const res = await fbGetYourStoryFeed(date, user ? user.user_id : null);
+  if (_ysSelectedDate !== date || !document.getElementById('ys-feed-area')) return; // 그 사이 다른 날짜로 넘어갔거나 페이지를 떠났으면 무시
+  if (!res.ok) {
+    document.getElementById('ys-feed-area').innerHTML = `<div style="text-align:center;padding:30px 0;color:var(--muted);font-size:13px">불러오지 못했어요.<br><button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="ysLoadDate('${date}')">다시 시도</button></div>`;
+    return;
+  }
+  _ysFeedData = res.posts;
+  if (isToday) renderYsCompose();
+  renderYsFeed();
+}
+
+function renderYsCompose() {
+  const area = document.getElementById('ys-compose-area');
+  if (!area) return;
+  if (!user) {
+    area.innerHTML = `<div style="text-align:center;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:18px;font-size:12.5px;color:var(--muted)">로그인하면 오늘 하루를 남길 수 있어요.</div>`;
+    return;
+  }
+  const mine = _ysFeedData.find(p => p.mine);
+  if (mine) {
+    area.innerHTML = `
+      <div class="ys-mine-text" style="margin-bottom:18px">
+        ${mine.deleted ? '신고에 의해 삭제된 댓글입니다.' : esc(mine.text)}
+        ${!mine.deleted ? `<div style="margin-top:10px;display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="ysEditMine()">수정</button>
+          <button class="btn btn-ghost btn-sm" onclick="ysDeleteMine()">삭제</button>
+        </div>` : ''}
+      </div>`;
+    return;
+  }
+  area.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:18px">
+      <div style="position:relative;flex:1">
+        <input id="ys-compose-input" type="text" maxlength="${YS_MAX_CHARS}" placeholder="당신의 오늘 하루를 적어주세요 (+10P)" class="ys-compose-input" oninput="ysOnComposeInput()">
+        <span class="ys-compose-count" id="ys-compose-count">0/${YS_MAX_CHARS}</span>
+      </div>
+      <button id="ys-submit-btn" class="btn btn-primary btn-sm" onclick="ysSubmit()" disabled>남기기</button>
+    </div>`;
+}
+
+function ysOnComposeInput() {
+  const val = document.getElementById('ys-compose-input').value;
+  document.getElementById('ys-compose-count').textContent = `${val.length}/${YS_MAX_CHARS}`;
+  const btn = document.getElementById('ys-submit-btn');
+  if (btn) btn.disabled = val.trim().length === 0;
+}
+
+async function ysSubmit() {
+  if (_ysSubmitInFlight) return;
+  const input = document.getElementById('ys-compose-input');
+  const val = (input?.value || '').trim();
+  if (!val) { toast('내용을 입력해주세요.', true); return; }
+  _ysSubmitInFlight = true;
+  try {
+    const res = await fbSubmitYourStory(user.user_id, val);
+    if (!res.ok) { toast(res.error || '작성에 실패했어요.', true); return; }
+    toast('오늘 하루가 남겨졌어요 (+10P)');
+    _ysCardData = null; _lsc.del('yourStoryCard');
+    ysLoadDate(_ysSelectedDate);
+  } finally {
+    _ysSubmitInFlight = false;
+  }
+}
+
+function ysEditMine() {
+  const area = document.getElementById('ys-compose-area');
+  const mine = _ysFeedData.find(p => p.mine);
+  if (!mine) return;
+  area.innerHTML = `
+    <div style="position:relative;margin-bottom:18px">
+      <input id="ys-compose-input" type="text" maxlength="${YS_MAX_CHARS}" class="ys-compose-input" value="${esc(mine.text)}" oninput="ysOnComposeInput()">
+      <span class="ys-compose-count" id="ys-compose-count">${mine.text.length}/${YS_MAX_CHARS}</span>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:18px;margin-top:-10px">
+      <button class="btn btn-ghost btn-sm" onclick="renderYsCompose()">취소</button>
+      <button class="btn btn-primary btn-sm" onclick="ysSaveEdit()">저장</button>
+    </div>`;
+}
+
+async function ysSaveEdit() {
+  if (_ysSubmitInFlight) return;
+  const input = document.getElementById('ys-compose-input');
+  const val = (input?.value || '').trim();
+  if (!val) { toast('내용을 입력해주세요.', true); return; }
+  _ysSubmitInFlight = true;
+  try {
+    const res = await fbEditYourStory(user.user_id, val);
+    if (!res.ok) { toast(res.error || '수정에 실패했어요.', true); return; }
+    toast('수정했어요.');
+    _ysCardData = null; _lsc.del('yourStoryCard');
+    ysLoadDate(_ysSelectedDate);
+  } finally {
+    _ysSubmitInFlight = false;
+  }
+}
+
+function ysDeleteMine() {
+  _modalCallbacks['ys-delete-modal'] = async (mid) => {
+    document.getElementById(mid)?.remove(); delete _modalCallbacks[mid];
+    const res = await fbDeleteYourStory(user.user_id);
+    if (!res.ok) { toast(res.error || '삭제에 실패했어요.', true); return; }
+    toast('삭제했어요.');
+    _ysCardData = null; _lsc.del('yourStoryCard');
+    ysLoadDate(_ysSelectedDate);
+  };
+  showConfirmModal({
+    id: 'ys-delete-modal',
+    title: '오늘 남긴 이야기 삭제',
+    desc: '삭제하면 받은 10P도 함께 회수돼요.<br>삭제할까요?',
+    confirmLabel: '삭제',
+  });
+}
+
+function renderYsFeed() {
+  const area = document.getElementById('ys-feed-area');
+  if (!area) return;
+  if (!_ysFeedData.length) {
+    area.innerHTML = `<div style="text-align:center;padding:30px 0;color:var(--muted);font-size:13px">이 날은 아직 아무도 남기지 않았어요.</div>`;
+    return;
+  }
+  area.innerHTML = _ysFeedData.map(p => `
+    <div class="ys-entry-row">
+      ${p.deleted
+        ? `<div class="ys-entry-text deleted">신고에 의해 삭제된 댓글입니다.</div>`
+        : `<div class="ys-entry-text">${esc(p.text)}${p.edited ? ' <span style="font-size:10px;color:var(--muted)">(수정됨)</span>' : ''}</div>`}
+      <div class="ys-entry-meta">
+        ${!p.deleted ? `
+        <button class="ys-heart-btn${p.hearted ? ' on' : ''}" ${!user || p.mine ? 'disabled' : ''} onclick="ysToggleHeart('${p.post_id}', this)" title="${p.mine ? '본인 글' : '공감'}">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="${p.hearted ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>${p.heart_count > 0 ? p.heart_count : ''}
+        </button>
+        ${!p.mine ? `<button class="ys-report-btn" ${!user ? 'disabled' : ''} onclick="ysReport('${p.post_id}', this)" title="신고"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></button>` : ''}
+        ` : ''}
+        <span class="ys-entry-time">${_ysRelTime(p.created_at)}</span>
+      </div>
+    </div>`).join('');
+}
+
+function _ysRelTime(iso) {
+  const diffMin = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (diffMin < 1) return '방금';
+  if (diffMin < 60) return `${diffMin}분 전`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}시간 전`;
+  return `${Math.round(diffHr / 24)}일 전`;
+}
+
+async function ysToggleHeart(post_id, btn) {
+  if (!user) { toast('로그인이 필요해요.', true); return; }
+  btn.disabled = true;
+  const res = await fbToggleYourStoryHeart(post_id, user.user_id);
+  btn.disabled = false;
+  if (!res.ok) { toast(res.error || '처리에 실패했어요.', true); return; }
+  const item = _ysFeedData.find(p => p.post_id === post_id);
+  if (item) { item.hearted = res.hearted; item.heart_count = res.heart_count; }
+  renderYsFeed();
+}
+
+function ysReport(post_id, btn) {
+  if (!user) { toast('로그인이 필요해요.', true); return; }
+  _modalCallbacks['ys-report-modal'] = async (mid) => {
+    document.getElementById(mid)?.remove(); delete _modalCallbacks[mid];
+    const res = await fbReportYourStory(post_id, user.user_id);
+    if (!res.ok) { toast(res.error || '처리에 실패했어요.', true); return; }
+    toast(res.deleted ? '신고가 누적되어 가려졌어요.' : '신고했어요.');
+    ysLoadDate(_ysSelectedDate);
+  };
+  showConfirmModal({
+    id: 'ys-report-modal',
+    title: '🚩 신고하시겠어요?',
+    desc: '다른 사람들의 신고가 누적되면(3표) 자동으로 가려져요.',
+    confirmLabel: '신고하기',
+  });
+}
+
+// ── 달력 ──
+function ysToggleCal() {
+  const pop = document.getElementById('ys-cal-pop');
+  const btn = document.getElementById('ys-date-btn');
+  const opening = !pop.classList.contains('open');
+  pop.classList.toggle('open');
+  btn.classList.toggle('open');
+  if (opening) { _ysCalCursor = new Date(_ysSelectedDate + 'T00:00:00'); ysRenderCalendar(); }
+}
+function ysCalMonthShift(delta) {
+  _ysCalCursor = new Date(_ysCalCursor.getFullYear(), _ysCalCursor.getMonth() + delta, 1);
+  ysRenderCalendar();
+}
+function ysPickDate(dateKey) {
+  document.getElementById('ys-cal-pop').classList.remove('open');
+  document.getElementById('ys-date-btn').classList.remove('open');
+  ysLoadDate(dateKey);
+}
+function ysJumpToday() { ysPickDate(_ysKstToday()); }
+
+async function ysRenderCalendar() {
+  const pop = document.getElementById('ys-cal-pop');
+  const y = _ysCalCursor.getFullYear(), m = _ysCalCursor.getMonth();
+  const monthKey = `${y}-${String(m + 1).padStart(2, '0')}`;
+  if (!_ysMonthDotsCache[monthKey]) {
+    const from = `${monthKey}-01`;
+    const to = `${y}-${String(m + 1).padStart(2, '0')}-${String(new Date(y, m + 1, 0).getDate()).padStart(2, '0')}`;
+    const res = await fbGetYourStoryMonthDots(from, to);
+    _ysMonthDotsCache[monthKey] = new Set(res.ok ? res.dates : []);
+    if (_ysCalCursor.getFullYear() !== y || _ysCalCursor.getMonth() !== m) return; // 그 사이 다른 달로 넘어갔으면 무시
+  }
+  const dotDates = _ysMonthDotsCache[monthKey];
+
+  const first = new Date(y, m, 1);
+  const startOffset = first.getDay();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const prevDays = new Date(y, m, 0).getDate();
+  const todayKey = _ysKstToday();
+
+  let cells = '';
+  for (let i = startOffset - 1; i >= 0; i--) cells += `<div class="ys-cal-day other-month">${prevDays - i}</div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const isFuture = key > todayKey;
+    const isSelected = key === _ysSelectedDate;
+    cells += `<button type="button" class="ys-cal-day${isFuture ? ' future' : ''}${isSelected ? ' selected' : ''}" ${isFuture ? 'disabled' : `onclick="ysPickDate('${key}')"`}>${d}${dotDates.has(key) ? '<span class="dot"></span>' : ''}</button>`;
+  }
+  const totalSoFar = startOffset + daysInMonth;
+  const nextDays = (7 - (totalSoFar % 7)) % 7;
+  for (let d = 1; d <= nextDays; d++) cells += `<div class="ys-cal-day other-month">${d}</div>`;
+
+  pop.innerHTML = `
+    <div class="ys-cal-head">
+      <button onclick="ysCalMonthShift(-1)">‹</button>
+      <span class="ys-cal-month">${y}년 ${m + 1}월</span>
+      <button onclick="ysCalMonthShift(1)">›</button>
+    </div>
+    <div class="ys-cal-grid">
+      ${['일', '월', '화', '수', '목', '금', '토'].map(x => `<div class="ys-cal-dow">${x}</div>`).join('')}
+      ${cells}
+    </div>
+    <button type="button" class="ys-cal-today-btn" onclick="ysJumpToday()">오늘로 이동</button>`;
+}
+
 // 카드 하나를 렌더 — 원래 renderSpotlight() 안의 클로저였는데, 🔥 인기 자유
 // 이야기 카드의 "다음/이전 이야기" 넘겨보기가 renderSpotlight() 전체를 다시
 // 그리지 않고 그 카드 하나만 갱신해야 해서(스크롤 위치/다른 카드 상태 보존)
@@ -7341,7 +7754,8 @@ function renderSpotlight() {
     <div id="hint-card-area"></div>
     ${cardHtml('speedrun')}${cardHtml('genre_switch')}${cardHtml('fairytale')}${cardHtml('fixed_ending')}${cardHtml('hot')}
     ${_coupangBannerHtml()}
-    ${diaryHubTeaserCardHtml()}`;
+    ${diaryHubTeaserCardHtml()}
+    ${yourStoryTeaserCardHtml()}`;
   // 광고 재요청은 여기서 안 하고 loadHomeTab()이 "이 탭 방문의 진짜 마지막
   // 렌더" 시점에 딱 한 번만 호출함 — renderSpotlight()는 캐시→네트워크
   // 재검증으로 방문 한 번에 두 번 불릴 수 있는데(투표/더보기 등도 이 함수를
@@ -7397,6 +7811,7 @@ function renderSpotlight() {
     }
   }
   loadHintCard();
+  loadYourStoryCard();
 }
 
 // 🔥 인기 자유 이야기 카드의 "다음/이전 이야기" — renderSpotlight() 전체를
@@ -12113,7 +12528,7 @@ function timeAgo(dateStr) {
 // 해시 라우팅(location.hash)은 크롤러에 전송되지 않아 개별 이야기가 서버 경로
 // URL로 존재할 수 없었음. history.pushState 기반 경로 라우팅으로 전환.
 const BASE = '/bang/';
-const _ROUTE_WHITELIST = ['home','seed','spotlight','free','popular','mine','done','story','episode','auth','profile','user','create','resetpw','wordchallenge','diary','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','admin-wordchallenge','admin-fairytale','admin-hint','patchnotes'];
+const _ROUTE_WHITELIST = ['home','seed','spotlight','free','popular','mine','done','story','episode','auth','profile','user','create','resetpw','wordchallenge','diary','yourstory','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','admin-wordchallenge','admin-fairytale','admin-hint','patchnotes'];
 // story는 완결작 정적 발행(SSG, 후속 단계) 파일 경로(/bang/story/{id}/index.html)와
 // canonical URL을 통일하기 위해 트레일링 슬래시를 씀 — 다른 라우트는 불필요.
 const _SLASH_ROUTES = new Set(['story']);

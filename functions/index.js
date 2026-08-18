@@ -2585,9 +2585,9 @@ exports.speedrunReport = functions
 
     if (result.ok && result.deleted) {
       const db2 = admin.firestore();
-      try { await _serverReverseSpeedrunPoints(db2, sub_id, 'speedrun_adopt', 'speedrun_report_delete'); } catch (e) { console.error('speedrun report point reversal error:', e.message); }
+      try { await _serverReversePoints(db2, sub_id, 'speedrun_adopt', 'speedrun_report_delete'); } catch (e) { console.error('speedrun report point reversal error:', e.message); }
       if (result.hadBonus) {
-        try { await _serverReverseSpeedrunPoints(db2, sub_id, 'speedrun_upvote_bonus', 'speedrun_report_delete'); } catch (e) { console.error('speedrun report bonus reversal error:', e.message); }
+        try { await _serverReversePoints(db2, sub_id, 'speedrun_upvote_bonus', 'speedrun_report_delete'); } catch (e) { console.error('speedrun report bonus reversal error:', e.message); }
       }
     }
     return result;
@@ -2596,8 +2596,10 @@ exports.speedrunReport = functions
 // 무효화(-3)/보너스클로백 공용 — 강제 회수라 실패해선 안 되므로 잔액부족시
 // throw하는 _fbSpendPoints와 달리 0으로 클램프(유저 확정: "이미 다른 데 써버렸어도
 // 마이너스로 안 내려감"). point_ledger에서 원래 지급 건을 sub_id+reason으로
-// 정확히 찾아서 반대 부호로 역분개.
-async function _serverReverseSpeedrunPoints(db, sub_id, sourceReason, reverseReason) {
+// 정확히 찾아서 반대 부호로 역분개. 원래 speedrun 전용이었는데 당신의 이야기
+// (2026-08-18)도 신고 3표 삭제 시 동일한 회수 로직이 필요해져서 이름에서
+// speedrun을 떼고 공용으로 승격.
+async function _serverReversePoints(db, sub_id, sourceReason, reverseReason) {
   const ledgerSnap = await db.collection('point_ledger')
     .where('sub_id', '==', sub_id).where('reason', '==', sourceReason).limit(1).get();
   if (ledgerSnap.empty) return;
@@ -2691,11 +2693,257 @@ exports.adminForceDeleteSpeedrunSubmission = functions
       .where('sub_id', '==', sub_id).where('reason', '==', 'speedrun_report_delete').limit(1).get();
     if (!alreadyReversed.empty) return { ok: false, error: '이미 포인트가 회수됐어요.' };
     if (!sub.is_deleted) await subRef.update({ is_deleted: true, deleted_at: new Date().toISOString() });
-    await _serverReverseSpeedrunPoints(db, sub_id, 'speedrun_adopt', 'speedrun_report_delete');
+    await _serverReversePoints(db, sub_id, 'speedrun_adopt', 'speedrun_report_delete');
     if (sub.upvote_bonus_given === true) {
-      await _serverReverseSpeedrunPoints(db, sub_id, 'speedrun_upvote_bonus', 'speedrun_report_delete');
+      await _serverReversePoints(db, sub_id, 'speedrun_upvote_bonus', 'speedrun_report_delete');
     }
     return { ok: true };
+  });
+
+// ─── 당신의 이야기 (참여형 아닌 익명 한 줄 일지, 2026-08-18) ───────────────
+// 하루 1개(유저당), 30자, 익명, 추천/선정 없이 하트(순공감)+신고만. 신고 3표
+// 도달 시 텍스트를 "신고에 의해 삭제된 댓글입니다."로 대체하고 지급됐던
+// 10P를 회수(본인 삭제도 동일하게 회수). 익명이 핵심 요구사항인데 Firestore
+// 규칙은 필드 단위로 user_id만 숨길 수 없어서(hint_rounds와 동일한 이유,
+// firestore.rules 참고) 컬렉션 자체를 완전히 잠그고 아래 함수들이 클라이언트
+// 응답에 user_id를 절대 포함하지 않음(mine/hearted처럼 계산된 값만 내려줌).
+// 문서 ID를 `${kst날짜}_${user_id}`로 결정적으로 잡아서 "하루 1개"를 별도
+// 카운터/쿼리 없이 존재 여부만으로 판정(submission_votes의 `${sub_id}_${voter_id}`
+// 결정적 ID 패턴과 동일).
+const YOUR_STORY_MAX_CHARS = 30;
+const YOUR_STORY_REPORT_THRESHOLD = 3;
+
+exports.submitYourStory = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const user_id = data.user_id;
+    const text = (data.text || '').trim();
+    if (!user_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(user_id, data.token);
+    if (!text) return { ok: false, error: '내용을 입력해주세요.' };
+    if (text.length > YOUR_STORY_MAX_CHARS) return { ok: false, error: `${YOUR_STORY_MAX_CHARS}자 이내로 작성해주세요.` };
+
+    const db = admin.firestore();
+    const kstToday = _kstDateStr(new Date().toISOString());
+    const post_id = `${kstToday}_${user_id}`;
+    const postRef = db.collection('your_story_posts').doc(post_id);
+    const dayMetaRef = db.collection('your_story_day_meta').doc(kstToday);
+
+    const result = await db.runTransaction(async tx => {
+      const postSnap = await tx.get(postRef);
+      if (postSnap.exists) return { ok: false, error: '오늘은 이미 남기셨어요.' };
+      tx.set(postRef, {
+        post_id, user_id, date: kstToday, text,
+        heart_count: 0, report_count: 0, is_deleted: false, deleted_reason: '',
+        created_at: new Date().toISOString(), edited_at: '',
+      });
+      // 날짜별 게시글 수 비정규화 — 달력에 "이 날짜에 글이 있다" 점 표시할 때
+      // your_story_posts를 date로 스캔하지 않고 이 카운터 하나만 읽게 함
+      // (초성힌트 participant_count와 동일한 이유).
+      tx.set(dayMetaRef, { post_count: admin.firestore.FieldValue.increment(1) }, { merge: true });
+      return { ok: true, post_id };
+    });
+
+    // _serverAddPoints는 자체 트랜잭션을 열어서 위 트랜잭션 안에서 재사용
+    // 불가(speedrunSubmit과 동일 이유) — 성공 후 별도 호출.
+    if (result.ok) await _serverAddPoints(db, user_id, 10, 'your_story_post', post_id);
+    return result;
+  });
+
+exports.editYourStory = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const user_id = data.user_id;
+    const text = (data.text || '').trim();
+    if (!user_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(user_id, data.token);
+    if (!text) return { ok: false, error: '내용을 입력해주세요.' };
+    if (text.length > YOUR_STORY_MAX_CHARS) return { ok: false, error: `${YOUR_STORY_MAX_CHARS}자 이내로 작성해주세요.` };
+
+    const db = admin.firestore();
+    const kstToday = _kstDateStr(new Date().toISOString());
+    // post_id를 클라이언트가 보내게 하지 않고 오늘 날짜+인증된 본인 user_id로
+    // 서버가 직접 계산 — 남의 글 id를 넣어 수정 시도할 수 있는 여지 자체를 없앰.
+    const postRef = db.collection('your_story_posts').doc(`${kstToday}_${user_id}`);
+    const postSnap = await postRef.get();
+    if (!postSnap.exists || postSnap.data().is_deleted) return { ok: false, error: '수정할 글을 찾을 수 없습니다.' };
+    await postRef.update({ text, edited_at: new Date().toISOString() });
+    return { ok: true };
+  });
+
+exports.deleteYourStory = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const user_id = data.user_id;
+    if (!user_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(user_id, data.token);
+
+    const db = admin.firestore();
+    const kstToday = _kstDateStr(new Date().toISOString());
+    const post_id = `${kstToday}_${user_id}`;
+    const postRef = db.collection('your_story_posts').doc(post_id);
+    const dayMetaRef = db.collection('your_story_day_meta').doc(kstToday);
+
+    // 본인 삭제는 신고 삭제와 달리 완전히 지워버림(다른 콘텐츠처럼 남길 "흔적"이
+    // 없는 단발성 콘텐츠라 소프트 삭제 이유가 없음) — 문서가 사라지므로 같은 날
+    // 다시 쓸 수도 있게 됨(포인트도 아래에서 같이 회수되니 순증 없음, 실질적
+    // 어뷰징 경로 아님).
+    const result = await db.runTransaction(async tx => {
+      const postSnap = await tx.get(postRef);
+      if (!postSnap.exists) return { ok: false, error: '삭제할 글을 찾을 수 없습니다.' };
+      tx.delete(postRef);
+      tx.set(dayMetaRef, { post_count: admin.firestore.FieldValue.increment(-1) }, { merge: true });
+      return { ok: true };
+    });
+
+    if (result.ok) await _serverReversePoints(db, post_id, 'your_story_post', 'your_story_self_delete');
+    return result;
+  });
+
+exports.reportYourStory = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const user_id = data.user_id;
+    const post_id = data.post_id;
+    if (!user_id || !post_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(user_id, data.token);
+
+    const db = admin.firestore();
+    const postRef = db.collection('your_story_posts').doc(post_id);
+    const reportRef = db.collection('your_story_reports').doc(`${post_id}_${user_id}`);
+
+    const result = await db.runTransaction(async tx => {
+      const [postSnap, reportSnap] = await Promise.all([tx.get(postRef), tx.get(reportRef)]);
+      if (!postSnap.exists) return { ok: false, error: '글을 찾을 수 없습니다.' };
+      if (reportSnap.exists) return { ok: false, error: '이미 신고했어요.' };
+      const post = postSnap.data();
+      if (post.user_id === user_id) return { ok: false, error: '본인 글은 신고할 수 없습니다.' };
+      if (post.is_deleted) return { ok: false, error: '이미 삭제된 글이에요.' };
+
+      const newReportCount = (Number(post.report_count) || 0) + 1;
+      tx.set(reportRef, { post_id, user_id, created_at: new Date().toISOString() });
+      const willDelete = newReportCount >= YOUR_STORY_REPORT_THRESHOLD;
+      const update = { report_count: newReportCount };
+      if (willDelete) { update.is_deleted = true; update.deleted_reason = 'report'; update.deleted_at = new Date().toISOString(); }
+      tx.update(postRef, update);
+      return { ok: true, report_count: newReportCount, deleted: willDelete };
+    });
+
+    if (result.ok && result.deleted) {
+      try { await _serverReversePoints(db, post_id, 'your_story_post', 'your_story_report_delete'); }
+      catch (e) { console.error('your_story report point reversal error:', e.message); }
+    }
+    return result;
+  });
+
+exports.toggleYourStoryHeart = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const user_id = data.user_id;
+    const post_id = data.post_id;
+    if (!user_id || !post_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(user_id, data.token);
+
+    const db = admin.firestore();
+    const postRef = db.collection('your_story_posts').doc(post_id);
+    const heartRef = db.collection('your_story_hearts').doc(`${post_id}_${user_id}`);
+
+    return db.runTransaction(async tx => {
+      const [postSnap, heartSnap] = await Promise.all([tx.get(postRef), tx.get(heartRef)]);
+      if (!postSnap.exists) return { ok: false, error: '글을 찾을 수 없습니다.' };
+      const post = postSnap.data();
+      if (post.user_id === user_id) return { ok: false, error: '본인 글에는 공감할 수 없습니다.' };
+      const alreadyHearted = heartSnap.exists;
+      const newCount = Math.max(0, (Number(post.heart_count) || 0) + (alreadyHearted ? -1 : 1));
+      tx.update(postRef, { heart_count: newCount });
+      if (alreadyHearted) tx.delete(heartRef);
+      else tx.set(heartRef, { post_id, user_id, created_at: new Date().toISOString() });
+      return { ok: true, heart_count: newCount, hearted: !alreadyHearted };
+    });
+  });
+
+// 공개 피드 조회 — 비로그인도 열람 가능(user_id 없으면 mine/hearted는 항상
+// false). user_id가 오면 그 계정 소유 확인까지 함(다른 사람 계정으로 mine/
+// hearted를 훔쳐볼 수 없게).
+exports.getYourStoryFeed = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const date = data.date;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) throw new functions.https.HttpsError('invalid-argument', '잘못된 날짜입니다.');
+    const db = admin.firestore();
+    const kstToday = _kstDateStr(new Date().toISOString());
+    if (date > kstToday) return { ok: false, error: '아직 오지 않은 날짜예요.' };
+
+    const user_id = data.user_id;
+    if (user_id) await _requireUser(user_id, data.token);
+
+    const snap = await db.collection('your_story_posts').where('date', '==', date).orderBy('created_at', 'desc').limit(50).get();
+    const posts = snap.docs.map(d => d.data());
+
+    const myHearts = new Set();
+    if (user_id && posts.length) {
+      const ids = posts.map(p => p.post_id);
+      const chunks = []; // Firestore 'in'은 최대 30개라 나눠서 조회
+      for (let i = 0; i < ids.length; i += 30) chunks.push(ids.slice(i, i + 30));
+      const heartSnaps = await Promise.all(chunks.map(chunk =>
+        db.collection('your_story_hearts').where('user_id', '==', user_id).where('post_id', 'in', chunk).get()));
+      heartSnaps.forEach(s => s.docs.forEach(d => myHearts.add(d.data().post_id)));
+    }
+
+    return {
+      ok: true,
+      posts: posts.map(p => p.is_deleted
+        ? { post_id: p.post_id, deleted: true, created_at: p.created_at }
+        : {
+            post_id: p.post_id, text: p.text, heart_count: p.heart_count || 0,
+            created_at: p.created_at, edited: Boolean(p.edited_at),
+            mine: Boolean(user_id) && p.user_id === user_id,
+            hearted: myHearts.has(p.post_id),
+          }),
+    };
+  });
+
+// 카드의 ‹ › 가 넘겨보는 "내가 쓴 과거 글"만 — 오늘 것은 date/post_id로 이미
+// 알 수 있어(클라이언트가 KST 오늘 날짜 계산) 제외.
+exports.getMyYourStoryHistory = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const user_id = data.user_id;
+    if (!user_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(user_id, data.token);
+    const db = admin.firestore();
+    const kstToday = _kstDateStr(new Date().toISOString());
+    const [todaySnap, histSnap] = await Promise.all([
+      db.collection('your_story_posts').doc(`${kstToday}_${user_id}`).get(),
+      db.collection('your_story_posts').where('user_id', '==', user_id).orderBy('date', 'desc').limit(31).get(),
+    ]);
+    // 오늘 것도 같이 내려줘서(카드의 "오늘" 슬롯 표시용) 클라이언트가 별도
+    // 호출을 안 하게 함 — 문서ID로 직접 읽어서 위 range 쿼리와 무관하게 항상 최신.
+    const today = todaySnap.exists
+      ? (todaySnap.data().is_deleted ? { deleted: true } : { text: todaySnap.data().text })
+      : null;
+    const history = histSnap.docs.map(d => d.data())
+      .filter(p => p.date !== kstToday)
+      .map(p => p.is_deleted ? { date: p.date, deleted: true } : { date: p.date, text: p.text });
+    return { ok: true, today, history };
+  });
+
+// 날짜 달력 점 표시용 — your_story_posts를 직접 스캔하지 않고 위에서 이미
+// 비정규화해둔 day_meta.post_count만 문서ID(=날짜) 범위쿼리로 읽음(추가
+// 복합인덱스 불필요, 문서ID 단일필드 범위쿼리라 자동 인덱싱됨).
+exports.getYourStoryMonthDots = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const from = data.from, to = data.to;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from || '') || !/^\d{4}-\d{2}-\d{2}$/.test(to || '')) {
+      throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    }
+    const db = admin.firestore();
+    const snap = await db.collection('your_story_day_meta')
+      .where(admin.firestore.FieldPath.documentId(), '>=', from)
+      .where(admin.firestore.FieldPath.documentId(), '<=', to).get();
+    const dates = snap.docs.filter(d => (d.data().post_count || 0) > 0).map(d => d.id);
+    return { ok: true, dates };
   });
 
 // 초스피드 전용 씨앗 생성 — _serverCreateSeedStory는 max_steps:10/vote_threshold:2가

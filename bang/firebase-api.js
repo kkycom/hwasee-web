@@ -2991,6 +2991,59 @@ async function fbSpeedrunUpvote(sub_id, voter_id) {
   } catch (e) { return { ok: false, error: e.message || '처리에 실패했습니다.' }; }
 }
 
+// 당신의 이야기 — your_story_posts가 firestore.rules에서 완전히 잠겨있어
+// (익명 보장을 위해 user_id를 응답에서 직접 벗겨내야 함, functions/index.js
+// 주석 참고) hint_rounds/speedrun 신고와 동일하게 전부 Cloud Function 경유.
+async function fbSubmitYourStory(user_id, text) {
+  try {
+    const r = await functionsRegion.httpsCallable('submitYourStory')({ text, user_id, token: localStorage.getItem('hwasee_token') });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '작성에 실패했습니다.' }; }
+}
+async function fbEditYourStory(user_id, text) {
+  try {
+    const r = await functionsRegion.httpsCallable('editYourStory')({ text, user_id, token: localStorage.getItem('hwasee_token') });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '수정에 실패했습니다.' }; }
+}
+async function fbDeleteYourStory(user_id) {
+  try {
+    const r = await functionsRegion.httpsCallable('deleteYourStory')({ user_id, token: localStorage.getItem('hwasee_token') });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '삭제에 실패했습니다.' }; }
+}
+async function fbReportYourStory(post_id, user_id) {
+  try {
+    const r = await functionsRegion.httpsCallable('reportYourStory')({ post_id, user_id, token: localStorage.getItem('hwasee_token') });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '처리에 실패했습니다.' }; }
+}
+async function fbToggleYourStoryHeart(post_id, user_id) {
+  try {
+    const r = await functionsRegion.httpsCallable('toggleYourStoryHeart')({ post_id, user_id, token: localStorage.getItem('hwasee_token') });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '처리에 실패했습니다.' }; }
+}
+// date의 공개 피드 — 비로그인도 열람 가능(user_id 없으면 mine/hearted 항상 false)
+async function fbGetYourStoryFeed(date, user_id) {
+  try {
+    const r = await functionsRegion.httpsCallable('getYourStoryFeed')({ date, user_id: user_id || null, token: user_id ? localStorage.getItem('hwasee_token') : null });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '불러오지 못했습니다.' }; }
+}
+async function fbGetMyYourStoryHistory(user_id) {
+  try {
+    const r = await functionsRegion.httpsCallable('getMyYourStoryHistory')({ user_id, token: localStorage.getItem('hwasee_token') });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '불러오지 못했습니다.' }; }
+}
+async function fbGetYourStoryMonthDots(from, to) {
+  try {
+    const r = await functionsRegion.httpsCallable('getYourStoryMonthDots')({ from, to });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '불러오지 못했습니다.' }; }
+}
+
 // 초성힌트 — hint_rounds가 정답을 담고 있고 firestore.rules에서 완전히
 // 잠겨있어(functions/index.js 주석 참고) 조회 자체도 Cloud Function 경유
 // (일반 fbXxx 로컬 Firestore 함수가 아님 — speedrunSubmit과 동일 이유).

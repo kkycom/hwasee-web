@@ -7503,7 +7503,7 @@ function renderYsFeed() {
         : `<div class="ys-entry-text">${esc(p.text)}${p.edited ? ' <span style="font-size:10px;color:var(--muted)">(수정됨)</span>' : ''}</div>`}
       <div class="ys-entry-meta">
         ${!p.deleted ? `
-        <button class="ys-heart-btn${p.hearted ? ' on' : ''}" ${!user || p.mine ? 'disabled' : ''} onclick="ysToggleHeart('${p.post_id}', this)" title="${p.mine ? '본인 글' : '공감'}">
+        <button class="ys-heart-btn${p.hearted ? ' on' : ''}" ${!user || p.mine || _ysHeartInFlight.has(p.post_id) ? 'disabled' : ''} onclick="ysToggleHeart('${p.post_id}')" title="${p.mine ? '본인 글' : '공감'}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="${p.hearted ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>${p.heart_count > 0 ? p.heart_count : ''}
         </button>
         ${!p.mine ? `<button class="ys-report-btn" ${!user ? 'disabled' : ''} onclick="ysReport('${p.post_id}', this)" title="신고"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></button>` : ''}
@@ -7522,14 +7522,34 @@ function _ysRelTime(iso) {
   return `${Math.round(diffHr / 24)}일 전`;
 }
 
-async function ysToggleHeart(post_id, btn) {
+// 낙관적 업데이트 — 서버 응답을 기다린 뒤에야 하트가 반영돼서 느리게 느껴진다는
+// 제보(2026-08-18, 신규 함수라 트래픽이 적어 콜드스타트 왕복이 특히 눈에 띔) —
+// 클릭 즉시 로컬 상태부터 바꾸고 백그라운드로 서버 확정, 실패하면 원상복구.
+// renderYsFeed()가 매번 전체 리스트를 다시 그려서 클릭했던 button 엘리먼트
+// 참조가 그 직후 stale해지므로(다른 stale DOM 참조 버그들과 동일 원인),
+// btn 엘리먼트를 들고 있는 대신 post_id 기준 in-flight Set으로 중복 클릭을 막음.
+const _ysHeartInFlight = new Set();
+async function ysToggleHeart(post_id) {
   if (!user) { toast('로그인이 필요해요.', true); return; }
-  btn.disabled = true;
-  const res = await fbToggleYourStoryHeart(post_id, user.user_id);
-  btn.disabled = false;
-  if (!res.ok) { toast(res.error || '처리에 실패했어요.', true); return; }
+  if (_ysHeartInFlight.has(post_id)) return;
   const item = _ysFeedData.find(p => p.post_id === post_id);
-  if (item) { item.hearted = res.hearted; item.heart_count = res.heart_count; }
+  if (!item) return;
+  _ysHeartInFlight.add(post_id);
+  const prevHearted = item.hearted, prevCount = item.heart_count;
+  item.hearted = !prevHearted;
+  item.heart_count = Math.max(0, prevCount + (item.hearted ? 1 : -1));
+  renderYsFeed();
+
+  const res = await fbToggleYourStoryHeart(post_id, user.user_id);
+  _ysHeartInFlight.delete(post_id);
+  const item2 = _ysFeedData.find(p => p.post_id === post_id); // 응답 오는 사이 날짜를 넘겼으면 못 찾을 수 있음(그럼 반영 안 해도 무해)
+  if (!res.ok) {
+    if (item2) { item2.hearted = prevHearted; item2.heart_count = prevCount; }
+    toast(res.error || '처리에 실패했어요.', true);
+    renderYsFeed();
+    return;
+  }
+  if (item2) { item2.hearted = res.hearted; item2.heart_count = res.heart_count; } // 서버 확정값으로 최종 동기화
   renderYsFeed();
 }
 

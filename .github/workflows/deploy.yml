@@ -35,6 +35,16 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         continue-on-error: true
+      # 위 빌드 스텝은 인프라 문제(시크릿 미등록 등)로 실패해도 사이트 전체
+      # 배포는 막지 않으려고 continue-on-error를 켜뒀는데, 그 결과 빌드가
+      # "성공은 했지만 내용이 이상한"(예: 애드센스 6차 반려 원인이었던
+      # 온보딩 텍스트 중복류 문제) 경우를 걸러줄 장치가 없었음. 이 스텝은
+      # 반대로 continue-on-error 없이 둬서, 실제로 이상한 정적 페이지가
+      # 생성되면 여기서 배포 자체를 막음(bang/story/ 디렉터리가 아예 없는
+      # 경우, 즉 위 빌드가 통째로 스킵된 경우는 검사 대상 없음으로 보고
+      # 통과시킴 — 스크립트 자체 안에서 처리).
+      - name: Verify static story pages
+        run: node scripts/verify-static-stories.js
       # upload-pages-artifact는 .gitignore를 안 보고 이 시점의 디스크 내용을
       # 그대로 올림 — npm ci로 생긴 node_modules(빌드 전용, firebase-admin
       # 의존성 트리)가 그대로 라이브 사이트에 배포되고 있었음(디버그방 발견,

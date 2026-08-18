@@ -3044,6 +3044,17 @@ async function fbGetYourStoryMonthDots(from, to) {
   } catch (e) { return { ok: false, error: e.message || '불러오지 못했습니다.' }; }
 }
 
+// 훔쳐본 일기장 — 회차 내용(문단/선택지/엔딩)이 firestore.rules와 무관하게
+// 애초에 Firestore에 없고 functions/index.js에 서버 전용 상수로만 있음
+// (공개일 도래 전 콘텐츠가 클라이언트 번들에 실려서 미리 새던 문제 수정,
+// 2026-08-19 보안방). 로그인 불필요 — 공개된 읽기 전용 콘텐츠.
+async function fbGetDiaryBook(book_id) {
+  try {
+    const r = await functionsRegion.httpsCallable('getDiaryBook')({ book_id });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '불러오지 못했습니다.' }; }
+}
+
 // 초성힌트 — hint_rounds가 정답을 담고 있고 firestore.rules에서 완전히
 // 잠겨있어(functions/index.js 주석 참고) 조회 자체도 Cloud Function 경유
 // (일반 fbXxx 로컬 Firestore 함수가 아님 — speedrunSubmit과 동일 이유).

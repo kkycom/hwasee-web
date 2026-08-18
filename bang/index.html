@@ -6941,16 +6941,30 @@ const DIARY_STORY_DATA = {
   },
 };
 
+const DIARY_ORDINAL_LABELS = ['첫', '두', '세', '네', '다섯', '여섯', '일곱'];
+// 잠긴 책 제외하고 실제 공개된 것 중 가장 최근(id 가장 큰) 것 — 홈 카드
+// 미리보기가 항상 1권 고정이던 문제(유저 지적, 2026-08-18) 수정.
+function _dhLatestUnlockedBook() {
+  const unlocked = DIARY_HUB_BOOKS.filter(_dhIsUnlocked);
+  return unlocked[unlocked.length - 1] || DIARY_HUB_BOOKS[0];
+}
 function diaryHubTeaserCardHtml() {
+  const latest = _dhLatestUnlockedBook();
+  const story = DIARY_STORY_DATA[latest.id];
+  const snippetRaw = story.nodes[story.startNodeId].paragraphs[0] || '';
+  const snippet = snippetRaw.length > 60 ? snippetRaw.slice(0, 60) + '…' : snippetRaw;
+  const isLastBook = latest.id === DIARY_HUB_BOOKS[DIARY_HUB_BOOKS.length - 1].id;
+  const dripLabel = `${DIARY_ORDINAL_LABELS[latest.id - 1] || latest.id + '번째'} 이야기 공개 중`
+    + (isLastBook ? '' : ' (매주 수요일 추가 공개)');
   return `
     <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;position:relative">
       <div style="display:flex;align-items:center;gap:4px">
         <span style="font-size:14px;font-weight:700">📔 훔쳐본 일기장</span>
       </div>
       <p style="font-size:12.5px;color:var(--muted);line-height:1.7;margin:8px 0 0">다른 사람의 일기를 몰래 열어보세요.<br>일기장 속의 사람은 과연 어떤 사람일까요?</p>
-      <div class="diary-hub-snippet"><p>"그날 저녁 6시부터 9시, 어디 계셨어요?"</p></div>
+      <div class="diary-hub-snippet"><p>"${esc(snippet)}"</p></div>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-        <span class="diary-hub-drip">첫 번째 이야기 공개 중 (매주 수요일 추가 공개)</span>
+        <span class="diary-hub-drip">${esc(dripLabel)}</span>
         <button class="btn btn-primary btn-sm" style="border-radius:20px" onclick="nav('diary')">참여하기</button>
       </div>
     </div>`;

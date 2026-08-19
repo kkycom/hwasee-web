@@ -172,6 +172,14 @@ exports.onEpisodeClosed = functions
     const episode_id = context.params.episodeId;
     const story_id   = after.story_id;
 
+    // 초스피드는 투표 없이 제출 하나마다 에피소드가 닫히는 구조라(최대 100단계),
+    // 이 트리거를 그대로 두면 매 제출마다 스토리 전체 참여자/북마커를 다시
+    // 조회해서 "N단계로 이어졌어요" 알림을 쏘는 낭비성 팬아웃이 됨 — AI참여
+    // 스케줄러가 이미 "초스피드는 투표 자체가 없어 개입할 이유 없음"으로 완전히
+    // 스킵하는 것과 같은 이유로 여기도 빠져있었음(전수감사로 발견, 2026-08-19).
+    const storySnapEarly = await db.collection('stories').doc(story_id).get();
+    if (storySnapEarly.exists && storySnapEarly.data().mode === 'speedrun') return null;
+
     // 중복 처리 방지 — 트랜잭션으로 notif_sent 플래그 선점
     try {
       const shouldProcess = await db.runTransaction(async tx => {
@@ -205,9 +213,10 @@ exports.onEpisodeClosed = functions
       winners = humanTied.length > 0 ? humanTied : tied;
     }
 
-    const storySnap = await db.collection('stories').doc(story_id).get();
-    if (!storySnap.exists) return null;
-    const st = storySnap.data();
+    // storySnapEarly는 위에서 speedrun 여부 확인용으로 이미 조회해둔 것 — 여기서
+    // 또 조회하지 않고 그대로 재사용.
+    if (!storySnapEarly.exists) return null;
+    const st = storySnapEarly.data();
     // 이 트리거와 _serverCloseEpisode의 story.current_step 갱신 사이에 순서
     // 보장이 없어서, st.current_step을 직접 읽으면 레이스에 따라 +2가 될 수
     // 있음(그 +2 표시 버그가 실제로 있었음) — 방금 닫힌 이 에피소드 자체의
@@ -2525,6 +2534,10 @@ exports.speedrunUpvote = functions
       if (voteSnap.exists) return { ok: false, error: '이미 표시했어요.' };
       const sub = subSnap.data();
       if (sub.author_id === voter_id) return { ok: false, error: '본인 글에는 표시할 수 없습니다.' };
+      // speedrunReport와 동일한 가드가 여기 빠져있었음(전수감사로 발견, 2026-08-19)
+      // — 신고 3표로 이미 삭제 처리된 문장에도 추천이 계속 걸려서, 그 뒤 추천이
+      // 3표 모이면 이미 삭제된 글의 작성자에게 보너스 포인트가 또 나갈 수 있었음.
+      if (sub.is_deleted) return { ok: false, error: '이미 삭제된 문장이에요.' };
       // speedrunSubmit과 동일한 이유로 방어 — 범위 밖(일반 이야기) 문서에 쓰기가
       // 들어가지 않게 막아둠.
       const storySnap = await tx.get(db.collection('stories').doc(sub.story_id));

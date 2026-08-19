@@ -1604,6 +1604,10 @@ let currentParam = null;
 function _dhCloseFloatingOverlays() {
   document.getElementById('dh-intro-overlay')?.remove();
   document.getElementById('dh-ending-overlay')?.remove();
+  // dh-rewind-modal(_dhOpenRewind)도 같은 이유로 body에 떠있는 독립 엘리먼트인데
+  // 이 정리 목록에서 빠져있었음(전수감사로 발견, 2026-08-19) — "다른 선택 보기"
+  // 연 채로 브라우저 뒤로가기 등으로 나가면 이것만 화면전환 후에도 안 지워짐.
+  document.getElementById('dh-rewind-modal')?.remove();
 }
 function nav(route, param) {
   _dhCloseFloatingOverlays();
@@ -2468,7 +2472,7 @@ function _renderSpeedrunStory(s, episodes, submissions, story_id) {
         ${myCooldown ? `<div class="empty" style="padding:8px 0">⏳ 채택 후 5단계 이내에는 참여할 수 없어요</div>` : `
           <textarea id="sr-input" maxlength="15" rows="2" placeholder="다음 문장을 15자 이내로…" style="width:100%;resize:none;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:14px;color:var(--text);font-family:var(--serif);box-sizing:border-box" oninput="document.getElementById('sr-count').textContent=this.value.length"></textarea>
           <div style="text-align:right;font-size:11px;color:var(--muted);margin:4px 0 8px"><span id="sr-count">0</span>/15</div>
-          <button class="btn btn-primary" id="sr-submit-btn" style="width:100%" onclick="doSpeedrunSubmit('${story_id}','${openEp ? openEp.episode_id : ''}')">제출</button>
+          <button class="btn btn-primary" id="sr-submit-btn" style="width:100%" ontouchend="event.preventDefault();doSpeedrunSubmit('${story_id}','${openEp ? openEp.episode_id : ''}')" onclick="doSpeedrunSubmit('${story_id}','${openEp ? openEp.episode_id : ''}')">제출</button>
         `}
       </div>` : `<div class="empty" style="margin-top:16px">🎉 100단계 완결!</div>`}`;
   _loadKakaoAdfit();
@@ -3937,10 +3941,17 @@ function _dhGetVisited() {
   try { return new Set(JSON.parse(localStorage.getItem('hwasee_diary_visited') || '[]')); } catch(e) { return new Set(); }
 }
 function _dhAddVisited(nodeId) {
-  const s = _dhGetVisited(); s.add(_dhVisitedKey(nodeId));
+  const s = _dhGetVisited();
+  const key = _dhVisitedKey(nodeId);
+  // 되감기(_dhOpenRewind)로 같은 결말을 다시 보거나 책을 재방문해서 같은
+  // 결말에 또 도달하면 이 함수가 또 호출되는데, 이미 방문한 키인지 체크
+  // 없이 매번 서버에 집계를 올리고 있었음 — "표본 100명" 집계 취지(실제
+  // 방문자 수 파악)와 안 맞게 같은 사람이 여러 번 카운트됨(전수감사로 발견,
+  // 2026-08-19). 처음 도달했을 때만 집계하도록 수정.
+  const isFirstVisit = !s.has(key);
+  s.add(key);
   localStorage.setItem('hwasee_diary_visited', JSON.stringify([...s]));
-  // 표본 100명 넘었는지 나중에 확인하려는 순수 집계 — 화면엔 영향 없음
-  api('trackDiaryEnding', { book_id: _dhBookId, node_id: nodeId }).catch(() => {});
+  if (isFirstVisit) api('trackDiaryEnding', { book_id: _dhBookId, node_id: nodeId }).catch(() => {});
   return s;
 }
 function _dhTotalEndings() { return Object.values(_dhStory().nodes).filter(n => n.ending).length; }

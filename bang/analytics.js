@@ -201,6 +201,46 @@ function _svgComboChart(dates, barSeries, lineSeries, markerDates, detailed) {
     </svg>${legendHtml}`;
 }
 
+// 카테고리별(날짜 축이 아님) 단순 막대차트 — 위 차트들은 전부 x축이 날짜라
+// "책별 결말 도달 수" 같은 범주형 데이터엔 안 맞아서 새로 만듦. 값 라벨은
+// 항상 표시(카테고리 수가 적어 안 겹침).
+function _svgCategoryBarChart(labels, values, color) {
+  const n = labels.length;
+  if (!n) return '<div class="empty" style="padding:24px 0">데이터가 없습니다.</div>';
+
+  const H = 200, W = 640, padL = 34, padR = 12, padT = 20, padB = 26;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const maxV = Math.max(1, ...values);
+  const gap = plotW / n;
+  const barW = Math.max(1, gap * 0.5);
+  const xAt = i => padL + i * gap + gap / 2;
+
+  const gridSteps = 4;
+  const gridHtml = Array.from({ length: gridSteps + 1 }, (_, k) => {
+    const v = Math.round(maxV * k / gridSteps);
+    const y = (padT + (1 - k / gridSteps) * plotH).toFixed(1);
+    return `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="var(--border)" stroke-width="1"${k === 0 ? '' : ' stroke-dasharray="2 3"'}/>
+      <text x="4" y="${(+y + 3).toFixed(1)}" font-size="9">${v}</text>`;
+  }).join('');
+
+  const barsHtml = values.map((v, i) => {
+    const val = v || 0;
+    const x = (xAt(i) - barW / 2).toFixed(1);
+    const yTop = (padT + (1 - val / maxV) * plotH).toFixed(1);
+    const h = (padT + plotH - yTop).toFixed(1);
+    return `<rect x="${x}" y="${yTop}" width="${barW.toFixed(1)}" height="${h}" fill="${color}" rx="3"><title>${_esc(labels[i])}: ${val}</title></rect>
+      <text x="${xAt(i).toFixed(1)}" y="${(+yTop - 6).toFixed(1)}" font-size="10" text-anchor="middle" fill="${color}" font-weight="700">${val}</text>`;
+  }).join('');
+
+  const xLabelsHtml = labels.map((l, i) =>
+    `<text x="${xAt(i).toFixed(1)}" y="${H - 4}" font-size="9" text-anchor="middle">${_esc(l)}</text>`).join('');
+
+  return `
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="auto" role="img" aria-label="카테고리별 막대차트">
+      ${gridHtml}${barsHtml}${xLabelsHtml}
+    </svg>`;
+}
+
 // 100%-누적 막대차트 — 하루 총 참여량이 들쭉날쭉해도 "그날 무엇에 참여가 몰렸는지
 // 비율"만 일정한 높이로 비교할 수 있게 함(절대량은 title 툴팁에서 확인).
 function _svgStackedBarChart(dates, series, detailed) {
@@ -664,6 +704,11 @@ function _renderDashboard(res) {
       { label: '업적 달성 건수', color: 'var(--accent2)', values: (res.achievements || []).map(d => d.count) },
     ], achievementDates, null, true))}
     <div class="card">
+      <div class="chart-title">📔 훔쳐본 일기장 — 결말 도달 인원 (책별)</div>
+      <div class="insight" id="insight-diary_ending" style="display:none"></div>
+      <div id="diary-ending-chart-body" class="chart-zoomable" data-chart-title="📔 훔쳐본 일기장 — 결말 도달 인원 (책별)" data-chart-key="diary_ending" onclick="_openChartModal(this)" title="클릭하면 크게+자세히 보기"><div class="loading" style="padding:16px 0">불러오는 중...</div></div>
+    </div>
+    <div class="card">
       <div class="chart-title">⏱️ 일별 평균 체류시간 (Google Analytics)</div>
       <div class="insight" id="insight-dwell_time" style="display:none"></div>
       <div id="ga4-chart-body" class="chart-zoomable" data-chart-title="⏱️ 일별 평균 체류시간 (Google Analytics)" data-chart-key="dwell_time" onclick="_openChartModal(this)" title="클릭하면 크게+자세히 보기"><div class="loading" style="padding:16px 0">불러오는 중...</div></div>
@@ -710,6 +755,39 @@ function _renderDashboard(res) {
   _loadGa4Chart(startDate, endDate);
   _loadGa4DeviceChart(startDate, endDate);
   _loadGa4SetupCard();
+  _loadDiaryEndingStats();
+}
+
+// ── 훔쳐본 일기장: 결말 도달 인원 (책별, getAnalyticsDashboard와 별개 호출) ──
+async function _loadDiaryEndingStats() {
+  const el = document.getElementById('diary-ending-chart-body');
+  const auth = window._analyticsAuth;
+  if (!el || !auth) return;
+  try {
+    const fn = functionsRegion.httpsCallable('getDiaryEndingStats');
+    const r = await fn({ user_id: auth.user_id, token: auth.token });
+    const data = r.data;
+    if (!data || !data.ok) {
+      el.innerHTML = `<div class="empty" style="padding:16px 0">${_esc((data && data.error) || '불러오지 못했습니다.')}</div>`;
+      return;
+    }
+    const byBook = data.by_book || [];
+    const labels = byBook.map(b => b.book_title || b.book_id);
+    const values = byBook.map(b => b.total || 0);
+    el.innerHTML = _svgCategoryBarChart(labels, values, 'var(--accent2)');
+    _chartRegistry.diary_ending = () => {
+      const detailRows = (data.by_ending || []).map(e =>
+        `<tr><td>${_esc(e.book_title || e.book_id)}</td><td>${_esc(e.ending_title || e.node_id)}</td><td style="text-align:right">${e.count}</td></tr>`
+      ).join('');
+      return `${_svgCategoryBarChart(labels, values, 'var(--accent2)')}
+        <table style="width:100%;margin-top:12px;font-size:13px;border-collapse:collapse">
+          <thead><tr><th style="text-align:left">책</th><th style="text-align:left">결말</th><th style="text-align:right">도달 인원</th></tr></thead>
+          <tbody>${detailRows || '<tr><td colspan="3">데이터가 없습니다.</td></tr>'}</tbody>
+        </table>`;
+    };
+  } catch (e) {
+    el.innerHTML = `<div class="empty" style="padding:16px 0">불러오지 못했습니다: ${_esc(e.message || '알 수 없는 오류')}</div>`;
+  }
 }
 
 // ── Google Analytics 4 연동 (체류시간 + 1인당 방문횟수, 한 번의 호출로 같이 받음) ──

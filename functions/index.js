@@ -8325,3 +8325,37 @@ exports.getDiaryBook = functions
     if (!book) return { ok: false, error: '아직 콘텐츠가 준비되지 않았어요.' };
     return { ok: true, book };
   });
+
+// 애널리틱스 대시보드용 — diary_ending_reached(book_id_node_id별 순수 카운터,
+// project_hwasee_kakao_adfit 메모리 참고: rarity% 실측 대신 표본 확인용으로만
+// 쌓는 중)를 책별로 합산 + 결말별 상세로 반환. 책 제목/결말 제목은
+// DIARY_STORY_DATA에서 조인해 그래프 라벨을 읽기 좋게 만듦.
+exports.getDiaryEndingStats = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const snap = await db.collection('diary_ending_reached').get();
+    const byBookMap = {};
+    const byEnding = [];
+    snap.docs.forEach(doc => {
+      const d = doc.data();
+      const book_id = Number(d.book_id);
+      const count = Number(d.count) || 0;
+      byBookMap[book_id] = (byBookMap[book_id] || 0) + count;
+      const book = DIARY_STORY_DATA[book_id];
+      const node = book && book.nodes && book.nodes[d.node_id];
+      byEnding.push({
+        book_id, node_id: d.node_id, count,
+        book_title: book ? book.title : `${book_id}권`,
+        ending_title: (node && node.ending && node.ending.title) || d.node_id,
+      });
+    });
+    const by_book = Object.keys(byBookMap).map(k => ({
+      book_id: Number(k),
+      book_title: (DIARY_STORY_DATA[k] && DIARY_STORY_DATA[k].title) || `${k}권`,
+      total: byBookMap[k],
+    })).sort((a, b) => a.book_id - b.book_id);
+    byEnding.sort((a, b) => a.book_id - b.book_id || b.count - a.count);
+    return { ok: true, by_book, by_ending: byEnding, generated_at: new Date().toISOString() };
+  });

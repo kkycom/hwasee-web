@@ -2743,7 +2743,7 @@ function _applyStoryData(res, story_id) {
       </div>` : ''}
       ${isFinished ? `<div class="theend-fx" id="story-ending-fx"><span class="theend-text">The End</span></div>` : ''}
     </div>
-    ${isFinished ? _coupangBannerHtml() : ''}
+    ${isFinished ? _kakaoAdHtml() : ''}
     ${s.mode === 'genre_switch' && openEp ? genreSwitchBannerHtml((s.genre_sequence || [])[Number(openEp.step) - 1], (s.genre_sequence || [])[Number(openEp.step)]) : ''}
     ${isAdmin() && s.status === 'active' && !s.vote_threshold ? `
     <div style="display:flex;justify-content:flex-end;margin:6px 0 2px">
@@ -2770,7 +2770,7 @@ function _applyStoryData(res, story_id) {
           </div>` : `<div style="font-size:13px;color:var(--muted);margin-top:12px">로그인 후 감상을 남길 수 있어요.</div>`}
       </div>` : ''}`;
 
-  if (openEp && !_isFinishedStory) _loadKakaoAdfit();
+  if ((openEp && !_isFinishedStory) || isFinished) _loadKakaoAdfit();
 
   if (isFinished && !story_comments) {
     loadStoryComments(currentParam);
@@ -4164,7 +4164,7 @@ function _dhRenderDiary() {
     // 바로 넣으면 display:none이어도 iframe이 즉시 로드돼서, 결말까지
     // 안 읽고 나가는 대다수 방문에서도 매번 헛로드가 발생했음(2026-08-19).
     const bannerEl = document.getElementById('dh-ending-banner');
-    if (bannerEl && !bannerEl.innerHTML) bannerEl.innerHTML = _coupangBannerHtml();
+    if (bannerEl && !bannerEl.innerHTML) { bannerEl.innerHTML = _kakaoAdHtml(); _loadKakaoAdfit(); }
   }
 
   document.getElementById('dh-page-wrap').classList.toggle('blurred', _dhEndingPhase === 'overlay');

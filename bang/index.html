@@ -4772,6 +4772,9 @@ function renderSpotlight() {
   // 빈 여백이 그대로 남는데, 세 단어 카드 바로 밑(첫 화면 안)이면 그 여백이
   // 바로 눈에 띔 — 스크롤을 한 번 내려야 보이는 초스피드초장편 카드 밑으로
   // 옮겨 덜 두드러지게 함(유저 지적, 2026-08-20)
+  // 쿠팡 검색창 배너(_coupangBannerHtml)는 지인들에게 구매를 부탁해둔 배너라
+  // 카드들 사이 어중간한 위치보다 탭 맨 밑(당신의 하루 카드 밑)이 찾기 쉽고
+  // 자연스러워서 그쪽으로 뺌(유저 지적, 2026-08-20) — 푸터의 카카오 애드핏은 그대로 둠.
   area.innerHTML = `
     ${newSummaryBannerHtml()}
     <p style="font-family:var(--serif);font-size:16px;line-height:1.9;color:#9a8070;text-align:center;margin-bottom:20px">
@@ -4782,9 +4785,9 @@ function renderSpotlight() {
     ${cardHtml('speedrun')}
     ${_kakaoAdHtml()}
     ${cardHtml('genre_switch')}${cardHtml('fairytale')}${cardHtml('fixed_ending')}${cardHtml('hot')}
-    ${_coupangBannerHtml()}
     ${diaryHubTeaserCardHtml()}
-    ${yourStoryTeaserCardHtml()}`;
+    ${yourStoryTeaserCardHtml()}
+    ${_coupangBannerHtml()}`;
   // 광고 재요청은 여기서 안 하고 loadHomeTab()이 "이 탭 방문의 진짜 마지막
   // 렌더" 시점에 딱 한 번만 호출함 — renderSpotlight()는 캐시→네트워크
   // 재검증으로 방문 한 번에 두 번 불릴 수 있는데(투표/더보기 등도 이 함수를

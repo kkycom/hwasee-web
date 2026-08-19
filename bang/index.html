@@ -4768,15 +4768,20 @@ function renderSpotlight() {
   window._hotCandidateIds = slots.hot_candidate_ids || [];
   window._hotIndex = 0;
 
+  // 카카오 애드핏 자리(_kakaoAdHtml)는 미노출(무필) 기기에서 min-height만큼의
+  // 빈 여백이 그대로 남는데, 세 단어 카드 바로 밑(첫 화면 안)이면 그 여백이
+  // 바로 눈에 띔 — 스크롤을 한 번 내려야 보이는 초스피드초장편 카드 밑으로
+  // 옮겨 덜 두드러지게 함(유저 지적, 2026-08-20)
   area.innerHTML = `
     ${newSummaryBannerHtml()}
     <p style="font-family:var(--serif);font-size:16px;line-height:1.9;color:#9a8070;text-align:center;margin-bottom:20px">
       한 문장 소설 실험실
     </p>
     ${cardHtml('word')}
-    ${_kakaoAdHtml()}
     <div id="hint-card-area"></div>
-    ${cardHtml('speedrun')}${cardHtml('genre_switch')}${cardHtml('fairytale')}${cardHtml('fixed_ending')}${cardHtml('hot')}
+    ${cardHtml('speedrun')}
+    ${_kakaoAdHtml()}
+    ${cardHtml('genre_switch')}${cardHtml('fairytale')}${cardHtml('fixed_ending')}${cardHtml('hot')}
     ${_coupangBannerHtml()}
     ${diaryHubTeaserCardHtml()}
     ${yourStoryTeaserCardHtml()}`;

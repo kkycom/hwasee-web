@@ -3719,6 +3719,9 @@ const SPOTLIGHT_META = {
   // 자유 이야기 탭에서 지금 참여자 수가 가장 많은 이야기를 실시간으로 보여줌
   // (유저 제안, 2026-07-28 — 자유 이야기 탭 자체에 관심을 실어주는 취지).
   hot:      { icon: '🔥', title: '지금 인기 자유 이야기', info: '자유 이야기 탭에서 지금 참여자가 가장 많은 이야기예요. 방문할 때마다 실시간으로 바뀔 수 있어요.' },
+  hint:     { icon: '🧩', title: '초성 문장 퀴즈', info: '매일 오전 8시부터 오후 6시까지 2시간마다 정답 문장의 초성 힌트가 공개돼요. 다른 사람들의 시도도 함께 보면서 문장을 맞혀보세요. 먼저 맞히면 50P!' },
+  diary:    { icon: '📔', title: '훔쳐본 일기장', info: '다른 사람의 일기를 몰래 열어보는 읽기 전용 콘텐츠예요. 선택에 따라 이야기가 갈라지고, 한 번 넘긴 페이지는 되돌릴 수 없어요. 매주 수요일마다 새 일기가 한 편씩 공개돼요.' },
+  yourstory: { icon: '💭', title: '당신의 이야기', info: '오늘 하루를 한 줄로 익명으로 남겨보세요(하루 1개, 30자, +10P). 추천이나 채택은 없고 하트로 공감만 남길 수 있어요. 신고가 3표 모이면 자동으로 가려지고, 지급됐던 포인트도 회수돼요.' },
 };
 
 // 장르 확률 패널 색상 매핑 — functions/index.js의 SPOTLIGHT_GENRES와 이름이
@@ -3891,8 +3894,8 @@ function diaryHubTeaserCardHtml() {
     <div id="dh-teaser-card" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;position:relative">
       <div style="display:flex;align-items:center;gap:4px">
         <span style="font-size:14px;font-weight:700">📔 훔쳐본 일기장</span>
+        <button onclick="openSlotInfo('diary')" aria-label="설명 보기" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 2px">ⓘ</button>
       </div>
-      <p style="font-size:12.5px;color:var(--muted);line-height:1.7;margin:8px 0 0">다른 사람의 일기를 몰래 열어보세요.<br>일기장 속의 사람은 과연 어떤 사람일까요?</p>
       <div class="diary-hub-snippet"><p>"…"</p></div>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <span class="diary-hub-drip"></span>
@@ -4333,9 +4336,9 @@ function renderYourStoryCard() {
       <span class="card-glow-new-badge">NEW</span>
       <div style="display:flex;align-items:center;gap:4px">
         <span style="font-size:14px;font-weight:700">💭 당신의 이야기</span>
+        <button onclick="openSlotInfo('yourstory')" aria-label="설명 보기" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 2px">ⓘ</button>
       </div>
-      <p style="font-size:12.5px;color:var(--muted);line-height:1.7;margin:8px 0 12px">다른 사람들과 함께 쓰는, 하루 한 줄 기록이에요.</p>
-      <div class="ys-mine-text${isEmpty ? ' empty' : ''}">${bodyText}</div>
+      <div class="ys-mine-text${isEmpty ? ' empty' : ''}" style="margin-top:10px">${bodyText}</div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
         <div class="ys-pager">
           <button type="button" class="ys-pager-arrow" ${_ysCardCursor >= total ? 'disabled' : ''} onclick="ysCardPage(1)" aria-label="이전 기록">‹</button>
@@ -4966,6 +4969,7 @@ function renderHintCardHtml(round) {
     <div class="card" style="margin-top:14px" id="hint-card-inner">
       <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
         <span style="font-size:14px;font-weight:700">🧩 초성 문장 퀴즈${solved ? (round.failed ? ' · 아쉽게 실패' : ' · 정답 공개!') : ''}</span>
+        <button onclick="openSlotInfo('hint')" aria-label="설명 보기" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 2px">ⓘ</button>
         ${solved ? `<span style="font-size:11px;color:var(--muted);font-weight:400">(다음 라운드까지 <span id="hint-countdown"></span>)</span>` : ''}
       </div>
       <div class="story-prose" style="padding:28px 18px;margin:10px 0;position:relative${solved ? ';cursor:pointer' : ''}"${solved ? ' onclick="revealHintAnswer()"' : ''}>

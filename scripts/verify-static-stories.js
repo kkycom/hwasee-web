@@ -18,6 +18,7 @@ const crypto = require('crypto');
 const ROOT = path.join(__dirname, '..');
 const STORY_DIR = path.join(ROOT, 'bang', 'story');
 const TODAY_DIR = path.join(ROOT, 'bang', 'today');
+const WORD_CHALLENGE_DIR = path.join(ROOT, 'bang', 'word-challenge');
 const SITEMAP_PATH = path.join(ROOT, 'bang', 'sitemap.xml');
 const SITE_ORIGIN = 'https://hwasee.me';
 
@@ -217,6 +218,99 @@ function verifyTodayPages(sitemap) {
   console.log(`역할 슬롯 검사 완료: ${slugs.length}개 페이지(그중 indexable ${indexableSlugs.length}개)`);
 }
 
+// today/word-challenge 허브·개별 페이지가 공통으로 쓰는 가벼운 정적 셸
+// 검사 — title/canonical/description/robots/본문 존재/금지문구까지 한
+// 파일 기준으로 검사하고 결과를 돌려줌(호출부가 title 중복 등 페이지 간
+// 비교는 알아서 함).
+function checkStaticShellFile(filePath, expectedCanonical, label) {
+  if (!fs.existsSync(filePath)) { fail(`${label}: index.html 파일 자체가 없음`); return null; }
+  const html = fs.readFileSync(filePath, 'utf8');
+  const title = (html.match(/<title>([^<]*)<\/title>/) || [])[1];
+  const canonical = (html.match(/<link rel="canonical" href="([^"]*)">/) || [])[1];
+  const description = (html.match(/<meta name="description" content="([^"]*)">/) || [])[1];
+  const robots = (html.match(/<meta name="robots" content="([^"]*)">/) || [])[1];
+
+  if (!title) fail(`${label}: <title> 태그를 못 찾음`);
+  if (!description) fail(`${label}: description 메타태그를 못 찾음`);
+  if (!robots) fail(`${label}: robots 메타태그를 못 찾음`);
+  if (!canonical) fail(`${label}: canonical 태그를 못 찾음`);
+  else if (canonical !== expectedCanonical) fail(`${label}: canonical이 자기 URL과 불일치 (${canonical} !== ${expectedCanonical})`);
+
+  const mainMatch = html.match(/<main>([\s\S]*?)<\/main>/);
+  if (!mainMatch) { fail(`${label}: <main> 마커를 못 찾음`); return { title, canonical, description, robots }; }
+  const mainVisible = visibleLines(`<div>${mainMatch[1]}</div>`).join(' ');
+  if (!mainVisible.trim()) fail(`${label}: 본문이 비어있음`);
+  if (mainVisible.includes('불러오는 중')) fail(`${label}: 로딩 상태 문구가 정적 페이지에 남아있음(이 템플릿은 전부 정적이라 있으면 안 됨)`);
+
+  const wholeLines = visibleLines(html);
+  for (const phrase of FORBIDDEN_PHRASES) {
+    if (wholeLines.some(l => l.includes(phrase))) fail(`${label}: 금지 문구 "${phrase}"가 정적 페이지에 노출돼있음`);
+  }
+  return { title, canonical, description, robots };
+}
+
+function verifyTodayHub(sitemap) {
+  const filePath = path.join(TODAY_DIR, 'index.html');
+  if (!fs.existsSync(TODAY_DIR)) return; // verifyTodayPages가 이미 안내 로그를 찍음
+  console.log('\ntoday 허브 검사...');
+  const info = checkStaticShellFile(filePath, `${SITE_ORIGIN}/bang/today/`, 'today 허브');
+  if (!info) return;
+  // 설계상 today 허브는 5개 슬롯 요약이라 항상 indexable이어야 함(2026-08-20).
+  if (info.robots !== 'index,follow') fail(`today 허브: robots가 "index,follow"가 아님(항상 indexable이어야 하는 설계) — 실제: "${info.robots}"`);
+  if (sitemap && !sitemap.includes('<loc>https://hwasee.me/bang/today/</loc>')) {
+    fail('today 허브: sitemap.xml에 /bang/today/ 자체가 없음');
+  }
+  console.log('today 허브 검사 완료');
+}
+
+// bang/word-challenge/{id}/index.html + bang/word-challenge/index.html(허브) —
+// 개별 페이지는 마감분(winner_text 있음)만 생성되므로 story 페이지처럼 항상
+// indexable. 허브는 마감분이 하나도 없으면 noindex일 수 있음(today/{slot}과
+// 동일 원칙).
+function verifyWordChallengePages(sitemap) {
+  if (!fs.existsSync(WORD_CHALLENGE_DIR)) {
+    console.log('bang/word-challenge/ 없음 — 이번 빌드에서 세 단어 챌린지 페이지가 생성 안 됨. 검사 대상 없어 통과 처리.');
+    return;
+  }
+  const ids = fs.readdirSync(WORD_CHALLENGE_DIR, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
+  console.log(`\n세 단어 챌린지 개별 페이지 ${ids.length}건 검사 시작...`);
+
+  const titleOwners = new Map();
+  const descOwners = new Map();
+  for (const id of ids) {
+    const filePath = path.join(WORD_CHALLENGE_DIR, id, 'index.html');
+    const info = checkStaticShellFile(filePath, `${SITE_ORIGIN}/bang/word-challenge/${id}/`, `word-challenge/${id}`);
+    if (!info) continue;
+    if (info.robots !== 'index,follow') fail(`word-challenge/${id}: robots가 "index,follow"가 아님(마감분은 항상 indexable이어야 하는 설계) — 실제: "${info.robots}"`);
+    if (info.title) { if (!titleOwners.has(info.title)) titleOwners.set(info.title, []); titleOwners.get(info.title).push(id); }
+    if (info.description) { if (!descOwners.has(info.description)) descOwners.set(info.description, []); descOwners.get(info.description).push(id); }
+  }
+  for (const [title, owners] of titleOwners) {
+    if (owners.length > 1) fail(`word-challenge title "${title}"이 서로 다른 챌린지에서 동일함: ${owners.join(', ')}`);
+  }
+  for (const [desc, owners] of descOwners) {
+    if (owners.length > 1) fail(`word-challenge description "${desc.slice(0, 30)}..."이 서로 다른 챌린지에서 동일함: ${owners.join(', ')}`);
+  }
+
+  if (sitemap) {
+    const sitemapIds = [...sitemap.matchAll(/<loc>https:\/\/hwasee\.me\/bang\/word-challenge\/([^/<]+)\/<\/loc>/g)].map(m => m[1]);
+    const idSet = new Set(ids);
+    for (const id of ids) if (!sitemapIds.includes(id)) fail(`sitemap.xml에 없는 word-challenge 페이지: ${id}`);
+    for (const id of sitemapIds) if (!idSet.has(id)) fail(`sitemap.xml엔 있는데 실제 생성된 word-challenge 페이지 디렉터리가 없음: ${id}`);
+  }
+  console.log(`세 단어 챌린지 개별 페이지 검사 완료: ${ids.length}건`);
+
+  console.log('\nword-challenge 허브 검사...');
+  const hubInfo = checkStaticShellFile(path.join(WORD_CHALLENGE_DIR, 'index.html'), `${SITE_ORIGIN}/bang/word-challenge/`, 'word-challenge 허브');
+  if (hubInfo) {
+    const hubIndexable = hubInfo.robots === 'index,follow';
+    const hubInSitemap = !!(sitemap && sitemap.includes('<loc>https://hwasee.me/bang/word-challenge/</loc>'));
+    if (hubIndexable && !hubInSitemap) fail('word-challenge 허브: index,follow인데 sitemap.xml에 없음');
+    if (!hubIndexable && hubInSitemap) fail('word-challenge 허브: noindex인데 sitemap.xml에는 실려있음(모순된 신호)');
+  }
+  console.log('word-challenge 허브 검사 완료');
+}
+
 function main() {
   const sitemap = fs.existsSync(SITEMAP_PATH) ? fs.readFileSync(SITEMAP_PATH, 'utf8') : null;
   if (!sitemap) warn('sitemap.xml을 못 찾음');
@@ -225,6 +319,8 @@ function main() {
   // 그대로 계속 진행 — early return으로 서로를 가리지 않게 별도 함수로 분리.
   verifyStoryPages(sitemap);
   verifyTodayPages(sitemap);
+  verifyTodayHub(sitemap);
+  verifyWordChallengePages(sitemap);
 
   if (hasFatal) { console.error('\n🔴 치명적 문제 발견 — 배포를 중단합니다.'); process.exit(1); }
   console.log(hasWarning ? '\n🟠 경고 있음 — 배포는 진행하되 확인 권장.' : '\n🟢 이상 없음.');

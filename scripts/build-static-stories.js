@@ -25,6 +25,8 @@ const INDEX_HTML_PATH = path.join(BANG_DIR, 'index.html');
 const ROOT_INDEX_HTML_PATH = path.join(ROOT, 'index.html');
 const OUT_DIR = path.join(BANG_DIR, 'story');
 const TODAY_OUT_DIR = path.join(BANG_DIR, 'today');
+const TODAY_HUB_PATH = path.join(TODAY_OUT_DIR, 'index.html');
+const WORD_CHALLENGE_OUT_DIR = path.join(BANG_DIR, 'word-challenge');
 const SITEMAP_PATH = path.join(BANG_DIR, 'sitemap.xml');
 const SITE_ORIGIN = 'https://hwasee.me';
 const FB_ADMIN_ID = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
@@ -191,6 +193,32 @@ async function fetchHotCandidateStories(db, excludeStoryIds) {
     .map(d => ({ story_id: d.id, ...d.data() }));
 }
 
+// 오늘의 세 단어 챌린지(마감분만) — bang/firebase-api.js의
+// fbGetWordChallengeHistory()와 동일 쿼리 패턴(status로 필터링하는 복합
+// 인덱스 없이 start_at 단일 인덱스만으로 동작하게, status 필터는 JS에서).
+// 진행 중인 챌린지는 실시간 경쟁 상태(투표가 몇 시간 단위로 계속 바뀜)라
+// 정적 스냅샷 대상에서 제외 — hint(초성 퀴즈)를 뺀 것과 같은 이유
+// (2026-08-20 설계 논의 결론). winner_text 없는 마감분(제출 0건)도 같은
+// 이유로 제외.
+async function fetchClosedWordChallenges(db, limit = 40) {
+  const snap = await db.collection('word_challenges').orderBy('start_at', 'desc').limit(limit).get();
+  return snap.docs
+    .map(d => ({ challenge_id: d.id, ...d.data() }))
+    .filter(c => c.status === 'closed' && c.winner_text);
+}
+
+// 후보 문장 전부를 SSG하면 페이지가 비대해지고 페이지 간 구조도 비슷해져서,
+// 득표 상위 5개만 — 결과 페이지 취지에 맞고 완결작의 candidatesHtml(상위 4개
+// 갈림길 문장)과 동일한 절제 원칙.
+async function fetchWordChallengeTopSubmissions(db, challenge_id, max = 5) {
+  const snap = await db.collection('word_challenge_submissions').where('challenge_id', '==', challenge_id).get();
+  return snap.docs
+    .map(d => ({ ...d.data() }))
+    .filter(s => s.content && s.content.trim())
+    .sort((a, b) => (Number(b.vote_count) || 0) - (Number(a.vote_count) || 0))
+    .slice(0, max);
+}
+
 async function fetchStoryData(db, story_id) {
   const [episodesSnap, submissionsSnap] = await Promise.all([
     db.collection('episodes').where('story_id', '==', story_id).get(),
@@ -343,7 +371,7 @@ function renderStoryPage(indexHtmlSrc, { id, title, description, url, bodyHtml, 
   return html;
 }
 
-function renderSitemap(entries) {
+function renderSitemap(entries, extraStaticPages) {
   const staticPages = [
     { loc: `${SITE_ORIGIN}/bang/`, changefreq: 'daily', priority: '1.0' },
     { loc: `${SITE_ORIGIN}/bang/story/`, changefreq: 'daily', priority: '0.8' },
@@ -351,17 +379,25 @@ function renderSitemap(entries) {
     { loc: `${SITE_ORIGIN}/bang/guidelines.html`, changefreq: 'monthly', priority: '0.5' },
     { loc: `${SITE_ORIGIN}/bang/contact.html`, changefreq: 'monthly', priority: '0.5' },
     { loc: `${SITE_ORIGIN}/bang/privacy.html`, changefreq: 'yearly', priority: '0.3' },
+    // today 허브/word-challenge 아카이브는 항상 고정 URL이지만 indexable
+    // 여부가 빌드마다 바뀔 수 있어(콘텐츠 없으면 noindex) 고정 리스트에
+    // 못 넣고 main()에서 조건부로 넘겨줌.
+    ...(extraStaticPages || []),
   ];
   const urls = [
     ...staticPages.map(p => `  <url><loc>${p.loc}</loc><changefreq>${p.changefreq}</changefreq><priority>${p.priority}</priority></url>`),
     ...entries.map(e => {
-      // slotSlug가 있으면 today/{slot} 역할 페이지, 없으면 story/{id} 콘텐츠
-      // 페이지 — 둘 다 여기서 같이 렌더하되 경로만 분기.
-      const loc = e.slotSlug ? `${SITE_ORIGIN}/bang/today/${e.slotSlug}/` : `${SITE_ORIGIN}/bang/story/${e.id}/`;
+      // slotSlug가 있으면 today/{slot} 역할 페이지, wcId가 있으면 세 단어
+      // 챌린지 개별 결과 페이지, 둘 다 없으면 story/{id} 콘텐츠 페이지.
+      const loc = e.slotSlug ? `${SITE_ORIGIN}/bang/today/${e.slotSlug}/`
+        : e.wcId ? `${SITE_ORIGIN}/bang/word-challenge/${e.wcId}/`
+        : `${SITE_ORIGIN}/bang/story/${e.id}/`;
       // 진행 중 이야기/역할 페이지는 문장이 계속 추가되므로 완결작(monthly)보다
       // 짧은 주기로 표시 — 실제 리빌드 주기는 별개(GitHub Actions 스케줄)지만,
       // changefreq는 크롤러에게 갱신 가능성을 알려주는 힌트라 정직하게 반영.
-      const changefreq = e.slotSlug ? 'daily' : (e.isCompleted ? 'monthly' : 'daily');
+      // 세 단어 챌린지 개별 결과는 마감분만 만들어서(내용이 다시 안 바뀜)
+      // 완결작과 동일하게 monthly.
+      const changefreq = e.slotSlug ? 'daily' : e.wcId ? 'monthly' : (e.isCompleted ? 'monthly' : 'daily');
       return `  <url><loc>${loc}</loc>${e.lastmod ? `<lastmod>${e.lastmod.slice(0, 10)}</lastmod>` : ''}<changefreq>${changefreq}</changefreq><priority>0.6</priority></url>`;
     }),
   ].join('\n');
@@ -446,6 +482,8 @@ function renderArchiveIndex(entries) {
 <footer>
   <a href="https://hwasee.me/" style="color:var(--muted)">화씨 홈</a> &nbsp;·&nbsp;
   <a href="/bang/" style="color:var(--muted)">화씨.방</a> &nbsp;·&nbsp;
+  <a href="/bang/today/" style="color:var(--muted)">오늘의 이야기</a> &nbsp;·&nbsp;
+  <a href="/bang/word-challenge/" style="color:var(--muted)">세 단어 챌린지 결과</a> &nbsp;·&nbsp;
   <a href="/bang/about.html" style="color:var(--muted)">소개</a>
   <p style="margin-top:8px">&copy; 2026 화씨 (Hwasee). All rights reserved.</p>
 </footer>
@@ -512,9 +550,17 @@ function todaySlotBodyHtml({ slotKey, current, previous }) {
       </a>
     </div>` : '';
 
+  // word 슬롯은 이 이야기를 시작시킨 "세 단어 챌린지" 결과 아카이브와
+  // 직접 연관돼 있어서(우승 문장이 이 이야기의 오프닝이 됨) 다른 슬롯엔
+  // 없는 전용 링크를 하나 더 붙임.
+  const wordChallengeLinkHtml = slotKey === 'word'
+    ? `<p style="margin-top:16px;font-size:13px;color:var(--muted)">이 이야기는 세 단어 챌린지 우승 문장에서 시작됐어요 — <a href="/bang/word-challenge/" style="color:var(--accent2)">지난 우승작들 보기</a></p>`
+    : '';
+
   return `<h1>${esc(label)}</h1>
     ${currentHtml}
     ${previousHtml}
+    ${wordChallengeLinkHtml}
     <a href="/bang/" class="today-back">화씨.방에서 참여하기 →</a>`;
 }
 
@@ -592,12 +638,193 @@ function renderTodaySlotPage({ slotKey, current, previous, indexable }) {
 <footer>
   <a href="https://hwasee.me/" style="color:var(--muted)">화씨 홈</a> &nbsp;·&nbsp;
   <a href="/bang/" style="color:var(--muted)">화씨.방</a> &nbsp;·&nbsp;
-  <a href="/bang/story/" style="color:var(--muted)">완결작 모음</a>
+  <a href="/bang/today/" style="color:var(--muted)">오늘의 이야기</a> &nbsp;·&nbsp;
+  <a href="/bang/story/" style="color:var(--muted)">완결작 모음</a> &nbsp;·&nbsp;
+  <a href="/bang/word-challenge/" style="color:var(--muted)">세 단어 챌린지 결과</a>
   <p style="margin-top:8px">&copy; 2026 화씨 (Hwasee). All rights reserved.</p>
 </footer>
 </body>
 </html>
 `;
+}
+
+// 완결작 아카이브(renderArchiveIndex)/역할 슬롯(renderTodaySlotPage)과 같은
+// "SPA 라우트가 없는 가벼운 정적 허브" 부류가 이제 3종류(오늘의 이야기 허브,
+// 세 단어 챌린지 아카이브·개별 결과)로 늘어나서 <head>/헤더/푸터 반복을
+// 공유 셸로 뺌 — 기존 두 함수는 이미 배포돼 검증된 구조라 굳이 안 건드림.
+function staticHubPageShell({ title, description, canonical, robots, ogTitle, bodyHtml }) {
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${esc(title)}</title>
+<meta name="description" content="${esc(description)}">
+<meta name="robots" content="${robots}">
+<link rel="canonical" href="${canonical}">
+<link rel="icon" type="image/png" href="/bang/hwaseebang_sum.png">
+<meta name="theme-color" content="#f0ead8">
+<meta property="og:type"        content="website">
+<meta property="og:url"         content="${canonical}">
+<meta property="og:title"       content="${esc(ogTitle || title)}">
+<meta property="og:description" content="${esc(description)}">
+<meta property="og:image"       content="https://hwasee.me/bang/hwaseebang_og.png">
+<!-- 완결작 아카이브와 같은 이유로 광고 스크립트 없음(요약/링크 위주 허브,
+     Gemini 최종 점검 지적, 2026-07-21) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f0ead8; --surface: #e6dac8; --card: #ddd0b8; --border: #c4b090;
+    --accent: #80978c; --accent2: #c8823a; --text: #1c0e06; --muted: #7a5c40;
+    --radius: 12px; --font: 'Noto Sans KR', system-ui, sans-serif; --serif: 'Gowun Batang', Georgia, serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.7; }
+  header {
+    position: sticky; top: 0; z-index: 10; background: rgba(240,234,216,.92); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border); padding: 0 24px; height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo { font-size: 20px; font-weight: 400; letter-spacing: .5px; font-family: var(--serif); color: var(--text); text-decoration: none; }
+  .back { font-size: 13px; color: var(--muted); text-decoration: none; }
+  main { max-width: 640px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-family: var(--serif); font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+  h2 { font-family: var(--serif); font-size: 16px; font-weight: 700; margin: 28px 0 12px; }
+  .lead { font-size: 14px; color: var(--muted); margin-bottom: 24px; }
+  .hub-item {
+    display: block; text-decoration: none; color: inherit; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 12px;
+  }
+  .hub-item-title { font-family: var(--serif); font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .hub-item-teaser { font-size: 13px; color: var(--muted); }
+  .hub-item-meta { font-size: 11px; color: var(--accent2); margin-top: 6px; }
+  .wc-words { font-size: 12px; color: var(--accent2); font-weight: 700; margin-bottom: 6px; letter-spacing: .3px; }
+  .wc-winner { font-family: var(--serif); font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .wc-candidate { margin-top: 8px; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-size: 13px; line-height: 1.6; }
+  .wc-candidate-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .more-list { list-style: none; font-size: 13.5px; }
+  .more-list li { margin-bottom: 8px; }
+  .more-list a { color: var(--accent2); }
+  .empty { text-align: center; padding: 32px 0; color: var(--muted); font-size: 14px; }
+  .back-cta { display: inline-block; margin-top: 24px; padding: 10px 20px; background: var(--accent2); color: #fff; border-radius: 10px; text-decoration: none; font-size: 14px; font-weight: 600; }
+  footer { text-align: center; font-size: 12px; color: var(--muted); padding: 24px; border-top: 1px solid var(--border); }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <a class="logo" href="/bang/">화씨.방</a>
+  <a class="back" href="/bang/">← 화씨.방으로 돌아가기</a>
+</header>
+<main>
+  ${bodyHtml}
+</main>
+<footer>
+  <a href="https://hwasee.me/" style="color:var(--muted)">화씨 홈</a> &nbsp;·&nbsp;
+  <a href="/bang/" style="color:var(--muted)">화씨.방</a> &nbsp;·&nbsp;
+  <a href="/bang/today/" style="color:var(--muted)">오늘의 이야기</a> &nbsp;·&nbsp;
+  <a href="/bang/story/" style="color:var(--muted)">완결작 모음</a> &nbsp;·&nbsp;
+  <a href="/bang/word-challenge/" style="color:var(--muted)">세 단어 챌린지 결과</a>
+  <p style="margin-top:8px">&copy; 2026 화씨 (Hwasee). All rights reserved.</p>
+</footer>
+</body>
+</html>
+`;
+}
+
+// /bang/today/ 허브 — 5개 역할 슬롯을 한 곳에 모아 링크(오늘의 이야기 각
+// 슬롯 페이지가 sitemap에만 있고 실제 내부링크가 없으면 크롤러 발견 신뢰도가
+// 낮아서, 2026-08-20 논의로 추가). hint/diary는 story_id가 없는 완전히 다른
+// 데이터 모델이라 이번엔 전용 페이지를 안 만들고, 여기서 안내+링크만.
+function todayHubBodyHtml(slotSummaries) {
+  const items = slotSummaries.map(({ slotKey, current, previous }) => {
+    const label = SLOT_LABEL[slotKey];
+    const teaser = current ? current.description : (previous ? `지난 이야기: ${previous.description}` : '새 라운드를 준비하고 있어요.');
+    return `
+    <a class="hub-item" href="/bang/today/${SLOT_SLUG[slotKey]}/">
+      <div class="hub-item-title">${esc(label)}</div>
+      <div class="hub-item-teaser">${esc(teaser)}</div>
+    </a>`;
+  }).join('');
+
+  return `<h1>오늘의 이야기</h1>
+    <p class="lead">화씨.방에서 지금 진행 중인 이야기들이에요.</p>
+    ${items}
+    <h2>그 밖에도</h2>
+    <ul class="more-list">
+      <li>🧩 초성 문장 퀴즈 — 매일 정시마다 새 라운드가 열려요. <a href="/bang/">화씨.방에서 참여하기 →</a></li>
+      <li>📔 훔쳐본 일기장 — 매주 수요일 새 이야기가 공개돼요. <a href="/bang/">화씨.방에서 읽기 →</a></li>
+      <li>🎲 세 단어 챌린지 — 지난 우승작들은 <a href="/bang/word-challenge/">여기서</a> 볼 수 있어요.</li>
+    </ul>`;
+}
+
+function renderTodayHubPage(slotSummaries) {
+  const url = `${SITE_ORIGIN}/bang/today/`;
+  return staticHubPageShell({
+    title: '오늘의 이야기 — 화씨.방',
+    description: '화씨.방에서 지금 진행 중인 초스피드 초장편, 장르 강제 전환, 결말이 정해진 이야기, 동화 각색, 세 단어 챌린지를 한눈에 보세요.',
+    canonical: url, robots: 'index,follow',
+    bodyHtml: todayHubBodyHtml(slotSummaries),
+  });
+}
+
+// /bang/word-challenge/{id}/ — 마감된 챌린지만 SSG 대상(진행 중인 챌린지는
+// 몇 시간 단위로 순위가 바뀌는 실시간 경쟁 상태라 정적 스냅샷 부적합 —
+// hint를 뺀 것과 같은 이유, 2026-08-20 설계 논의 결론). 후보 전부가 아니라
+// 득표 상위 5개만(completedOnly의 candidatesHtml과 동일 절제 원칙).
+function wordChallengePageBodyHtml({ challenge, candidates }) {
+  const words = (challenge.words || []).join(' · ');
+  const candidatesHtml2 = candidates
+    .filter(c => c.content !== challenge.winner_text) // 우승작 중복 노출 방지
+    .map(c => `
+    <div class="wc-candidate">
+      ${esc(c.content)}
+      <div class="wc-candidate-meta">${Number(c.vote_count) || 0}표</div>
+    </div>`).join('');
+
+  return `<a class="back" href="/bang/word-challenge/">← 세 단어 챌린지 결과 모음</a>
+    <h1>${esc(challenge.date || '')} 세 단어 챌린지</h1>
+    <div class="wc-words">${esc(words)}</div>
+    <div class="wc-winner">"${esc(challenge.winner_text)}"</div>
+    <div class="hub-item-meta">${esc(challenge.winner_nickname || '익명')}님 · ${Number(challenge.winner_vote_count) || 0}표로 우승</div>
+    ${candidatesHtml2 ? `<h2>다른 도전 문장들</h2>${candidatesHtml2}` : ''}
+    <a href="/bang/today/word/" class="back-cta">지금 이어지는 이야기 보기 →</a>`;
+}
+
+function renderWordChallengePage({ challenge, candidates }) {
+  const url = `${SITE_ORIGIN}/bang/word-challenge/${challenge.challenge_id}/`;
+  const title = `${(challenge.words || []).join('·')} — 세 단어 챌린지 우승작`;
+  const description = `"${challenge.winner_text}" — ${(challenge.words || []).join(', ')}로 만든 세 단어 챌린지 우승 문장.`;
+  return staticHubPageShell({
+    title: `${esc(title)} — 화씨.방`, description, canonical: url, robots: 'index,follow',
+    ogTitle: title,
+    bodyHtml: wordChallengePageBodyHtml({ challenge, candidates }),
+  });
+}
+
+// /bang/word-challenge/ 아카이브 허브
+function wordChallengeArchiveBodyHtml(entries) {
+  const items = entries.map(({ challenge }) => `
+    <a class="hub-item" href="/bang/word-challenge/${challenge.challenge_id}/">
+      <div class="wc-words">${esc((challenge.words || []).join(' · '))}</div>
+      <div class="hub-item-title">"${esc(challenge.winner_text)}"</div>
+      <div class="hub-item-meta">${esc(challenge.winner_nickname || '익명')}님 · ${Number(challenge.winner_vote_count) || 0}표 · ${esc((challenge.date || '').slice(0, 10))}</div>
+    </a>`).join('');
+
+  return `<h1>세 단어 챌린지 결과 모음</h1>
+    <p class="lead">매일 주어지는 세 단어로 사람들이 쓴 문장 중, 가장 많은 표를 받은 우승작들이에요. 진행 중인 챌린지는 <a href="/bang/">화씨.방</a>에서 실시간으로 참여할 수 있어요.</p>
+    ${entries.length ? items : '<div class="empty">아직 마감된 챌린지가 없어요.</div>'}`;
+}
+
+function renderWordChallengeArchive(entries, indexable) {
+  const url = `${SITE_ORIGIN}/bang/word-challenge/`;
+  return staticHubPageShell({
+    title: '세 단어 챌린지 결과 모음 — 화씨.방',
+    description: `화씨.방에서 매일 진행되는 세 단어 챌린지의 지난 우승작 ${entries.length}편을 모아봤어요.`,
+    canonical: url, robots: indexable ? 'index,follow' : 'noindex,follow',
+    bodyHtml: wordChallengeArchiveBodyHtml(entries),
+  });
 }
 
 // ── 메인 ──
@@ -766,11 +993,13 @@ async function main() {
   fs.rmSync(TODAY_OUT_DIR, { recursive: true, force: true });
   fs.mkdirSync(TODAY_OUT_DIR, { recursive: true });
   let todayIndexable = 0;
+  const slotSummaries = [];
   for (const slotKey of SLOT_KEYS) {
     const current = processed.find(p => p.fromSlot === slotKey) || null;
     const previous = completedOnly.find(p => p.sectionKey === slotKey) || null;
     const indexable = !!(current || previous);
     if (indexable) todayIndexable++;
+    slotSummaries.push({ slotKey, current, previous });
 
     const html = renderTodaySlotPage({ slotKey, current, previous, indexable });
     const dir = path.join(TODAY_OUT_DIR, SLOT_SLUG[slotKey]);
@@ -786,13 +1015,43 @@ async function main() {
   }
   console.log(`역할 슬롯 페이지 ${SLOT_KEYS.length}건 생성(그중 indexable ${todayIndexable}건)`);
 
-  fs.writeFileSync(SITEMAP_PATH, renderSitemap(sitemapEntries));
+  // 4차: today 허브 — 5개 슬롯 다 있으니 항상 indexable(개별 슬롯이 noindex여도
+  // 허브 자체는 "지금 이런 게 진행 중"이라는 요약이라 별개로 유효).
+  fs.writeFileSync(TODAY_HUB_PATH, renderTodayHubPage(slotSummaries));
+
+  // 3차: 세 단어 챌린지 — 마감분만, 후보는 상위 5개만(fetchWordChallengeTopSubmissions).
+  fs.rmSync(WORD_CHALLENGE_OUT_DIR, { recursive: true, force: true });
+  fs.mkdirSync(WORD_CHALLENGE_OUT_DIR, { recursive: true });
+  const closedChallenges = await fetchClosedWordChallenges(db);
+  const wcEntries = [];
+  for (const challenge of closedChallenges) {
+    try {
+      const candidates = await fetchWordChallengeTopSubmissions(db, challenge.challenge_id);
+      const html = renderWordChallengePage({ challenge, candidates });
+      const dir = path.join(WORD_CHALLENGE_OUT_DIR, challenge.challenge_id);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'index.html'), html);
+      sitemapEntries.push({ wcId: challenge.challenge_id, lastmod: challenge.closed_at || challenge.start_at || null });
+      wcEntries.push({ challenge, candidates });
+    } catch (e) {
+      console.error(`세 단어 챌린지 처리 실패(${challenge.challenge_id}):`, e.message);
+    }
+  }
+  const wcIndexable = wcEntries.length > 0;
+  fs.writeFileSync(path.join(WORD_CHALLENGE_OUT_DIR, 'index.html'), renderWordChallengeArchive(wcEntries, wcIndexable));
+  console.log(`세 단어 챌린지 결과 페이지 ${wcEntries.length}건 생성`);
+
+  const extraStaticPages = [
+    { loc: `${SITE_ORIGIN}/bang/today/`, changefreq: 'daily', priority: '0.8' },
+    ...(wcIndexable ? [{ loc: `${SITE_ORIGIN}/bang/word-challenge/`, changefreq: 'daily', priority: '0.6' }] : []),
+  ];
+  fs.writeFileSync(SITEMAP_PATH, renderSitemap(sitemapEntries, extraStaticPages));
   // 아카이브 목록/루트 미리보기는 "완결된 이야기 모음"이라는 페이지 자체의
   // 정체성 때문에 완결작만 — 진행 중 인기작은 sitemap.xml과 각자 페이지의
   // "다른 완결작" 링크로는 발견되지만 이 두 곳엔 안 실림.
   const completedSitemapEntries = sitemapEntries.filter(e => e.isCompleted);
   fs.writeFileSync(path.join(OUT_DIR, 'index.html'), renderArchiveIndex(completedSitemapEntries));
-  console.log(`정적 페이지 ${ok}/${stories.length}건 생성 완료(완결 ${completedSitemapEntries.length} + 진행중 ${sitemapEntries.length - completedSitemapEntries.length}), 아카이브 목록·sitemap.xml 갱신됨`);
+  console.log(`정적 페이지 ${ok}/${stories.length}건 생성 완료(완결 ${completedSitemapEntries.length}건, 그 외 진행중/역할슬롯/챌린지 ${sitemapEntries.length - completedSitemapEntries.length}건), 아카이브 목록·sitemap.xml 갱신됨`);
 
   const ROOT_PREVIEW_COUNT = 15;
   const rootHtmlSrc = fs.readFileSync(ROOT_INDEX_HTML_PATH, 'utf8');
@@ -810,6 +1069,7 @@ module.exports = {
   proseHtml, storyMetaHtml, candidatesHtml, relatedStoriesHtml, storyPageBodyHtml,
   renderStoryPage, renderSitemap, renderArchiveIndex, renderRootArchivePreview, esc,
   classifySection, todaySlotBodyHtml, renderTodaySlotPage,
+  renderTodayHubPage, renderWordChallengePage, renderWordChallengeArchive,
   SLOT_KEYS, SLOT_SLUG, SLOT_LABEL,
 };
 

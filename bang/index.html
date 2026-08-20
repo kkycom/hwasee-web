@@ -1488,13 +1488,17 @@ function _loadKakaoAdfit() {
 // 회귀가 발생함(유저 제보) — 원상복구. 문장 제출/분기 선택 같은 반복 액션
 // 재요청 문제는 chooseBranch()에서 재요청 호출 자체를 아예 안 하는 방식으로
 // 대응 중(그 함수 참고) — 이 방식은 그대로 유지.
-function _kakaoAdHtml(margin = '16px 0') {
+function _kakaoAdHtml(margin = '16px 0', reserveSpace = true) {
   // min-height를 광고 높이(50px)만큼 미리 잡아둠 — 캐시 렌더→네트워크 렌더로
   // 이 영역이 두 번 다시 그려질 때마다 ins가 비었다 채워지며 자리 자체가
   // 없어졌다 생겼다 해서 아래 콘텐츠가 밀렸다 당겨지는 "꿀렁임"이 있었음
   // (유저 지적, 2026-08-11). 자리를 고정해두면 광고 내용만 자리 안에서
-  // 깜빡이고 주변 레이아웃은 안 흔들림.
-  return `<div style="text-align:center;margin:${margin};min-height:50px">
+  // 깜빡이고 주변 레이아웃은 안 흔들림. 단, 이 잡아둔 자리는 미노출(무필)
+  // 기기에선 광고가 영영 안 채워져도 그대로 빈 여백으로 남는 트레이드오프가
+  // 있어서, 첫 화면 밖(스크롤해야 보이는 위치)처럼 그 꿀렁임을 애초에 볼 일이
+  // 없는 자리엔 reserveSpace=false로 꺼서 빈 자리 자체가 안 남게 함(유저 지적,
+  // 2026-08-20).
+  return `<div style="text-align:center;margin:${margin}${reserveSpace ? ';min-height:50px' : ''}">
     <ins class="kakao_ad_area" style="display:none;"
     data-ad-unit = "DAN-XrJSiDdqNhNDEgMD"
     data-ad-width = "320"
@@ -4771,7 +4775,9 @@ function renderSpotlight() {
   // 카카오 애드핏 자리(_kakaoAdHtml)는 미노출(무필) 기기에서 min-height만큼의
   // 빈 여백이 그대로 남는데, 세 단어 카드 바로 밑(첫 화면 안)이면 그 여백이
   // 바로 눈에 띔 — 스크롤을 한 번 내려야 보이는 초스피드초장편 카드 밑으로
-  // 옮겨 덜 두드러지게 함(유저 지적, 2026-08-20)
+  // 옮겨 덜 두드러지게 함(유저 지적, 2026-08-20). min-height 예약 자체도
+  // 원래 "첫 화면에서 꿀렁이는 걸 막으려" 넣었던 건데, 이제 첫 화면 밖이라
+  // 그 꿀렁임을 볼 일이 없어서 reserveSpace=false로 꺼서 빈 자리도 안 남게 함.
   // 쿠팡 검색창 배너(_coupangBannerHtml)는 지인들에게 구매를 부탁해둔 배너라
   // 카드들 사이 어중간한 위치보다 탭 맨 밑(당신의 하루 카드 밑)이 찾기 쉽고
   // 자연스러워서 그쪽으로 뺌(유저 지적, 2026-08-20) — 푸터의 카카오 애드핏은 그대로 둠.
@@ -4783,7 +4789,7 @@ function renderSpotlight() {
     ${cardHtml('word')}
     <div id="hint-card-area"></div>
     ${cardHtml('speedrun')}
-    ${_kakaoAdHtml()}
+    ${_kakaoAdHtml('16px 0', false)}
     ${cardHtml('genre_switch')}${cardHtml('fairytale')}${cardHtml('fixed_ending')}${cardHtml('hot')}
     ${diaryHubTeaserCardHtml()}
     ${yourStoryTeaserCardHtml()}

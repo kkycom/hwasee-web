@@ -1,10 +1,19 @@
-// 완결작 정적 발행(SSG) — 애드센스 저가치콘텐츠 반려 대응 2단계.
+// 완결작 + 진행 중 인기작 정적 발행(SSG) — 애드센스 저가치콘텐츠 반려 대응 2단계.
 // GitHub Actions 빌드 시점에 완결된 이야기를 bang/index.html 원본을 복제+주입해서
 // bang/story/{id}/index.html로 만듦(진짜 프로그레시브 인핸스먼트 — 크롤러/JS 꺼진
 // 브라우저는 정적 본문을, 실제 유저는 그 위에 로드된 앱 JS가 그대로 인터랙티브
 // 버전으로 갈아치움. bang/index.html의 parsePath()가 이 URL 패턴을 이미 파싱하므로
 // 별도 라우팅 처리 불필요). 상세 배경: project_hwasee_bang_static_prerender_handoff
 // 메모리 참고(로컬 세션 밖에서는 무시).
+//
+// 2026-08-20 — 홈 첫 화면의 실제 대표 콘텐츠(오늘의 이야기)가 완결 전엔 정적
+// URL이 하나도 없던 간극을 메우려고, "지금 인기 자유 이야기(hot)" 후보까지
+// 같은 story_id·같은 URL(/bang/story/{id}/)로 SSG 대상에 포함시킴(진행 중 status
+// 그대로). hot은 완결 시에도 story_id가 안 바뀌는 유일한 슬롯이라(다른 슬롯은
+// config/spotlight_slots 포인터가 완결마다 새 story_id로 교체됨) canonical/redirect
+// 고민 없이 URL을 그대로 유지한 채 내용만(진행 중→완결) 갱신되는 구조가 성립함.
+// 나머지 슬롯(word/speedrun/genre_switch/fairytale/fixed_ending)은 역할 기반
+// URL이 따로 필요해서 여기 포함하지 않음(다음 단계에서 별도 설계).
 
 const fs = require('fs');
 const path = require('path');
@@ -130,6 +139,21 @@ function pickRejectedCandidates(subs, allSubmissions, max) {
 
 // ── Firestore 조회 ──
 
+// bang/firebase-api.js의 fbGetSpotlight() hot 슬롯 선정 쿼리와 동일 기준
+// (status/participant_count 인덱스도 firestore.indexes.json에 이미 있어 재사용) —
+// 실서비스 홈 화면에 실제로 노출되는 것과 다른 후보를 SSG하면 의미가 없어서
+// 그대로 복제. vote_threshold가 있는 문서는 다른 슬롯(스포트라이트) 출신이라 제외.
+async function fetchHotCandidateStories(db) {
+  const snap = await db.collection('stories')
+    .where('status', '==', 'active')
+    .orderBy('participant_count', 'desc')
+    .limit(10)
+    .get();
+  return snap.docs
+    .filter(d => !d.data().vote_threshold)
+    .map(d => ({ story_id: d.id, ...d.data() }));
+}
+
 async function fetchStoryData(db, story_id) {
   const [episodesSnap, submissionsSnap] = await Promise.all([
     db.collection('episodes').where('story_id', '==', story_id).get(),
@@ -161,11 +185,14 @@ function proseHtml(opening, lines) {
     </div>`;
 }
 
-function storyMetaHtml({ participantCount, sentenceCount, days }) {
+function storyMetaHtml({ participantCount, sentenceCount, days, isCompleted }) {
   const parts = [`참여자 ${participantCount}명`, `${sentenceCount}문장`];
-  if (days != null) parts.push(`${days}일 만에 완결`);
+  parts.push(isCompleted
+    ? (days != null ? `${days}일 만에 완결` : '완결')
+    : (days != null ? `${days}일째 진행 중` : '진행 중'));
   return `<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--muted)">
-    <strong style="color:var(--text);font-size:13px">이 이야기가 만들어진 과정</strong><br>${esc(parts.join(' · '))}
+    <strong style="color:var(--text);font-size:13px">${isCompleted ? '이 이야기가 만들어진 과정' : '지금까지의 이야기'}</strong><br>${esc(parts.join(' · '))}
+    ${isCompleted ? '' : '<div style="margin-top:8px;font-size:12.5px;color:var(--accent2)">✍️ 아직 진행 중인 이야기예요. 화씨.방에서 다음 문장을 이어써 보세요.</div>'}
   </div>`;
 }
 
@@ -291,7 +318,10 @@ function renderSitemap(entries) {
   const urls = [
     ...staticPages.map(p => `  <url><loc>${p.loc}</loc><changefreq>${p.changefreq}</changefreq><priority>${p.priority}</priority></url>`),
     ...entries.map(e =>
-      `  <url><loc>${SITE_ORIGIN}/bang/story/${e.id}/</loc>${e.lastmod ? `<lastmod>${e.lastmod.slice(0, 10)}</lastmod>` : ''}<changefreq>monthly</changefreq><priority>0.6</priority></url>`
+      // 진행 중 이야기는 문장이 계속 추가되므로 완결작(monthly)보다 짧은
+      // 주기로 표시 — 실제 리빌드 주기는 별개(GitHub Actions 스케줄)지만,
+      // changefreq는 크롤러에게 갱신 가능성을 알려주는 힌트라 정직하게 반영.
+      `  <url><loc>${SITE_ORIGIN}/bang/story/${e.id}/</loc>${e.lastmod ? `<lastmod>${e.lastmod.slice(0, 10)}</lastmod>` : ''}<changefreq>${e.isCompleted ? 'monthly' : 'daily'}</changefreq><priority>0.6</priority></url>`
     ),
   ].join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
@@ -427,8 +457,10 @@ async function main() {
   const indexHtmlSrc = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
 
   const storiesSnap = await db.collection('stories').where('status', '==', 'completed').get();
-  const stories = storiesSnap.docs.map(d => ({ story_id: d.id, ...d.data() }));
-  console.log(`완결 이야기 ${stories.length}건 발견`);
+  const completedStories = storiesSnap.docs.map(d => ({ story_id: d.id, ...d.data(), isCompleted: true }));
+  const hotStories = await fetchHotCandidateStories(db);
+  console.log(`완결 이야기 ${completedStories.length}건, 진행 중 인기작 후보 ${hotStories.length}건 발견`);
+  const stories = [...completedStories, ...hotStories];
 
   fs.rmSync(OUT_DIR, { recursive: true, force: true });
   fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -446,6 +478,10 @@ async function main() {
 
       const canonicalPath = buildCanonicalPath(closedEps, submissions);
       const subs = collectSubs(tree, canonicalPath);
+      // 완결작뿐 아니라 진행 중 인기작에도 동일하게 적용되는 최소 게이트 —
+      // 실제 참여자가 채택한 문장이 최소 1개는 있어야 다른 페이지와 구별되는
+      // 고유 콘텐츠가 생김("짧으면 저품질"이 아니라 "서로 구별 안 되면
+      // 저품질"이라는 기준, 2026-08-20 설계 논의 결론).
       if (!subs.length) { console.error(`스킵(채택 문장 없음): ${story.story_id}`); continue; }
       const lines = subs.map(s => s.content);
 
@@ -455,15 +491,17 @@ async function main() {
       const url = `${SITE_ORIGIN}/bang/story/${story.story_id}/`;
 
       const participantCount = new Set(subs.map(s => s.author_id).filter(_isRealAuthor)).size;
+      const isCompleted = story.isCompleted === true;
 
       processed.push({
-        id: story.story_id, lastmod, title, description, url,
+        id: story.story_id, lastmod, title, description, url, isCompleted,
         opening: story.opening, lines,
         creatorNickname: story.creator_nickname,
         meta: {
           participantCount,
           sentenceCount: lines.length,
           days: _daysBetween(story.created_at, lastmod),
+          isCompleted,
         },
         candidates: pickRejectedCandidates(subs, submissions, 4),
       });
@@ -491,7 +529,8 @@ async function main() {
       count.set(base, n);
       if (n > 1) {
         const d = item.lastmod ? new Date(item.lastmod) : null;
-        let candidate = (d && !isNaN(d)) ? `${base} · ${d.getMonth() + 1}/${d.getDate()} 완결` : `${base} (${n})`;
+        const suffix = item.isCompleted ? '완결' : '갱신';
+        let candidate = (d && !isNaN(d)) ? `${base} · ${d.getMonth() + 1}/${d.getDate()} ${suffix}` : `${base} (${n})`;
         if (used.has(candidate)) candidate = `${base} (${n})`;
         item[field] = candidate;
       }
@@ -501,14 +540,23 @@ async function main() {
   _dedupe(processed, 'title');
   _dedupe(processed, 'description');
 
-  // 2차 패스: 관련 작품(자기 다음 최신순 3편, 끝까지 가면 처음부터 순환) 확정 후 실제 파일 생성
+  // "다른 완결작" 관련 링크는 완결작 풀에서만 골라야 함 — 진행 중인 이야기를
+  // "완결작"이라고 링크 걸면 거짓 정보가 됨(2026-08-20 설계 논의 결론). 진행
+  // 중 페이지에도 이 링크는 그대로 붙음(완결작 아카이브 발견 경로가 하나 늘어남).
+  const completedOnly = processed.filter(p => p.isCompleted);
+
+  // 2차 패스: 관련 작품(완결작 풀에서 자기 다음 최신순 3편, 순환) 확정 후 실제 파일 생성
   const sitemapEntries = [];
   let ok = 0;
   for (let i = 0; i < processed.length; i++) {
     const item = processed[i];
     const related = [];
-    for (let k = 1; k <= processed.length - 1 && related.length < 3; k++) {
-      related.push(processed[(i + k) % processed.length]);
+    const poolLen = completedOnly.length;
+    const selfIdx = completedOnly.indexOf(item);
+    const startK = selfIdx >= 0 ? selfIdx + 1 : 0;
+    for (let k = 0; k < poolLen && related.length < 3; k++) {
+      const candidate = completedOnly[(startK + k) % poolLen];
+      if (candidate !== item) related.push(candidate);
     }
 
     const bodyHtml = storyPageBodyHtml({
@@ -524,13 +572,17 @@ async function main() {
     const dir = path.join(OUT_DIR, item.id);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'index.html'), html);
-    sitemapEntries.push({ id: item.id, lastmod: item.lastmod, title: item.title, description: item.description });
+    sitemapEntries.push({ id: item.id, lastmod: item.lastmod, title: item.title, description: item.description, isCompleted: item.isCompleted });
     ok++;
   }
 
   fs.writeFileSync(SITEMAP_PATH, renderSitemap(sitemapEntries));
-  fs.writeFileSync(path.join(OUT_DIR, 'index.html'), renderArchiveIndex(sitemapEntries));
-  console.log(`정적 페이지 ${ok}/${stories.length}건 생성 완료, 아카이브 목록·sitemap.xml 갱신됨`);
+  // 아카이브 목록/루트 미리보기는 "완결된 이야기 모음"이라는 페이지 자체의
+  // 정체성 때문에 완결작만 — 진행 중 인기작은 sitemap.xml과 각자 페이지의
+  // "다른 완결작" 링크로는 발견되지만 이 두 곳엔 안 실림.
+  const completedSitemapEntries = sitemapEntries.filter(e => e.isCompleted);
+  fs.writeFileSync(path.join(OUT_DIR, 'index.html'), renderArchiveIndex(completedSitemapEntries));
+  console.log(`정적 페이지 ${ok}/${stories.length}건 생성 완료(완결 ${completedSitemapEntries.length} + 진행중 ${sitemapEntries.length - completedSitemapEntries.length}), 아카이브 목록·sitemap.xml 갱신됨`);
 
   const ROOT_PREVIEW_COUNT = 15;
   const rootHtmlSrc = fs.readFileSync(ROOT_INDEX_HTML_PATH, 'utf8');
@@ -538,9 +590,9 @@ async function main() {
   if (!rootHtmlSrc.includes(MARKER)) {
     throw new Error('루트 index.html에서 STORY_ARCHIVE_PLACEHOLDER 마커를 못 찾음 — index.html 구조가 바뀌었을 수 있음');
   }
-  const rootPreviewHtml = renderRootArchivePreview(sitemapEntries.slice(0, ROOT_PREVIEW_COUNT));
+  const rootPreviewHtml = renderRootArchivePreview(completedSitemapEntries.slice(0, ROOT_PREVIEW_COUNT));
   fs.writeFileSync(ROOT_INDEX_HTML_PATH, rootHtmlSrc.replace(MARKER, rootPreviewHtml));
-  console.log(`루트 페이지(index.html)에 완결작 미리보기 ${Math.min(ROOT_PREVIEW_COUNT, sitemapEntries.length)}편 삽입 완료`);
+  console.log(`루트 페이지(index.html)에 완결작 미리보기 ${Math.min(ROOT_PREVIEW_COUNT, completedSitemapEntries.length)}편 삽입 완료`);
 }
 
 module.exports = {

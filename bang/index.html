@@ -4378,6 +4378,8 @@ async function yourStoryPage() {
     <div id="ys-compose-area"></div>
     <div id="ys-feed-area"><div class="loading"></div></div>`;
   ysLoadDate(_ysSelectedDate);
+  // 달력 팝업을 열기 전에 이번 달 dots를 미리 백그라운드로 받아둠 (아래 참고).
+  _ysFetchMonthDots(`${_ysCalCursor.getFullYear()}-${String(_ysCalCursor.getMonth() + 1).padStart(2, '0')}`, _ysCalCursor.getFullYear(), _ysCalCursor.getMonth());
 }
 
 async function ysLoadDate(date) {
@@ -4385,14 +4387,27 @@ async function ysLoadDate(date) {
   const isToday = date === _ysKstToday();
   document.getElementById('ys-date-btn-label').textContent = isToday ? `오늘 · ${_ysFmtLabel(date)}` : _ysFmtLabel(date);
   document.getElementById('ys-compose-area').innerHTML = '';
-  document.getElementById('ys-feed-area').innerHTML = '<div class="loading"></div>';
+
+  // 날짜별 피드를 캐싱해 재방문/재선택 시 즉시 렌더 후 백그라운드로 재검증 —
+  // 예전엔 매번 API 응답을 기다리는 동안 로딩 스피너만 보여서 카드/페이지
+  // 진입 자체가 느리게 느껴졌음(2026-08-19 유저 지적).
+  const cacheKey = `ysFeed:${date}:${user ? user.user_id : 'anon'}`;
+  const cached = _lsc.getStale(cacheKey);
+  if (cached) {
+    _ysFeedData = cached;
+    if (isToday) renderYsCompose();
+    renderYsFeed();
+  } else {
+    document.getElementById('ys-feed-area').innerHTML = '<div class="loading"></div>';
+  }
 
   const res = await fbGetYourStoryFeed(date, user ? user.user_id : null);
   if (_ysSelectedDate !== date || !document.getElementById('ys-feed-area')) return; // 그 사이 다른 날짜로 넘어갔거나 페이지를 떠났으면 무시
   if (!res.ok) {
-    document.getElementById('ys-feed-area').innerHTML = `<div style="text-align:center;padding:30px 0;color:var(--muted);font-size:13px">불러오지 못했어요.<br><button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="ysLoadDate('${date}')">다시 시도</button></div>`;
+    if (!cached) document.getElementById('ys-feed-area').innerHTML = `<div style="text-align:center;padding:30px 0;color:var(--muted);font-size:13px">불러오지 못했어요.<br><button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="ysLoadDate('${date}')">다시 시도</button></div>`;
     return;
   }
+  _lsc.set(cacheKey, res.posts, 60);
   _ysFeedData = res.posts;
   if (isToday) renderYsCompose();
   renderYsFeed();
@@ -4601,18 +4616,30 @@ function ysPickDate(dateKey) {
 }
 function ysJumpToday() { ysPickDate(_ysKstToday()); }
 
+// 인메모리(_ysMonthDotsCache, 이번 세션 한정) → 영속 캐시(_lsc, 페이지 재방문에도
+// 유지) → 서버 순으로 조회. 달력을 실제로 열기 전에 yourStoryPage()에서 미리
+// 백그라운드로 한 번 불러둬서, 첫 클릭에도 대부분 캐시 히트로 즉시 뜨게 함
+// (2026-08-19 — 예전엔 클릭한 시점에야 조회를 시작해 팝업이 한참 비어있었음).
+async function _ysFetchMonthDots(monthKey, y, m) {
+  if (_ysMonthDotsCache[monthKey]) return _ysMonthDotsCache[monthKey];
+  const cacheKey = `ysMonthDots:${monthKey}`;
+  const cached = _lsc.get(cacheKey);
+  if (cached) { _ysMonthDotsCache[monthKey] = new Set(cached); return _ysMonthDotsCache[monthKey]; }
+  const from = `${monthKey}-01`;
+  const to = `${y}-${String(m + 1).padStart(2, '0')}-${String(new Date(y, m + 1, 0).getDate()).padStart(2, '0')}`;
+  const res = await fbGetYourStoryMonthDots(from, to);
+  const dates = res.ok ? res.dates : [];
+  if (res.ok) _lsc.set(cacheKey, dates, 600); // 실패 응답은 캐싱 안 함
+  _ysMonthDotsCache[monthKey] = new Set(dates);
+  return _ysMonthDotsCache[monthKey];
+}
+
 async function ysRenderCalendar() {
   const pop = document.getElementById('ys-cal-pop');
   const y = _ysCalCursor.getFullYear(), m = _ysCalCursor.getMonth();
   const monthKey = `${y}-${String(m + 1).padStart(2, '0')}`;
-  if (!_ysMonthDotsCache[monthKey]) {
-    const from = `${monthKey}-01`;
-    const to = `${y}-${String(m + 1).padStart(2, '0')}-${String(new Date(y, m + 1, 0).getDate()).padStart(2, '0')}`;
-    const res = await fbGetYourStoryMonthDots(from, to);
-    _ysMonthDotsCache[monthKey] = new Set(res.ok ? res.dates : []);
-    if (_ysCalCursor.getFullYear() !== y || _ysCalCursor.getMonth() !== m) return; // 그 사이 다른 달로 넘어갔으면 무시
-  }
-  const dotDates = _ysMonthDotsCache[monthKey];
+  const dotDates = await _ysFetchMonthDots(monthKey, y, m);
+  if (_ysCalCursor.getFullYear() !== y || _ysCalCursor.getMonth() !== m) return; // 그 사이 다른 달로 넘어갔으면 무시
 
   const first = new Date(y, m, 1);
   const startOffset = first.getDay();

@@ -198,23 +198,34 @@ async function fetchHotCandidateStories(db, excludeStoryIds) {
 // 인덱스 없이 start_at 단일 인덱스만으로 동작하게, status 필터는 JS에서).
 // 진행 중인 챌린지는 실시간 경쟁 상태(투표가 몇 시간 단위로 계속 바뀜)라
 // 정적 스냅샷 대상에서 제외 — hint(초성 퀴즈)를 뺀 것과 같은 이유
-// (2026-08-20 설계 논의 결론). winner_text 없는 마감분(제출 0건)도 같은
-// 이유로 제외.
+// (2026-08-20 설계 논의 결론).
+//
+// ⚠️ winner_text/winner_nickname 단일 필드는 문서 생성 시(_serverStartWordChallenge)
+// null로 세팅된 뒤 마감 로직(_serverCloseWordChallenge, functions/index.js
+// 3990~4003줄)에서 한 번도 갱신되지 않는 죽은 필드 — 실제 마감 로직은
+// "winners" 배열(동률 당선 지원, {text,nickname,vote_count,user_id,points})에
+// 우승자를 저장함. 이 필드로 게이트를 걸었더니 실제 마감분이 있는데도 전부
+// 빠지는 버그가 있었음(2026-08-20, 라이브 문서 직접 조회로 발견) — winners
+// 배열 기준으로 수정.
 async function fetchClosedWordChallenges(db, limit = 40) {
   const snap = await db.collection('word_challenges').orderBy('start_at', 'desc').limit(limit).get();
   return snap.docs
     .map(d => ({ challenge_id: d.id, ...d.data() }))
-    .filter(c => c.status === 'closed' && c.winner_text);
+    .filter(c => c.status === 'closed' && Array.isArray(c.winners) && c.winners.length > 0);
 }
 
 // 후보 문장 전부를 SSG하면 페이지가 비대해지고 페이지 간 구조도 비슷해져서,
 // 득표 상위 5개만 — 결과 페이지 취지에 맞고 완결작의 candidatesHtml(상위 4개
 // 갈림길 문장)과 동일한 절제 원칙.
+//
+// ⚠️ 제출 문장 필드는 content가 아니라 text — fbSubmitWordChallengeEntry
+// (bang/firebase-api.js 3483줄)가 그렇게 write함. winners 배열 버그와 같은
+// "필드명 확인 없이 짐작" 실수라 같이 발견돼서 함께 고침(2026-08-20).
 async function fetchWordChallengeTopSubmissions(db, challenge_id, max = 5) {
   const snap = await db.collection('word_challenge_submissions').where('challenge_id', '==', challenge_id).get();
   return snap.docs
     .map(d => ({ ...d.data() }))
-    .filter(s => s.content && s.content.trim())
+    .filter(s => s.text && s.text.trim())
     .sort((a, b) => (Number(b.vote_count) || 0) - (Number(a.vote_count) || 0))
     .slice(0, max);
 }
@@ -769,33 +780,46 @@ function renderTodayHubPage(slotSummaries) {
   });
 }
 
+// winners 배열의 첫 번째(대표) 당선작 — 동률 당선이면 여러 명이지만, 리스트
+// 미리보기/제목/description처럼 "대표 1개"가 필요한 자리에서 사용.
+function primaryWinner(challenge) {
+  return (challenge.winners || [])[0] || {};
+}
+
 // /bang/word-challenge/{id}/ — 마감된 챌린지만 SSG 대상(진행 중인 챌린지는
 // 몇 시간 단위로 순위가 바뀌는 실시간 경쟁 상태라 정적 스냅샷 부적합 —
 // hint를 뺀 것과 같은 이유, 2026-08-20 설계 논의 결론). 후보 전부가 아니라
-// 득표 상위 5개만(completedOnly의 candidatesHtml과 동일 절제 원칙).
+// 득표 상위 5개만(completedOnly의 candidatesHtml과 동일 절제 원칙). 동률
+// 당선(winners 여러 개)이면 전부 "우승"으로 표시 — 스토리 쪽 갈림길 완결과
+// 동일한 원칙(_serverCloseWordChallenge가 동률을 전부 당선 처리함).
 function wordChallengePageBodyHtml({ challenge, candidates }) {
+  const winners = challenge.winners || [];
   const words = (challenge.words || []).join(' · ');
+  const winnerTexts = new Set(winners.map(w => w.text));
+  const winnersHtml = winners.map(w => `
+    <div class="wc-winner">"${esc(w.text)}"</div>
+    <div class="hub-item-meta">${esc(w.nickname || '익명')}님 · ${Number(w.vote_count) || 0}표${winners.length > 1 ? ' · 공동 우승' : '로 우승'}</div>`).join('');
   const candidatesHtml2 = candidates
-    .filter(c => c.content !== challenge.winner_text) // 우승작 중복 노출 방지
+    .filter(c => !winnerTexts.has(c.text)) // 우승작 중복 노출 방지
     .map(c => `
     <div class="wc-candidate">
-      ${esc(c.content)}
+      ${esc(c.text)}
       <div class="wc-candidate-meta">${Number(c.vote_count) || 0}표</div>
     </div>`).join('');
 
   return `<a class="back" href="/bang/word-challenge/">← 세 단어 챌린지 결과 모음</a>
     <h1>${esc(challenge.date || '')} 세 단어 챌린지</h1>
     <div class="wc-words">${esc(words)}</div>
-    <div class="wc-winner">"${esc(challenge.winner_text)}"</div>
-    <div class="hub-item-meta">${esc(challenge.winner_nickname || '익명')}님 · ${Number(challenge.winner_vote_count) || 0}표로 우승</div>
+    ${winnersHtml}
     ${candidatesHtml2 ? `<h2>다른 도전 문장들</h2>${candidatesHtml2}` : ''}
     <a href="/bang/today/word/" class="back-cta">지금 이어지는 이야기 보기 →</a>`;
 }
 
 function renderWordChallengePage({ challenge, candidates }) {
   const url = `${SITE_ORIGIN}/bang/word-challenge/${challenge.challenge_id}/`;
+  const winner = primaryWinner(challenge);
   const title = `${(challenge.words || []).join('·')} — 세 단어 챌린지 우승작`;
-  const description = `"${challenge.winner_text}" — ${(challenge.words || []).join(', ')}로 만든 세 단어 챌린지 우승 문장.`;
+  const description = `"${winner.text}" — ${(challenge.words || []).join(', ')}로 만든 세 단어 챌린지 우승 문장.`;
   return staticHubPageShell({
     title: `${esc(title)} — 화씨.방`, description, canonical: url, robots: 'index,follow',
     ogTitle: title,
@@ -805,12 +829,15 @@ function renderWordChallengePage({ challenge, candidates }) {
 
 // /bang/word-challenge/ 아카이브 허브
 function wordChallengeArchiveBodyHtml(entries) {
-  const items = entries.map(({ challenge }) => `
+  const items = entries.map(({ challenge }) => {
+    const winner = primaryWinner(challenge);
+    return `
     <a class="hub-item" href="/bang/word-challenge/${challenge.challenge_id}/">
       <div class="wc-words">${esc((challenge.words || []).join(' · '))}</div>
-      <div class="hub-item-title">"${esc(challenge.winner_text)}"</div>
-      <div class="hub-item-meta">${esc(challenge.winner_nickname || '익명')}님 · ${Number(challenge.winner_vote_count) || 0}표 · ${esc((challenge.date || '').slice(0, 10))}</div>
-    </a>`).join('');
+      <div class="hub-item-title">"${esc(winner.text)}"</div>
+      <div class="hub-item-meta">${esc(winner.nickname || '익명')}님 · ${Number(winner.vote_count) || 0}표${(challenge.winners || []).length > 1 ? ` 외 공동우승 ${challenge.winners.length - 1}건` : ''} · ${esc((challenge.date || '').slice(0, 10))}</div>
+    </a>`;
+  }).join('');
 
   return `<h1>세 단어 챌린지 결과 모음</h1>
     <p class="lead">매일 주어지는 세 단어로 사람들이 쓴 문장 중, 가장 많은 표를 받은 우승작들이에요. 진행 중인 챌린지는 <a href="/bang/">화씨.방</a>에서 실시간으로 참여할 수 있어요.</p>

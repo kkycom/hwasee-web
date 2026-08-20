@@ -9867,12 +9867,25 @@ window.onload = async () => {
     // 경우에만 해당 — 로드한 지 얼마 안 된 시점(입력할 틈도 없었던
     // 시점)에 업데이트가 오면 잃을 게 없으니 조용히 새로고침해도 안전함.
     const _pageLoadedAt = Date.now();
+    // 🚨 "로드 직후 5초 이내면 잃을 게 없다"는 전제가 틀렸음(유저 실사고
+    // 제보, 2026-08-19) — 로그인 안 된 상태로 막 들어와서 "로그인" 버튼을
+    // 5초 안에 누르면, 그 클릭 직후 컨트롤러 교체가 걸려 조용히 새로고침
+    // 되면서 정적 인트로 화면이 잠깐 깜빡이고 오늘의 이야기 탭으로 돌아가
+    // 버림 — 방금 누른 "로그인" 클릭이 새로고침에 통째로 씹혀서 한 번 더
+    // 눌러야 로그인창이 뜸. "입력할 틈이 없었다"가 아니라 "클릭할 틈이
+    // 없었다"만 확인했던 게 문제 — 실제 상호작용(클릭/탭/키입력) 여부를
+    // 추적해서, 진짜 아무것도 안 건드린 순수 대기 상태일 때만 조용히
+    // 새로고침하도록 좁힘.
+    let _userInteractedSinceLoad = false;
+    ['pointerdown', 'keydown'].forEach(ev =>
+      window.addEventListener(ev, () => { _userInteractedSinceLoad = true; }, { capture: true, once: true })
+    );
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!_swHadController) { _swHadController = true; return; }
       // 세션당 1회로 제한 — 위 등록 URL 안정화로 반복 재설치 루프는 막았지만,
       // 혹시 모를 재발 시 무한 새로고침 대신 최소 한 번은 배너로 전환되게
       // 하는 안전장치(2026-08-11 깜빡임 사고 재발 방지).
-      if (Date.now() - _pageLoadedAt < 5000 && !sessionStorage.getItem('sw_auto_reloaded')) {
+      if (!_userInteractedSinceLoad && Date.now() - _pageLoadedAt < 5000 && !sessionStorage.getItem('sw_auto_reloaded')) {
         try { sessionStorage.setItem('sw_auto_reloaded', '1'); } catch {}
         location.reload();
         return;

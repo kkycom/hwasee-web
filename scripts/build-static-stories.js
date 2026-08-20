@@ -24,6 +24,7 @@ const BANG_DIR = path.join(ROOT, 'bang');
 const INDEX_HTML_PATH = path.join(BANG_DIR, 'index.html');
 const ROOT_INDEX_HTML_PATH = path.join(ROOT, 'index.html');
 const OUT_DIR = path.join(BANG_DIR, 'story');
+const TODAY_OUT_DIR = path.join(BANG_DIR, 'today');
 const SITEMAP_PATH = path.join(BANG_DIR, 'sitemap.xml');
 const SITE_ORIGIN = 'https://hwasee.me';
 const FB_ADMIN_ID = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
@@ -137,20 +138,56 @@ function pickRejectedCandidates(subs, allSubmissions, max) {
   return races.slice(0, max);
 }
 
+// ── 5개 역할(role) 슬롯 — config/spotlight_slots 포인터가 완결마다 새
+// story_id로 교체하는 슬롯들. bang/index.html의 SPOTLIGHT_META와 동일 라벨.
+const SLOT_KEYS = ['word', 'speedrun', 'genre_switch', 'fairytale', 'fixed_ending'];
+const SLOT_SLUG = {
+  word: 'word', speedrun: 'speedrun', genre_switch: 'genre-switch',
+  fairytale: 'fairytale', fixed_ending: 'fixed-ending',
+};
+const SLOT_LABEL = {
+  word: '오늘의 세 단어 챌린지',
+  speedrun: '초스피드 초장편',
+  genre_switch: '장르 강제 전환',
+  fairytale: '동화를 각색한 이야기',
+  fixed_ending: '결말이 정해진 이야기',
+};
+
+// functions/index.js의 부문 집계 로직(3189~3216줄)과 동일 분류 기준 —
+// "직전 완결본" 링크를 슬롯별로 찾으려면 완결작 각각이 어느 슬롯 출신인지
+// 알아야 해서 포팅. word는 mode가 아니라 challenge_words 유무로 판별됨(주의).
+function classifySection(story) {
+  if (story.challenge_words) return 'word';
+  if (story.mode === 'speedrun') return 'speedrun';
+  if (story.mode === 'genre_switch') return 'genre_switch';
+  if (story.mode === 'fixed_ending') return 'fixed_ending';
+  if (story.mode === 'fairytale') return 'fairytale';
+  return null;
+}
+
 // ── Firestore 조회 ──
+
+async function fetchSpotlightSlotsPointer(db) {
+  const snap = await db.collection('config').doc('spotlight_slots').get();
+  return snap.exists ? snap.data() : {};
+}
 
 // bang/firebase-api.js의 fbGetSpotlight() hot 슬롯 선정 쿼리와 동일 기준
 // (status/participant_count 인덱스도 firestore.indexes.json에 이미 있어 재사용) —
 // 실서비스 홈 화면에 실제로 노출되는 것과 다른 후보를 SSG하면 의미가 없어서
-// 그대로 복제. vote_threshold가 있는 문서는 다른 슬롯(스포트라이트) 출신이라 제외.
-async function fetchHotCandidateStories(db) {
+// 그대로 복제. vote_threshold 유무로 "역할 슬롯 출신이라 제외"를 가려내던
+// 예전 방식은 exports.cleanupAbandonedSeeds가 이미 겪은 것과 같은 버그
+// 패턴(초스피드는 vote_threshold를 아예 안 만들어서 안 걸러짐, 2026-07-29
+// 실사고)이라 — 포인터 story_id를 직접 조회해서 명시적으로 제외하는 방식으로
+// bang/firebase-api.js와 함께 고침(2026-08-20).
+async function fetchHotCandidateStories(db, excludeStoryIds) {
   const snap = await db.collection('stories')
     .where('status', '==', 'active')
     .orderBy('participant_count', 'desc')
     .limit(10)
     .get();
   return snap.docs
-    .filter(d => !d.data().vote_threshold)
+    .filter(d => !excludeStoryIds.has(d.id))
     .map(d => ({ story_id: d.id, ...d.data() }));
 }
 
@@ -317,12 +354,16 @@ function renderSitemap(entries) {
   ];
   const urls = [
     ...staticPages.map(p => `  <url><loc>${p.loc}</loc><changefreq>${p.changefreq}</changefreq><priority>${p.priority}</priority></url>`),
-    ...entries.map(e =>
-      // 진행 중 이야기는 문장이 계속 추가되므로 완결작(monthly)보다 짧은
-      // 주기로 표시 — 실제 리빌드 주기는 별개(GitHub Actions 스케줄)지만,
+    ...entries.map(e => {
+      // slotSlug가 있으면 today/{slot} 역할 페이지, 없으면 story/{id} 콘텐츠
+      // 페이지 — 둘 다 여기서 같이 렌더하되 경로만 분기.
+      const loc = e.slotSlug ? `${SITE_ORIGIN}/bang/today/${e.slotSlug}/` : `${SITE_ORIGIN}/bang/story/${e.id}/`;
+      // 진행 중 이야기/역할 페이지는 문장이 계속 추가되므로 완결작(monthly)보다
+      // 짧은 주기로 표시 — 실제 리빌드 주기는 별개(GitHub Actions 스케줄)지만,
       // changefreq는 크롤러에게 갱신 가능성을 알려주는 힌트라 정직하게 반영.
-      `  <url><loc>${SITE_ORIGIN}/bang/story/${e.id}/</loc>${e.lastmod ? `<lastmod>${e.lastmod.slice(0, 10)}</lastmod>` : ''}<changefreq>${e.isCompleted ? 'monthly' : 'daily'}</changefreq><priority>0.6</priority></url>`
-    ),
+      const changefreq = e.slotSlug ? 'daily' : (e.isCompleted ? 'monthly' : 'daily');
+      return `  <url><loc>${loc}</loc>${e.lastmod ? `<lastmod>${e.lastmod.slice(0, 10)}</lastmod>` : ''}<changefreq>${changefreq}</changefreq><priority>0.6</priority></url>`;
+    }),
   ].join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }
@@ -445,6 +486,120 @@ function renderRootArchivePreview(entries) {
   </section>`;
 }
 
+// today/{slot} 역할 페이지 — /bang/story/{id}/와 달리 "지금 이 슬롯이 뭘
+// 가리키는지" 안내하는 역할(role) 페이지라 완전히 별개 정체성. 완결작
+// 아카이브(renderArchiveIndex)와 같은 이유로 대응하는 SPA 라우트가 없는
+// 순수 정적 허브라 가벼운 자체 템플릿 사용. 현재 story의 전체 본문은 절대
+// 넣지 않고(중복 콘텐츠 방지, 2026-08-20 설계 논의) description(≤80자
+// 티저)만 링크와 함께 보여줌 — 전문은 반드시 /bang/story/{id}/에만 존재.
+function todaySlotBodyHtml({ slotKey, current, previous }) {
+  const label = SLOT_LABEL[slotKey];
+  const currentHtml = current ? `
+    <div class="today-current">
+      <div class="today-current-title">${esc(current.title)}</div>
+      <div class="today-current-teaser">${esc(current.description)}</div>
+      <div class="today-current-meta">참여자 ${current.meta.participantCount}명 · ${current.meta.sentenceCount}문장 · ${current.meta.days != null ? `${current.meta.days}일째 진행 중` : '진행 중'}</div>
+      <a class="today-cta" href="/bang/story/${current.id}/">지금까지의 이야기 읽기 →</a>
+    </div>` : `
+    <div class="today-current today-empty">새 라운드가 막 시작됐어요. 화씨.방에서 첫 문장을 이어써보세요!</div>`;
+
+  const previousHtml = previous ? `
+    <div class="today-previous">
+      <div class="today-previous-label">지난 이야기</div>
+      <a class="today-previous-link" href="/bang/story/${previous.id}/">
+        <div class="today-previous-title">${esc(previous.title)}</div>
+        <div class="today-previous-desc">${esc(previous.description)}</div>
+      </a>
+    </div>` : '';
+
+  return `<h1>${esc(label)}</h1>
+    ${currentHtml}
+    ${previousHtml}
+    <a href="/bang/" class="today-back">화씨.방에서 참여하기 →</a>`;
+}
+
+function renderTodaySlotPage({ slotKey, current, previous, indexable }) {
+  const label = SLOT_LABEL[slotKey];
+  const url = `${SITE_ORIGIN}/bang/today/${SLOT_SLUG[slotKey]}/`;
+  const description = current
+    ? `지금 화씨.방에서 진행 중인 ${label} — ${current.description}`
+    : previous
+      ? `화씨.방의 ${label} — 지난 이야기: ${previous.description}`
+      : `화씨.방에서 매일 진행되는 ${label}에 참여해보세요.`;
+  const body = todaySlotBodyHtml({ slotKey, current, previous });
+
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${esc(label)} — 화씨.방</title>
+<meta name="description" content="${esc(description)}">
+<meta name="robots" content="${indexable ? 'index,follow' : 'noindex,follow'}">
+<link rel="canonical" href="${url}">
+<link rel="icon" type="image/png" href="/bang/hwaseebang_sum.png">
+<meta name="theme-color" content="#f0ead8">
+<meta property="og:type"        content="website">
+<meta property="og:url"         content="${url}">
+<meta property="og:title"       content="${esc(label)} — 화씨.방">
+<meta property="og:description" content="${esc(description)}">
+<meta property="og:image"       content="https://hwasee.me/bang/hwaseebang_og.png">
+<!-- 완결작 아카이브와 같은 이유로 광고 스크립트 없음(요약/링크 위주 허브,
+     Gemini 최종 점검 지적, 2026-07-21) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f0ead8; --surface: #e6dac8; --card: #ddd0b8; --border: #c4b090;
+    --accent: #80978c; --accent2: #c8823a; --text: #1c0e06; --muted: #7a5c40;
+    --radius: 12px; --font: 'Noto Sans KR', system-ui, sans-serif; --serif: 'Gowun Batang', Georgia, serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.7; }
+  header {
+    position: sticky; top: 0; z-index: 10; background: rgba(240,234,216,.92); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border); padding: 0 24px; height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo { font-size: 20px; font-weight: 400; letter-spacing: .5px; font-family: var(--serif); color: var(--text); text-decoration: none; }
+  .back { font-size: 13px; color: var(--muted); text-decoration: none; }
+  main { max-width: 640px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-family: var(--serif); font-size: 24px; font-weight: 700; margin-bottom: 20px; }
+  .today-current { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 20px; }
+  .today-current-title { font-family: var(--serif); font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+  .today-current-teaser { font-size: 14px; color: var(--text); margin-bottom: 10px; line-height: 1.7; }
+  .today-current-meta { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+  .today-cta, .today-back { display: inline-block; padding: 10px 18px; background: var(--accent2); color: #fff; border-radius: 10px; text-decoration: none; font-size: 14px; font-weight: 600; }
+  .today-empty { color: var(--muted); font-size: 14px; }
+  .today-previous { margin-bottom: 24px; }
+  .today-previous-label { font-size: 12px; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+  .today-previous-link { display: block; text-decoration: none; color: inherit; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; }
+  .today-previous-title { font-family: var(--serif); font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  .today-previous-desc { font-size: 13px; color: var(--muted); }
+  .today-back { margin-top: 8px; }
+  footer { text-align: center; font-size: 12px; color: var(--muted); padding: 24px; border-top: 1px solid var(--border); }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <a class="logo" href="/bang/">화씨.방</a>
+  <a class="back" href="/bang/">← 화씨.방으로 돌아가기</a>
+</header>
+<main>
+  ${body}
+</main>
+<footer>
+  <a href="https://hwasee.me/" style="color:var(--muted)">화씨 홈</a> &nbsp;·&nbsp;
+  <a href="/bang/" style="color:var(--muted)">화씨.방</a> &nbsp;·&nbsp;
+  <a href="/bang/story/" style="color:var(--muted)">완결작 모음</a>
+  <p style="margin-top:8px">&copy; 2026 화씨 (Hwasee). All rights reserved.</p>
+</footer>
+</body>
+</html>
+`;
+}
+
 // ── 메인 ──
 
 async function main() {
@@ -458,9 +613,31 @@ async function main() {
 
   const storiesSnap = await db.collection('stories').where('status', '==', 'completed').get();
   const completedStories = storiesSnap.docs.map(d => ({ story_id: d.id, ...d.data(), isCompleted: true }));
-  const hotStories = await fetchHotCandidateStories(db);
-  console.log(`완결 이야기 ${completedStories.length}건, 진행 중 인기작 후보 ${hotStories.length}건 발견`);
-  const stories = [...completedStories, ...hotStories];
+
+  const slotPtr = await fetchSpotlightSlotsPointer(db);
+  const slotStoryIds = new Set(SLOT_KEYS.map(k => slotPtr[k] && slotPtr[k].story_id).filter(Boolean));
+  const hotStories = await fetchHotCandidateStories(db, slotStoryIds);
+  // 정합성 회귀 가드 — 위에서 명시적으로 제외했으니 절대 겹치면 안 됨(겹치면
+  // hot 선정 로직이 다시 예전 vote_threshold 버그 패턴으로 돌아갔다는 뜻).
+  const overlap = hotStories.filter(s => slotStoryIds.has(s.story_id));
+  if (overlap.length) {
+    throw new Error(`hot 후보와 역할 슬롯 story_id가 겹침(선정 로직 회귀 의심): ${overlap.map(s => s.story_id).join(', ')}`);
+  }
+
+  // 5개 역할 슬롯이 지금 가리키는 story도 같은 in-progress 파이프라인으로
+  // /bang/story/{id}/를 만들어둠 — today/{slot} 페이지가 여길 링크로만
+  // 참조하고(본문 복붙 안 함) 항상 유효한 링크가 되게 하려면 hot 후보 여부와
+  // 무관하게 독립적으로 존재를 보장해야 함.
+  const slotCurrentStories = [];
+  for (const key of SLOT_KEYS) {
+    const sid = slotPtr[key] && slotPtr[key].story_id;
+    if (!sid) continue;
+    const doc = await db.collection('stories').doc(sid).get();
+    if (doc.exists) slotCurrentStories.push({ story_id: sid, ...doc.data(), fromSlot: key });
+  }
+
+  console.log(`완결 이야기 ${completedStories.length}건, 진행 중 인기작 후보 ${hotStories.length}건, 역할 슬롯 현재작 ${slotCurrentStories.length}건 발견`);
+  const stories = [...completedStories, ...hotStories, ...slotCurrentStories];
 
   fs.rmSync(OUT_DIR, { recursive: true, force: true });
   fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -497,6 +674,11 @@ async function main() {
         id: story.story_id, lastmod, title, description, url, isCompleted,
         opening: story.opening, lines,
         creatorNickname: story.creator_nickname,
+        // sectionKey: 이 완결작이 어느 역할 슬롯 출신인지("직전 완결본" 찾기용).
+        // fromSlot: 이 story가 지금 그 슬롯의 현재(진행 중) 대상인지(today
+        // 페이지의 "현재 진행 중" 링크 대상 찾기용) — 완결작은 항상 undefined.
+        sectionKey: classifySection(story),
+        fromSlot: story.fromSlot,
         meta: {
           participantCount,
           sentenceCount: lines.length,
@@ -576,6 +758,34 @@ async function main() {
     ok++;
   }
 
+  // 3차 패스: today/{slot} 역할 페이지 — 5개 슬롯 모두 항상 페이지가 존재함
+  // (URL 안정성). current는 위에서 이미 만든 processed 항목 중 이 슬롯의
+  // 현재 포인터 대상(게이트 통과 못 했으면 null), previous는 완결작 풀에서
+  // 이 슬롯 출신 중 가장 최근 것. 둘 다 없으면(막 시작된 슬롯이고 이전
+  // 완결본도 아직 없음) 구별되는 콘텐츠가 없다는 뜻이라 noindex.
+  fs.rmSync(TODAY_OUT_DIR, { recursive: true, force: true });
+  fs.mkdirSync(TODAY_OUT_DIR, { recursive: true });
+  let todayIndexable = 0;
+  for (const slotKey of SLOT_KEYS) {
+    const current = processed.find(p => p.fromSlot === slotKey) || null;
+    const previous = completedOnly.find(p => p.sectionKey === slotKey) || null;
+    const indexable = !!(current || previous);
+    if (indexable) todayIndexable++;
+
+    const html = renderTodaySlotPage({ slotKey, current, previous, indexable });
+    const dir = path.join(TODAY_OUT_DIR, SLOT_SLUG[slotKey]);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'index.html'), html);
+
+    // noindex 페이지는 sitemap에 안 넣음(Google 가이드상 모순 신호라 권장 안 됨) —
+    // 페이지 자체는 항상 존재하므로 URL이 깨지진 않고, 콘텐츠가 쌓이면 다음
+    // cron 빌드에서 자동으로 indexable+sitemap 포함으로 전환됨.
+    if (indexable) {
+      sitemapEntries.push({ slotSlug: SLOT_SLUG[slotKey], lastmod: (current && current.lastmod) || (previous && previous.lastmod) || null });
+    }
+  }
+  console.log(`역할 슬롯 페이지 ${SLOT_KEYS.length}건 생성(그중 indexable ${todayIndexable}건)`);
+
   fs.writeFileSync(SITEMAP_PATH, renderSitemap(sitemapEntries));
   // 아카이브 목록/루트 미리보기는 "완결된 이야기 모음"이라는 페이지 자체의
   // 정체성 때문에 완결작만 — 진행 중 인기작은 sitemap.xml과 각자 페이지의
@@ -599,6 +809,8 @@ module.exports = {
   getEpisodeTree, buildCanonicalPath, collectLines, collectSubs, pickRejectedCandidates,
   proseHtml, storyMetaHtml, candidatesHtml, relatedStoriesHtml, storyPageBodyHtml,
   renderStoryPage, renderSitemap, renderArchiveIndex, renderRootArchivePreview, esc,
+  classifySection, todaySlotBodyHtml, renderTodaySlotPage,
+  SLOT_KEYS, SLOT_SLUG, SLOT_LABEL,
 };
 
 if (require.main === module) {

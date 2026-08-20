@@ -3744,12 +3744,22 @@ async function fbGetSpotlight(viewer_id) {
       let hotSlot = { state: 'empty' };
       let hotCandidateIds = [];
       try {
+        // vote_threshold 유무로 "스포트라이트 슬롯 이야기라 제외해야 함"을 가려내던
+        // 방식은 exports.cleanupAbandonedSeeds에서 이미 한 번 사고를 낸 패턴과 동일함
+        // (초스피드는 투표가 없어 vote_threshold를 아예 안 만들어서, 참여자 많은
+        // 초스피드초장편이 vote_threshold 필터를 그냥 통과해버림 — 2026-07-29
+        // 실사고, 17단계까지 진행된 초스피드가 있던 위치와 다른 함수지만 근본
+        // 원인은 동일). 그 함수가 고친 방식(포인터를 직접 조회해서 예외 없이
+        // 제외) 그대로 적용 — 위에서 이미 읽어둔 ptr을 재사용.
+        const slotStoryIds = new Set(
+          Object.values(ptr).map(v => v && v.story_id).filter(Boolean)
+        );
         const hotSnap = await db.collection('stories')
           .where('status', '==', 'active')
           .orderBy('participant_count', 'desc')
           .limit(10)
           .get();
-        hotCandidateIds = hotSnap.docs.filter(d => !d.data().vote_threshold).map(d => d.id);
+        hotCandidateIds = hotSnap.docs.filter(d => !slotStoryIds.has(d.id)).map(d => d.id);
         if (hotCandidateIds.length) hotSlot = await _fbBuildSpotlightStoryPayload(hotCandidateIds[0], mySubsAll, viewer_id);
       } catch (e) { console.error('hot slot query error:', e.message); }
       return { hotSlot, hotCandidateIds };

@@ -17,6 +17,7 @@ const crypto = require('crypto');
 
 const ROOT = path.join(__dirname, '..');
 const STORY_DIR = path.join(ROOT, 'bang', 'story');
+const TODAY_DIR = path.join(ROOT, 'bang', 'today');
 const SITEMAP_PATH = path.join(ROOT, 'bang', 'sitemap.xml');
 const SITE_ORIGIN = 'https://hwasee.me';
 
@@ -49,7 +50,7 @@ function visibleLines(html) {
   return h.replace(/<[^>]+>/g, '\n').split('\n').map(l => l.trim()).filter(Boolean);
 }
 
-function main() {
+function verifyStoryPages(sitemap) {
   if (!fs.existsSync(STORY_DIR)) {
     console.log('bang/story/ 없음 — 이번 빌드에서 정적 스토리 페이지가 생성 안 된 것으로 보임(빌드 스텝이 continue-on-error로 스킵됐을 수 있음). 검사 대상 없어 통과 처리.');
     return;
@@ -131,8 +132,7 @@ function main() {
     warn(`공통 텍스트가 baseline 대비 ${WARN_MULTIPLIER}배 이상(${commonChars}자) — 급증 추세, 확인 권장`);
   }
 
-  if (fs.existsSync(SITEMAP_PATH)) {
-    const sitemap = fs.readFileSync(SITEMAP_PATH, 'utf8');
+  if (sitemap) {
     // 아카이브 목록 URL(/bang/story/, ID 없음) 자체도 sitemap에 있어서
     // [^/]+로만 걸면 그 줄까지 오매칭됨(캡처 그룹이 "</loc"의 "<" 한
     // 글자만 잡아버림) — <loc>...</loc> 태그 경계로 확실히 좁히고, ID엔
@@ -142,11 +142,90 @@ function main() {
     const dirIdSet = new Set(ids);
     for (const id of ids) if (!sitemapIdSet.has(id)) fail(`sitemap.xml에 없는 완결작 페이지: ${id}`);
     for (const id of sitemapIds) if (!dirIdSet.has(id)) fail(`sitemap.xml엔 있는데 실제 생성된 페이지 디렉터리가 없음: ${id}`);
-  } else {
-    warn('sitemap.xml을 못 찾음');
   }
 
-  console.log(`\n검사 완료: ${ids.length}개 페이지`);
+  console.log(`검사 완료: ${ids.length}개 페이지`);
+}
+
+// bang/today/{slug}/index.html — 역할(role) 페이지 전수 검사. story 페이지와
+// 달리 완결작 개수만큼 있는 게 아니라 슬롯 개수만큼만 있고, noindex인 페이지는
+// sitemap에서 의도적으로 빠지므로 1:1 매칭 방향이 다름(sitemap→디렉터리는
+// 여전히 1:1이어야 하지만 디렉터리→sitemap은 indexable인 것만).
+function verifyTodayPages(sitemap) {
+  if (!fs.existsSync(TODAY_DIR)) {
+    console.log('bang/today/ 없음 — 이번 빌드에서 역할 슬롯 페이지가 생성 안 됨. 검사 대상 없어 통과 처리.');
+    return;
+  }
+  const slugs = fs.readdirSync(TODAY_DIR, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
+  if (!slugs.length) { console.log('역할 슬롯 정적 페이지 0개 — 검사할 게 없어 통과 처리.'); return; }
+  console.log(`\n역할 슬롯 정적 페이지 ${slugs.length}건 검사 시작...`);
+
+  const titleOwners = new Map();
+  const indexableSlugs = [];
+
+  for (const slug of slugs) {
+    const filePath = path.join(TODAY_DIR, slug, 'index.html');
+    if (!fs.existsSync(filePath)) { fail(`today/${slug}: index.html 파일 자체가 없음`); continue; }
+    const html = fs.readFileSync(filePath, 'utf8');
+    const expectedCanonical = `${SITE_ORIGIN}/bang/today/${slug}/`;
+
+    const title = (html.match(/<title>([^<]*)<\/title>/) || [])[1];
+    const canonical = (html.match(/<link rel="canonical" href="([^"]*)">/) || [])[1];
+    const description = (html.match(/<meta name="description" content="([^"]*)">/) || [])[1];
+    const robots = (html.match(/<meta name="robots" content="([^"]*)">/) || [])[1];
+
+    if (!title) fail(`today/${slug}: <title> 태그를 못 찾음`);
+    else { if (!titleOwners.has(title)) titleOwners.set(title, []); titleOwners.get(title).push(slug); }
+    if (!description) fail(`today/${slug}: description 메타태그를 못 찾음`);
+    if (!robots) fail(`today/${slug}: robots 메타태그를 못 찾음`);
+
+    // today 페이지는 역할 페이지 자체가 canonical 대상이라(story/{id}로 이전
+    // 안 함, 2026-08-20 설계 논의 결론) 항상 자기 자신을 가리켜야 함.
+    if (!canonical) fail(`today/${slug}: canonical 태그를 못 찾음`);
+    else if (canonical !== expectedCanonical) fail(`today/${slug}: canonical이 자기 URL과 불일치 (${canonical} !== ${expectedCanonical})`);
+
+    const mainMatch = html.match(/<main>([\s\S]*?)<\/main>/);
+    if (!mainMatch) { fail(`today/${slug}: <main> 마커를 못 찾음`); continue; }
+    const mainVisible = visibleLines(`<div>${mainMatch[1]}</div>`).join(' ');
+    if (!mainVisible.trim()) fail(`today/${slug}: 본문이 비어있음`);
+    if (mainVisible.includes('불러오는 중')) fail(`today/${slug}: 로딩 상태 문구가 정적 페이지에 남아있음(이 템플릿은 전부 정적이라 있으면 안 됨)`);
+
+    const wholeLines = visibleLines(html);
+    for (const phrase of FORBIDDEN_PHRASES) {
+      if (wholeLines.some(l => l.includes(phrase))) {
+        fail(`today/${slug}: 금지 문구 "${phrase}"가 정적 페이지에 노출돼있음`);
+      }
+    }
+
+    if (robots && robots.includes('index') && !robots.includes('noindex')) indexableSlugs.push(slug);
+    else if (robots && robots.includes('noindex') && sitemap && sitemap.includes(`/bang/today/${slug}/`)) {
+      fail(`today/${slug}: robots가 noindex인데 sitemap.xml에는 실려있음(모순된 신호)`);
+    }
+  }
+
+  for (const [title, owners] of titleOwners) {
+    if (owners.length > 1) fail(`today 페이지 title "${title}"이 서로 다른 슬롯에서 동일함: ${owners.join(', ')}`);
+  }
+
+  if (sitemap) {
+    const sitemapSlugs = [...sitemap.matchAll(/<loc>https:\/\/hwasee\.me\/bang\/today\/([^/<]+)\/<\/loc>/g)].map(m => m[1]);
+    const slugSet = new Set(slugs);
+    for (const slug of sitemapSlugs) if (!slugSet.has(slug)) fail(`sitemap.xml엔 있는데 실제 생성된 today 페이지 디렉터리가 없음: ${slug}`);
+    for (const slug of indexableSlugs) if (!sitemapSlugs.includes(slug)) fail(`today/${slug}: index,follow인데 sitemap.xml에 없음`);
+  }
+
+  console.log(`역할 슬롯 검사 완료: ${slugs.length}개 페이지(그중 indexable ${indexableSlugs.length}개)`);
+}
+
+function main() {
+  const sitemap = fs.existsSync(SITEMAP_PATH) ? fs.readFileSync(SITEMAP_PATH, 'utf8') : null;
+  if (!sitemap) warn('sitemap.xml을 못 찾음');
+  // 완결작/진행중 story 검사와 역할 슬롯 검사는 서로 독립된 빌드 산출물이라,
+  // 한쪽이 비어있거나(예: 역할 슬롯 아직 미도입) 실패해도 다른 쪽 검사는
+  // 그대로 계속 진행 — early return으로 서로를 가리지 않게 별도 함수로 분리.
+  verifyStoryPages(sitemap);
+  verifyTodayPages(sitemap);
+
   if (hasFatal) { console.error('\n🔴 치명적 문제 발견 — 배포를 중단합니다.'); process.exit(1); }
   console.log(hasWarning ? '\n🟠 경고 있음 — 배포는 진행하되 확인 권장.' : '\n🟢 이상 없음.');
 }

@@ -5934,7 +5934,15 @@ async function episodeVotes() {
   const episode_id = currentParam;
   const epoch = _renderEpoch;
   if (!episode_id) { nav('seed'); return; }
-  document.getElementById('app').innerHTML = `<div class="loading"></div>`;
+
+  // 캐시 있으면 즉시 렌더 후 백그라운드 재검증 — profile()/userProfile()/
+  // yourstory와 동일 패턴(2026-08-19). 이 화면은 원래도 onSnapshot 실시간
+  // 구독이 아니라 단발성 조회라, 캐시를 짧게(TTL 20초) 둬도 기존 "볼 때마다
+  // 새로 조회" 동작과 체감상 다르지 않음 — 그냥 첫 화면이 즉시 뜰 뿐.
+  const _evCacheKey = `episodeVotes:${episode_id}`;
+  const _evCached = _lsc.getStale(_evCacheKey);
+  if (_evCached) _renderEpisodeVotesData(_evCached);
+  else document.getElementById('app').innerHTML = `<div class="loading"></div>`;
 
   // 이 함수는 api()를 거치지 않는 직접 Firestore 조회라 원래 타임아웃/재시도가
   // 전혀 없었음 — 백그라운드 탭 복귀 직후 연결이 끊겨있으면 "불러오는 중..."에
@@ -5964,7 +5972,7 @@ async function episodeVotes() {
     try {
       data = await _fetchEpisodeVotes();
     } catch (e2) {
-      document.getElementById('app').innerHTML = `<div class="empty">불러오지 못했어요.<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="episodeVotes()">다시 시도</button></div>`;
+      if (!_evCached) document.getElementById('app').innerHTML = `<div class="empty">불러오지 못했어요.<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="episodeVotes()">다시 시도</button></div>`;
       return;
     }
   }
@@ -6007,6 +6015,12 @@ async function episodeVotes() {
     (commentsBySubId[c.sub_id] = commentsBySubId[c.sub_id] || []).push(c);
   });
 
+  const evData = { ep, story_id, story, subs, commentsBySubId };
+  _lsc.set(_evCacheKey, evData, 20);
+  _renderEpisodeVotesData(evData);
+}
+
+function _renderEpisodeVotesData({ ep, story_id, story, subs, commentsBySubId }) {
   const stepNum = Number(ep.step) + 1;
   const totalVoters = ep.vote_total || 0;
   const canBranch = user && (story.status === 'completed' || story.status === 'inactive');
@@ -6594,7 +6608,19 @@ async function doResetWithToken() {
 async function profile() {
   if (!user) { nav('auth','login'); return; }
   const epoch = _renderEpoch;
-  document.getElementById('app').innerHTML = `<div class="loading"></div>`;
+
+  // 캐시 있으면 즉시 렌더(배지 동기화는 최신 응답에서만 수행 — 오래된 캐시로
+  // 전역 user.badge를 되돌리면 안 되므로 아래 syncBadge=false로 스킵), 백그라운드로
+  // 항상 재검증. 예전엔 매번 API 응답을 기다리는 동안 로딩 스피너만 보여서
+  // 프로필 화면 진입 자체가 느리게 느껴졌음(2026-08-19 유저 지적, yourstory와 동일 패턴).
+  const _profCacheKey = `profile:${user.user_id}`;
+  const _profCached = _lsc.getStale(_profCacheKey);
+  if (_profCached) {
+    _renderProfileData(_profCached.res, _profCached.bmRes, false);
+  } else {
+    document.getElementById('app').innerHTML = `<div class="loading"></div>`;
+  }
+
   let [res, bmRes] = await Promise.all([api('getProfile'), api('getBookmarks')]);
   // 탭 복귀 직후 등 Firestore 연결이 잠깐 끊겨있을 때 첫 요청만 실패하는
   // 경우가 있어(story()/episode()와 동일 패턴) 읽기 전용이라 안전하게
@@ -6603,10 +6629,17 @@ async function profile() {
     [res, bmRes] = await Promise.all([api('getProfile'), api('getBookmarks')]);
   }
   if (!user || _renderEpoch !== epoch || currentRoute !== 'profile') return;
-  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="profile()">다시 시도</button></div>`; return; }
+  if (!res.ok) {
+    if (!_profCached) document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="profile()">다시 시도</button></div>`;
+    return;
+  }
+  _lsc.set(_profCacheKey, { res, bmRes }, 60);
+  _renderProfileData(res, bmRes, true);
+}
 
+function _renderProfileData(res, bmRes, syncBadge) {
   const u         = res.user;
-  if (user && (u.badge !== user.badge || u.avatar !== user.avatar)) {
+  if (syncBadge && user && (u.badge !== user.badge || u.avatar !== user.avatar)) {
     user.badge = u.badge; user.avatar = u.avatar; user.owned_avatars = u.owned_avatars || [];
     saveUser(user); renderNav();
   }
@@ -6845,7 +6878,13 @@ async function userProfile() {
   if (target_id === user.user_id) { nav('profile'); return; }
 
   const epoch = _renderEpoch;
-  document.getElementById('app').innerHTML = `<div class="loading"></div>`;
+  // 캐시 있으면 즉시 렌더 후 백그라운드 재검증 — profile()/yourstory와 동일 패턴
+  // (2026-08-19, 캐싱 없이 매번 API를 기다려 진입이 느리게 느껴졌음).
+  const _upCacheKey = `userProfile:${target_id}`;
+  const _upCached = _lsc.getStale(_upCacheKey);
+  if (_upCached) _renderUserProfileData(_upCached);
+  else document.getElementById('app').innerHTML = `<div class="loading"></div>`;
+
   let res = await api('getPublicProfile', { user_id: target_id });
   // 탭 복귀 직후 등 Firestore 연결이 잠깐 끊겨있을 때 첫 요청만 실패하는
   // 경우가 있어(story()/episode()와 동일 패턴) 읽기 전용이라 안전하게
@@ -6854,8 +6893,15 @@ async function userProfile() {
     res = await api('getPublicProfile', { user_id: target_id });
   }
   if (_renderEpoch !== epoch || currentRoute !== 'user') return;
-  if (!res.ok) { document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="userProfile()">다시 시도</button></div>`; return; }
+  if (!res.ok) {
+    if (!_upCached) document.getElementById('app').innerHTML = `<div class="empty">${esc(res.error)}<br><button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="userProfile()">다시 시도</button></div>`;
+    return;
+  }
+  _lsc.set(_upCacheKey, res, 60);
+  _renderUserProfileData(res);
+}
 
+function _renderUserProfileData(res) {
   const u = res.user;
   const joinedDate = u.created_at ? new Date(u.created_at).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }) : '알 수 없음';
 

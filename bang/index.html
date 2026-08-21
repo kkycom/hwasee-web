@@ -9675,6 +9675,16 @@ window.addEventListener('popstate', () => {
 // 백그라운드에 오래 있으면 모바일 브라우저가 WebChannel 연결을 끊어버리는데,
 // 이후 유저가 실제로 이야기를 누를 때 그 협상 비용을 처음부터 다시 치르면서
 // 느려지거나 무한로딩처럼 보이는 문제 방지 — 복귀 즉시 미리 채널을 열어둠.
+// 방금 고친 "로그인 클릭이 조용한 새로고침에 씹히던" 사고와 같은 맥락의 문제
+// — 이 render()는 무조건 실행돼서, 이어쓰기/단어챌린지/초성힌트 등 #app 안
+// 텍스트 입력창에 뭔가 써둔 채로 30초 넘게 백그라운드(알림 확인 등, 모바일에서
+// 아주 흔함) 있다가 돌아오면 쓰던 내용이 통째로 날아감(전수감사로 발견,
+// 2026-08-19) — 임시저장/복원 로직이 전혀 없어서 더 치명적. Firestore 재웜업
+// (바로 아래 stats 조회)은 render()와 무관하게 이미 되고 있으므로, 입력 중인
+// 텍스트가 있으면 화면 갱신만 건너뛰어도 원래 목적엔 지장 없음.
+function _hasUnsavedTextInput() {
+  return [...document.querySelectorAll('#app input[type="text"], #app textarea')].some(el => el.value.trim().length > 0);
+}
 let _hiddenAt = 0;
 document.addEventListener('visibilitychange', async () => {
   if (document.hidden) {
@@ -9682,7 +9692,7 @@ document.addEventListener('visibilitychange', async () => {
   } else if (_hiddenAt && Date.now() - _hiddenAt > 30000) {
     _hiddenAt = 0;
     firebase.firestore().collection('config').doc('stats').get().catch(() => {});
-    render(); renderNav();
+    if (!_hasUnsavedTextInput()) { render(); renderNav(); }
     // 백그라운드에 오래 있는 동안(예: 다른 기기에서 재로그인) 서버 토큰이
     // 이미 무효화됐을 수 있음 — 여기서 안 챙기면 화면은 계속 로그인된 것처럼
     // 보이다가, 나중에 아무 API 호출(예: 알림 열기)에 걸리는 순간에야 뜬금없이

@@ -590,9 +590,13 @@ async function fbGetStories(page) {
     return { ok: true, stories, page: 1 };
   } else {
     const storiesSnap = await db.collection('stories').where('status', '==', 'completed').get();
+    // completed_at(2026-08-22 신설, 없으면 옛날 데이터라 created_at로 폴백) 기준
+    // 정렬 — created_at(이야기 시작일)만 쓰면 오래전에 시작해 방금 완결된 긴
+    // 이야기가 목록 맨 위가 아니라 시작일 기준 옛날 자리에 묻혀서 "완성된 이야기로
+    // 안 넘어온 것처럼" 보였음(유저 제보).
     const stories = storiesSnap.docs
       .map(d => ({ ...d.data(), like_count: d.data().like_count || 0 }))
-      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      .sort((a, b) => new Date(b.completed_at || b.created_at) - new Date(a.completed_at || a.created_at));
     return { ok: true, stories, page: 2 };
   }
 }

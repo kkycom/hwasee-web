@@ -823,6 +823,7 @@ async function _serverSpinOffOrphan(db, orphanEp, story, epById, subsByEp, subBy
     opening: story.opening, max_steps: story.max_steps || 10,
     current_step: resolvedWinners ? Number(orphanEp.step) : Number(orphanEp.step) - 1,
     status: (resolvedWinners && resolvedWinners.anyClose) ? 'completed' : 'active',
+    ...((resolvedWinners && resolvedWinners.anyClose) ? { completed_at: new Date().toISOString() } : {}),
     creator_id: story.creator_id,
     creator_nickname: story.creator_nickname || '익명',
     creator_badge: story.creator_badge || '',
@@ -1026,8 +1027,13 @@ async function _serverCloseEpisode(db, episode_id, ep) {
         created_at: now, is_closing: true,
       });
     });
+    // completed_at 신설(2026-08-22) — 완성된 이야기 탭이 지금까지 created_at
+    // (이야기 시작일) 기준으로 정렬돼서, 오래전에 시작해 방금 막 완결된 긴
+    // 이야기가 목록 맨 위가 아니라 시작일 기준 옛날 자리에 묻혀 보였음(유저
+    // 제보 — "완성된 이야기로 안 넘어온 것 같다", 실제론 넘어갔는데 정렬 때문에
+    // 안 보였던 것). 아래 다른 완결 경로(anyClose/초스피드/고아분기) 전부 동일.
     finalBatch.update(storySnap.ref, {
-      current_step: nextStep + 1, status: 'completed',
+      current_step: nextStep + 1, status: 'completed', completed_at: now,
       ...(winners.length > 1 ? { has_branch: true } : {}),
     });
     await finalBatch.commit();
@@ -1053,7 +1059,7 @@ async function _serverCloseEpisode(db, episode_id, ep) {
   }
 
   if (anyClose) {
-    await storySnap.ref.update({ current_step: nextStep, status: 'completed' });
+    await storySnap.ref.update({ current_step: nextStep, status: 'completed', completed_at: new Date().toISOString() });
     // 3슬롯 "오늘의 이야기" 스포트라이트 리필 훅 — 방금 완결된 스토리가 스포트라이트
     // 슬롯을 차지하고 있었다면 다음 이야기로 즉시 교체. 사람/AI 마감 경로 모두
     // 이 함수를 거치므로(공용 단일 완결 지점) 여기가 정확한 훅 위치.
@@ -2479,7 +2485,7 @@ exports.speedrunSubmit = functions
 
       if (isLastStep) {
         tx.update(storyRef, {
-          current_step: step, status: 'completed', cooldown_winners: nextWinners,
+          current_step: step, status: 'completed', completed_at: new Date().toISOString(), cooldown_winners: nextWinners,
           [`open_steps.${episode_id}`]: admin.firestore.FieldValue.delete(),
         });
       } else {

@@ -4464,12 +4464,32 @@ async function ysSubmit() {
   const val = (input?.value || '').trim();
   if (!val) { toast('내용을 입력해주세요.', true); return; }
   _ysSubmitInFlight = true;
+
+  // 낙관적 업데이트 — ysToggleHeart()와 동일한 이유로 등록 반응이 1초 넘게
+  // 느리게 느껴진다는 제보(2026-08-19: 신규 콜러블이라 트래픽이 적어 콜드
+  // 스타트 왕복이 특히 눈에 띔). post_id는 서버와 동일한 규칙(오늘날짜_user_id)
+  // 이라 응답을 기다리지 않고 미리 정확히 계산 가능 — 클릭 즉시 화면에
+  // 반영하고 백그라운드로 서버 확정, 실패하면 원상복구.
+  const post_id = `${_ysKstToday()}_${user.user_id}`;
+  const optimisticPost = { post_id, text: val, heart_count: 0, created_at: new Date().toISOString(), edited: false, mine: true, hearted: false };
+  _ysFeedData = [optimisticPost, ..._ysFeedData];
+  renderYsCompose();
+  renderYsFeed();
+
   try {
     const res = await fbSubmitYourStory(user.user_id, val);
-    if (!res.ok) { toast(res.error || '작성에 실패했어요.', true); return; }
+    if (!res.ok) {
+      _ysFeedData = _ysFeedData.filter(p => p.post_id !== post_id);
+      renderYsCompose();
+      renderYsFeed();
+      const restoredInput = document.getElementById('ys-compose-input');
+      if (restoredInput) { restoredInput.value = val; ysOnComposeInput(); }
+      toast(res.error || '작성에 실패했어요.', true);
+      return;
+    }
     toast('오늘 하루가 남겨졌어요 (+10P)');
     _ysCardData = null; _lsc.del('yourStoryCard');
-    ysLoadDate(_ysSelectedDate);
+    _lsc.set(`ysFeed:${_ysSelectedDate}:${user.user_id}`, _ysFeedData, 60);
   } finally {
     _ysSubmitInFlight = false;
   }

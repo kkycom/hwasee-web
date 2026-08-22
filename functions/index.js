@@ -992,7 +992,19 @@ async function _serverCloseEpisode(db, episode_id, ep) {
   // 결말 고정 이야기: 마지막 단계(max_steps)를 공개 제출로 열지 않고, 생성 시
   // 미리 정해둔 fixed_ending을 채택된 내용으로 그대로 주입해서 즉시 완결시킴.
   // anyClose를 위에서 이미 무력화했으므로 이 분기가 유일한 완결 경로.
-  if (st.mode === 'fixed_ending' && nextStep + 1 === Number(st.max_steps)) {
+  // ⚠️ 화면 표시 단계(calcDisplayStep, bang/index.html)는 오프닝 문장을 "1단계"로
+  // 치고 내부 step마다 +1을 더해서 보여줌(분기/연장 이력 없는 일반 스토리 기준).
+  // 원래는 nextStep+1===max_steps일 때 주입해서 내부 10단계(=화면 11단계)에
+  // 결말이 뜨고 있었음 — max_steps:10 설정과 실제 화면 표시가 어긋나서
+  // "10단계에서 끝나야 의미있지 않냐"는 유저 지적으로 한 단계 앞당김
+  // (2026-08-21). 이제 내부 9단계(=화면 10단계)에 결말이 뜨고, max_steps와
+  // 화면 표시가 정확히 일치함 — 진행률 표시("N/max_steps단계")도 더는
+  // 분자가 분모를 넘는 일이 없어짐. 단, 이미 내부 9단계가 예전 기준(10단계에서
+  // 주입)으로 공개 제출을 받아 진행 중이던 스토리(AoB9rHAEM7hNZg5seMHi 등)는
+  // nextStep+1===max_steps 조건도 같이 남겨둬서 그대로 완결까지 가게 함(그
+  // 스토리만 예전처럼 화면 11단계로 끝남 — 이미 열린 단계를 지금 와서 무효화할
+  // 순 없으므로, 신규 스토리만 새 기준 적용).
+  if (st.mode === 'fixed_ending' && (nextStep + 2 === Number(st.max_steps) || nextStep + 1 === Number(st.max_steps))) {
     const now = new Date().toISOString();
     const finalBatch = db.batch();
     // winners가 동률로 여러 갈래일 수 있음 — 갈래를 버리지 않고 각 갈래 끝에

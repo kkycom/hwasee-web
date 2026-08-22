@@ -8988,6 +8988,22 @@ function cancelProseEdit() {
   document.querySelectorAll('.prose-inline-editor').forEach(el => el.remove());
 }
 
+// 분기 이야기는 chooseBranch() 등 재렌더가 DOM이 아니라 window._storyData
+// (메모리 캐시 객체)에서 다시 그리는 구조라, 이 함수처럼 화면(DOM)만 직접
+// 고쳐쓰면 그 다음 재렌더(갈래 전환 등) 때 메모리에 남은 옛 내용으로 도로
+// 덮어써짐 — 분기 이전(공유) 문장 수정이 "저장은 되는데 다시 원래대로
+// 돌아간다"고 보였던 원인(유저 제보, 2026-08-21). 같은 sub_id가 나타날 수
+// 있는 세 곳(본문 submissions, 분기 이야기의 조상 체인 parent_chain,
+// 부모 이야기에 번들로 내려오는 포크 분기 branches[].submissions)을
+// 전부 찾아서 메모리 값도 같이 갱신.
+function _patchStoryDataSubmission(sub_id, new_content) {
+  const sd = window._storyData;
+  if (!sd) return;
+  const patchArr = arr => { const s = (arr || []).find(x => x.sub_id === sub_id); if (s) s.content = new_content; };
+  patchArr(sd.submissions);
+  patchArr(sd.parent_chain?.submissions);
+  (sd.branches || []).forEach(b => patchArr(b.submissions));
+}
 async function saveProseEdit() {
   const editor = document.querySelector('.prose-inline-editor');
   if (!editor) return;
@@ -9000,6 +9016,7 @@ async function saveProseEdit() {
   const story_id = window._storyData?.story?.story_id || '';
   const res = await api('adminEditSub', { sub_id, new_content, old_content, story_id, edit_type: 'manual' });
   if (!res.ok) { toast(res.error, true); return; }
+  _patchStoryDataSubmission(sub_id, new_content);
   const proseLine = document.querySelector(`.prose-line[data-episode-id="${ep_id}"]`);
   if (proseLine) {
     const sentenceEl = proseLine.querySelector('.prose-sentence');

@@ -231,7 +231,7 @@
     position:absolute; top:0; right:12px;
     display:flex; gap:4px; pointer-events:none;
   }
-  .card-branch-sticker, .card-bookmark-sticker, .card-new-sticker, .card-today-sticker {
+  .card-branch-sticker, .card-bookmark-sticker, .card-new-sticker {
     background:#c8b898; color:#5a4030;
     border:1px solid rgba(154,104,64,.25); border-top:none;
     font-size:10px; font-weight:700; padding:2px 8px; white-space:nowrap;
@@ -239,7 +239,6 @@
   }
   .card-bookmark-sticker { color:#a06020; border-color:rgba(200,130,58,.35); }
   .card-new-sticker { color:#b03030; border-color:rgba(176,48,48,.3); }
-  .card-today-sticker { color:#5a4a80; border-color:rgba(90,74,128,.3); }
 
   /* ── 장르 확률 패널(스포트라이트 카드 + 상세페이지 공용) */
   .genre-panel { border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; border-left: 4px solid var(--g); background: var(--wash); }
@@ -2196,7 +2195,17 @@ const CONTENT_MODE_STICKER = {
 };
 function cardStickersHtml(s, alwaysBm) {
   const hasBm = alwaysBm || _bmIds.has(s.story_id);
-  const modeTag = (s.status === 'completed' && CONTENT_MODE_STICKER[s.mode]) ? `<span class="card-branch-sticker">${CONTENT_MODE_STICKER[s.mode]}</span>` : '';
+  // 단어챌린지 출신은 mode가 'default'라 CONTENT_MODE_STICKER로 못 잡음 — 대신
+  // challenge_words(_serverCreateSeedStory 생성 시 그 3단어를 같이 저장, 이후
+  // 안 지워짐)로 판별. 이걸로 5종 스포트라이트 콘텐츠(결말고정/장르전환/초스피드/
+  // 동화각색/단어챌린지) 전부 완결 시 자기만의 배지가 생겨서, 그동안 이 배지가
+  // 없는 단어챌린지 출신만 별도 "✦ 오늘" 태그로 땜빵하던 걸 없앨 수 있게 됨
+  // (유저 지적, 2026-08-22 — "다른 컨텐츠들 배지 다 있는데 오늘 표시 굳이 필요없을듯").
+  const modeTag = s.status === 'completed'
+    ? (CONTENT_MODE_STICKER[s.mode]
+        ? `<span class="card-branch-sticker">${CONTENT_MODE_STICKER[s.mode]}</span>`
+        : (s.challenge_words ? `<span class="card-branch-sticker">🔤 세단어</span>` : ''))
+    : '';
   // 분기/연장은 서로 배타적이지 않음 — 완결된 원본 이야기가 분기도 있고
   // 나중에 연장도 됐으면 둘 다 표시(is_continuation은 "이 이야기 자체가
   // 연장본"인 경우, has_continuation은 "이 이야기가 연장됐다"인 경우라 서로 다름)
@@ -2205,16 +2214,11 @@ function cardStickersHtml(s, alwaysBm) {
   // 참여 중인 이야기 전용(fbGetMyStories가 story_visits 대비로 계산해서 내려줌) —
   // 마지막으로 본 상태보다 단계/활동량이 늘었으면 표시
   const newTag = s.is_new ? `<span class="card-new-sticker">N</span>` : '';
-  // 오늘의 이야기(스포트라이트) 출신 이야기는 완성된 뒤에도 계속 표시 —
-  // vote_threshold는 _serverCreateSeedStory에서 생성 시 한 번 박히고 이후
-  // 절대 지워지지 않으므로(전체 grep 확인) 별도 태깅 없이 이 필드만으로 판별 가능
-  const todayTag = s.vote_threshold ? `<span class="card-today-sticker">✦ 오늘</span>` : '';
   const parts = [
     modeTag,
     branchTag,
     contTag,
     newTag,
-    todayTag,
     hasBm ? `<span class="card-bookmark-sticker">★</span>` : '',
   ].filter(Boolean).join('');
   return parts ? `<div class="card-stickers">${parts}</div>` : '';

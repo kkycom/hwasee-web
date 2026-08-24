@@ -27,6 +27,8 @@ const OUT_DIR = path.join(BANG_DIR, 'story');
 const TODAY_OUT_DIR = path.join(BANG_DIR, 'today');
 const TODAY_HUB_PATH = path.join(TODAY_OUT_DIR, 'index.html');
 const WORD_CHALLENGE_OUT_DIR = path.join(BANG_DIR, 'word-challenge');
+const DIARY_OUT_DIR = path.join(BANG_DIR, 'diary');
+const DIARY_HUB_PATH = path.join(DIARY_OUT_DIR, 'index.html');
 const SITEMAP_PATH = path.join(BANG_DIR, 'sitemap.xml');
 const SITE_ORIGIN = 'https://hwasee.me';
 const FB_ADMIN_ID = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
@@ -230,6 +232,36 @@ async function fetchWordChallengeTopSubmissions(db, challenge_id, max = 5) {
     .slice(0, max);
 }
 
+// 훔쳐본 일기장 — functions/index.js에 서버 전용 상수(DIARY_STORY_DATA)로만
+// 있고 Firestore엔 없음(2026-08-19 보안방: 공개일 도래 전 회차가 클라이언트
+// 번들에 실려 미리 새던 문제 수정, [[project_hwasee_speedrun_participant_count_bug]]와
+// 같은 세션에서 다룬 것과 별개 이슈). 그래서 admin SDK로 못 읽고, 이미 배포된
+// getDiaryBook 콜러블을 그대로 호출 — 이게 유일한 공개일 게이트 소스(book_id별
+// DIARY_RELEASE_DATES 비교)라, 여기서 날짜 로직을 다시 베끼면 두 곳이 어긋날
+// 위험이 생김(word-challenge winners 필드명 사고와 같은 종류의 실수를 막으려는
+// 설계). 로그인 불필요 콜러블이라 인증 없이 그대로 POST.
+const DIARY_FUNCTION_URL = 'https://asia-northeast3-hwasee-bang.cloudfunctions.net/getDiaryBook';
+// 총 권수 — DIARY_RELEASE_DATES(functions/index.js)/DIARY_HUB_BOOKS(bang/index.html)에
+// 책이 추가되면 여기도 같이 늘려야 함(이미 있던 3-파일 동기화 관행과 동일).
+const DIARY_BOOK_COUNT = 7;
+
+async function fetchPublicDiaryBook(book_id) {
+  try {
+    const res = await fetch(DIARY_FUNCTION_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: { book_id } }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const result = json.result || {};
+    return result.ok ? result.book : null; // 공개 전이면 ok:false(locked:true)로 옴 — 그대로 제외
+  } catch (e) {
+    console.error(`훔쳐본 일기장 ${book_id}권 조회 실패:`, e.message);
+    return null;
+  }
+}
+
 async function fetchStoryData(db, story_id) {
   const [episodesSnap, submissionsSnap] = await Promise.all([
     db.collection('episodes').where('story_id', '==', story_id).get(),
@@ -399,16 +431,18 @@ function renderSitemap(entries, extraStaticPages) {
     ...staticPages.map(p => `  <url><loc>${p.loc}</loc><changefreq>${p.changefreq}</changefreq><priority>${p.priority}</priority></url>`),
     ...entries.map(e => {
       // slotSlug가 있으면 today/{slot} 역할 페이지, wcId가 있으면 세 단어
-      // 챌린지 개별 결과 페이지, 둘 다 없으면 story/{id} 콘텐츠 페이지.
+      // 챌린지 개별 결과 페이지, diaryId가 있으면 훔쳐본 일기장 개별 회차,
+      // 나머지는 story/{id} 콘텐츠 페이지.
       const loc = e.slotSlug ? `${SITE_ORIGIN}/bang/today/${e.slotSlug}/`
         : e.wcId ? `${SITE_ORIGIN}/bang/word-challenge/${e.wcId}/`
+        : e.diaryId ? `${SITE_ORIGIN}/bang/diary/${e.diaryId}/`
         : `${SITE_ORIGIN}/bang/story/${e.id}/`;
       // 진행 중 이야기/역할 페이지는 문장이 계속 추가되므로 완결작(monthly)보다
       // 짧은 주기로 표시 — 실제 리빌드 주기는 별개(GitHub Actions 스케줄)지만,
       // changefreq는 크롤러에게 갱신 가능성을 알려주는 힌트라 정직하게 반영.
-      // 세 단어 챌린지 개별 결과는 마감분만 만들어서(내용이 다시 안 바뀜)
-      // 완결작과 동일하게 monthly.
-      const changefreq = e.slotSlug ? 'daily' : e.wcId ? 'monthly' : (e.isCompleted ? 'monthly' : 'daily');
+      // 세 단어 챌린지 개별 결과/일기장 개별 회차는 한 번 공개되면 내용이 다시
+      // 안 바뀌어서 완결작과 동일하게 monthly.
+      const changefreq = e.slotSlug ? 'daily' : (e.wcId || e.diaryId) ? 'monthly' : (e.isCompleted ? 'monthly' : 'daily');
       return `  <url><loc>${loc}</loc>${e.lastmod ? `<lastmod>${e.lastmod.slice(0, 10)}</lastmod>` : ''}<changefreq>${changefreq}</changefreq><priority>0.6</priority></url>`;
     }),
   ].join('\n');
@@ -651,7 +685,8 @@ function renderTodaySlotPage({ slotKey, current, previous, indexable }) {
   <a href="/bang/" style="color:var(--muted)">화씨.방</a> &nbsp;·&nbsp;
   <a href="/bang/today/" style="color:var(--muted)">오늘의 이야기</a> &nbsp;·&nbsp;
   <a href="/bang/story/" style="color:var(--muted)">완결작 모음</a> &nbsp;·&nbsp;
-  <a href="/bang/word-challenge/" style="color:var(--muted)">세 단어 챌린지 결과</a>
+  <a href="/bang/word-challenge/" style="color:var(--muted)">세 단어 챌린지 결과</a> &nbsp;·&nbsp;
+  <a href="/bang/diary/" style="color:var(--muted)">훔쳐본 일기장</a>
   <p style="margin-top:8px">&copy; 2026 화씨 (Hwasee). All rights reserved.</p>
 </footer>
 </body>
@@ -717,6 +752,7 @@ function staticHubPageShell({ title, description, canonical, robots, ogTitle, bo
   .more-list { list-style: none; font-size: 13.5px; }
   .more-list li { margin-bottom: 8px; }
   .more-list a { color: var(--accent2); }
+  .diary-page p { font-family: var(--serif); font-size: 14.5px; line-height: 1.9; margin-bottom: 14px; }
   .empty { text-align: center; padding: 32px 0; color: var(--muted); font-size: 14px; }
   .back-cta { display: inline-block; margin-top: 24px; padding: 10px 20px; background: var(--accent2); color: #fff; border-radius: 10px; text-decoration: none; font-size: 14px; font-weight: 600; }
   footer { text-align: center; font-size: 12px; color: var(--muted); padding: 24px; border-top: 1px solid var(--border); }
@@ -736,7 +772,8 @@ function staticHubPageShell({ title, description, canonical, robots, ogTitle, bo
   <a href="/bang/" style="color:var(--muted)">화씨.방</a> &nbsp;·&nbsp;
   <a href="/bang/today/" style="color:var(--muted)">오늘의 이야기</a> &nbsp;·&nbsp;
   <a href="/bang/story/" style="color:var(--muted)">완결작 모음</a> &nbsp;·&nbsp;
-  <a href="/bang/word-challenge/" style="color:var(--muted)">세 단어 챌린지 결과</a>
+  <a href="/bang/word-challenge/" style="color:var(--muted)">세 단어 챌린지 결과</a> &nbsp;·&nbsp;
+  <a href="/bang/diary/" style="color:var(--muted)">훔쳐본 일기장</a>
   <p style="margin-top:8px">&copy; 2026 화씨 (Hwasee). All rights reserved.</p>
 </footer>
 </body>
@@ -746,8 +783,10 @@ function staticHubPageShell({ title, description, canonical, robots, ogTitle, bo
 
 // /bang/today/ 허브 — 5개 역할 슬롯을 한 곳에 모아 링크(오늘의 이야기 각
 // 슬롯 페이지가 sitemap에만 있고 실제 내부링크가 없으면 크롤러 발견 신뢰도가
-// 낮아서, 2026-08-20 논의로 추가). hint/diary는 story_id가 없는 완전히 다른
-// 데이터 모델이라 이번엔 전용 페이지를 안 만들고, 여기서 안내+링크만.
+// 낮아서, 2026-08-20 논의로 추가). hint(초성 퀴즈)는 정답이 콘텐츠라 원천적으로
+// SSG 대상이 될 수 없어 안내 문구만 남김. diary(훔쳐본 일기장)는 2026-08-25에
+// /bang/diary/ 전용 페이지가 생겨서 아래 링크가 그리로 감(story_id가 없는
+// 별도 데이터 모델이라 story 파이프라인과는 독립적으로 처리 — renderDiaryHubPage 참고).
 function todayHubBodyHtml(slotSummaries) {
   const items = slotSummaries.map(({ slotKey, current, previous }) => {
     const label = SLOT_LABEL[slotKey];
@@ -765,7 +804,7 @@ function todayHubBodyHtml(slotSummaries) {
     <h2>그 밖에도</h2>
     <ul class="more-list">
       <li>🧩 초성 문장 퀴즈 — 매일 정시마다 새 라운드가 열려요. <a href="/bang/">화씨.방에서 참여하기 →</a></li>
-      <li>📔 훔쳐본 일기장 — 매주 수요일 새 이야기가 공개돼요. <a href="/bang/">화씨.방에서 읽기 →</a></li>
+      <li>📔 훔쳐본 일기장 — 매주 수요일 새 이야기가 공개돼요. <a href="/bang/diary/">지난 회차 보기 →</a></li>
       <li>🎲 세 단어 챌린지 — 지난 우승작들은 <a href="/bang/word-challenge/">여기서</a> 볼 수 있어요.</li>
     </ul>`;
 }
@@ -851,6 +890,64 @@ function renderWordChallengeArchive(entries, indexable) {
     description: `화씨.방에서 매일 진행되는 세 단어 챌린지의 지난 우승작 ${entries.length}편을 모아봤어요.`,
     canonical: url, robots: indexable ? 'index,follow' : 'noindex,follow',
     bodyHtml: wordChallengeArchiveBodyHtml(entries),
+  });
+}
+
+// /bang/diary/{book_id}/ — 스포일러 없는 도입부(start 노드, 선택 갈리기 전)만
+// 정적으로 공개. 전체 분기/모든 엔딩을 다 풀면 그건 크롤러만이 아니라 검색으로
+// 우연히 들어온 일반 유저에게도 스포일러가 되고(정적 페이지는 앱과 달리 누구나
+// 바로 도달 가능한 공개 URL), 인터랙티브하게 선택해가며 읽는 앱 본연의 재미도
+// 없앰 — start 노드는 어떤 선택을 하든 모두가 보는 공통 도입부라 스포일러가 될
+// 수 없음(2026-08-25 논의 결론).
+function diaryTeaserBodyHtml({ book }) {
+  const startNode = (book.nodes || {})[book.startNodeId] || {};
+  const paragraphsHtml = (startNode.paragraphs || []).map(p => `<p>${esc(p)}</p>`).join('');
+  return `<a class="back" href="/bang/diary/">← 훔쳐본 일기장 모음</a>
+    <h1>${esc(book.title)}</h1>
+    ${startNode.dateLabel ? `<div class="hub-item-meta">${esc(startNode.dateLabel)}</div>` : ''}
+    <div class="diary-page">${paragraphsHtml}</div>
+    <p class="lead" style="margin-top:20px">이야기는 여기서 갈라져요. 선택에 따라 결말이 달라집니다.</p>
+    <a href="/bang/" class="back-cta">화씨.방에서 이어 읽기 →</a>`;
+}
+
+function renderDiaryBookPage({ book_id, book }) {
+  const url = `${SITE_ORIGIN}/bang/diary/${book_id}/`;
+  const startNode = (book.nodes || {})[book.startNodeId] || {};
+  const firstPara = (startNode.paragraphs || [])[0] || '';
+  const description = `${firstPara.slice(0, 80)}${firstPara.length > 80 ? '…' : ''} — 훔쳐본 일기장 ${book_id}권 도입부.`;
+  return staticHubPageShell({
+    title: `${esc(book.title)} — 훔쳐본 일기장 — 화씨.방`,
+    description, canonical: url, robots: 'index,follow',
+    ogTitle: book.title,
+    bodyHtml: diaryTeaserBodyHtml({ book }),
+  });
+}
+
+// /bang/diary/ 허브 — 공개된 회차만 나열(release 게이트는 getDiaryBook이
+// 이미 통과시킨 것만 여기 도착하므로 별도 필터 불필요).
+function diaryHubBodyHtml(entries) {
+  const items = entries.map(({ book_id, book }) => {
+    const startNode = (book.nodes || {})[book.startNodeId] || {};
+    const firstPara = (startNode.paragraphs || [])[0] || '';
+    return `
+    <a class="hub-item" href="/bang/diary/${book_id}/">
+      <div class="hub-item-title">${esc(book.title)}</div>
+      <div class="hub-item-teaser">${esc(firstPara.slice(0, 60))}${firstPara.length > 60 ? '…' : ''}</div>
+    </a>`;
+  }).join('');
+
+  return `<h1>훔쳐본 일기장</h1>
+    <p class="lead">다른 사람의 일기를 몰래 열어보는 읽기 전용 콘텐츠예요. 매주 수요일마다 새 회차가 한 편씩 공개돼요. 여기서는 공개된 회차의 도입부만 볼 수 있고, 선택에 따라 갈라지는 결말은 <a href="/bang/">화씨.방</a>에서 직접 읽을 수 있어요.</p>
+    ${entries.length ? items : '<div class="empty">아직 공개된 회차가 없어요.</div>'}`;
+}
+
+function renderDiaryHubPage(entries, indexable) {
+  const url = `${SITE_ORIGIN}/bang/diary/`;
+  return staticHubPageShell({
+    title: '훔쳐본 일기장 — 화씨.방',
+    description: `화씨.방 훔쳐본 일기장 — 지금까지 공개된 회차 ${entries.length}편의 도입부를 모아봤어요.`,
+    canonical: url, robots: indexable ? 'index,follow' : 'noindex,follow',
+    bodyHtml: diaryHubBodyHtml(entries),
   });
 }
 
@@ -1068,9 +1165,30 @@ async function main() {
   fs.writeFileSync(path.join(WORD_CHALLENGE_OUT_DIR, 'index.html'), renderWordChallengeArchive(wcEntries, wcIndexable));
   console.log(`세 단어 챌린지 결과 페이지 ${wcEntries.length}건 생성`);
 
+  // 4차: 훔쳐본 일기장 — getDiaryBook 콜러블이 공개일 게이트를 이미 통과시킨
+  // 책만 ok:true로 내려주므로, 여기선 그 결과를 그대로 신뢰하고 순회만 함
+  // (날짜 로직 중복 없음, fetchPublicDiaryBook 주석 참고).
+  fs.rmSync(DIARY_OUT_DIR, { recursive: true, force: true });
+  fs.mkdirSync(DIARY_OUT_DIR, { recursive: true });
+  const diaryEntries = [];
+  for (let book_id = 1; book_id <= DIARY_BOOK_COUNT; book_id++) {
+    const book = await fetchPublicDiaryBook(book_id);
+    if (!book) continue;
+    const html = renderDiaryBookPage({ book_id, book });
+    const dir = path.join(DIARY_OUT_DIR, String(book_id));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'index.html'), html);
+    sitemapEntries.push({ diaryId: book_id, lastmod: null });
+    diaryEntries.push({ book_id, book });
+  }
+  const diaryIndexable = diaryEntries.length > 0;
+  fs.writeFileSync(DIARY_HUB_PATH, renderDiaryHubPage(diaryEntries, diaryIndexable));
+  console.log(`훔쳐본 일기장 페이지 ${diaryEntries.length}/${DIARY_BOOK_COUNT}건 생성(공개된 회차만)`);
+
   const extraStaticPages = [
     { loc: `${SITE_ORIGIN}/bang/today/`, changefreq: 'daily', priority: '0.8' },
     ...(wcIndexable ? [{ loc: `${SITE_ORIGIN}/bang/word-challenge/`, changefreq: 'daily', priority: '0.6' }] : []),
+    ...(diaryIndexable ? [{ loc: `${SITE_ORIGIN}/bang/diary/`, changefreq: 'weekly', priority: '0.6' }] : []),
   ];
   fs.writeFileSync(SITEMAP_PATH, renderSitemap(sitemapEntries, extraStaticPages));
   // 아카이브 목록/루트 미리보기는 "완결된 이야기 모음"이라는 페이지 자체의
@@ -1097,7 +1215,8 @@ module.exports = {
   renderStoryPage, renderSitemap, renderArchiveIndex, renderRootArchivePreview, esc,
   classifySection, todaySlotBodyHtml, renderTodaySlotPage,
   renderTodayHubPage, renderWordChallengePage, renderWordChallengeArchive,
-  SLOT_KEYS, SLOT_SLUG, SLOT_LABEL,
+  renderDiaryBookPage, renderDiaryHubPage,
+  SLOT_KEYS, SLOT_SLUG, SLOT_LABEL, DIARY_BOOK_COUNT,
 };
 
 if (require.main === module) {

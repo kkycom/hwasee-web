@@ -19,6 +19,7 @@ const ROOT = path.join(__dirname, '..');
 const STORY_DIR = path.join(ROOT, 'bang', 'story');
 const TODAY_DIR = path.join(ROOT, 'bang', 'today');
 const WORD_CHALLENGE_DIR = path.join(ROOT, 'bang', 'word-challenge');
+const DIARY_DIR = path.join(ROOT, 'bang', 'diary');
 const SITEMAP_PATH = path.join(ROOT, 'bang', 'sitemap.xml');
 const SITE_ORIGIN = 'https://hwasee.me';
 
@@ -311,6 +312,55 @@ function verifyWordChallengePages(sitemap) {
   console.log('word-challenge 허브 검사 완료');
 }
 
+// bang/diary/{book_id}/index.html + bang/diary/index.html(허브) — 개별
+// 페이지는 getDiaryBook이 공개일 게이트를 통과시킨 회차만 생성되므로
+// word-challenge 개별 페이지처럼 항상 indexable. 게이트 로직 자체(날짜 비교)는
+// 여기서 다시 검사하지 않음 — build-static-stories.js가 그 로직을 안 베끼고
+// 라이브 콜러블에 그대로 위임하게 짠 이유(단일 소스)와 같은 원칙.
+function verifyDiaryPages(sitemap) {
+  if (!fs.existsSync(DIARY_DIR)) {
+    console.log('bang/diary/ 없음 — 이번 빌드에서 훔쳐본 일기장 페이지가 생성 안 됨. 검사 대상 없어 통과 처리.');
+    return;
+  }
+  const ids = fs.readdirSync(DIARY_DIR, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
+  console.log(`\n훔쳐본 일기장 개별 페이지 ${ids.length}건 검사 시작...`);
+
+  const titleOwners = new Map();
+  const descOwners = new Map();
+  for (const id of ids) {
+    const filePath = path.join(DIARY_DIR, id, 'index.html');
+    const info = checkStaticShellFile(filePath, `${SITE_ORIGIN}/bang/diary/${id}/`, `diary/${id}`);
+    if (!info) continue;
+    if (info.robots !== 'index,follow') fail(`diary/${id}: robots가 "index,follow"가 아님(공개된 회차는 항상 indexable이어야 하는 설계) — 실제: "${info.robots}"`);
+    if (info.title) { if (!titleOwners.has(info.title)) titleOwners.set(info.title, []); titleOwners.get(info.title).push(id); }
+    if (info.description) { if (!descOwners.has(info.description)) descOwners.set(info.description, []); descOwners.get(info.description).push(id); }
+  }
+  for (const [title, owners] of titleOwners) {
+    if (owners.length > 1) fail(`diary title "${title}"이 서로 다른 회차에서 동일함: ${owners.join(', ')}`);
+  }
+  for (const [desc, owners] of descOwners) {
+    if (owners.length > 1) fail(`diary description "${desc.slice(0, 30)}..."이 서로 다른 회차에서 동일함: ${owners.join(', ')}`);
+  }
+
+  if (sitemap) {
+    const sitemapIds = [...sitemap.matchAll(/<loc>https:\/\/hwasee\.me\/bang\/diary\/([^/<]+)\/<\/loc>/g)].map(m => m[1]);
+    const idSet = new Set(ids);
+    for (const id of ids) if (!sitemapIds.includes(id)) fail(`sitemap.xml에 없는 diary 페이지: ${id}`);
+    for (const id of sitemapIds) if (!idSet.has(id)) fail(`sitemap.xml엔 있는데 실제 생성된 diary 페이지 디렉터리가 없음: ${id}`);
+  }
+  console.log(`훔쳐본 일기장 개별 페이지 검사 완료: ${ids.length}건`);
+
+  console.log('\ndiary 허브 검사...');
+  const hubInfo = checkStaticShellFile(path.join(DIARY_DIR, 'index.html'), `${SITE_ORIGIN}/bang/diary/`, 'diary 허브');
+  if (hubInfo) {
+    const hubIndexable = hubInfo.robots === 'index,follow';
+    const hubInSitemap = !!(sitemap && sitemap.includes('<loc>https://hwasee.me/bang/diary/</loc>'));
+    if (hubIndexable && !hubInSitemap) fail('diary 허브: index,follow인데 sitemap.xml에 없음');
+    if (!hubIndexable && hubInSitemap) fail('diary 허브: noindex인데 sitemap.xml에는 실려있음(모순된 신호)');
+  }
+  console.log('diary 허브 검사 완료');
+}
+
 function main() {
   const sitemap = fs.existsSync(SITEMAP_PATH) ? fs.readFileSync(SITEMAP_PATH, 'utf8') : null;
   if (!sitemap) warn('sitemap.xml을 못 찾음');
@@ -321,6 +371,7 @@ function main() {
   verifyTodayPages(sitemap);
   verifyTodayHub(sitemap);
   verifyWordChallengePages(sitemap);
+  verifyDiaryPages(sitemap);
 
   if (hasFatal) { console.error('\n🔴 치명적 문제 발견 — 배포를 중단합니다.'); process.exit(1); }
   console.log(hasWarning ? '\n🟠 경고 있음 — 배포는 진행하되 확인 권장.' : '\n🟢 이상 없음.');

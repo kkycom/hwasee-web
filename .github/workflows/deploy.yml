@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # 코드 push 없이도 시간에 따라 콘텐츠가 바뀌는 것들(훔쳐본 일기장 매주 수요일
+  # 공개, hot 랭킹, 세 단어 챌린지 마감 등)이 우연히 push가 없는 날엔 정적
+  # 페이지에 며칠씩 늦게 반영되던 간극을 메우려고 매일 1회 자동 재빌드 추가
+  # (2026-08-25). 시각은 한국 기준 새벽 시간대(UTC 21:00 = KST 06:00)로 잡아서
+  # 트래픽 낮은 시간에 돎.
+  schedule:
+    - cron: '0 21 * * *'
 
 permissions:
   contents: read

@@ -1077,13 +1077,22 @@
   // 이미지를 주입. site-footer(아래 IntersectionObserver용)보다 이 스크립트가
   // 먼저 파싱되므로, 이 삽입은 그 null 체크보다 앞에서 독립적으로 실행해야 함
   // — 뒤에 두면 foot이 아직 없어 조기 return되면서 이미지 자체가 안 뜸.
+  // 쿠팡 파트너스(이 자리에 달아뒀던 카테고리)가 전환이 0건이라 카카오
+  // 애드핏으로 교체(2026-08-25, 유닛은 8/18 이전에 이 자리에 쓰던 것과 동일한
+  // DAN-9ylORAM6xK6SUwLT/160x600 재사용). innerHTML로 주입하는 자리라 안의
+  // <script>는 자동실행 안 돼서 _loadKakaoAdfit() 별도 호출 필요
+  // (project_hwasee_kakao_adfit 메모리에 정리된 것과 동일 원칙) — 근데 그 함수
+  // 자체가 이 스크립트보다 한참 뒤(HWASEE BANG 메인 스크립트)에서 정의되므로
+  // 지금 바로 부르면 아직 정의 전이라 ReferenceError남. pc-side-rank의
+  // loadLeaderboard()와 동일한 이유로 window load 이후로 호출을 미룸.
   if (ad && window.matchMedia('(min-width: 1280px)').matches) {
     ad.innerHTML = `
-      <a href="https://link.coupang.com/a/gjH44ivEUm" target="_blank" rel="noopener" referrerpolicy="unsafe-url">
-        <img src="https://ads-partners.coupang.com/banners/1018960?trackingCode=AF8559179&subId=&traceId=V0-301-8be2627c04ed5569-I1018960&w=160&h=600" alt="쿠팡 파트너스 배너" width="160" height="600" style="width:160px;height:600px;display:block;border-radius:8px">
-      </a>
-      <div style="font-size:10px;color:var(--muted);margin-top:4px;text-align:center">쿠팡 파트너스 활동으로 일정액의 수수료를 제공받을 수 있습니다.</div>
+      <ins class="kakao_ad_area" style="display:none;"
+      data-ad-unit = "DAN-9ylORAM6xK6SUwLT"
+      data-ad-width = "160"
+      data-ad-height = "600"></ins>
     `;
+    window.addEventListener('load', function () { _loadKakaoAdfit(); });
   }
   const foot = document.getElementById('site-footer');
   if (!ad || !foot || !window.IntersectionObserver) return;

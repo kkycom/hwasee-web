@@ -2491,7 +2491,24 @@ async function fbGetProfile(user_id) {
 
   return {
     ok: true,
-    user: { user_id, nickname: u.nickname, display_name: u.display_name || u.nickname, total_points: u.total_points || 0, badge: u.badge || 'seed', avatar: u.avatar || null, owned_avatars: u.owned_avatars || [], created_at: u.created_at, nickname_change_free: !(u.name_history && u.name_history.length) },
+    user: {
+      user_id, nickname: u.nickname, display_name: u.display_name || u.nickname, total_points: u.total_points || 0,
+      badge: u.badge || 'seed', avatar: u.avatar || null, owned_avatars: u.owned_avatars || [], created_at: u.created_at,
+      nickname_change_free: !(u.name_history && u.name_history.length),
+      // 업적 현황(achievementStatusHtml, bang/index.html)이 쓰는 필드들 — 원래
+      // 이 화이트리스트에 없어서 전부 undefined로 내려가 "업적 현황"이 다 0회로
+      // 뜨던 버그(2026-08-19 유저 제보). FB_ACHIEVEMENTS의 category 이름과
+      // 반드시 일치해야 함.
+      achievements: u.achievements || [],
+      adoption_count: u.adoption_count || 0, submission_count: u.submission_count || 0,
+      closing_count: u.closing_count || 0, vote_count: u.vote_count || 0,
+      login_streak: u.login_streak || 0, refine_count: u.refine_count || 0,
+      seed_count: u.seed_count || 0, referral_count: u.referral_count || 0,
+      word_challenge_wins: u.word_challenge_wins || 0, spotlight_sentence_picks: u.spotlight_sentence_picks || 0,
+      fairytale_count: u.fairytale_count || 0, speedrun_count: u.speedrun_count || 0,
+      fixed_ending_count: u.fixed_ending_count || 0, genre_switch_count: u.genre_switch_count || 0,
+      hint_win_count: u.hint_win_count || 0,
+    },
     history, writings,
   };
 }

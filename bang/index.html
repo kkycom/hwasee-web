@@ -6684,6 +6684,56 @@ async function profile() {
   _renderProfileData(res, bmRes, true);
 }
 
+// 히든 업적을 유저에게 공개(동기부여 목적, 2026-08-19 유저 결정) — 예전엔
+// owned_avatars에 실제로 들어와야만(달성 후) 아바타 상점에 흔적이 보이는
+// 식으로만 간접 노출됐음. FB_ACHIEVEMENTS는 firebase-api.js가 이미 전역으로
+// 정의해둔 걸 그대로 씀(같은 페이지에서 로드되는 스크립트라 전역 공유됨,
+// 여기서 중복 정의하면 두 배열이 어긋날 위험만 생김).
+const ACH_CATEGORY_LABELS = {
+  adoption_count: '채택', submission_count: '제출', closing_count: '완결', vote_count: '공감',
+  login_streak: '연속 출석', refine_count: '윤색', seed_count: '이야기 시작', referral_count: '친구 초대',
+  word_challenge_wins: '단어 챌린지 우승', spotlight_sentence_picks: '시작 문장 채택',
+  fairytale_count: '동화 각색 참여', speedrun_count: '초스피드 참여', fixed_ending_count: '결말고정 참여',
+  genre_switch_count: '장르전환 참여', hint_win_count: '초성힌트 정답',
+};
+function achievementStatusHtml(u) {
+  const unlocked = new Set(u.achievements || []);
+  const order = [];
+  const byCategory = {};
+  FB_ACHIEVEMENTS.forEach(a => {
+    if (!byCategory[a.category]) { byCategory[a.category] = []; order.push(a.category); }
+    byCategory[a.category].push(a);
+  });
+  return order.map(cat => {
+    const tiers = byCategory[cat];
+    const current = Number(u[cat]) || 0;
+    return `
+      <div style="margin-bottom:14px">
+        <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px">${esc(ACH_CATEGORY_LABELS[cat] || cat)} <span style="font-variant-numeric:tabular-nums;font-weight:400">(현재 ${current})</span></div>
+        ${tiers.map(a => {
+          const done = unlocked.has(a.id);
+          // 달성한 업적은 항상 꽉 찬 바 + "달성"만 표시 — login_streak처럼 연속
+          // 기록이 나중에 끊겨도(현재값이 threshold 밑으로 내려가도) "30/30 달성"
+          // 했었는데 왜 "3/30"으로 보이냐는 오해가 안 생기게 함.
+          const pct = done ? 100 : Math.min(100, Math.round((current / a.threshold) * 100));
+          return `
+            <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+              <span style="font-size:16px;flex-shrink:0;opacity:${done ? 1 : .45}">${a.avatar}</span>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+                  <span style="color:${done ? 'var(--text)' : 'var(--muted)'};font-weight:${done ? 700 : 400}">${esc(a.name)}${done ? ' ✓' : ''}</span>
+                  <span style="color:var(--muted);font-variant-numeric:tabular-nums">${done ? '달성' : `${current}/${a.threshold}`}</span>
+                </div>
+                <div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+                  <div style="height:100%;width:${pct}%;background:${done ? 'var(--accent)' : 'var(--accent2)'}"></div>
+                </div>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>`;
+  }).join('');
+}
+
 function _renderProfileData(res, bmRes, syncBadge) {
   const u         = res.user;
   if (syncBadge && user && (u.badge !== user.badge || u.avatar !== user.avatar)) {
@@ -6708,9 +6758,9 @@ function _renderProfileData(res, bmRes, syncBadge) {
     <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
       <button onclick="const b=this.nextElementSibling,a=this.querySelector('.arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
         <span>✦ 등급 기준</span>
-        <span class="arrow" style="font-size:11px;transition:transform .2s;transform:rotate(180deg)">▼</span>
+        <span class="arrow" style="font-size:11px;transition:transform .2s">▼</span>
       </button>
-      <div style="display:block;padding:12px 16px">
+      <div style="display:none;padding:12px 16px">
         ${[
           [['seed','씨앗','0'],['seed1','금간 씨앗','20'],['seed2','발아하는 씨앗','60']],
           [['sprout','여린 새싹','150'],['sprout1','새싹','350'],['sprout2','무성한 새싹','550']],
@@ -6728,6 +6778,15 @@ function _renderProfileData(res, bmRes, syncBadge) {
                 <span style="font-size:10px;color:var(--muted)">${pts}p</span>
               </div>`).join('')}
           </div>`).join('')}
+      </div>
+    </div>
+    <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <button onclick="const b=this.nextElementSibling,a=this.querySelector('.arrow');b.style.display=b.style.display==='none'?'block':'none';a.style.transform=b.style.display==='none'?'':'rotate(180deg)'" style="width:100%;padding:11px 16px;background:var(--surface);border:none;color:var(--muted);text-align:left;cursor:pointer;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+        <span>🏆 업적 현황</span>
+        <span class="arrow" style="font-size:11px;transition:transform .2s">▼</span>
+      </button>
+      <div style="display:none;padding:12px 16px">
+        ${achievementStatusHtml(u)}
       </div>
     </div>
     <div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">

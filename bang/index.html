@@ -142,17 +142,14 @@
      html/body를 스크롤 컨테이너로 만들어버려서 그 이후로 sticky 포지셔닝이
      전부(헤더 포함) 죽어있었음(2026-07-13 발견) — clip은 hidden과 동일하게
      가로 넘침을 잘라내지만 스크롤 컨테이너를 만들지 않아 sticky가 정상 동작함 */
-  html { overflow-x: clip; overscroll-behavior-y: contain; }
-  /* 모바일 브라우저 기본 "당겨서 새로고침" 제스처 차단 — 스크롤 맨 위에서 아래로
-     당기면 SPA 상태를 완전히 무시하고 페이지 전체를 강제 새로고침함. 오늘
-     고친 안전장치들(로그인 클릭 씹힘/입력창 값 보존 등, controllerchange·
-     visibilitychange 핸들러)은 전부 이 "진짜 새로고침"이 아니라 "우리 JS가
-     하는 조용한 새로고침"만 막는 거라, 이 브라우저 네이티브 제스처는 전혀
-     못 막고 있었음 — 단어챌린지 입력창 등에 뭔가 쓰던 중 실수로 당겨지면
-     그 즉시 통째로 날아감(유저 제보, 2026-08-22 — 실제로는 이 제스처였음을
-     확인). overscroll-behavior로 브라우저 차원에서 아예 제스처 자체를 비활성화.
+  html { overflow-x: clip; }
+  /* 당겨서 새로고침(pull-to-refresh) 제스처는 한 번 껐다가(2026-08-22) 바로
+     복구함 — 껐던 이유였던 "정적 인트로 깜빡임"은 사실 이 제스처가 아니라
+     불필요한 조용한 새로고침 로직(이제 제거됨) 때문이었고, PWA로 설치해서
+     쓰는 유저는 브라우저 주소창이 아예 없어 이 제스처가 유일한 수동 새로고침
+     수단이라는 지적이 맞아서 원상복구(유저 판단, 2026-08-22).
   */
-  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; overflow-x: clip; overscroll-behavior-y: contain; max-width: 100vw; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; overflow-x: clip; max-width: 100vw; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   button, a { touch-action: manipulation; }
   @media (max-width: 768px) { input, textarea, select { font-size: 16px !important; } }
 

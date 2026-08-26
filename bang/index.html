@@ -273,7 +273,11 @@
     background:linear-gradient(rgba(0,0,0,0) 40%, rgba(0,0,0,.5)), var(--sc);
     border-radius:4px 4px 0 0; box-shadow:inset -4px 0 0 rgba(0,0,0,.16), 3px 4px 9px rgba(28,14,6,.22);
     display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:4px; padding:18px 7px 16px;
-    writing-mode:vertical-rl; text-orientation:mixed; color:rgba(240,234,216,.94);
+    /* text-orientation:mixed는 숫자를 옆으로 눕혀서 통째로 회전시키는데,
+       한글 사이에 숫자가 끼면(예: "10년의...") 그 부분만 90도 돌아가서
+       뒤죽박죽으로 보임(2026-08-26 유저 제보) — upright로 바꿔서 숫자도
+       한글처럼 하나씩 세워서 쌓이게 함 */
+    writing-mode:vertical-rl; text-orientation:upright; color:rgba(240,234,216,.94);
     font-family:var(--serif); font-size:14px; font-weight:700; letter-spacing:.01em;
     transition:transform .15s ease; overflow:hidden;
   }
@@ -482,7 +486,9 @@
     border:none; border-radius:3px 3px 0 0; box-shadow:inset -2px 0 0 rgba(0,0,0,.1), 0 3px 6px rgba(0,0,0,.14);
     display:flex; align-items:center; justify-content:center; padding:8px 0;
     font-family:var(--serif); font-size:10.5px; font-weight:700; color:rgba(255,255,255,.95);
-    letter-spacing:.04em; writing-mode:vertical-rl; text-orientation:mixed; white-space:nowrap;
+    /* 완결 이야기 책장(.dshelf-spine)과 같은 이유로 upright(숫자 회전
+       버그 방지, 2026-08-26) */
+    letter-spacing:.04em; writing-mode:vertical-rl; text-orientation:upright; white-space:nowrap;
     cursor:pointer; transition:transform .15s ease; flex-shrink:0; width:38px; height:140px;
   }
   .dh-spine:hover { transform:translateY(-5px); }

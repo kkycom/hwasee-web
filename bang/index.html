@@ -1534,10 +1534,17 @@ function _doneSplitSpineTitle(s) {
   if (b.length > max) b = b.slice(0, max - 1) + '…';
   return [a, b];
 }
-// genre_probs는 stories와 별도 컬렉션(story_genre_probs)이라 오늘의 이야기
-// 스포트라이트 슬롯 출신 완결작에만 존재함 — 없으면 짙은 회색 폴백(목업에서
-// 이미 "장르 미정" 케이스로 다뤄본 처리 그대로).
+// genre_switch(장르 강제 전환) 이야기는 AI 확률 분류 대상이 아니라 이미
+// genre_sequence로 매 단계 장르가 확정돼있어서(anyClose 훅과 동일 이유로
+// backfillGenreProbs도 이 모드는 건너뜀), 마지막 단계 장르를 그대로 표지
+// 색으로 씀 — AI 호출 없이 결정론적으로 바로 나옴. 그 외엔 story_genre_probs
+// (백필로 대부분 채워짐, 2026-08-26)를 쓰고, 그마저 없으면 짙은 회색 폴백.
 function _doneGenreColor(s) {
+  if (s.mode === 'genre_switch' && Array.isArray(s.genre_sequence) && s.genre_sequence.length) {
+    const last = s.genre_sequence[s.genre_sequence.length - 1];
+    const gsSuffix = GENRE_META[last] || null;
+    if (gsSuffix) return `var(--g-${gsSuffix})`;
+  }
   const top = _doneCache && _doneCache.genreTops && _doneCache.genreTops[s.story_id];
   if (!top) return '#4a4642';
   const suffix = GENRE_META[top.genre] || 'mystery';

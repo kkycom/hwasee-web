@@ -869,6 +869,40 @@ exports.backfillStoryTitles = functions
     return { ok: true, target_count: targets.length, done, failed };
   });
 
+// 책장 표지색용 — _classifyStoryGenre는 원래 "오늘의 이야기" 스포트라이트
+// 슬롯 출신에만 호출돼서(vote_threshold 게이트), 일반 자유 이야기 완결작
+// 대부분엔 story_genre_probs가 없어 표지가 회색으로만 보임(2026-08-26,
+// "책의 언어" 책장 기능에서 발견). 유저가 전체 확장을 확정해서, 완결작
+// 전체 대상으로 이 함수도 같은 백필 방식으로 추가. genre_switch 모드는
+// 이미 genre_sequence로 장르가 확정돼있어(AI 확률 분류가 낭비+모순, 기존
+// anyClose 훅 주석과 동일 이유) 대상에서 제외 — 프론트에서 그 값을 직접
+// 색으로 씀.
+exports.backfillGenreProbs = functions
+  .region('asia-northeast3')
+  .runWith({ timeoutSeconds: 540 })
+  .https.onCall(async (data) => {
+    const user_id = data.user_id;
+    if (!user_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(user_id, data.token);
+    if (user_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '관리자만 실행할 수 있습니다.');
+
+    const db = admin.firestore();
+    const [storiesSnap, probsSnap] = await Promise.all([
+      db.collection('stories').where('status', '==', 'completed').get(),
+      db.collection('story_genre_probs').get(),
+    ]);
+    const haveProbs = new Set(probsSnap.docs.map(d => d.id));
+    const targets = storiesSnap.docs.filter(d => !haveProbs.has(d.id) && d.data().mode !== 'genre_switch');
+    if (data.dryRun) return { ok: true, dryRun: true, target_count: targets.length, total_completed: storiesSnap.size };
+
+    let done = 0, failed = 0;
+    for (const doc of targets) {
+      try { await _classifyStoryGenre(db, doc.id, Number(doc.data().current_step) || 0); done++; }
+      catch (e) { failed++; console.error('backfill genre error:', doc.id, e.message); }
+    }
+    return { ok: true, target_count: targets.length, done, failed };
+  });
+
 // story_id에 속한 전체 에피소드/제출을 episode_id/sub_id로 빠르게 찾을 수 있는
 // 맵으로 만듦 — _serverSpinOffOrphan의 조상 체인 추적에 필요.
 async function _serverBuildEpisodeMaps(db, story_id) {

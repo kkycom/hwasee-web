@@ -252,11 +252,14 @@
   /* ── 완성된 이야기 책장(2026-08-26, "책의 언어" 디자인 탐색 확정본) ──
      doneCardHtml 플랫 리스트 대신 책장(스파인)→표지→기존 상세페이지
      흐름. claude.ai 목업 최종 라운드 CSS를 실제 토큰/클래스에 맞춰 이식. */
-  .dshelf-frame { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px 20px 18px; margin-top:8px; }
-  .dshelf-plank { height:16px; background:linear-gradient(to bottom,#a9834f,#8a6538); box-shadow:0 9px 16px rgba(28,14,6,.16); }
+  /* 일반 폰 화면엔 7권 정도까지밖에 안 보인다는 지적(2026-08-26)으로 한
+     줄 10→7권으로 줄임 — 그만큼 프레임 좌우 여백도 줄여서 책이 줄어든
+     만큼 허전해 보이지 않게 함(책 폭 자체도 아래서 키움). */
+  .dshelf-frame { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px 10px 18px; margin-top:8px; }
+  .dshelf-plank { height:16px; background:linear-gradient(to bottom,#a9834f,#8a6538); box-shadow:0 9px 16px rgba(28,14,6,.14); }
   .dshelf-plank:first-child { border-radius:3px 3px 0 0; }
   .dshelf-plank:last-child { border-radius:0 0 3px 3px; }
-  .dshelf-row { display:flex; align-items:flex-end; justify-content:center; gap:9px; padding:16px 8px 0; flex-wrap:nowrap; overflow-x:auto; }
+  .dshelf-row { display:flex; align-items:flex-end; justify-content:center; gap:8px; padding:16px 4px 0; flex-wrap:nowrap; overflow-x:auto; }
   .dshelf-spine {
     border:none; cursor:pointer; flex-shrink:0;
     background:linear-gradient(rgba(0,0,0,0) 40%, rgba(0,0,0,.5)), var(--sc);
@@ -1491,7 +1494,9 @@ function _doneSpineSize(s, lines) {
   const textH = longest * 18 + 40;
   const stepH = 170 + step * 4.5;
   const h = Math.max(170, Math.min(320, Math.max(textH, stepH)));
-  const w = Math.max(42, Math.min(72, 40 + step * 1.1));
+  // 한 줄 10권→7권으로 줄인 만큼(2026-08-26) 폭을 ~10/7배 키워서, 줄어든
+  // 권수만큼 선반이 허전해 보이지 않고 이전과 비슷하게 꽉 차 보이게 함.
+  const w = Math.max(60, Math.min(105, 57 + step * 1.6));
   return { w, h };
 }
 // current_step은 보통 "마감된 마지막 에피소드 자체의 내부 step 번호"라 다른
@@ -1540,7 +1545,7 @@ function _doneGenreColor(s) {
 }
 function _doneShelfHtml(visible, total) {
   const rows = [];
-  for (let i = 0; i < visible.length; i += 10) rows.push(visible.slice(i, i + 10));
+  for (let i = 0; i < visible.length; i += 7) rows.push(visible.slice(i, i + 7));
   let html = `<div style="text-align:center;font-family:var(--serif);font-size:13.5px;color:var(--muted);margin-bottom:22px">완성된 이야기 · ${total}편</div><div class="dshelf-plank"></div>`;
   rows.forEach(row => {
     html += `<div class="dshelf-row">${row.map(s => {

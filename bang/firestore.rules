@@ -101,11 +101,17 @@ service cloud.firestore {
     match /stories/{docId} {
       allow read: if true;
       allow create, delete: if true;
+      // title/ai_title은 editStoryTitle/reportStoryTitle(Cloud Function,
+      // Admin SDK라 이 규칙 자체를 안 탐) 전용 — stories 컬렉션이 이 문서
+      // 전체가 인증 없이 열려있는 구조라, 이 가드가 없으면 클라이언트가
+      // Firestore SDK로 직접 title을 덮어써서 신고 기능을 완전히 우회할
+      // 수 있음(2026-08-26, "책의 언어" 책장 기능 설계 중 발견).
       allow update: if !(
         resource.data.get('vote_threshold', 0) > 0 &&
         resource.data.status == 'active' &&
         (request.resource.data.status == 'inactive' || request.resource.data.status == 'completed')
-      );
+      ) && request.resource.data.get('title', null) == resource.data.get('title', null)
+        && request.resource.data.get('ai_title', null) == resource.data.get('ai_title', null);
     }
     match /episodes/{docId} { allow read, write: if true; }
     match /submissions/{docId} { allow read, write: if true; }
@@ -158,6 +164,9 @@ service cloud.firestore {
     match /your_story_hearts/{docId} { allow read, write: if false; }
     match /your_story_reports/{docId} { allow read, write: if false; }
     match /your_story_day_meta/{docId} { allow read, write: if false; }
+    // 책 제목 신고 중복 방지용 — editStoryTitle/reportStoryTitle(Cloud
+    // Function) 전용, your_story_reports와 동일 패턴.
+    match /story_title_reports/{docId} { allow read, write: if false; }
     // 분석 대시보드 일별 집계 — computeAnalyticsDaily/backfillAnalyticsDaily(Admin
     // SDK)만 쓰고, getAnalyticsDashboard(_requireAdmin 게이트)를 통해서만 읽음.
     match /analytics_daily/{docId} { allow read, write: if false; }

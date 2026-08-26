@@ -743,6 +743,132 @@ ${text}
   });
 }
 
+// 완결 시 짧은 책 제목을 붙여줌("책의 언어" 책장 디자인, 2026-08-26) —
+// _classifyStoryGenre와 같은 실패 처리(키/본문 없거나 호출·파싱 실패 시
+// 조용히 return, throw 안 함 — 완결 흐름 자체를 막으면 안 됨). title/
+// ai_title 둘 다 같은 값으로 채움 — title은 유저가 이후 수정 가능한
+// "현재 표시용", ai_title은 신고 시 되돌아갈 원본(editStoryTitle은
+// ai_title을 안 건드림).
+async function _generateStoryTitle(db, story_id) {
+  const storyRef = db.collection('stories').doc(story_id);
+  const storySnap = await storyRef.get();
+  if (!storySnap.exists) return;
+  const story = storySnap.data();
+  if (story.title) return; // 이미 제목 있으면(재시도 등) 덮어쓰지 않음
+
+  const secretsSnap = await db.collection('config').doc('secrets').get();
+  const claudeKey = secretsSnap.exists ? secretsSnap.data().claude_key : null;
+  if (!claudeKey) return;
+
+  const text = await _buildStoryContext(db, story_id, story);
+  if (!text.trim()) return;
+
+  const prompt = `다음은 여러 사람이 한 문장씩 이어 써서 완성한 릴레이 소설입니다. 이 이야기에 어울리는 짧은 제목을 지어주세요.
+
+이야기 내용:
+"""
+${text}
+"""
+
+조건: 한국어 명사구 하나, 2~10자 내외. 따옴표나 설명 없이 제목 텍스트만 출력하세요.`;
+
+  let raw;
+  try { raw = await _callClaude(claudeKey, prompt, 40); } catch (e) { console.error('title generate call error:', e.message); return; }
+  if (!raw) return;
+
+  // 모델이 그래도 따옴표/줄바꿈을 붙여 보내는 경우가 있어 방어적으로 정리
+  const title = raw.replace(/^["'“”\s]+|["'“”\s.]+$/g, '').split('\n')[0].slice(0, 20).trim();
+  if (!title) return;
+
+  await storyRef.update({ title, ai_title: title });
+}
+
+const STORY_TITLE_MAX_CHARS = 20;
+
+// 책 제목 수정 — editYourStory와 달리 story_id를 클라이언트가 지정함(협업
+// 창작물이라 "본인 글" 개념이 없어 소유자 검증이 불가 — your_story처럼
+// 결정론적 id로 막을 수 없음). 대신 완결된 스토리에만, 짧은 길이 제한
+// 안에서만 허용하고, 남용은 아래 reportStoryTitle로 사후 대응(유저 확정
+// 방향 — "일단 그냥 제목 바꿀수있게 해주고 신고 기능만"). ai_title은
+// 절대 안 건드림 — 신고 시 되돌아갈 원본이라 유지.
+exports.editStoryTitle = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const user_id = data.user_id;
+    const story_id = data.story_id;
+    const title = (data.title || '').trim();
+    if (!user_id || !story_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(user_id, data.token);
+    if (!title) return { ok: false, error: '제목을 입력해주세요.' };
+    if (title.length > STORY_TITLE_MAX_CHARS) return { ok: false, error: `${STORY_TITLE_MAX_CHARS}자 이내로 작성해주세요.` };
+
+    const db = admin.firestore();
+    const storyRef = db.collection('stories').doc(story_id);
+    const storySnap = await storyRef.get();
+    if (!storySnap.exists) return { ok: false, error: '이야기를 찾을 수 없습니다.' };
+    const story = storySnap.data();
+    if (story.status !== 'completed' && story.status !== 'inactive') return { ok: false, error: '완결된 이야기만 제목을 수정할 수 있어요.' };
+
+    await storyRef.update({ title });
+    return { ok: true, title };
+  });
+
+// 제목 신고 — 신고 1건이면 승인·투표 없이 즉시 AI 원제목으로 복귀(유저 확정
+// 방향, your_story_reports의 임계값 3 패턴과 의도적으로 다름 — 여기는
+// "삭제"가 아니라 "원상복구"라 리스크가 훨씬 낮아서 즉시 처리해도 안전).
+// 중복 신고 방지는 동일하게 결정론적 id(story_id_user_id) 존재 여부로.
+exports.reportStoryTitle = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const user_id = data.user_id;
+    const story_id = data.story_id;
+    if (!user_id || !story_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(user_id, data.token);
+
+    const db = admin.firestore();
+    const storyRef = db.collection('stories').doc(story_id);
+    const reportRef = db.collection('story_title_reports').doc(`${story_id}_${user_id}`);
+
+    return db.runTransaction(async tx => {
+      const [storySnap, reportSnap] = await Promise.all([tx.get(storyRef), tx.get(reportRef)]);
+      if (!storySnap.exists) return { ok: false, error: '이야기를 찾을 수 없습니다.' };
+      if (reportSnap.exists) return { ok: false, error: '이미 신고했어요.' };
+      const story = storySnap.data();
+      if (!story.ai_title) return { ok: false, error: '신고가 불가한 제목이에요.' };
+      if (story.title === story.ai_title) return { ok: false, error: '신고가 불가한 제목이에요.' };
+
+      tx.set(reportRef, { story_id, user_id, created_at: new Date().toISOString() });
+      tx.update(storyRef, { title: story.ai_title });
+      return { ok: true, title: story.ai_title };
+    });
+  });
+
+// 이번 기능 배포 전에 이미 완결된 이야기들엔 title이 없음 — 관리자가 수동으로
+// 한 번 트리거하는 백필. dryRun:true면 대상 건수만 세고 실제 호출은 안 함
+// (Claude 호출 비용을 미리 가늠할 수 있게, 유저 요청). cron 아니고 콜러블
+// (관리자 계정으로 직접 호출) — 자동 스케줄 아님.
+exports.backfillStoryTitles = functions
+  .region('asia-northeast3')
+  .runWith({ timeoutSeconds: 540 })
+  .https.onCall(async (data) => {
+    const user_id = data.user_id;
+    if (!user_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(user_id, data.token);
+    if (user_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '관리자만 실행할 수 있습니다.');
+
+    const db = admin.firestore();
+    const snap = await db.collection('stories').where('status', '==', 'completed').get();
+    const targets = snap.docs.filter(d => !d.data().title);
+    if (data.dryRun) return { ok: true, dryRun: true, target_count: targets.length, total_completed: snap.size };
+
+    let done = 0, failed = 0;
+    for (const doc of targets) {
+      try { await _generateStoryTitle(db, doc.id); done++; }
+      catch (e) { failed++; console.error('backfill title error:', doc.id, e.message); }
+    }
+    return { ok: true, target_count: targets.length, done, failed };
+  });
+
 // story_id에 속한 전체 에피소드/제출을 episode_id/sub_id로 빠르게 찾을 수 있는
 // 맵으로 만듦 — _serverSpinOffOrphan의 조상 체인 추적에 필요.
 async function _serverBuildEpisodeMaps(db, story_id) {
@@ -1054,6 +1180,7 @@ async function _serverCloseEpisode(db, episode_id, ep) {
       }
     }
 
+    try { await _generateStoryTitle(db, ep.story_id); } catch (e) { console.error('title generate error:', e.message); }
     console.log(`serverCloseEpisode: ${episode_id} → fixed_ending 완결 (step ${nextStep + 1})`);
     return;
   }
@@ -1064,6 +1191,11 @@ async function _serverCloseEpisode(db, episode_id, ep) {
     // 슬롯을 차지하고 있었다면 다음 이야기로 즉시 교체. 사람/AI 마감 경로 모두
     // 이 함수를 거치므로(공용 단일 완결 지점) 여기가 정확한 훅 위치.
     try { await _serverRefillSpotlightSlot(db, ep.story_id); } catch (e) { console.error('spotlight refill error:', e.message); }
+    // 책장 표지용 짧은 제목 생성("책의 언어" 디자인, 2026-08-26) — 사람/AI
+    // 마감 공용 지점이라 여기 한 곳이면 일반 자유 이야기·genre_switch·
+    // 단어챌린지 등 대부분의 완결을 커버함(fixed_ending/초스피드는 각자
+    // 완결 경로가 따로 있어 그쪽에도 별도로 호출 필요).
+    try { await _generateStoryTitle(db, ep.story_id); } catch (e) { console.error('title generate error:', e.message); }
 
     // 동률 중 일부만 완결을 선택한 경우 — 완결 아닌 갈래는 그대로 묻히면 안
     // 되므로, else 분기와 동일하게 새 열린 에피소드를 만들어줌. 그래야 바로
@@ -2523,6 +2655,7 @@ exports.speedrunSubmit = functions
     }
     if (result.ok && result.completed) {
       try { await _serverRefillSpotlightSlot(db, result.story_id); } catch (e) { console.error('speedrun spotlight refill error:', e.message); }
+      try { await _generateStoryTitle(db, result.story_id); } catch (e) { console.error('speedrun title generate error:', e.message); }
     }
     return result;
   });

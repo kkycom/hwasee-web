@@ -249,6 +249,84 @@
   .card-bookmark-sticker { color:#a06020; border-color:rgba(200,130,58,.35); }
   .card-new-sticker { color:#b03030; border-color:rgba(176,48,48,.3); }
 
+  /* ── 완성된 이야기 책장(2026-08-26, "책의 언어" 디자인 탐색 확정본) ──
+     doneCardHtml 플랫 리스트 대신 책장(스파인)→표지→기존 상세페이지
+     흐름. claude.ai 목업 최종 라운드 CSS를 실제 토큰/클래스에 맞춰 이식. */
+  .dshelf-frame { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px 20px 18px; margin-top:8px; }
+  .dshelf-plank { height:16px; background:linear-gradient(to bottom,#a9834f,#8a6538); box-shadow:0 9px 16px rgba(28,14,6,.16); }
+  .dshelf-plank:first-child { border-radius:3px 3px 0 0; }
+  .dshelf-plank:last-child { border-radius:0 0 3px 3px; }
+  .dshelf-row { display:flex; align-items:flex-end; justify-content:center; gap:9px; padding:16px 8px 0; flex-wrap:nowrap; overflow-x:auto; }
+  .dshelf-spine {
+    border:none; cursor:pointer; flex-shrink:0;
+    background:linear-gradient(rgba(0,0,0,0) 40%, rgba(0,0,0,.5)), var(--sc);
+    border-radius:4px 4px 0 0; box-shadow:inset -4px 0 0 rgba(0,0,0,.16), 3px 4px 9px rgba(28,14,6,.22);
+    display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:3px; padding:16px 6px 14px;
+    writing-mode:vertical-rl; text-orientation:mixed; color:rgba(240,234,216,.94);
+    font-family:var(--serif); font-size:13px; font-weight:700; letter-spacing:.01em;
+    transition:transform .15s ease; overflow:hidden;
+  }
+  .dshelf-spine:hover { transform:translateY(-8px); }
+  .dshelf-spine .dshelf-line { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-height:100%; }
+  .dshelf-back {
+    background:none; border:none; color:var(--muted); font-size:12.5px; font-weight:600; cursor:pointer;
+    padding:6px 4px; margin-bottom:16px; display:inline-flex; align-items:center; gap:4px;
+  }
+  .dshelf-back:hover { color:var(--text); }
+  .dcover-card {
+    position:relative; border-radius:6px; padding:20px 22px 24px; width:100%; max-width:260px;
+    min-height:372px; margin:10px auto 0;
+    background:linear-gradient(rgba(0,0,0,0) 40%, rgba(0,0,0,.55)), var(--g);
+    box-shadow:0 22px 44px rgba(28,14,6,.32), 0 2px 6px rgba(28,14,6,.16);
+    color:#f0ead8; cursor:pointer; border:none; text-align:left; font-family:var(--font);
+  }
+  .dcover-card:hover { box-shadow:0 26px 50px rgba(28,14,6,.38), 0 2px 6px rgba(28,14,6,.2); }
+  .dcover-card::before {
+    content:''; position:absolute; left:0; top:0; bottom:0; width:10px; border-radius:6px 0 0 6px;
+    background:linear-gradient(to right, rgba(0,0,0,.42), rgba(0,0,0,0));
+  }
+  .dcover-status { position:absolute; top:20px; left:22px; right:22px; font-size:10px; font-weight:700; letter-spacing:.1em; color:rgba(240,234,216,.65); line-height:1.6; }
+  .dcover-title { font-family:var(--serif); font-size:21px; line-height:1.5; font-weight:700; text-wrap:balance; margin-top:34px; }
+  .dcover-excerpt { font-family:var(--serif); font-size:12px; line-height:1.7; color:rgba(240,234,216,.72); font-style:italic; margin-top:10px; }
+  /* 표지 위 카테고리 스티커 = cardStickersHtml() 그대로 재사용, 배경만
+     진한 장르색 위에서 안 붕 뜨게 종이톤으로 오버라이드(색은 안 건드림) */
+  .dcover-card .card-stickers { top:0; right:12px; }
+  .dcover-card .card-branch-sticker, .dcover-card .card-bookmark-sticker, .dcover-card .card-new-sticker { background:rgba(250,246,238,.92); }
+
+  /* ── 완결 이야기 제목 수정/신고(상세페이지) ── */
+  .story-title-wrap { text-align:center; margin:4px 0 14px; }
+  .story-title-main { font-family:var(--serif); font-size:16px; font-weight:700; color:var(--text); }
+  .story-title-actions { display:flex; align-items:center; justify-content:center; gap:18px; margin-top:8px; }
+  .story-title-action {
+    display:inline-flex; align-items:center; gap:5px; background:none; border:none; cursor:pointer;
+    font-family:var(--font); font-size:11.5px; font-weight:700; color:var(--muted); padding:4px 2px;
+  }
+  .story-title-action svg { width:13px; height:13px; flex-shrink:0; }
+  .story-title-action:hover { color:var(--accent2); }
+  .story-title-action.report:hover { color:#a8503f; }
+  @keyframes storyTitleRevertFlash { 0% { color:#a8503f; } 100% { color:var(--text); } }
+  .story-title-reverted { animation:storyTitleRevertFlash .9s ease; }
+  .story-title-modal-overlay {
+    position:fixed; inset:0; background:rgba(28,14,6,.45); z-index:80;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .story-title-modal-card {
+    background:var(--paper); border:1px solid var(--paper-edge); border-radius:14px;
+    padding:22px; max-width:320px; width:100%; box-shadow:0 24px 54px rgba(28,14,6,.35);
+  }
+  .story-title-modal-title { font-family:var(--serif); font-size:16px; font-weight:700; color:var(--text); margin-bottom:8px; }
+  .story-title-modal-body { font-size:12.5px; line-height:1.65; color:var(--muted); margin-bottom:16px; }
+  .story-title-modal-input {
+    width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--paper-edge);
+    background:#fff; font-family:var(--font); font-size:14px; color:var(--text); margin-bottom:16px; box-sizing:border-box;
+  }
+  .story-title-modal-actions { display:flex; gap:8px; justify-content:flex-end; }
+  .story-title-modal-btn { padding:9px 16px; border-radius:8px; border:none; font-weight:700; font-size:12.5px; cursor:pointer; font-family:var(--font); }
+  .story-title-modal-btn--ghost { background:none; color:var(--muted); }
+  .story-title-modal-btn--ghost:hover { background:var(--surface); }
+  .story-title-modal-btn--primary { background:var(--accent2); color:#fff; }
+  .story-title-modal-btn--danger { background:#a8503f; color:#fff; }
+
   /* ── 장르 확률 패널(스포트라이트 카드 + 상세페이지 공용)
      좌측 색바+워시 배경 → 페넌트 리본 모양으로 교체(2026-08-26, "책의 언어"
      디자인 탐색 라운드에서 확정). 세모+네모를 이어붙인 게 아니라 clip-path로
@@ -1226,8 +1304,10 @@ let _freeFilter = 'others'; // 'others'=미참여(기본, 새 글 찾기 우선)
 let _freeCache  = null; // { mine, others }
 let _freeLimit  = 20;
 let _doneSort  = 'activity';
-let _doneCache = null; // { stories }
+let _doneCache = null; // { stories, genreTops }
 let _doneLimit = 20;
+let _doneCoverId = null; // 책장에서 표지가 펼쳐진 story_id(null=책장 그리드)
+let _doneGenreFetching = false;
 let _freeFetching = false;
 let _doneFetching = false;
 let _spotlightFetching = false;
@@ -1248,7 +1328,7 @@ function _currentSubCount(s) {
   return eps.length ? Math.max(...eps.map(e => Number(e.sub_count) || 0)) : 0;
 }
 
-// 카드 표시(doneCardHtml 등)와 동일한 보정 규칙 — has_branch 스토리는 current_step
+// 카드 표시(_doneStepCount 등)와 동일한 보정 규칙 — has_branch 스토리는 current_step
 // 자체가 이미 정답(동률 처리 특성상), 연장/분기 스토리는 calcDisplayStep으로 보정.
 // "진행도 순" 정렬이 이 보정 없이 raw current_step만 쓰면 화면에 보이는 단계
 // 숫자와 정렬 위치가 어긋남(실제 제보로 확인됨).
@@ -1395,9 +1475,71 @@ function setDoneSort(key) {
   renderDoneCards();
 }
 
+// 책장 스파인 크기 — step 수에 비례(목업처럼 고정값 아님), 너무 작거나
+// 너무 크지 않게 범위로 clamp.
+function _doneSpineSize(s) {
+  const step = Number(s.current_step) || 0;
+  return { w: Math.max(26, Math.min(52, 24 + step)), h: Math.max(96, Math.min(216, 90 + step * 5)) };
+}
+// current_step은 보통 "마감된 마지막 에피소드 자체의 내부 step 번호"라 다른
+// 곳(참여중 카드의 calcDisplayStep, 활성 이야기 step-pill)과 맞추려면 +1이
+// 필요함 — 근데 이야기 도중 한 번이라도 동률(분기)이 있었던 이야기
+// (has_branch===true)는 그 동률 시점에 같은 step 번호를 두 에피소드가 나눠
+// 쓰면서 current_step 자체가 이미 실제 문장 수보다 1 앞서가 있어서, 그런
+// 이야기는 +1을 또 더하면 오히려 1단계 더 높게 잘못 표시됨(2026-07-08 검증).
+function _doneStepCount(s) {
+  return s.has_branch ? (Number(s.current_step) || 0) : calcDisplayStep(s, Number(s.current_step) || 0);
+}
+function _doneParticipantCount(s) { return Number(s.activity_count || s.participant_count) || 0; }
+// title 필드(완결 시 AI가 붙여줌, editStoryTitle로 유저가 수정 가능)가 없는
+// 구버전 완결작은 첫 문장을 잘라 폴백 — backfillStoryTitles 실행 전까지의
+// 과도기 대비.
+function _doneTitle(s) {
+  if (s.title) return s.title;
+  const o = s.opening || '';
+  return o.length > 24 ? o.slice(0, 24) + '…' : o;
+}
+// 책등 세로 두 줄 분리 — writing-mode 자동 줄바꿈에 맡기면 글자 순서가
+// 뒤섞여 보이는 문제가 있어(목업에서 확인) 직접 앞/뒤로 잘라 각각 독립된
+// 줄로 렌더(세로쓰기 블록 진행 방향이 오른쪽→왼쪽이라 첫 줄이 오른쪽에 옴).
+function _doneSplitSpineTitle(s) {
+  const max = 19;
+  if (s.length <= max) return [s];
+  const mid = Math.ceil(s.length / 2);
+  let cut = s.lastIndexOf(' ', mid + 3);
+  if (cut < mid - 5) cut = s.indexOf(' ', mid - 3);
+  if (cut === -1) cut = mid;
+  let a = s.slice(0, cut).trim(), b = s.slice(cut).trim();
+  if (a.length > max) a = a.slice(0, max - 1) + '…';
+  if (b.length > max) b = b.slice(0, max - 1) + '…';
+  return [a, b];
+}
+// genre_probs는 stories와 별도 컬렉션(story_genre_probs)이라 오늘의 이야기
+// 스포트라이트 슬롯 출신 완결작에만 존재함 — 없으면 짙은 회색 폴백(목업에서
+// 이미 "장르 미정" 케이스로 다뤄본 처리 그대로).
+function _doneGenreColor(s) {
+  const top = _doneCache && _doneCache.genreTops && _doneCache.genreTops[s.story_id];
+  if (!top) return '#4a4642';
+  const suffix = GENRE_META[top.genre] || 'mystery';
+  return `var(--g-${suffix})`;
+}
+function _doneShelfHtml(visible, total) {
+  const rows = [];
+  for (let i = 0; i < visible.length; i += 7) rows.push(visible.slice(i, i + 7));
+  let html = `<div style="text-align:center;font-family:var(--serif);font-size:13.5px;color:var(--muted);margin-bottom:22px">완성된 이야기 · ${total}편</div><div class="dshelf-plank"></div>`;
+  rows.forEach(row => {
+    html += `<div class="dshelf-row">${row.map(s => {
+      const size = _doneSpineSize(s);
+      return `<button type="button" class="dshelf-spine" style="--sc:${_doneGenreColor(s)};width:${size.w}px;height:${size.h}px" onclick="doneOpenCover('${esc(s.story_id)}')">${_doneSplitSpineTitle(_doneTitle(s)).map(line => `<span class="dshelf-line">${esc(line)}</span>`).join('')}</button>`;
+    }).join('')}</div><div class="dshelf-plank"></div>`;
+  });
+  return `<div class="dshelf-frame">${html}</div>`;
+}
+
 function renderDoneCards() {
   const content = document.getElementById('home-content');
   if (!content || !_doneCache) return;
+  if (_doneCoverId) { _renderDoneCover(content); return; }
   const _wasSortOpen = _isSortMenuOpen('ds');
   const sorted = _sortStories(_doneCache.stories, _doneSort);
   const visible = sorted.slice(0, _doneLimit);
@@ -1407,22 +1549,50 @@ function renderDoneCards() {
     : '';
   content.innerHTML = _sortBtns('ds', [['activity','참여도 순'],['likes','추천 순'],['latest','최신 순']], _doneSort)
     + (sorted.length
-      ? visible.map(s => doneCardHtml(s)).join('') + loadMoreHtml
+      ? _doneShelfHtml(visible, sorted.length) + loadMoreHtml
       : `<div class="empty" style="padding-top:40px">아직 완결된 이야기가 없어요.<br>이야기에 참여해 함께 만들어 가요!</div>`);
   _restoreSortMenuOpen('ds', _wasSortOpen);
 }
 
+// 책장은 선반 판이 행 사이에 끼는 구조라 doneCardHtml 시절처럼 "더보기" 버튼
+// 앞에 새 항목만 끼워넣는 식으로는 못 함(끼워넣을 자리가 선반 중간이 됨) —
+// 그냥 한도만 늘리고 전체를 다시 그림(20~60개 수준 재렌더는 비용 미미).
 function loadMoreDone() {
   if (!_doneCache) return;
-  const sorted = _sortStories(_doneCache.stories, _doneSort);
-  const newItems = sorted.slice(_doneLimit, _doneLimit + 20);
   _doneLimit += 20;
-  const btn = document.getElementById('done-load-more');
-  if (!btn) return;
-  const remaining = sorted.length - _doneLimit;
-  btn.before(document.createRange().createContextualFragment(newItems.map(s => doneCardHtml(s)).join('')));
-  if (remaining > 0) btn.textContent = `더 보기 (${remaining}개)`;
-  else btn.remove();
+  renderDoneCards();
+}
+
+function _renderDoneCover(content) {
+  const s = _doneCache.stories.find(x => x.story_id === _doneCoverId);
+  if (!s) { _doneCoverId = null; renderDoneCards(); return; }
+  content.innerHTML = `
+    <button type="button" class="dshelf-back" onclick="doneCloseCover()">‹ 책장으로</button>
+    <button type="button" class="dcover-card" style="--g:${_doneGenreColor(s)}" onclick="nav('story','${esc(s.story_id)}')">
+      ${cardStickersHtml(s)}
+      <div class="dcover-status">${_doneStepCount(s)}단계 완결<br>${_doneParticipantCount(s)}명 참여</div>
+      <div class="dcover-title">${esc(_doneTitle(s))}</div>
+      <div class="dcover-excerpt">"${esc(s.opening || '')}"</div>
+    </button>`;
+}
+function doneOpenCover(story_id) { _doneCoverId = story_id; renderDoneCards(); }
+function doneCloseCover() { _doneCoverId = null; renderDoneCards(); }
+
+// 책장 표지색용 genre_probs 배치 조회 — 부가 정보라 실패해도 조용히 무시,
+// 메인 렌더를 막지 않음(회색 폴백으로 이미 정상 표시되고 있음).
+async function _fetchDoneGenreTops(stories) {
+  if (_doneGenreFetching || !stories.length) return;
+  const ids = stories.map(s => s.story_id).filter(id => !((_doneCache && _doneCache.genreTops) || {})[id]);
+  if (!ids.length) return;
+  _doneGenreFetching = true;
+  try {
+    const res = await api('getGenreTops', { story_ids: ids });
+    if (res?.ok && _doneCache) {
+      _doneCache.genreTops = { ..._doneCache.genreTops, ...res.tops };
+      if (currentRoute === 'done') renderDoneCards();
+    }
+  } catch (e) { /* 부가 정보 — 조용히 무시 */ }
+  finally { _doneGenreFetching = false; }
 }
 
 // ─── 상태 ──────────────────────────────────────────────────
@@ -2047,8 +2217,9 @@ async function loadHomeTab(tab, epoch) {
   } else if (tab === 'done') {
     const _applyDone = (res) => {
       const stories = res?.ok ? res.stories : [];
-      _doneCache = { stories };
+      _doneCache = { stories, genreTops: (_doneCache && _doneCache.genreTops) || {} };
       if (currentRoute === 'done') renderDoneCards();
+      _fetchDoneGenreTops(stories);
     };
     const _cachedDone = _lsc.get('done');
     const _staleDone  = _cachedDone || _lsc.getStale('done');
@@ -2290,33 +2461,6 @@ function popularCardHtml(s) {
     </div>`;
 }
 
-// 완결된 이야기 카드
-function doneCardHtml(s) {
-  // current_step은 보통 "마감된 마지막 에피소드 자체의 내부 step 번호"라 다른 곳
-  // (참여중 카드의 calcDisplayStep, 활성 이야기 step-pill, 알림 메시지)과 맞추려면
-  // +1이 필요함 — 근데 이야기 도중 한 번이라도 동률(분기)이 있었던 이야기
-  // (has_branch===true)는 그 동률 시점에 같은 step 번호를 두 에피소드가
-  // 나눠 쓰면서 current_step 자체가 이미 실제 문장 수보다 1 앞서가 있어서,
-  // 그런 이야기는 +1을 또 더하면 오히려 1단계 더 높게 잘못 표시됨(2026-07-08,
-  // 유저가 "전에 맞던 것도 이제 틀리다"고 재차 지적해서 전수 재검증 후 확인 —
-  // 완결된 9개 중 f3279a4e/7e9e8c33 두 개만 has_branch=true였고 이 패턴이었음).
-  const step = s.has_branch
-    ? (Number(s.current_step) || 0)
-    : calcDisplayStep(s, Number(s.current_step) || 0);
-  const likes = Number(s.like_count) || 0;
-  const count = Number(s.activity_count || s.participant_count) || 0;
-  return `
-    <div class="story-card-wrap">
-    <div class="story-card" onclick="nav('story','${esc(s.story_id)}')">
-      ${cardStickersHtml(s)}
-      <div class="story-card-title">${esc(s.opening)}</div>
-      <div class="story-card-footer">
-        <span class="step-pill">${step}단계 완성 · 참여자 ${count}명</span>
-        ${likes > 0 ? `<span style="font-size:12px;color:var(--accent);margin-left:auto;display:inline-flex;align-items:center;gap:3px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>${likes}</span>` : ''}
-      </div>
-    </div>
-    </div>`;
-}
 
 
 function myStoryCardHtml(s) {
@@ -2760,6 +2904,7 @@ function _applyStoryData(res, story_id) {
         <button class="btn btn-ghost btn-sm" style="border:none;color:var(--muted);display:inline-flex;align-items:center;gap:4px" onclick="shareStory('${esc(s.story_id)}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>공유</button>
       </div>
     </div>
+    ${isFinished && s.title ? storyTitleBlockHtml(s) : ''}
     ${s.mode === 'fixed_ending' ? `<div style="margin:12px 0"><span class="step-pill"><span class="step-dot"></span>🎯 ${isFinished ? '완결' : (openEp ? calcDisplayStep(s, openEp.step) : (Number(s.current_step) || 0) + 1) + '/' + (s.max_steps || 10) + '단계'}</span></div>` : ''}
     <div id="prose-select-bar" class="prose-select-bar"></div>
     <div class="story-prose" id="story-prose-wrap" onclick="handleProseWrapClick(event)">
@@ -5594,6 +5739,95 @@ function _bmBtnPaint(btn, marked) {
   btn.setAttribute('data-bm', marked ? '1' : '');
   btn.style.color = marked ? 'var(--accent2)' : 'var(--muted)';
   btn.innerHTML = `${_bmIconSvg(marked)}${marked ? '책갈피됨' : '책갈피'}`;
+}
+
+// ── 완결 이야기 책 제목(2026-08-26, "책의 언어" 책장 기능) ──────────────
+const _TITLE_PENCIL_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+const _TITLE_FLAG_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22V15"/></svg>`;
+
+function storyTitleBlockHtml(s) {
+  return `
+    <div class="story-title-wrap">
+      <div class="story-title-main" id="story-title-text">${esc(s.title)}</div>
+      ${user ? `
+      <div class="story-title-actions">
+        <button type="button" class="story-title-action" data-story="${esc(s.story_id)}" onclick="openEditStoryTitleModal(this)">${_TITLE_PENCIL_SVG}제목 수정</button>
+        <button type="button" class="story-title-action report" data-story="${esc(s.story_id)}" data-ai-title="${esc(s.ai_title || '')}" onclick="openReportStoryTitleModal(this)">${_TITLE_FLAG_SVG}신고</button>
+      </div>` : ''}
+    </div>`;
+}
+
+function _showTitleModal(html) {
+  let ov = document.getElementById('story-title-modal-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'story-title-modal-overlay';
+    ov.className = 'story-title-modal-overlay';
+    ov.onclick = (e) => { if (e.target === ov) _closeTitleModal(); };
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML = `<div class="story-title-modal-card">${html}</div>`;
+}
+function _closeTitleModal() {
+  const ov = document.getElementById('story-title-modal-overlay');
+  if (ov) ov.remove();
+}
+
+function openEditStoryTitleModal(btn) {
+  const story_id = btn.dataset.story;
+  const current = document.getElementById('story-title-text')?.textContent || '';
+  _showTitleModal(`
+    <div class="story-title-modal-title">제목 수정</div>
+    <div class="story-title-modal-body">이 책의 제목을 새로 제안해보세요.</div>
+    <input class="story-title-modal-input" id="story-title-modal-input" value="${esc(current)}" maxlength="20">
+    <div class="story-title-modal-actions">
+      <button type="button" class="story-title-modal-btn story-title-modal-btn--ghost" onclick="_closeTitleModal()">취소</button>
+      <button type="button" class="story-title-modal-btn story-title-modal-btn--primary" onclick="_confirmEditStoryTitle('${esc(story_id)}')">저장</button>
+    </div>`);
+  document.getElementById('story-title-modal-input')?.focus();
+}
+async function _confirmEditStoryTitle(story_id) {
+  if (!user) { toast('로그인이 필요해요.', true); return; }
+  const input = document.getElementById('story-title-modal-input');
+  const v = (input?.value || '').trim();
+  if (!v) return;
+  const res = await fbEditStoryTitle(story_id, user.user_id, v);
+  if (!res.ok) { toast(res.error || '수정에 실패했어요.', true); return; }
+  const el = document.getElementById('story-title-text');
+  if (el) el.textContent = res.title || v;
+  _closeTitleModal();
+}
+
+function openReportStoryTitleModal(btn) {
+  const story_id = btn.dataset.story;
+  const aiTitle = btn.dataset.aiTitle;
+  const current = document.getElementById('story-title-text')?.textContent || '';
+  const already = !aiTitle || current === aiTitle;
+  _showTitleModal(already ? `
+    <div class="story-title-modal-title">신고 불가</div>
+    <div class="story-title-modal-body">AI가 붙인 제목이에요 — 신고가 불가한 제목이에요.</div>
+    <div class="story-title-modal-actions">
+      <button type="button" class="story-title-modal-btn story-title-modal-btn--ghost" onclick="_closeTitleModal()">닫기</button>
+    </div>` : `
+    <div class="story-title-modal-title">신고하시겠습니까?</div>
+    <div class="story-title-modal-body">누군가 바꾼 제목이에요. 신고하면 승인 절차 없이 바로 원래 AI 제목("${esc(aiTitle)}")으로 되돌아가요.</div>
+    <div class="story-title-modal-actions">
+      <button type="button" class="story-title-modal-btn story-title-modal-btn--ghost" onclick="_closeTitleModal()">취소</button>
+      <button type="button" class="story-title-modal-btn story-title-modal-btn--danger" onclick="_confirmReportStoryTitle('${esc(story_id)}')">신고하기</button>
+    </div>`);
+}
+async function _confirmReportStoryTitle(story_id) {
+  if (!user) { toast('로그인이 필요해요.', true); return; }
+  const res = await fbReportStoryTitle(story_id, user.user_id);
+  _closeTitleModal();
+  if (!res.ok) { toast(res.error || '처리에 실패했어요.', true); return; }
+  const el = document.getElementById('story-title-text');
+  if (el) {
+    el.textContent = res.title;
+    el.classList.add('story-title-reverted');
+    setTimeout(() => el.classList.remove('story-title-reverted'), 900);
+  }
+  toast('신고 접수 — 원래 제목으로 되돌렸어요.');
 }
 
 async function toggleBookmark(story_id, btn) {

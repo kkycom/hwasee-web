@@ -601,6 +601,27 @@ async function fbGetStories(page) {
   }
 }
 
+// 완성된 이야기 책장(2026-08-26) 표지 색용 — story_genre_probs는 stories와
+// 별도 컬렉션이라(오늘의 이야기 스포트라이트 슬롯 출신에만 존재, 일반
+// 자유 이야기는 없는 경우가 더 많음) 책장에 보이는 story_id들만 모아
+// _fbGetUsersByIds와 동일한 청크 'in' 조회로 한 번에 가져옴. 이 컬렉션은
+// firestore.rules에서 read:true라 여기서 클라이언트가 직접 읽어도 안전.
+async function fbGetGenreTops(story_ids) {
+  const uniqueIds = [...new Set(story_ids)].filter(Boolean);
+  if (!uniqueIds.length) return { ok: true, tops: {} };
+  const chunks = [];
+  for (let i = 0; i < uniqueIds.length; i += 30) chunks.push(uniqueIds.slice(i, i + 30));
+  const snaps = await Promise.all(
+    chunks.map(chunk => db.collection('story_genre_probs').where(firebase.firestore.FieldPath.documentId(), 'in', chunk).get())
+  );
+  const tops = {};
+  snaps.forEach(s => s.docs.forEach(d => {
+    const top = (d.data().top || [])[0];
+    if (top) tops[d.id] = top;
+  }));
+  return { ok: true, tops };
+}
+
 // 유저 문서 여러 개를 개별 .doc(id).get() N번 대신 documentId() 'in' 쿼리로
 // 묶어서 조회('in'은 최대 30개) — 오래됐거나 참여자·분기가 많은 이야기일수록
 // 개별 조회 수가 그만큼 늘어나 이야기 진입이 느려지던 원인 중 하나였음
@@ -3012,6 +3033,22 @@ async function fbSpeedrunUpvote(sub_id, voter_id) {
   } catch (e) { return { ok: false, error: e.message || '처리에 실패했습니다.' }; }
 }
 
+// 완결 이야기 책 제목 수정/신고 — stories 컬렉션이 firestore.rules에서
+// title/ai_title 필드만 클라이언트 직접 수정을 막아둬서(2026-08-26 추가),
+// 이 두 필드는 반드시 Cloud Function 경유.
+async function fbEditStoryTitle(story_id, user_id, title) {
+  try {
+    const r = await functionsRegion.httpsCallable('editStoryTitle')({ story_id, title, user_id, token: localStorage.getItem('hwasee_token') });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '수정에 실패했습니다.' }; }
+}
+async function fbReportStoryTitle(story_id, user_id) {
+  try {
+    const r = await functionsRegion.httpsCallable('reportStoryTitle')({ story_id, user_id, token: localStorage.getItem('hwasee_token') });
+    return r.data;
+  } catch (e) { return { ok: false, error: e.message || '처리에 실패했습니다.' }; }
+}
+
 // 당신의 이야기 — your_story_posts가 firestore.rules에서 완전히 잠겨있어
 // (익명 보장을 위해 user_id를 응답에서 직접 벗겨내야 함, functions/index.js
 // 주석 참고) hint_rounds/speedrun 신고와 동일하게 전부 Cloud Function 경유.
@@ -3322,6 +3359,7 @@ async function firebaseApi(action, params = {}) {
     case 'setMyEmail':             return fbSetMyEmail(await requireUid(), params.email);
 
     case 'getStories':         return fbGetStories(params.page);
+    case 'getGenreTops':       return fbGetGenreTops(params.story_ids);
     case 'getStory':           return fbGetStory(params.story_id, uid || null);
     case 'createStory':        return fbCreateStory(params.opening, await requireUid(), params.is_ai_seed);
     case 'getMyStories':       return fbGetMyStories(await requireUid());

@@ -249,25 +249,22 @@
   .card-bookmark-sticker { color:#a06020; border-color:rgba(200,130,58,.35); }
   .card-new-sticker { color:#b03030; border-color:rgba(176,48,48,.3); }
 
-  /* ── 장르 확률 패널(스포트라이트 카드 + 상세페이지 공용) */
-  .genre-panel { border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; border-left: 4px solid var(--g); background: var(--wash); }
-  .genre-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
-  .genre-headline { font-size: 11.5px; line-height: 1.6; flex: 1 1 auto; min-width: max-content; white-space: nowrap; color: var(--muted); }
-  .genre-headline .n { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
-  .genre-pill-primary {
-    display: inline-flex; align-items: baseline; gap: 2px;
-    background: var(--g); color: #faf6ee;
-    padding: 2px 6px; border-radius: 20px; font-weight: 700; font-size: 11px;
-    white-space: nowrap; margin: 0 3px 0 2px;
+  /* ── 장르 확률 패널(스포트라이트 카드 + 상세페이지 공용)
+     좌측 색바+워시 배경 → 페넌트 리본 모양으로 교체(2026-08-26, "책의 언어"
+     디자인 탐색 라운드에서 확정). 세모+네모를 이어붙인 게 아니라 clip-path로
+     한 덩어리를 잘라내서 진짜 깃발처럼 오른쪽 끝이 파이게 함. 2·3순위 장르
+     칩은 빼고 1순위만 보여주는 쪽으로 확정(genre-chip류 CSS는 더 안 쓰여서
+     같이 정리). --wash 토큰은 이제 안 쓰지만, 호출부 스타일 속성엔 그대로
+     남겨둬도 무해해서 그쪽은 안 건드림. */
+  .genre-panel {
+    position: relative; padding: 10px 26px 10px 14px; margin-bottom: 12px;
+    background: var(--g); box-shadow: 0 3px 7px rgba(28,14,6,.16);
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%);
   }
-  .genre-chips { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; flex-shrink: 0; }
-  .genre-chip {
-    display: inline-flex; align-items: baseline; gap: 2px;
-    font-size: 9.5px; font-weight: 600; padding: 2px 6px; border-radius: 20px;
-    background: var(--card); border: 1px solid var(--border); color: var(--muted);
-    white-space: nowrap;
-  }
-  .genre-chip .n { font-variant-numeric: tabular-nums; color: var(--text); }
+  .genre-row { display: flex; align-items: center; gap: 6px; }
+  .genre-headline { font-size: 11.5px; line-height: 1.5; color: rgba(245,239,224,.82); }
+  .genre-headline .n { font-weight: 700; color: #f5efe0; font-variant-numeric: tabular-nums; }
+  .genre-pill-primary { font-weight: 800; color: #f5efe0; white-space: nowrap; }
 
   /* ── 상세페이지 장르 확률 추이 차트 */
   .genre-chart-toggle {
@@ -2751,7 +2748,7 @@ function _applyStoryData(res, story_id) {
         ${user ? `
           <button id="bm-btn" class="btn btn-ghost btn-sm" data-bm="${is_bookmarked?'1':''}" style="border:none;color:${is_bookmarked?'var(--accent2)':'var(--muted)'};display:inline-flex;align-items:center;gap:4px"
             onclick="toggleBookmark('${esc(s.story_id)}', this)">
-            <svg width="9" height="12" viewBox="0 0 9 12" fill="${is_bookmarked?'currentColor':'none'}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M1 1h7v10l-3.5-2.5L1 11z"/></svg>${is_bookmarked ? '책갈피됨' : '책갈피'}
+            ${_bmIconSvg(is_bookmarked)}${is_bookmarked ? '책갈피됨' : '책갈피'}
           </button>
           ${s.status === 'active' ? `
             <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>
@@ -3770,15 +3767,13 @@ const GENRE_META = {
 // 이야기 상세로 들어가지 않아도 스포트라이트 카드에서 바로 확인 가능하게, 유저 요청).
 function genrePanelHtml(genre_probs, story_id) {
   if (!genre_probs || !genre_probs.length) return '';
-  const [top, ...rest] = genre_probs;
+  const [top] = genre_probs;
   const suffix = GENRE_META[top.genre] || 'mystery';
-  const chips = rest.map(g => `<span class="genre-chip">${esc(g.genre)} <span class="n">${g.pct}%</span></span>`).join('');
   const clickAttr = story_id ? ` onclick="openStoryGenreModal('${esc(story_id)}')" role="button" tabindex="0" style="--g:var(--g-${suffix});--wash:var(--g-${suffix}-wash);cursor:pointer"` : ` style="--g:var(--g-${suffix});--wash:var(--g-${suffix}-wash)"`;
   return `
     <div class="genre-panel"${clickAttr}>
       <div class="genre-row">
         <div class="genre-headline">이 이야기, <span class="genre-pill-primary">${esc(top.genre)}</span>로 끝날 확률 <span class="n">${top.pct}%</span></div>
-        <div class="genre-chips">${chips}</div>
       </div>
     </div>`;
 }
@@ -4013,7 +4008,11 @@ function _dhRenderShelf() {
   const booksHtml = DIARY_HUB_BOOKS.map(b => {
     if (!_dhIsUnlocked(b)) return `<button type="button" class="dh-spine locked" disabled>🔒</button>`;
     const size = DIARY_HUB_SPINE_SIZES[b.id] || {};
-    return `<button type="button" class="dh-spine" style="background:${DIARY_HUB_THEME_COLORS[b.theme]};color:#1c0e06;width:${size.w || 38}px;height:${size.h || 140}px" onclick="_dhSelectBook(${b.id})">${esc(b.title)}</button>`;
+    // 원톤 평면 배경이 그래픽처럼 밋밋해 보인다는 지적(2026-08-26) — 완결
+    // 이야기 책장(cshelf-spine)에 넣은 것과 같은 그라데이션으로 입체감을 줌.
+    // 다만 여기 글자색은 밝은 배경 위 어두운 텍스트라, 완결 책장(밝은 글자)만큼
+    // 진하게 어둡히면 하단부 글자 대비가 무너져서 강도는 더 약하게(.24) 둠.
+    return `<button type="button" class="dh-spine" style="background:linear-gradient(rgba(0,0,0,0) 40%, rgba(0,0,0,.24)), ${DIARY_HUB_THEME_COLORS[b.theme]};color:#1c0e06;width:${size.w || 38}px;height:${size.h || 140}px" onclick="_dhSelectBook(${b.id})">${esc(b.title)}</button>`;
   }).join('');
   const lockedLabels = DIARY_HUB_BOOKS.filter(b => !_dhIsUnlocked(b)).map(_dhReleaseLabel).join(' · ');
   document.getElementById('dh-root').innerHTML = `
@@ -5585,10 +5584,16 @@ function polishSub(sub_id, content, author_nickname) {
   input.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
+// 리본 아이콘 대신 접힌 모서리(도그이어) 페이지 아이콘 — "책의 언어" 디자인
+// 탐색 라운드에서 확정(2026-08-26). 접힌 코너 삼각형이 책갈피 상태일 때만
+// 채워짐(모양 자체는 그대로, 칠 여부로만 상태 구분).
+function _bmIconSvg(marked) {
+  return `<svg width="11" height="13" viewBox="0 0 12 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M1.5 1H8L10.5 3.5V13H1.5Z"/><path d="M8 1L10.5 3.5H8Z" fill="${marked ? 'currentColor' : 'none'}" stroke="none"/></svg>`;
+}
 function _bmBtnPaint(btn, marked) {
   btn.setAttribute('data-bm', marked ? '1' : '');
   btn.style.color = marked ? 'var(--accent2)' : 'var(--muted)';
-  btn.innerHTML = `<svg width="9" height="12" viewBox="0 0 9 12" fill="${marked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M1 1h7v10l-3.5-2.5L1 11z"/></svg>${marked ? '책갈피됨' : '책갈피'}`;
+  btn.innerHTML = `${_bmIconSvg(marked)}${marked ? '책갈피됨' : '책갈피'}`;
 }
 
 async function toggleBookmark(story_id, btn) {

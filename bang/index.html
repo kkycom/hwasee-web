@@ -2930,7 +2930,7 @@ function _applyStoryData(res, story_id) {
         ${user ? `
           <button id="bm-btn" class="btn btn-ghost btn-sm" data-bm="${is_bookmarked?'1':''}" style="border:none;color:${is_bookmarked?'var(--accent2)':'var(--muted)'};display:inline-flex;align-items:center;gap:4px"
             onclick="toggleBookmark('${esc(s.story_id)}', this)">
-            ${_bmIconSvg(is_bookmarked)}${is_bookmarked ? '책갈피됨' : '책갈피'}
+            <svg width="9" height="12" viewBox="0 0 9 12" fill="${is_bookmarked?'currentColor':'none'}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M1 1h7v10l-3.5-2.5L1 11z"/></svg>${is_bookmarked ? '책갈피됨' : '책갈피'}
           </button>
           ${s.status === 'active' ? `
             <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>
@@ -5767,16 +5767,10 @@ function polishSub(sub_id, content, author_nickname) {
   input.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-// 리본 아이콘 대신 접힌 모서리(도그이어) 페이지 아이콘 — "책의 언어" 디자인
-// 탐색 라운드에서 확정(2026-08-26). 접힌 코너 삼각형이 책갈피 상태일 때만
-// 채워짐(모양 자체는 그대로, 칠 여부로만 상태 구분).
-function _bmIconSvg(marked) {
-  return `<svg width="11" height="13" viewBox="0 0 12 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M1.5 1H8L10.5 3.5V13H1.5Z"/><path d="M8 1L10.5 3.5H8Z" fill="${marked ? 'currentColor' : 'none'}" stroke="none"/></svg>`;
-}
 function _bmBtnPaint(btn, marked) {
   btn.setAttribute('data-bm', marked ? '1' : '');
   btn.style.color = marked ? 'var(--accent2)' : 'var(--muted)';
-  btn.innerHTML = `${_bmIconSvg(marked)}${marked ? '책갈피됨' : '책갈피'}`;
+  btn.innerHTML = `<svg width="9" height="12" viewBox="0 0 9 12" fill="${marked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M1 1h7v10l-3.5-2.5L1 11z"/></svg>${marked ? '책갈피됨' : '책갈피'}`;
 }
 
 // ── 완결 이야기 책 제목(2026-08-26, "책의 언어" 책장 기능) ──────────────

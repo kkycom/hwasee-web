@@ -261,9 +261,9 @@
     border:none; cursor:pointer; flex-shrink:0;
     background:linear-gradient(rgba(0,0,0,0) 40%, rgba(0,0,0,.5)), var(--sc);
     border-radius:4px 4px 0 0; box-shadow:inset -4px 0 0 rgba(0,0,0,.16), 3px 4px 9px rgba(28,14,6,.22);
-    display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:3px; padding:16px 6px 14px;
+    display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:4px; padding:18px 7px 16px;
     writing-mode:vertical-rl; text-orientation:mixed; color:rgba(240,234,216,.94);
-    font-family:var(--serif); font-size:13px; font-weight:700; letter-spacing:.01em;
+    font-family:var(--serif); font-size:14px; font-weight:700; letter-spacing:.01em;
     transition:transform .15s ease; overflow:hidden;
   }
   .dshelf-spine:hover { transform:translateY(-8px); }
@@ -1477,9 +1477,20 @@ function setDoneSort(key) {
 
 // 책장 스파인 크기 — step 수에 비례(목업처럼 고정값 아님), 너무 작거나
 // 너무 크지 않게 범위로 clamp.
-function _doneSpineSize(s) {
+// 높이는 step(=책 두께 다양성용)뿐 아니라 실제 책등 글자 줄 길이도 함께
+// 반영 — step만 보고 정했더니 짧은 step인데 제목이 긴 책은 글자가 잘리고
+// (2026-08-26 유저 지적), 반대로 step 큰 책은 필요 이상으로 커 보였음.
+// 세로쓰기 한 글자당 대략 18px 필요하다고 보고 필요한 최소 높이를 계산해서
+// step 기반 높이와 둘 중 더 큰 값을 씀(글자 잘림 자체를 없앰). 기준 크기도
+// 전체적으로 키움(유저가 "현실의 균열" 크기를 기준으로 다양화하라고 확정).
+function _doneSpineSize(s, lines) {
   const step = Number(s.current_step) || 0;
-  return { w: Math.max(26, Math.min(52, 24 + step)), h: Math.max(96, Math.min(216, 90 + step * 5)) };
+  const longest = Math.max(...lines.map(l => l.length), 4);
+  const textH = longest * 18 + 40;
+  const stepH = 170 + step * 4.5;
+  const h = Math.max(170, Math.min(320, Math.max(textH, stepH)));
+  const w = Math.max(42, Math.min(72, 40 + step * 1.1));
+  return { w, h };
 }
 // current_step은 보통 "마감된 마지막 에피소드 자체의 내부 step 번호"라 다른
 // 곳(참여중 카드의 calcDisplayStep, 활성 이야기 step-pill)과 맞추려면 +1이
@@ -1503,7 +1514,9 @@ function _doneTitle(s) {
 // 뒤섞여 보이는 문제가 있어(목업에서 확인) 직접 앞/뒤로 잘라 각각 독립된
 // 줄로 렌더(세로쓰기 블록 진행 방향이 오른쪽→왼쪽이라 첫 줄이 오른쪽에 옴).
 function _doneSplitSpineTitle(s) {
-  const max = 19;
+  // 한 줄 최대 길이를 짧게 둬서(기존 19 → 11) 한 줄이 지나치게 길어지는
+  // 걸 막고, 그만큼 책 높이 편차도 줄임(2026-08-26 "뒤죽박죽" 지적 반영).
+  const max = 11;
   if (s.length <= max) return [s];
   const mid = Math.ceil(s.length / 2);
   let cut = s.lastIndexOf(' ', mid + 3);
@@ -1525,12 +1538,13 @@ function _doneGenreColor(s) {
 }
 function _doneShelfHtml(visible, total) {
   const rows = [];
-  for (let i = 0; i < visible.length; i += 7) rows.push(visible.slice(i, i + 7));
+  for (let i = 0; i < visible.length; i += 12) rows.push(visible.slice(i, i + 12));
   let html = `<div style="text-align:center;font-family:var(--serif);font-size:13.5px;color:var(--muted);margin-bottom:22px">완성된 이야기 · ${total}편</div><div class="dshelf-plank"></div>`;
   rows.forEach(row => {
     html += `<div class="dshelf-row">${row.map(s => {
-      const size = _doneSpineSize(s);
-      return `<button type="button" class="dshelf-spine" style="--sc:${_doneGenreColor(s)};width:${size.w}px;height:${size.h}px" onclick="doneOpenCover('${esc(s.story_id)}')">${_doneSplitSpineTitle(_doneTitle(s)).map(line => `<span class="dshelf-line">${esc(line)}</span>`).join('')}</button>`;
+      const lines = _doneSplitSpineTitle(_doneTitle(s));
+      const size = _doneSpineSize(s, lines);
+      return `<button type="button" class="dshelf-spine" style="--sc:${_doneGenreColor(s)};width:${size.w}px;height:${size.h}px" onclick="doneOpenCover('${esc(s.story_id)}')">${lines.map(line => `<span class="dshelf-line">${esc(line)}</span>`).join('')}</button>`;
     }).join('')}</div><div class="dshelf-plank"></div>`;
   });
   return `<div class="dshelf-frame">${html}</div>`;

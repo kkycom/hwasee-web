@@ -261,7 +261,9 @@
   /* 일반 폰 화면엔 7권 정도까지밖에 안 보인다는 지적(2026-08-26)으로 한
      줄 10→7권으로 줄임 — 그만큼 프레임 좌우 여백도 줄여서 책이 줄어든
      만큼 허전해 보이지 않게 함(책 폭 자체도 아래서 키움). */
-  .dshelf-frame { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px 10px 18px; margin-top:8px; }
+  /* 책장 안쪽도 위는 밝고 아래로 갈수록 어두워지게 — 마치 위에서 빛이
+     들어오는 캐비닛처럼 깊이감을 줌(2026-08-26 유저 요청) */
+  .dshelf-frame { background:linear-gradient(rgba(0,0,0,0) 0%, rgba(28,14,6,.16) 100%), var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px 10px 18px; margin-top:8px; }
   .dshelf-plank { height:16px; background:linear-gradient(to bottom,#a9834f,#8a6538); box-shadow:0 9px 16px rgba(28,14,6,.14); }
   .dshelf-plank:first-child { border-radius:3px 3px 0 0; }
   .dshelf-plank:last-child { border-radius:0 0 3px 3px; }
@@ -1507,8 +1509,10 @@ function _doneSpineSize(s, lines) {
   // 위 보정(10/7배)이 과했음 — 폭이 너무 두꺼워져서 7권이 한 줄에 실제로
   // 안 들어가고 맨 왼쪽 책이 잘려나가던 버그(2026-08-26 유저 지적,
   // "세로길이는 적당한데 가로 폭"). 일반 폰 콘텐츠 폭(~330px)에 7권+간격
-  // 6개(6px)가 실제로 들어가는 값으로 다시 계산.
-  const w = Math.max(30, Math.min(50, 27 + step * 0.6));
+  // 6개(6px)가 실제로 들어가는 값으로 다시 계산한 뒤, "지금 뚱뚱한 느낌은
+  // 아닌데 폭 차이가 너무 균일해 보인다"는 후속 지적으로 계수만 살짝 키움
+  // (권당 최대폭은 여전히 안전 범위 안).
+  const w = Math.max(28, Math.min(52, 26 + step * 0.75));
   return { w, h };
 }
 // current_step은 보통 "마감된 마지막 에피소드 자체의 내부 step 번호"라 다른

@@ -1570,7 +1570,7 @@ function _doneGenreColor(s) {
 }
 function _doneShelfHtml(visible, total) {
   const rows = [];
-  for (let i = 0; i < visible.length; i += 7) rows.push(visible.slice(i, i + 7));
+  for (let i = 0; i < visible.length; i += 8) rows.push(visible.slice(i, i + 8));
   let html = `<div style="text-align:center;font-family:var(--serif);font-size:13.5px;color:var(--muted);margin-bottom:22px">완성된 이야기 · ${total}편</div><div class="dshelf-plank"></div>`;
   rows.forEach(row => {
     html += `<div class="dshelf-row">${row.map(s => {

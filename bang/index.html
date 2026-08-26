@@ -265,7 +265,7 @@
   .dshelf-plank { height:16px; background:linear-gradient(to bottom,#a9834f,#8a6538); box-shadow:0 9px 16px rgba(28,14,6,.14); }
   .dshelf-plank:first-child { border-radius:3px 3px 0 0; }
   .dshelf-plank:last-child { border-radius:0 0 3px 3px; }
-  .dshelf-row { display:flex; align-items:flex-end; justify-content:center; gap:8px; padding:16px 4px 0; flex-wrap:nowrap; overflow-x:auto; }
+  .dshelf-row { display:flex; align-items:flex-end; justify-content:center; gap:6px; padding:16px 4px 0; flex-wrap:nowrap; overflow-x:auto; }
   .dshelf-spine {
     border:none; cursor:pointer; flex-shrink:0;
     background:linear-gradient(rgba(0,0,0,0) 40%, rgba(0,0,0,.5)), var(--sc);
@@ -283,24 +283,26 @@
   }
   .dshelf-back:hover { color:var(--text); }
   .dcover-card {
-    /* 260px는 페이지에 비해 너무 작아 보인다는 지적(2026-08-26) — 책이라는
-       느낌이 나게 더 크게, 비율(3:4.3)은 유지. display:block 명시 — 버튼
-       기본값(inline-block)이라 "‹ 책장으로" 버튼과 인라인으로 나란히
-       섞여서 세로 중간쯤에 걸쳐 보이던 문제가 있었음(유저 지적) */
-    display:block; position:relative; border-radius:8px; padding:26px 28px 30px; width:100%; max-width:340px;
-    min-height:487px; margin:38px auto 0;
+    /* 340px가 압도적으로 크다는 지적(2026-08-26) — 85%로 축소(289px),
+       비율(3:4.3)은 유지. display:block 명시 — 버튼 기본값(inline-block)
+       이라 "‹ 책장으로" 버튼과 인라인으로 나란히 섞여서 세로 중간쯤에
+       걸쳐 보이던 문제가 있었음(유저 지적) — 지금은 뒤로가기 버튼을
+       평범한 블록 흐름으로 되돌려서(절대위치 안 씀) 이 display:block만
+       있어도 항상 그 아래 줄에 옴. */
+    display:block; position:relative; border-radius:7px; padding:22px 24px 26px; width:100%; max-width:289px;
+    min-height:414px; margin:10px auto 0;
     background:linear-gradient(rgba(0,0,0,0) 40%, rgba(0,0,0,.55)), var(--g);
     box-shadow:0 22px 44px rgba(28,14,6,.32), 0 2px 6px rgba(28,14,6,.16);
     color:#f0ead8; cursor:pointer; border:none; text-align:left; font-family:var(--font);
   }
   .dcover-card:hover { box-shadow:0 26px 50px rgba(28,14,6,.38), 0 2px 6px rgba(28,14,6,.2); }
   .dcover-card::before {
-    content:''; position:absolute; left:0; top:0; bottom:0; width:12px; border-radius:8px 0 0 8px;
+    content:''; position:absolute; left:0; top:0; bottom:0; width:10px; border-radius:7px 0 0 7px;
     background:linear-gradient(to right, rgba(0,0,0,.42), rgba(0,0,0,0));
   }
-  .dcover-status { position:absolute; top:26px; left:28px; right:28px; font-size:11px; font-weight:700; letter-spacing:.1em; color:rgba(240,234,216,.65); line-height:1.6; }
-  .dcover-title { font-family:var(--serif); font-size:26px; line-height:1.45; font-weight:700; text-wrap:balance; margin-top:42px; }
-  .dcover-excerpt { font-family:var(--serif); font-size:14px; line-height:1.7; color:rgba(240,234,216,.72); font-style:italic; margin-top:14px; }
+  .dcover-status { position:absolute; top:22px; left:24px; right:24px; font-size:10px; font-weight:700; letter-spacing:.1em; color:rgba(240,234,216,.65); line-height:1.6; }
+  .dcover-title { font-family:var(--serif); font-size:22px; line-height:1.45; font-weight:700; text-wrap:balance; margin-top:36px; }
+  .dcover-excerpt { font-family:var(--serif); font-size:12px; line-height:1.7; color:rgba(240,234,216,.72); font-style:italic; margin-top:12px; }
   /* 표지 위 카테고리 스티커 = cardStickersHtml() 그대로 재사용, 배경만
      진한 장르색 위에서 안 붕 뜨게 종이톤으로 오버라이드(색은 안 건드림) */
   .dcover-card .card-stickers { top:0; right:12px; }
@@ -1502,9 +1504,11 @@ function _doneSpineSize(s, lines) {
   const textH = longest * 18 + 40;
   const stepH = 170 + step * 4.5;
   const h = Math.max(170, Math.min(320, Math.max(textH, stepH)));
-  // 한 줄 10권→7권으로 줄인 만큼(2026-08-26) 폭을 ~10/7배 키워서, 줄어든
-  // 권수만큼 선반이 허전해 보이지 않고 이전과 비슷하게 꽉 차 보이게 함.
-  const w = Math.max(60, Math.min(105, 57 + step * 1.6));
+  // 위 보정(10/7배)이 과했음 — 폭이 너무 두꺼워져서 7권이 한 줄에 실제로
+  // 안 들어가고 맨 왼쪽 책이 잘려나가던 버그(2026-08-26 유저 지적,
+  // "세로길이는 적당한데 가로 폭"). 일반 폰 콘텐츠 폭(~330px)에 7권+간격
+  // 6개(6px)가 실제로 들어가는 값으로 다시 계산.
+  const w = Math.max(30, Math.min(50, 27 + step * 0.6));
   return { w, h };
 }
 // current_step은 보통 "마감된 마지막 에피소드 자체의 내부 step 번호"라 다른
@@ -1603,15 +1607,13 @@ function _renderDoneCover(content) {
   const s = _doneCache.stories.find(x => x.story_id === _doneCoverId);
   if (!s) { _doneCoverId = null; renderDoneCards(); return; }
   content.innerHTML = `
-    <div style="position:relative">
-      <button type="button" class="dshelf-back" style="position:absolute;top:0;left:0;margin-bottom:0;z-index:1" onclick="doneCloseCover()">‹ 책장으로</button>
-      <button type="button" class="dcover-card" style="--g:${_doneGenreColor(s)}" onclick="nav('story','${esc(s.story_id)}')">
-        ${cardStickersHtml(s)}
-        <div class="dcover-status">${_doneStepCount(s)}단계 완결<br>${_doneParticipantCount(s)}명 참여</div>
-        <div class="dcover-title">${esc(_doneTitle(s))}</div>
-        <div class="dcover-excerpt">"${esc(s.opening || '')}"</div>
-      </button>
-    </div>`;
+    <button type="button" class="dshelf-back" onclick="doneCloseCover()">‹ 책장으로</button>
+    <button type="button" class="dcover-card" style="--g:${_doneGenreColor(s)}" onclick="nav('story','${esc(s.story_id)}')">
+      ${cardStickersHtml(s)}
+      <div class="dcover-status">${_doneStepCount(s)}단계 완결<br>${_doneParticipantCount(s)}명 참여</div>
+      <div class="dcover-title">${esc(_doneTitle(s))}</div>
+      <div class="dcover-excerpt">"${esc(s.opening || '')}"</div>
+    </button>`;
 }
 function doneOpenCover(story_id) { _doneCoverId = story_id; renderDoneCards(); }
 function doneCloseCover() { _doneCoverId = null; renderDoneCards(); }

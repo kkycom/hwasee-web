@@ -131,14 +131,19 @@
 
     /* 스포트라이트 장르 확률 패널용 — 8개 고정 카테고리(functions/index.js
        SPOTLIGHT_GENRES와 이름 반드시 일치, GENRE_META에서 이 변수들을 참조) */
-    --g-romance:  #8a4a5c; --g-romance-wash:  rgba(138,74,92,.20);
-    --g-mystery:  #4a4364; --g-mystery-wash:  rgba(74,67,100,.24);
-    --g-thriller: #7a4030; --g-thriller-wash: rgba(122,64,48,.20);
-    --g-comedy:   #8a6420; --g-comedy-wash:   rgba(138,100,32,.24);
-    --g-fantasy:  #4a4a8a; --g-fantasy-wash:  rgba(74,74,138,.20);
-    --g-horror:   #33402f; --g-horror-wash:   rgba(51,64,47,.22);
-    --g-drama:    #6b5645; --g-drama-wash:    rgba(107,86,69,.20);
-    --g-sf:       #2e5f66; --g-sf-wash:       rgba(46,95,102,.20);
+    /* 미스터리/판타지가 둘 다 탁한 보라라 구분이 안 되고 전체적으로
+       칙칙하다는 지적(2026-08-26) — 8색이 서로 겹치지 않는 색상으로
+       재배치(로즈/블루/레드/골드/바이올렛/그린/브라운/틸), 채도도 조금
+       올려서 표지 위 흰 글자와 대비도 더 살게 함. 여러 곳(장르 확률
+       패널, 차트 범례, 책장 표지 등)이 공유하는 토큰이라 전체에 반영됨. */
+    --g-romance:  #a8497a; --g-romance-wash:  rgba(168,73,122,.20);
+    --g-mystery:  #2f5288; --g-mystery-wash:  rgba(47,82,136,.24);
+    --g-thriller: #9a3530; --g-thriller-wash: rgba(154,53,48,.20);
+    --g-comedy:   #b3841c; --g-comedy-wash:   rgba(179,132,28,.24);
+    --g-fantasy:  #6f3f9e; --g-fantasy-wash:  rgba(111,63,158,.20);
+    --g-horror:   #2c4a30; --g-horror-wash:   rgba(44,74,48,.22);
+    --g-drama:    #8a5a2e; --g-drama-wash:    rgba(138,90,46,.20);
+    --g-sf:       #1f7080; --g-sf-wash:       rgba(31,112,128,.20);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   /* overflow-x: hidden(2026-06-30, 모바일 110% 줌 가로스크롤 버그 수정용)이
@@ -278,9 +283,11 @@
   .dshelf-back:hover { color:var(--text); }
   .dcover-card {
     /* 260px는 페이지에 비해 너무 작아 보인다는 지적(2026-08-26) — 책이라는
-       느낌이 나게 더 크게, 비율(3:4.3)은 유지 */
-    position:relative; border-radius:8px; padding:26px 28px 30px; width:100%; max-width:340px;
-    min-height:487px; margin:10px auto 0;
+       느낌이 나게 더 크게, 비율(3:4.3)은 유지. display:block 명시 — 버튼
+       기본값(inline-block)이라 "‹ 책장으로" 버튼과 인라인으로 나란히
+       섞여서 세로 중간쯤에 걸쳐 보이던 문제가 있었음(유저 지적) */
+    display:block; position:relative; border-radius:8px; padding:26px 28px 30px; width:100%; max-width:340px;
+    min-height:487px; margin:38px auto 0;
     background:linear-gradient(rgba(0,0,0,0) 40%, rgba(0,0,0,.55)), var(--g);
     box-shadow:0 22px 44px rgba(28,14,6,.32), 0 2px 6px rgba(28,14,6,.16);
     color:#f0ead8; cursor:pointer; border:none; text-align:left; font-family:var(--font);
@@ -1595,13 +1602,15 @@ function _renderDoneCover(content) {
   const s = _doneCache.stories.find(x => x.story_id === _doneCoverId);
   if (!s) { _doneCoverId = null; renderDoneCards(); return; }
   content.innerHTML = `
-    <button type="button" class="dshelf-back" onclick="doneCloseCover()">‹ 책장으로</button>
-    <button type="button" class="dcover-card" style="--g:${_doneGenreColor(s)}" onclick="nav('story','${esc(s.story_id)}')">
-      ${cardStickersHtml(s)}
-      <div class="dcover-status">${_doneStepCount(s)}단계 완결<br>${_doneParticipantCount(s)}명 참여</div>
-      <div class="dcover-title">${esc(_doneTitle(s))}</div>
-      <div class="dcover-excerpt">"${esc(s.opening || '')}"</div>
-    </button>`;
+    <div style="position:relative">
+      <button type="button" class="dshelf-back" style="position:absolute;top:0;left:0;margin-bottom:0;z-index:1" onclick="doneCloseCover()">‹ 책장으로</button>
+      <button type="button" class="dcover-card" style="--g:${_doneGenreColor(s)}" onclick="nav('story','${esc(s.story_id)}')">
+        ${cardStickersHtml(s)}
+        <div class="dcover-status">${_doneStepCount(s)}단계 완결<br>${_doneParticipantCount(s)}명 참여</div>
+        <div class="dcover-title">${esc(_doneTitle(s))}</div>
+        <div class="dcover-excerpt">"${esc(s.opening || '')}"</div>
+      </button>
+    </div>`;
 }
 function doneOpenCover(story_id) { _doneCoverId = story_id; renderDoneCards(); }
 function doneCloseCover() { _doneCoverId = null; renderDoneCards(); }

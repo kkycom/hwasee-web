@@ -139,10 +139,14 @@
     --g-romance:  #a8497a; --g-romance-wash:  rgba(168,73,122,.20);
     --g-mystery:  #2f5288; --g-mystery-wash:  rgba(47,82,136,.24);
     --g-thriller: #9a3530; --g-thriller-wash: rgba(154,53,48,.20);
-    --g-comedy:   #b3841c; --g-comedy-wash:   rgba(179,132,28,.24);
+    /* 코미디/드라마 둘 다 등장 빈도가 높은 편인데 오렌지-브라운 계열로
+       겹쳐 보인다는 지적(2026-08-26) — 코미디는 톤을 죽이지 않고 오히려
+       더 순수한 노랑쪽으로 채도를 올려 확실히 "골드"로 읽히게, 드라마는
+       주황기를 빼고 회갈색(taupe)쪽으로 옮겨서 둘이 겹치지 않게 함. */
+    --g-comedy:   #c9a227; --g-comedy-wash:   rgba(201,162,39,.24);
     --g-fantasy:  #6f3f9e; --g-fantasy-wash:  rgba(111,63,158,.20);
     --g-horror:   #2c4a30; --g-horror-wash:   rgba(44,74,48,.22);
-    --g-drama:    #8a5a2e; --g-drama-wash:    rgba(138,90,46,.20);
+    --g-drama:    #6b4a42; --g-drama-wash:    rgba(107,74,66,.20);
     --g-sf:       #1f7080; --g-sf-wash:       rgba(31,112,128,.20);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }

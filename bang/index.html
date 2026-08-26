@@ -274,20 +274,22 @@
   }
   .dshelf-back:hover { color:var(--text); }
   .dcover-card {
-    position:relative; border-radius:6px; padding:20px 22px 24px; width:100%; max-width:260px;
-    min-height:372px; margin:10px auto 0;
+    /* 260px는 페이지에 비해 너무 작아 보인다는 지적(2026-08-26) — 책이라는
+       느낌이 나게 더 크게, 비율(3:4.3)은 유지 */
+    position:relative; border-radius:8px; padding:26px 28px 30px; width:100%; max-width:340px;
+    min-height:487px; margin:10px auto 0;
     background:linear-gradient(rgba(0,0,0,0) 40%, rgba(0,0,0,.55)), var(--g);
     box-shadow:0 22px 44px rgba(28,14,6,.32), 0 2px 6px rgba(28,14,6,.16);
     color:#f0ead8; cursor:pointer; border:none; text-align:left; font-family:var(--font);
   }
   .dcover-card:hover { box-shadow:0 26px 50px rgba(28,14,6,.38), 0 2px 6px rgba(28,14,6,.2); }
   .dcover-card::before {
-    content:''; position:absolute; left:0; top:0; bottom:0; width:10px; border-radius:6px 0 0 6px;
+    content:''; position:absolute; left:0; top:0; bottom:0; width:12px; border-radius:8px 0 0 8px;
     background:linear-gradient(to right, rgba(0,0,0,.42), rgba(0,0,0,0));
   }
-  .dcover-status { position:absolute; top:20px; left:22px; right:22px; font-size:10px; font-weight:700; letter-spacing:.1em; color:rgba(240,234,216,.65); line-height:1.6; }
-  .dcover-title { font-family:var(--serif); font-size:21px; line-height:1.5; font-weight:700; text-wrap:balance; margin-top:34px; }
-  .dcover-excerpt { font-family:var(--serif); font-size:12px; line-height:1.7; color:rgba(240,234,216,.72); font-style:italic; margin-top:10px; }
+  .dcover-status { position:absolute; top:26px; left:28px; right:28px; font-size:11px; font-weight:700; letter-spacing:.1em; color:rgba(240,234,216,.65); line-height:1.6; }
+  .dcover-title { font-family:var(--serif); font-size:26px; line-height:1.45; font-weight:700; text-wrap:balance; margin-top:42px; }
+  .dcover-excerpt { font-family:var(--serif); font-size:14px; line-height:1.7; color:rgba(240,234,216,.72); font-style:italic; margin-top:14px; }
   /* 표지 위 카테고리 스티커 = cardStickersHtml() 그대로 재사용, 배경만
      진한 장르색 위에서 안 붕 뜨게 종이톤으로 오버라이드(색은 안 건드림) */
   .dcover-card .card-stickers { top:0; right:12px; }
@@ -1538,7 +1540,7 @@ function _doneGenreColor(s) {
 }
 function _doneShelfHtml(visible, total) {
   const rows = [];
-  for (let i = 0; i < visible.length; i += 12) rows.push(visible.slice(i, i + 12));
+  for (let i = 0; i < visible.length; i += 10) rows.push(visible.slice(i, i + 10));
   let html = `<div style="text-align:center;font-family:var(--serif);font-size:13.5px;color:var(--muted);margin-bottom:22px">완성된 이야기 · ${total}편</div><div class="dshelf-plank"></div>`;
   rows.forEach(row => {
     html += `<div class="dshelf-row">${row.map(s => {

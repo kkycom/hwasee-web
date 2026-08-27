@@ -2,3 +2,4 @@ functions/node_modules/
 node_modules/
 bang/story/
 .agent-reviews/
+/.claude/worktrees/

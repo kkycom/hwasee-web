@@ -74,7 +74,7 @@ if (-not $codex) {
   throw 'Codex CLI was not found on PATH. Configure the Codex command in Orca before running this review.'
 }
 
-& $codex.Source exec -C $repoRoot -s read-only -a never -o $outputPath $prompt
+& $codex.Source -s read-only -a never exec -C $repoRoot -o $outputPath $prompt
 if ($LASTEXITCODE -ne 0) {
   throw "Codex $Phase review failed with exit code $LASTEXITCODE."
 }

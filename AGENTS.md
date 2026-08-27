@@ -2,6 +2,20 @@
 
 이 저장소는 화씨.방 전체 서비스의 기준 코드다. 기능·보안·분석·성능 작업은 서로 영향을 줄 수 있으므로, 작업 범위 밖의 변경을 만들지 않는다.
 
+## 장기 공유 메모
+
+기존 VS Code/Claude 작업방과 Orca worktree는 대화를 직접 공유하지 않는다. 다음 메모가 검증된 과거 결정과 운영 맥락의 공용 인수인계 원본이다.
+
+- 공용 이력 인덱스: `C:\Users\kkyco\.claude\projects\c--Users-kkyco--claude\memory\MEMORY.md`
+- 화씨.방 전용 최근 이력 인덱스: `C:\Users\kkyco\.claude\projects\C--Users-kkyco--claude-hwasee-hwasee-web\memory\MEMORY.md`
+
+- **Claude는 모든 새 작업 시작 전에** 두 인덱스를 읽고, 현재 아젠다와 직접 관련된 `project_*.md`·`feedback_*.md`만 추가로 읽는다. 큰 메모를 습관적으로 전부 읽어 컨텍스트를 소모하지 않는다.
+- 메모는 현재 코드·실서비스보다 우선하지 않는다. 오래된 사실이나 추정은 코드, Git 이력, 실제 검증으로 다시 확인한다.
+- 중요한 작업의 `agenda.md`에는 관련된 **기존 확정 사실·의도적으로 감수한 트레이드오프·금지된 회귀**만 짧게 적는다. Claude의 이번 조사 결론·구현안은 discovery 안건에 넣지 않는다.
+- Codex는 agenda에 적힌 이 사실을 기존 제약으로 참고하되, 그 사실과 현재 코드가 충돌할 가능성도 독립적으로 확인한다.
+- 병합·배포까지 확정된 중요한 결정이나 새로 확인된 회귀는 기존 관례에 맞춰 공용 메모에 한 항목으로 남긴다. 진행 중 가설이나 미확정 계획은 기록하지 않는다.
+- 위 경로를 읽을 수 없는 환경에서는 그 사실을 보고하고, 메모가 있다고 가정하거나 임의로 대체하지 않는다.
+
 ## 기본 역할과 의사결정
 
 - **Claude Code는 리드 개발자·유일한 구현 담당**이다. 기존 코드와 운영 맥락을 먼저 조사하고, 최종 구현·검증·커밋을 책임진다.
@@ -51,6 +65,7 @@ Codex 검토 결과는 `BLOCKER`, `WARNING`, `OPTIONAL`로 구분한다. OPTIONA
 - 독립 감사는 프로젝트의 Claude Stop Hook이 자동 실행한다. Claude는 `scripts/start-agent-review.ps1`와 `scripts/request-agent-review.ps1`로 검토를 요청만 등록한다. Hook은 Codex를 `read-only` 샌드박스로 실행하고 결과를 저장한 뒤, Claude가 결과를 읽을 때까지 종료를 멈춘다.
 - Hook이 작동하지 않는 환경에서만 `scripts/request-codex-review.ps1`를 수동으로 실행한다. 사용자가 Codex 명령을 복사·실행할 필요는 없다.
 - `discovery` 단계에는 Claude의 결론이나 계획을 전달하지 않는다. 원래 아젠다를 기준으로 누락된 문제와 반증을 찾게 한다.
+- 다만 agenda의 “기존 확정 맥락”에는 공유 메모에서 확인한 사실만 적어, 이미 의도적으로 배제한 방향을 새 발견처럼 반복하지 않게 한다.
 - `plan` 단계에는 Claude의 계획과 근거를 전달해 최소 안전 변경인지 검토하게 한다.
 - `final` 단계에는 실제 변경 diff와 테스트 결과를 검토하게 한다.
 - 리뷰 결과는 `.agent-reviews/`에만 저장하며 Git에 포함하지 않는다.

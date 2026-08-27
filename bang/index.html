@@ -950,17 +950,10 @@
   /* 화씨.방 전용 UI 아이콘 공통 규칙(hwIcon()) — 크기는 호출부에서 width/height로 */
   .hwi { display: inline-block; vertical-align: -0.15em; flex-shrink: 0; }
   .loading { text-align: center; padding: 40px; color: var(--muted); }
-  /* 로딩 인디케이터 — 이모지(✍️, OS별 상이) 대신 전용 깃펜 아이콘을 mask로.
-     data URI 내부 currentColor는 상속되지 않으므로(마스크는 알파만 사용) 색은
-     background-color:currentColor(= .loading의 var(--muted))가 담당. writing
-     애니메이션(좌우로 쓰는 듯한 이동)은 그대로 유지. */
-  .loading::before {
-    content: ''; display: inline-block; width: 20px; height: 20px;
-    background-color: currentColor;
-    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.5 3.5c-1-1-2.7-1-3.7 0L6.1 14.2c-.3.3-.5.6-.6 1l-1.4 5.2c-.1.5.3.9.8.8l5.2-1.4c.4-.1.7-.3 1-.6L21.6 7.2c1-1 1-2.7 0-3.7z'/%3E%3C/svg%3E") center/contain no-repeat;
-    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.5 3.5c-1-1-2.7-1-3.7 0L6.1 14.2c-.3.3-.5.6-.6 1l-1.4 5.2c-.1.5.3.9.8.8l5.2-1.4c.4-.1.7-.3 1-.6L21.6 7.2c1-1 1-2.7 0-3.7z'/%3E%3C/svg%3E") center/contain no-repeat;
-    animation: writing 5s ease-in-out infinite;
-  }
+  /* 로딩 인디케이터는 ✍️(writing hand) 이모지 그대로 — "연필 쥔 손이 끄적이는"
+     느낌이 핵심이라 깃펜 SVG 단독으로는 대체 불가(유저 판단, 2026-08-27).
+     writing 애니메이션(좌우로 쓰는 듯한 이동)과 함께 유지. */
+  .loading::before { content: '✍️'; display: inline-block; font-size: 20px; animation: writing 5s ease-in-out infinite; filter: saturate(0.55) brightness(1.1); }
   .loading::after  { content: '불러오는 중입니다'; display: block; font-size: 13px; color: var(--muted); margin-top: 10px; letter-spacing: .3px; }
 
   /* ── 채택 문장 잉크 번짐 등장(진행 중 이야기의 최신 문장, 볼 때마다 재생) ──
@@ -2104,11 +2097,12 @@ function badgeLabel(b) {
 function isAdmin() { return !!(user && user.is_admin); }
 function logout() { saveUser(null); renderNav(); toast('로그아웃됐습니다.'); nav('seed'); }
 
-// ─── 화씨.방 전용 UI 아이콘 (1단계: 스포트라이트 유형 10종 + 로딩) ───────────
+// ─── 화씨.방 전용 UI 아이콘 (1단계: 스포트라이트 유형 10종) ───────────
 // 배지 아트워크(bang/badges/*.webp)의 시각 언어 — 두꺼운 라운드 실루엣, 플랫,
 // 저채도 — 를 SVG로 옮긴 것. OS별로 다르게 그려지는 이모지(🎲🤖📖⚡🎯🎭🔥🧩📔💭)
 // 의존을 스포트라이트 표면에서 없애기 위함. 아바타·업적·상점 이모지 ID와
 // Firestore 데이터는 건드리지 않음(별도 축). 상태/반응/빈화면 아이콘은 후속.
+// 로딩 인디케이터는 ✍️ 이모지 유지(손이 끄적이는 느낌이 핵심, .loading::before).
 // 24×24 그리드, 실드로잉 ~3–21, fill=currentColor(사용처 color 상속),
 // 보조 형태는 opacity로 깊이만.
 const HWICONS = {
@@ -2122,7 +2116,6 @@ const HWICONS = {
   hint:        `<path d="M4 6.7C4 5.2 5.2 4 6.7 4H10c0 1.3.9 2 2 2s2-.7 2-2h3.3C18.8 4 20 5.2 20 6.7V10c1.3 0 2 .9 2 2s-.7 2-2 2v3.3c0 1.5-1.2 2.7-2.7 2.7H14c0-1.3-.9-2-2-2s-2 .7-2 2H6.7C5.2 20 4 18.8 4 17.3V14c-1.3 0-2-.9-2-2s.7-2 2-2V6.7z"/>`,
   diary:       `<path fill-rule="evenodd" d="M6.6 3H18a1.5 1.5 0 0 1 1.5 1.5v15A1.5 1.5 0 0 1 18 21H6.6A1.6 1.6 0 0 1 5 19.4V4.6A1.6 1.6 0 0 1 6.6 3Zm5.6 6a1.8 1.8 0 0 0-1 3.3l-.6 2.8a.6.6 0 0 0 .6.7h2.6a.6.6 0 0 0 .6-.7l-.6-2.8A1.8 1.8 0 0 0 12.2 9Z"/><rect x="2.4" y="6" width="3.2" height="2" rx="1" opacity=".45"/><rect x="2.4" y="11" width="3.2" height="2" rx="1" opacity=".45"/><rect x="2.4" y="16" width="3.2" height="2" rx="1" opacity=".45"/>`,
   yourstory:   `<path d="M4 6.5A2.9 2.9 0 0 1 6.9 3.6h10.2A2.9 2.9 0 0 1 20 6.5v6.6a2.9 2.9 0 0 1-2.9 2.9H10l-3.4 2.9c-.7.6-1.7.1-1.7-.8V16A2.9 2.9 0 0 1 4 13.1z"/><path d="M13.5 7c1-1.2 2.6-1.4 3.6-1.2.2.9-.1 2.5-1.4 3.5-1 .8-2 .4-2.5 0s-.6-1.4.3-2.3z" opacity=".36"/>`,
-  writing:     `<path d="M20.5 3.5c-1-1-2.7-1-3.7 0L6.1 14.2c-.3.3-.5.6-.6 1l-1.4 5.2c-.1.5.3.9.8.8l5.2-1.4c.4-.1.7-.3 1-.6L21.6 7.2c1-1 1-2.7 0-3.7z"/>`,
 };
 function hwIcon(name, opts) {
   const p = HWICONS[name];

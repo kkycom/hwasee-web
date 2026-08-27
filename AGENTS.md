@@ -48,11 +48,13 @@ Codex 검토 결과는 `BLOCKER`, `WARNING`, `OPTIONAL`로 구분한다. OPTIONA
 
 ## Codex 호출 규칙
 
-- 독립 감사는 `scripts/request-codex-review.ps1`로 실행한다. 이 스크립트는 Codex를 `read-only` 샌드박스로 실행한다.
+- 독립 감사는 프로젝트의 Claude Stop Hook이 자동 실행한다. Claude는 `scripts/start-agent-review.ps1`와 `scripts/request-agent-review.ps1`로 검토를 요청만 등록한다. Hook은 Codex를 `read-only` 샌드박스로 실행하고 결과를 저장한 뒤, Claude가 결과를 읽을 때까지 종료를 멈춘다.
+- Hook이 작동하지 않는 환경에서만 `scripts/request-codex-review.ps1`를 수동으로 실행한다. 사용자가 Codex 명령을 복사·실행할 필요는 없다.
 - `discovery` 단계에는 Claude의 결론이나 계획을 전달하지 않는다. 원래 아젠다를 기준으로 누락된 문제와 반증을 찾게 한다.
 - `plan` 단계에는 Claude의 계획과 근거를 전달해 최소 안전 변경인지 검토하게 한다.
 - `final` 단계에는 실제 변경 diff와 테스트 결과를 검토하게 한다.
 - 리뷰 결과는 `.agent-reviews/`에만 저장하며 Git에 포함하지 않는다.
+- 자동 검토가 실패하면 Hook은 한 번만 중단 사유를 Claude에게 보여 준다. 권한을 우회하거나 검토를 건너뛰지 말고, 원인을 보고한 뒤 사용자에게 필요한 조치를 요청한다.
 
 ## 안전 규칙
 

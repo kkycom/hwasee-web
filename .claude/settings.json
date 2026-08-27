@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/agent-review-stop-gate.ps1"
+          }
+        ]
+      }
+    ]
+  }
+}

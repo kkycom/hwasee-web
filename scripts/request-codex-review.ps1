@@ -71,10 +71,26 @@ $plan
 
 $codex = Get-Command codex -ErrorAction SilentlyContinue
 if (-not $codex) {
-  throw 'Codex CLI was not found on PATH. Configure the Codex command in Orca before running this review.'
+  # Codex Desktop installs versioned binaries outside PATH on some Windows hosts.
+  # Prefer PATH when present, then use the newest bundled executable as a safe fallback.
+  $bundledRoot = Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin'
+  if (Test-Path -LiteralPath $bundledRoot) {
+    $bundledCodex = Get-ChildItem -LiteralPath $bundledRoot -Filter 'codex.exe' -File -Recurse -ErrorAction SilentlyContinue |
+      Sort-Object LastWriteTimeUtc -Descending |
+      Select-Object -First 1
+    if ($bundledCodex) {
+      $codex = [PSCustomObject]@{ Source = $bundledCodex.FullName }
+    }
+  }
+}
+if (-not $codex) {
+  throw 'Codex CLI was not found on PATH or in the local Codex Desktop installation.'
 }
 
-& $codex.Source exec -C $repoRoot -s read-only -a never -o $outputPath $prompt
+# Claude's shell tool keeps inherited stdin open while waiting for this process.
+# Feed the prompt through a finite pipeline so `codex exec` receives EOF instead
+# of waiting indefinitely for that inherited stdin to close.
+$prompt | & $codex.Source -s read-only -a never exec -C $repoRoot -o $outputPath -
 if ($LASTEXITCODE -ne 0) {
   throw "Codex $Phase review failed with exit code $LASTEXITCODE."
 }

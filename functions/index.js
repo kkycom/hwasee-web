@@ -1793,16 +1793,16 @@ exports.register = functions
     const salt = _genSalt();
     const pwHash = _hashPwSalted(password, salt);
 
-    await Promise.all([
-      db.collection('users').doc(user_id).set({
-        user_id, nickname, display_name: dn,
-        total_points: 0, adoption_count: 0, badge: 'seed', name: name.trim(), email,
-        referral: referral.trim(), created_at: new Date().toISOString(),
-        last_seen_patch_id: initialSeenPatchId,
-        auth_uid: context.auth.uid,
-      }),
-      db.collection('user_secrets').doc(user_id).set({ pw_hash: pwHash, salt, token, token_exp }),
-    ]);
+    const initBatch = db.batch();
+    initBatch.set(db.collection('users').doc(user_id), {
+      user_id, nickname, display_name: dn,
+      total_points: 0, adoption_count: 0, badge: 'seed', name: name.trim(), email,
+      referral: referral.trim(), created_at: new Date().toISOString(),
+      last_seen_patch_id: initialSeenPatchId,
+      auth_uid: context.auth.uid,
+    });
+    initBatch.set(db.collection('user_secrets').doc(user_id), { pw_hash: pwHash, salt, token, token_exp });
+    await initBatch.commit();
 
     // 추천인 보너스(관리자/AI 봇 제외) — 신규 가입자 본인 몫은 이 함수(Admin SDK)가
     // 이미 처리하므로, 추천인 몫도 같은 트랜잭션 성격으로 여기서 함께 지급(예전엔

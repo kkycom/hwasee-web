@@ -3629,9 +3629,14 @@ function switchLbTab() {}
 let _wcCountdownTimer = null;
 const WC_PAGE_SIZE = 10;
 let _wcVisibleCount = WC_PAGE_SIZE;
-// top이 음수여야 hero 카드 안쪽(패딩 24px) 밖으로 빠져나가 실제 구분선에
-// 가까워짐 — 이전엔 양수값이라 hero 카드 내부 상단 근처에서만 움직였음
-const WC_HISTORY_BTN_HTML = `<button onclick="openWordChallengeHistory()" style="position:absolute;top:-14px;right:12px;background:var(--card);border:none;border-radius:8px;padding:5px 10px;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer">역대 당선작 보기</button>`;
+// 예전엔 position:absolute;top:-14px로 카드 위 경계선에 걸쳐 놓았는데, 버튼
+// 높이(~22px) 때문에 절반 가까이가 항상 카드 안쪽으로 다시 들어와 "카드
+// 두 개가 겹쳐 보인다"는 지적을 받음(유저 스크린샷 제보, 모바일에서 계속
+// 재현됨, 2026-08-23) — 텍스트 위치만 손봐선 안 고쳐지는 구조적 문제라
+// 아예 겹칠 일이 없는 형태로 변경: 카드 위에 별도 줄로 완전히 분리해서 둠
+// (WC_HISTORY_BTN_ROW로 개명, 더 이상 absolute 아님 — 호출부에서 카드
+// 바깥에 형제 엘리먼트로 배치).
+const WC_HISTORY_BTN_ROW = `<div style="text-align:right;margin-bottom:6px"><button onclick="openWordChallengeHistory()" style="background:var(--card);border:none;border-radius:8px;padding:5px 10px;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer">역대 당선작 보기</button></div>`;
 
 // 오늘의 단어 챌린지 — 예전엔 "오늘의 이야기" 탭 스포트라이트 카드 3개 아래에
 // 이어붙여서 페이지 하나가 너무 길어지고 두 컨텐츠가 뒤섞여 보이는 문제가
@@ -3740,30 +3745,36 @@ function renderWordChallenge() {
   // 단어 3개(진행 중)와 우승 문장(마감 후)이 같은 "큰 공간" 한 자리를 그대로
   // 교체해가며 씀 — 새 배너를 따로 만들지 않고 이 자리 안에서만 상태가 전환됨
   const heroHtml = isActive ? `
-    <div style="position:relative;text-align:center;background:var(--bg);border-radius:14px;padding:28px 16px 24px;margin-bottom:20px">
-      ${WC_HISTORY_BTN_HTML}
-      <div style="font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:14px">🎲 오늘의 단어 챌린지</div>
-      <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-        ${(challenge.words || []).map(w => `<span style="display:inline-block;background:var(--accent2);color:#fff;font-weight:700;font-size:17px;padding:8px 18px;border-radius:24px">${esc(w)}</span>`).join('')}
+    <div style="margin-bottom:20px">
+      ${WC_HISTORY_BTN_ROW}
+      <div style="text-align:center;background:var(--bg);border-radius:14px;padding:28px 16px 24px">
+        <div style="font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:14px">🎲 오늘의 단어 챌린지</div>
+        <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+          ${(challenge.words || []).map(w => `<span style="display:inline-block;background:var(--accent2);color:#fff;font-weight:700;font-size:17px;padding:8px 18px;border-radius:24px">${esc(w)}</span>`).join('')}
+        </div>
+        <div style="font-size:12px;color:var(--muted)">이 세 단어를 모두 넣어 ${FB_WORD_CHALLENGE_MAX_CHARS}자 이내 문장을 지어보세요</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">1등에게 100p를 지급합니다 (동률이면 인원수만큼 나눠 가져요)</div>
+        <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-top:10px">⏰ <span id="wc-countdown"></span> 마감</div>
       </div>
-      <div style="font-size:12px;color:var(--muted)">이 세 단어를 모두 넣어 ${FB_WORD_CHALLENGE_MAX_CHARS}자 이내 문장을 지어보세요</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">1등에게 100p를 지급합니다 (동률이면 인원수만큼 나눠 가져요)</div>
-      <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-top:10px">⏰ <span id="wc-countdown"></span> 마감</div>
     </div>`
     : (winners.length ? `
-    <div style="position:relative;text-align:center;background:var(--bg);border-radius:14px;padding:28px 16px;margin-bottom:20px">
-      ${WC_HISTORY_BTN_HTML}
-      <div style="font-size:12px;font-weight:700;color:var(--accent2);letter-spacing:.5px;margin-bottom:16px">🏆 오늘의 장원${winners.length > 1 ? ` · ${winners.length}명 동률` : ''}</div>
-      ${winners.map((w, i) => `
-        <div style="font-size:18px;line-height:1.7;font-family:var(--serif);font-weight:600;text-wrap:balance;${i > 0 ? 'margin-top:14px' : ''}">${boldChallengeWords(w.text, challenge.words)}</div>
-        <div style="font-size:13px;color:var(--muted);margin-top:6px">👑 ${esc(w.nickname)} · +${w.points}p</div>`).join('')}
-      <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-top:14px">⏰ 다음 챌린지까지 <span id="wc-countdown"></span></div>
+    <div style="margin-bottom:20px">
+      ${WC_HISTORY_BTN_ROW}
+      <div style="text-align:center;background:var(--bg);border-radius:14px;padding:28px 16px">
+        <div style="font-size:12px;font-weight:700;color:var(--accent2);letter-spacing:.5px;margin-bottom:16px">🏆 오늘의 장원${winners.length > 1 ? ` · ${winners.length}명 동률` : ''}</div>
+        ${winners.map((w, i) => `
+          <div style="font-size:18px;line-height:1.7;font-family:var(--serif);font-weight:600;text-wrap:balance;${i > 0 ? 'margin-top:14px' : ''}">${boldChallengeWords(w.text, challenge.words)}</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:6px">👑 ${esc(w.nickname)} · +${w.points}p</div>`).join('')}
+        <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-top:14px">⏰ 다음 챌린지까지 <span id="wc-countdown"></span></div>
+      </div>
     </div>` : `
-    <div style="position:relative;text-align:center;background:var(--bg);border-radius:14px;padding:28px 16px;margin-bottom:20px">
-      ${WC_HISTORY_BTN_HTML}
-      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:16px">🏆 오늘의 장원</div>
-      <div style="font-size:13px;color:var(--muted)">당선작이 없었어요 (최소 1표 이상 받아야 당선돼요)</div>
-      <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-top:10px">⏰ 다음 챌린지까지 <span id="wc-countdown"></span></div>
+    <div style="margin-bottom:20px">
+      ${WC_HISTORY_BTN_ROW}
+      <div style="text-align:center;background:var(--bg);border-radius:14px;padding:28px 16px">
+        <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:16px">🏆 오늘의 장원</div>
+        <div style="font-size:13px;color:var(--muted)">당선작이 없었어요 (최소 1표 이상 받아야 당선돼요)</div>
+        <div style="font-size:13px;font-weight:700;color:var(--accent2);margin-top:10px">⏰ 다음 챌린지까지 <span id="wc-countdown"></span></div>
+      </div>
     </div>`);
 
   const hasVoted = !!my_vote_submission_id;

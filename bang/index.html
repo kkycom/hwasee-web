@@ -258,20 +258,37 @@
   /* ── 완성된 이야기 책장(2026-08-26, "책의 언어" 디자인 탐색 확정본) ──
      doneCardHtml 플랫 리스트 대신 책장(스파인)→표지→기존 상세페이지
      흐름. claude.ai 목업 최종 라운드 CSS를 실제 토큰/클래스에 맞춰 이식. */
-  /* 일반 폰 화면엔 7권 정도까지밖에 안 보인다는 지적(2026-08-26)으로 한
-     줄 10→7권으로 줄임 — 그만큼 프레임 좌우 여백도 줄여서 책이 줄어든
-     만큼 허전해 보이지 않게 함(책 폭 자체도 아래서 키움). */
+  /* 한 줄 8권(_doneShelfHtml의 `i += 8`). "7권" 시절 주석은 최근 커밋
+     "책장 한 줄 7권→8권"으로 옛말이 됨. */
   /* 책장 안쪽도 위는 밝고 아래로 갈수록 어두워지게 — 마치 위에서 빛이
      들어오는 캐비닛처럼 깊이감을 줌(2026-08-26 유저 요청) */
-  .dshelf-frame { background:linear-gradient(rgba(0,0,0,0) 0%, rgba(28,14,6,.16) 100%), var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px 10px 18px; margin-top:8px; }
-  .dshelf-plank { height:16px; background:linear-gradient(to bottom,#a9834f,#8a6538); box-shadow:0 9px 16px rgba(28,14,6,.14); }
+  /* 2026-08-27 물성 보강(design-impl): CSS만으로 선반 2면(윗면/앞면), 책등
+     종이 단면(::before)·좌우 접힘, 책 사이 접지 그림자, 표지 페이지 단면
+     (::after)·미세 그레인. 권마다 미세 물성은 story_id 해시로 결정론적
+     (--tilt: 대부분 0, 약 1/4만 ±0.5deg / --edge·--edge-shadow: 단면색 3단계).
+     텍스처 이미지는 아직 안 씀 — CSS 시안 실물 확인 후 별도 판단. */
+  .dshelf-frame { background:linear-gradient(rgba(0,0,0,0) 0%, rgba(28,14,6,.16) 100%), var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px 10px 18px; margin-top:8px; box-shadow:inset 0 10px 14px -8px rgba(28,14,6,.32); }
+  .dshelf-plank {
+    height:16px;
+    /* 윗면(위 3px, 빛 받는 밝은 띠) + 앞면(어두운 나뭇결) */
+    background:linear-gradient(to bottom, #c39c64 0, #b1804a 3px, #97693a 3px, #7f5730 100%);
+    box-shadow:0 10px 18px -2px rgba(28,14,6,.22), inset 0 2px 0 rgba(255,240,214,.16), inset 0 -3px 5px rgba(28,14,6,.26);
+  }
   .dshelf-plank:first-child { border-radius:3px 3px 0 0; }
   .dshelf-plank:last-child { border-radius:0 0 3px 3px; }
-  .dshelf-row { display:flex; align-items:flex-end; justify-content:center; gap:6px; padding:16px 4px 0; flex-wrap:nowrap; overflow-x:auto; }
+  .dshelf-row { display:flex; align-items:flex-end; justify-content:center; gap:4px; padding:16px 4px 0; flex-wrap:nowrap; overflow-x:auto; }
   .dshelf-spine {
+    position:relative;
     border:none; cursor:pointer; flex-shrink:0;
     background:linear-gradient(rgba(0,0,0,0) 40%, rgba(0,0,0,.5)), var(--sc);
-    border-radius:4px 4px 0 0; box-shadow:inset -4px 0 0 rgba(0,0,0,.16), 3px 4px 9px rgba(28,14,6,.22);
+    border-radius:4px 4px 0 0;
+    /* 우측 접힘 + 우측 각진 하이라이트 + 좌측 접힘 + 옆책으로의 접지 그림자 + 바깥 드롭 */
+    box-shadow:
+      inset -3px 0 4px -1px rgba(0,0,0,.26),
+      inset -1px 0 0 rgba(255,255,255,.10),
+      inset 3px 0 5px -2px rgba(0,0,0,.28),
+      -3px 2px 6px -2px rgba(28,14,6,.28),
+      2px 5px 10px -2px rgba(28,14,6,.20);
     display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:4px; padding:18px 7px 16px;
     /* text-orientation:mixed는 숫자를 옆으로 눕혀서 통째로 회전시키는데,
        한글 사이에 숫자가 끼면(예: "10년의...") 그 부분만 90도 돌아가서
@@ -279,9 +296,17 @@
        한글처럼 하나씩 세워서 쌓이게 함 */
     writing-mode:vertical-rl; text-orientation:upright; color:rgba(240,234,216,.94);
     font-family:var(--serif); font-size:14px; font-weight:700; letter-spacing:.01em;
+    transform:rotate(var(--tilt,0deg)); transform-origin:bottom center;
     transition:transform .15s ease; overflow:hidden;
   }
-  .dshelf-spine:hover { transform:translateY(-8px); }
+  /* 책 위쪽 = 세로쓰기라 spine 상단. 종이 다발 단면(2~3px, 절제) — 내부 배치라
+     overflow:hidden에 안 잘림. --edge/--edge-shadow는 _doneMatHash가 주입. */
+  .dshelf-spine::before {
+    content:''; position:absolute; left:2px; right:2px; top:0; height:3px;
+    border-radius:2px 2px 0 0;
+    background:repeating-linear-gradient(90deg, var(--edge,#e8dcbf) 0 1px, var(--edge-shadow,#c9b78f) 1px 2px);
+  }
+  .dshelf-spine:hover { transform:translateY(-8px) rotate(var(--tilt,0deg)); }
   .dshelf-spine .dshelf-line { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-height:100%; }
   .dshelf-back {
     background:none; border:none; color:var(--muted); font-size:12.5px; font-weight:600; cursor:pointer;
@@ -297,14 +322,27 @@
        있어도 항상 그 아래 줄에 옴. */
     display:block; position:relative; border-radius:7px; padding:22px 24px 26px; width:100%; max-width:289px;
     min-height:414px; margin:10px auto 0;
-    background:linear-gradient(rgba(0,0,0,0) 40%, rgba(0,0,0,.55)), var(--g);
+    /* 미세 그레인(아주 옅게) → 다크 오버레이 → 장르색 */
+    background:
+      radial-gradient(rgba(255,255,255,.025) .5px, transparent .5px) 0 0/3px 3px,
+      linear-gradient(rgba(0,0,0,0) 40%, rgba(0,0,0,.55)),
+      var(--g);
     box-shadow:0 22px 44px rgba(28,14,6,.32), 0 2px 6px rgba(28,14,6,.16);
     color:#f0ead8; cursor:pointer; border:none; text-align:left; font-family:var(--font);
+    outline:1px solid rgba(255,255,255,.05); outline-offset:-4px;
   }
   .dcover-card:hover { box-shadow:0 26px 50px rgba(28,14,6,.38), 0 2px 6px rgba(28,14,6,.2); }
+  /* 책등 접힘 그림자 */
   .dcover-card::before {
-    content:''; position:absolute; left:0; top:0; bottom:0; width:10px; border-radius:7px 0 0 7px;
-    background:linear-gradient(to right, rgba(0,0,0,.42), rgba(0,0,0,0));
+    content:''; position:absolute; left:0; top:0; bottom:0; width:13px; border-radius:7px 0 0 7px;
+    background:linear-gradient(to right, rgba(0,0,0,.5), rgba(0,0,0,.12) 55%, rgba(0,0,0,0));
+  }
+  /* 우측 페이지 단면(책배) */
+  .dcover-card::after {
+    content:''; position:absolute; right:-3px; top:10px; bottom:10px; width:4px;
+    border-radius:0 3px 3px 0;
+    background:repeating-linear-gradient(0deg, #e8dcbf 0 1px, #d3c4a4 1px 2px);
+    box-shadow:1px 0 3px rgba(28,14,6,.22);
   }
   .dcover-status { position:absolute; top:22px; left:24px; right:24px; font-size:10px; font-weight:700; letter-spacing:.1em; color:rgba(240,234,216,.65); line-height:1.6; }
   .dcover-title { font-family:var(--serif); font-size:22px; line-height:1.45; font-weight:700; text-wrap:balance; margin-top:36px; }
@@ -909,8 +947,20 @@
     /* ⑥ 스윽 복귀 */
     100% { transform: translateX(-21px); }
   }
+  /* 화씨.방 전용 UI 아이콘 공통 규칙(hwIcon()) — 크기는 호출부에서 width/height로 */
+  .hwi { display: inline-block; vertical-align: -0.15em; flex-shrink: 0; }
   .loading { text-align: center; padding: 40px; color: var(--muted); }
-  .loading::before { content: '✍️'; display: inline-block; font-size: 20px; animation: writing 5s ease-in-out infinite; filter: saturate(0.55) brightness(1.1); }
+  /* 로딩 인디케이터 — 이모지(✍️, OS별 상이) 대신 전용 깃펜 아이콘을 mask로.
+     data URI 내부 currentColor는 상속되지 않으므로(마스크는 알파만 사용) 색은
+     background-color:currentColor(= .loading의 var(--muted))가 담당. writing
+     애니메이션(좌우로 쓰는 듯한 이동)은 그대로 유지. */
+  .loading::before {
+    content: ''; display: inline-block; width: 20px; height: 20px;
+    background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.5 3.5c-1-1-2.7-1-3.7 0L6.1 14.2c-.3.3-.5.6-.6 1l-1.4 5.2c-.1.5.3.9.8.8l5.2-1.4c.4-.1.7-.3 1-.6L21.6 7.2c1-1 1-2.7 0-3.7z'/%3E%3C/svg%3E") center/contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.5 3.5c-1-1-2.7-1-3.7 0L6.1 14.2c-.3.3-.5.6-.6 1l-1.4 5.2c-.1.5.3.9.8.8l5.2-1.4c.4-.1.7-.3 1-.6L21.6 7.2c1-1 1-2.7 0-3.7z'/%3E%3C/svg%3E") center/contain no-repeat;
+    animation: writing 5s ease-in-out infinite;
+  }
   .loading::after  { content: '불러오는 중입니다'; display: block; font-size: 13px; color: var(--muted); margin-top: 10px; letter-spacing: .3px; }
 
   /* ── 채택 문장 잉크 번짐 등장(진행 중 이야기의 최신 문장, 볼 때마다 재생) ──
@@ -1574,6 +1624,19 @@ function _doneGenreColor(s) {
   const suffix = GENRE_META[top.genre] || 'mystery';
   return `var(--g-${suffix})`;
 }
+// 책등 물성 변주 — story_id 해시로 결정론적(방문마다 안 바뀜). 대부분 정확히
+// 수직, 약 1/4만 아주 미세하게(±0.5deg) 기울고, 종이 단면색은 3단계 중 하나.
+function _doneMatHash(storyId) {
+  const s = String(storyId || '');
+  if (!s) return { tilt: '0deg', edge: '#e8dcbf', edgeShadow: '#c9b78f' };
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  const EDGES = [['#e8dcbf', '#c9b78f'], ['#e3d3ab', '#c2ad80'], ['#ddccae', '#bfa97f']];
+  const [edge, edgeShadow] = EDGES[h % 3];
+  const t = (h >>> 5) % 8; // 0..7 (unsigned)
+  const tilt = t === 0 ? '-0.5deg' : t === 1 ? '0.5deg' : '0deg';
+  return { tilt, edge, edgeShadow };
+}
 function _doneShelfHtml(visible, total) {
   const rows = [];
   for (let i = 0; i < visible.length; i += 8) rows.push(visible.slice(i, i + 8));
@@ -1582,7 +1645,8 @@ function _doneShelfHtml(visible, total) {
     html += `<div class="dshelf-row">${row.map(s => {
       const lines = _doneSplitSpineTitle(_doneTitle(s));
       const size = _doneSpineSize(s, lines);
-      return `<button type="button" class="dshelf-spine" style="--sc:${_doneGenreColor(s)};width:${size.w}px;height:${size.h}px" onclick="doneOpenCover('${esc(s.story_id)}')">${lines.map(line => `<span class="dshelf-line">${esc(line)}</span>`).join('')}</button>`;
+      const m = _doneMatHash(s.story_id);
+      return `<button type="button" class="dshelf-spine" style="--sc:${_doneGenreColor(s)};--tilt:${m.tilt};--edge:${m.edge};--edge-shadow:${m.edgeShadow};width:${size.w}px;height:${size.h}px" onclick="doneOpenCover('${esc(s.story_id)}')">${lines.map(line => `<span class="dshelf-line">${esc(line)}</span>`).join('')}</button>`;
     }).join('')}</div><div class="dshelf-plank"></div>`;
   });
   return `<div class="dshelf-frame">${html}</div>`;
@@ -2039,6 +2103,34 @@ function badgeLabel(b) {
 }
 function isAdmin() { return !!(user && user.is_admin); }
 function logout() { saveUser(null); renderNav(); toast('로그아웃됐습니다.'); nav('seed'); }
+
+// ─── 화씨.방 전용 UI 아이콘 (1단계: 스포트라이트 유형 10종 + 로딩) ───────────
+// 배지 아트워크(bang/badges/*.webp)의 시각 언어 — 두꺼운 라운드 실루엣, 플랫,
+// 저채도 — 를 SVG로 옮긴 것. OS별로 다르게 그려지는 이모지(🎲🤖📖⚡🎯🎭🔥🧩📔💭)
+// 의존을 스포트라이트 표면에서 없애기 위함. 아바타·업적·상점 이모지 ID와
+// Firestore 데이터는 건드리지 않음(별도 축). 상태/반응/빈화면 아이콘은 후속.
+// 24×24 그리드, 실드로잉 ~3–21, fill=currentColor(사용처 color 상속),
+// 보조 형태는 opacity로 깊이만.
+const HWICONS = {
+  word:        `<rect x="2.4" y="6.6" width="5.8" height="10.8" rx="2"/><rect x="9.1" y="6.6" width="5.8" height="10.8" rx="2"/><rect x="15.8" y="6.6" width="5.8" height="10.8" rx="2"/><circle cx="5.3" cy="12" r="1.2" opacity=".38"/><circle cx="12" cy="12" r="1.2" opacity=".38"/><circle cx="18.7" cy="12" r="1.2" opacity=".38"/>`,
+  sentence:    `<path d="M20.5 3.5c-1-1-2.7-1-3.7 0L6.1 14.2c-.3.3-.5.6-.6 1l-1.4 5.2c-.1.5.3.9.8.8l5.2-1.4c.4-.1.7-.3 1-.6L21.6 7.2c1-1 1-2.7 0-3.7z"/>`,
+  fairytale:   `<path d="M11.2 6.7C9.3 5.3 6.9 4.6 4.4 4.6c-.8 0-1.6.1-2.4.3-.5.1-.8.5-.8 1v11.4c0 .7.6 1.1 1.3 1 .6-.1 1.2-.2 1.9-.2 2.5 0 4.8.8 6.8 2.3V6.7z"/><path d="M12.8 6.7C14.7 5.3 17.1 4.6 19.6 4.6c.8 0 1.6.1 2.4.3.5.1.8.5.8 1v11.4c0 .7-.6 1.1-1.3 1-.6-.1-1.2-.2-1.9-.2-2.5 0-4.8.8-6.8 2.3V6.7z"/>`,
+  speedrun:    `<path d="M13.8 2.3 4.5 13.4c-.5.6-.1 1.6.7 1.6h4.6l-1.6 6.4c-.2 1 1 1.6 1.7.8l9.1-10.8c.5-.6.1-1.6-.7-1.6h-4.4l1.5-6.3c.2-1-1-1.6-1.6-.8z"/>`,
+  fixed_ending:`<path fill-rule="evenodd" d="M12 2.6a9.4 9.4 0 1 0 0 18.8 9.4 9.4 0 0 0 0-18.8Zm0 3.2a6.2 6.2 0 1 1 0 12.4 6.2 6.2 0 0 1 0-12.4Z"/><path fill-rule="evenodd" d="M12 7.3a4.7 4.7 0 1 0 0 9.4 4.7 4.7 0 0 0 0-9.4Zm0 2.8a1.9 1.9 0 1 1 0 3.8 1.9 1.9 0 0 1 0-3.8Z"/>`,
+  genre_switch:`<path fill-rule="evenodd" d="M3.6 8.9h12.7l-2.9-2.9a1.2 1.2 0 0 1 1.7-1.7l4.9 4.9a1.2 1.2 0 0 1 0 1.7l-.1.1H3.6a1.2 1.2 0 1 1 0-2.2Zm16.8 4a1.2 1.2 0 0 1 0 2.2H7.7l2.9 2.9a1.2 1.2 0 0 1-1.7 1.7l-4.9-4.9a1.2 1.2 0 0 1 0-1.7l.1-.1h16.2Z"/>`,
+  hot:         `<path d="M12.4 2.2c.6 3-.8 4.9-2.5 6.8C8.1 10.9 6.3 12.8 6.3 15.6a5.7 5.7 0 0 0 11.4 0c0-2-.7-3.5-1.8-5-.4.9-1 1.5-1.9 1.8.9-2.7.2-5.9-1.6-10z"/><path d="M12 20a3 3 0 0 0 3-3c0-1.3-.7-2.3-1.5-3.3-.3.6-.7 1-1.3 1.2.3-1.5-.2-2.8-1.4-4.2-.9 1-1.8 2.1-1.8 3.9A3 3 0 0 0 12 20z" opacity=".38"/>`,
+  hint:        `<path d="M4 6.7C4 5.2 5.2 4 6.7 4H10c0 1.3.9 2 2 2s2-.7 2-2h3.3C18.8 4 20 5.2 20 6.7V10c1.3 0 2 .9 2 2s-.7 2-2 2v3.3c0 1.5-1.2 2.7-2.7 2.7H14c0-1.3-.9-2-2-2s-2 .7-2 2H6.7C5.2 20 4 18.8 4 17.3V14c-1.3 0-2-.9-2-2s.7-2 2-2V6.7z"/>`,
+  diary:       `<path fill-rule="evenodd" d="M6.6 3H18a1.5 1.5 0 0 1 1.5 1.5v15A1.5 1.5 0 0 1 18 21H6.6A1.6 1.6 0 0 1 5 19.4V4.6A1.6 1.6 0 0 1 6.6 3Zm5.6 6a1.8 1.8 0 0 0-1 3.3l-.6 2.8a.6.6 0 0 0 .6.7h2.6a.6.6 0 0 0 .6-.7l-.6-2.8A1.8 1.8 0 0 0 12.2 9Z"/><rect x="2.4" y="6" width="3.2" height="2" rx="1" opacity=".45"/><rect x="2.4" y="11" width="3.2" height="2" rx="1" opacity=".45"/><rect x="2.4" y="16" width="3.2" height="2" rx="1" opacity=".45"/>`,
+  yourstory:   `<path d="M4 6.5A2.9 2.9 0 0 1 6.9 3.6h10.2A2.9 2.9 0 0 1 20 6.5v6.6a2.9 2.9 0 0 1-2.9 2.9H10l-3.4 2.9c-.7.6-1.7.1-1.7-.8V16A2.9 2.9 0 0 1 4 13.1z"/><path d="M13.5 7c1-1.2 2.6-1.4 3.6-1.2.2.9-.1 2.5-1.4 3.5-1 .8-2 .4-2.5 0s-.6-1.4.3-2.3z" opacity=".36"/>`,
+  writing:     `<path d="M20.5 3.5c-1-1-2.7-1-3.7 0L6.1 14.2c-.3.3-.5.6-.6 1l-1.4 5.2c-.1.5.3.9.8.8l5.2-1.4c.4-.1.7-.3 1-.6L21.6 7.2c1-1 1-2.7 0-3.7z"/>`,
+};
+function hwIcon(name, opts) {
+  const p = HWICONS[name];
+  if (!p) return '';
+  const size = (opts && opts.size) || 16;
+  const cls  = (opts && opts.cls) ? ' ' + opts.cls : '';
+  return `<svg class="hwi${cls}" viewBox="0 0 24 24" width="${size}" height="${size}" fill="currentColor" aria-hidden="true" focusable="false">${p}</svg>`;
+}
 
 function toggleProfileMenu() {
   const btn  = document.getElementById('profile-menu-btn');
@@ -3934,20 +4026,23 @@ const SPOTLIGHT_META = {
   // "챌린지 가기" 버튼만 봐서는 안 와닿아 참여율이 떨어졌다는 판단(유저 제보,
   // 2026-07-21)으로 "세"를 색으로 강조해 한눈에 "3단어짜리 챌린지구나"가
   // 캐치되게 함. title(플레인 텍스트)은 정보 모달(openSlotInfo)에서 그대로 사용.
-  word:     { icon: '🎲', title: '오늘의 세 단어 챌린지 우승작', titleHtml: '오늘의 <span style="color:var(--accent2);font-weight:800">세</span> 단어 챌린지 우승작', info: '매일 열리는 단어 챌린지에서 사람들이 가장 좋아한 문장으로 새 이야기가 시작돼요.' },
-  sentence: { icon: '✍️', title: '사람들이 뽑은 시작 문장',   info: '사람들이 직접 제안하고 투표해서 뽑은 문장으로 이야기가 시작돼요. (1~3등에게 각 50p)' },
+  // iconKey: 화씨.방 전용 SVG 아이콘(hwIcon) 이름. 렌더러가 iconKey 있으면 SVG,
+  // 없으면 icon(이모지) 폴백. icon 값은 폴백용으로 남겨둠(삭제 금지). ai 슬롯은
+  // 현재 렌더 목록에 없는 레거시라 iconKey 미부여(🤖 폴백 유지).
+  word:     { icon: '🎲', iconKey: 'word', title: '오늘의 세 단어 챌린지 우승작', titleHtml: '오늘의 <span style="color:var(--accent2);font-weight:800">세</span> 단어 챌린지 우승작', info: '매일 열리는 단어 챌린지에서 사람들이 가장 좋아한 문장으로 새 이야기가 시작돼요.' },
+  sentence: { icon: '✍️', iconKey: 'sentence', title: '사람들이 뽑은 시작 문장',   info: '사람들이 직접 제안하고 투표해서 뽑은 문장으로 이야기가 시작돼요. (1~3등에게 각 50p)' },
   ai:       { icon: '🤖', title: 'AI가 고른 뜻밖의 시작',     info: 'AI가 골라준 첫 문장으로 이야기가 시작돼요.' },
-  fairytale: { icon: '📖', title: '동화를 각색한 이야기', info: '누구나 아는 동화의 첫 장면으로 시작해요. 기존 등장인물을 최대한 활용해주세요! 여기서부턴 자유롭게 새로운 이야기로 이어써 보세요.' },
-  speedrun: { icon: '⚡', title: '초스피드 초장편', info: '투표 없이, 쓰는 순간 바로 채택돼요. 15자 이내 한 문장씩 100단계까지 빠르게 이어써요. 각 단계마다 1~100P가 무작위로 걸려있어요. 다른 사람 글에 추천을 남길 수 있는데, 3표를 넘으면 받은 포인트가 2배가 돼요. 스팸·의미없는 문장은 신고할 수 있고, 신고 3표가 모이면 그 문장은 삭제 처리돼요.' },
-  fixed_ending: { icon: '🎯', title: '결말이 정해진 이야기', info: '마지막 문장이 미리 정해져 있어요. 그 결말까지 자유롭게 이어써 보세요.' },
-  genre_switch: { icon: '🎭', title: '장르 강제 전환', info: '매 단계마다 장르가 랜덤으로 바뀌어요. 문장은 50자 이내로 써주세요.' },
+  fairytale: { icon: '📖', iconKey: 'fairytale', title: '동화를 각색한 이야기', info: '누구나 아는 동화의 첫 장면으로 시작해요. 기존 등장인물을 최대한 활용해주세요! 여기서부턴 자유롭게 새로운 이야기로 이어써 보세요.' },
+  speedrun: { icon: '⚡', iconKey: 'speedrun', title: '초스피드 초장편', info: '투표 없이, 쓰는 순간 바로 채택돼요. 15자 이내 한 문장씩 100단계까지 빠르게 이어써요. 각 단계마다 1~100P가 무작위로 걸려있어요. 다른 사람 글에 추천을 남길 수 있는데, 3표를 넘으면 받은 포인트가 2배가 돼요. 스팸·의미없는 문장은 신고할 수 있고, 신고 3표가 모이면 그 문장은 삭제 처리돼요.' },
+  fixed_ending: { icon: '🎯', iconKey: 'fixed_ending', title: '결말이 정해진 이야기', info: '마지막 문장이 미리 정해져 있어요. 그 결말까지 자유롭게 이어써 보세요.' },
+  genre_switch: { icon: '🎭', iconKey: 'genre_switch', title: '장르 강제 전환', info: '매 단계마다 장르가 랜덤으로 바뀌어요. 문장은 50자 이내로 써주세요.' },
   // 다른 슬롯과 달리 완결돼야만 교체되는 고정 포인터가 아니라, 방문할 때마다
   // 자유 이야기 탭에서 지금 참여자 수가 가장 많은 이야기를 실시간으로 보여줌
   // (유저 제안, 2026-07-28 — 자유 이야기 탭 자체에 관심을 실어주는 취지).
-  hot:      { icon: '🔥', title: '지금 인기 자유 이야기', info: '자유 이야기 탭에서 지금 참여자가 가장 많은 이야기예요. 방문할 때마다 실시간으로 바뀔 수 있어요.' },
-  hint:     { icon: '🧩', title: '초성 문장 퀴즈', info: '매일 오전 8시부터 오후 6시까지 2시간마다 정답 문장의 초성 힌트가 공개돼요. 다른 사람들의 시도도 함께 보면서 문장을 맞혀보세요. 먼저 맞히면 50P!' },
-  diary:    { icon: '📔', title: '훔쳐본 일기장', info: '다른 사람의 일기를 몰래 열어보는 읽기 전용 콘텐츠예요. 선택에 따라 이야기가 갈라지고, 한 번 넘긴 페이지는 되돌릴 수 없어요. 매주 수요일마다 새 일기가 한 편씩 공개돼요.' },
-  yourstory: { icon: '💭', title: '당신의 이야기', info: '오늘 하루를 한 줄로 익명으로 남겨보세요(하루 1개, 30자, +10P). 추천이나 채택은 없고 하트로 공감만 남길 수 있어요. 신고가 3표 모이면 자동으로 가려지고, 지급됐던 포인트도 회수돼요.' },
+  hot:      { icon: '🔥', iconKey: 'hot', title: '지금 인기 자유 이야기', info: '자유 이야기 탭에서 지금 참여자가 가장 많은 이야기예요. 방문할 때마다 실시간으로 바뀔 수 있어요.' },
+  hint:     { icon: '🧩', iconKey: 'hint', title: '초성 문장 퀴즈', info: '매일 오전 8시부터 오후 6시까지 2시간마다 정답 문장의 초성 힌트가 공개돼요. 다른 사람들의 시도도 함께 보면서 문장을 맞혀보세요. 먼저 맞히면 50P!' },
+  diary:    { icon: '📔', iconKey: 'diary', title: '훔쳐본 일기장', info: '다른 사람의 일기를 몰래 열어보는 읽기 전용 콘텐츠예요. 선택에 따라 이야기가 갈라지고, 한 번 넘긴 페이지는 되돌릴 수 없어요. 매주 수요일마다 새 일기가 한 편씩 공개돼요.' },
+  yourstory: { icon: '💭', iconKey: 'yourstory', title: '당신의 이야기', info: '오늘 하루를 한 줄로 익명으로 남겨보세요(하루 1개, 30자, +10P). 추천이나 채택은 없고 하트로 공감만 남길 수 있어요. 신고가 3표 모이면 자동으로 가려지고, 지급됐던 포인트도 회수돼요.' },
 };
 
 // 장르 확률 패널 색상 매핑 — functions/index.js의 SPOTLIGHT_GENRES와 이름이
@@ -3985,7 +4080,7 @@ function genreSwitchBannerHtml(genre, nextGenre) {
   return `
     <div class="genre-panel" id="genre-switch-banner" style="--g:var(--g-${suffix});--wash:var(--g-${suffix}-wash);margin-top:10px">
       <div class="genre-row">
-        <div class="genre-headline">🎭 지금 장르: <span class="genre-pill-primary">${esc(genre)}</span>${nextGenre ? ` · 다음 단계 장르 <span class="genre-pill-primary">${esc(nextGenre)}</span>로!` : ''}</div>
+        <div class="genre-headline">${hwIcon('genre_switch', { size: 12 })} 지금 장르: <span class="genre-pill-primary">${esc(genre)}</span>${nextGenre ? ` · 다음 단계 장르 <span class="genre-pill-primary">${esc(nextGenre)}</span>로!` : ''}</div>
       </div>
     </div>`;
 }
@@ -4117,7 +4212,7 @@ function diaryHubTeaserCardHtml() {
   return `
     <div id="dh-teaser-card" class="spotlight-card-shell">
       <div style="display:flex;align-items:center;gap:4px">
-        <span style="font-size:14px;font-weight:700">📔 훔쳐본 일기장</span>
+        <span style="font-size:14px;font-weight:700">${hwIcon('diary', { size: 15 })} 훔쳐본 일기장</span>
         <button onclick="openSlotInfo('diary')" aria-label="설명 보기" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 2px">ⓘ</button>
       </div>
       <div class="diary-hub-snippet"><p>"…"</p></div>
@@ -4563,7 +4658,7 @@ function renderYourStoryCard() {
     <div class="spotlight-card-shell card-glow-new">
       <span class="card-glow-new-badge">NEW</span>
       <div style="display:flex;align-items:center;gap:4px">
-        <span style="font-size:14px;font-weight:700">💭 당신의 이야기</span>
+        <span style="font-size:14px;font-weight:700">${hwIcon('yourstory', { size: 15 })} 당신의 이야기</span>
         <button onclick="openSlotInfo('yourstory')" aria-label="설명 보기" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 2px">ⓘ</button>
       </div>
       <div class="ys-mine-text${isEmpty ? ' empty' : ''}" style="margin-top:10px">${bodyText}</div>
@@ -4597,7 +4692,7 @@ async function yourStoryPage() {
       <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="nav('spotlight')">← 오늘의 이야기로</button>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
-      <div style="font-family:var(--serif);font-size:19px;font-weight:700">💭 당신의 이야기</div>
+      <div style="font-family:var(--serif);font-size:19px;font-weight:700">${hwIcon('yourstory', { size: 18 })} 당신의 이야기</div>
       <div style="position:relative">
         <button class="ys-date-btn" id="ys-date-btn" onclick="ysToggleCal()"><span id="ys-date-btn-label"></span><span class="caret">▾</span></button>
         <div class="ys-cal-pop" id="ys-cal-pop"></div>
@@ -4983,11 +5078,11 @@ function cardHtml(key) {
       // 쓰기)와 다른 액션임을 구분(시안 논의로 확정: 타이틀에 이미 🎲가 있어서
       // 타이틀 줄에 나란히 두면 겹치니 여기 버튼에만 아이콘을 둠).
       const wcLinkBtn = key === 'word'
-        ? `<button class="btn btn-sm" style="background:rgba(200,130,58,.12);color:var(--accent2);border:1px solid rgba(200,130,58,.35);border-radius:20px;display:inline-flex;align-items:center;gap:4px" onclick="nav('wordchallenge')">🎲 챌린지 가기</button>`
+        ? `<button class="btn btn-sm" style="background:rgba(200,130,58,.12);color:var(--accent2);border:1px solid rgba(200,130,58,.35);border-radius:20px;display:inline-flex;align-items:center;gap:4px" onclick="nav('wordchallenge')">${hwIcon('word', { size: 13 })} 챌린지 가기</button>`
         : '';
       const fixedEndingTeaserHtml = key === 'fixed_ending' && slot.fixed_ending ? `
         <div style="font-size:12px;color:var(--accent2);background:var(--surface);border-left:3px solid var(--accent2);border-radius:6px;padding:8px 12px;margin:10px 0">
-          🎯 이 문장으로 끝나요: <strong>${esc(slot.fixed_ending)}</strong>
+          ${hwIcon('fixed_ending', { size: 12 })} 이 문장으로 끝나요: <strong>${esc(slot.fixed_ending)}</strong>
         </div>` : '';
       const genreSwitchTeaserHtml = key === 'genre_switch' && _curEp
         ? genreSwitchBannerHtml((slot.genre_sequence || [])[Number(_curEp.step) - 1], (slot.genre_sequence || [])[Number(_curEp.step)])
@@ -5029,7 +5124,7 @@ function cardHtml(key) {
       <div id="spotlight-card-${key}" class="spotlight-card-shell">
         ${slot.state === 'story' ? cardStickersHtml(slot, false) : ''}
         <div style="display:flex;align-items:center;gap:4px">
-          <span style="font-size:14px;font-weight:700">${meta.icon} ${meta.titleHtml || esc(meta.title)}</span>
+          <span style="font-size:14px;font-weight:700">${meta.iconKey ? hwIcon(meta.iconKey, { size: 15 }) : meta.icon} ${meta.titleHtml || esc(meta.title)}</span>
           <button onclick="openSlotInfo('${key}')" aria-label="설명 보기" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 2px">ⓘ</button>
         </div>
         ${bodyHtml}
@@ -5243,7 +5338,7 @@ function renderHintCardHtml(round) {
   return `
     <div class="card" style="margin-top:14px" id="hint-card-inner">
       <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
-        <span style="font-size:14px;font-weight:700">🧩 초성 문장 퀴즈${solved ? (round.failed ? ' · 아쉽게 실패' : ' · 정답 공개!') : ''}</span>
+        <span style="font-size:14px;font-weight:700">${hwIcon('hint', { size: 15 })} 초성 문장 퀴즈${solved ? (round.failed ? ' · 아쉽게 실패' : ' · 정답 공개!') : ''}</span>
         <button onclick="openSlotInfo('hint')" aria-label="설명 보기" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 2px">ⓘ</button>
         ${solved ? `<span style="font-size:11px;color:var(--muted);font-weight:400">(다음 라운드까지 <span id="hint-countdown"></span>)</span>` : ''}
       </div>
@@ -5399,7 +5494,7 @@ function openSlotInfo(key) {
   modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
   modal.innerHTML = `
     <div class="modal-box" style="max-width:320px;text-align:center">
-      <div style="font-size:28px;margin-bottom:10px">${meta.icon}</div>
+      <div style="margin-bottom:10px;color:var(--text)">${meta.iconKey ? hwIcon(meta.iconKey, { size: 30 }) : `<span style="font-size:28px">${meta.icon}</span>`}</div>
       <div style="font-size:15px;font-weight:700;margin-bottom:10px">${esc(meta.title)}</div>
       <div style="font-size:13px;color:var(--muted);line-height:1.6">${esc(meta.info)}</div>
       <button class="btn btn-primary btn-sm" style="margin-top:16px" onclick="document.getElementById('slot-info-modal').remove()">확인</button>

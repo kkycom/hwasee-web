@@ -1045,19 +1045,33 @@ async function _serverSpinOffOrphan(db, orphanEp, story, epById, subsByEp, subBy
 async function _serverCloseEpisode(db, episode_id, ep) {
   const epRef = db.collection('episodes').doc(episode_id);
   const storyRef = db.collection('stories').doc(ep.story_id);
-  const alreadyClosed = await db.runTransaction(async tx => {
-    const snap = await tx.get(epRef);
-    if (!snap.exists) return true;
+  // 🔒 2026-08-27 보안방: closeEpisode가 무인증+무검증 콜러블이라 실제 투표
+  // 임계값 도달 여부와 무관하게 아무나 강제 마감을 트리거할 수 있었음 —
+  // 마감 선점(status:'closed'로 바꾸는 것)과 같은 트랜잭션 안에서 실제
+  // 최고 득표수를 재조회해 임계값 미만이면 아무것도 바꾸지 않고 되돌아감
+  // (TOCTOU 없이, 검증과 상태변경이 원자적으로 묶임).
+  const closeResult = await db.runTransaction(async tx => {
+    const [snap, storySnap, subsSnap] = await Promise.all([
+      tx.get(epRef),
+      tx.get(storyRef),
+      tx.get(db.collection('submissions').where('episode_id', '==', episode_id)),
+    ]);
+    if (!snap.exists) return 'already_closed';
     const st = snap.data().status;
-    if (st !== 'open' && st !== 'pending') return true;
+    if (st !== 'open' && st !== 'pending') return 'already_closed';
+
+    const voteThreshold = (storySnap.exists && storySnap.data().vote_threshold) || AI_VOTE_THRESHOLD;
+    const maxVoteCount = subsSnap.docs.reduce((m, d) => Math.max(m, Number(d.data().vote_count) || 0), 0);
+    if (maxVoteCount < voteThreshold) return 'below_threshold';
+
     tx.update(epRef, { status: 'closed', closed_at: new Date().toISOString() });
     // 자유 이야기 탭 카드용 open_steps에서도 제거 — 안 지우면 닫힌 에피소드가
     // 카드에 계속 "열려있는 것"처럼 남음(2026-07-18 성능개선용 비정규화 필드,
     // firebase-api.js fbCreateStory 참고)
     tx.update(storyRef, { [`open_steps.${episode_id}`]: admin.firestore.FieldValue.delete() });
-    return false;
+    return 'closed';
   });
-  if (alreadyClosed) return;
+  if (closeResult !== 'closed') return closeResult;
 
   const subsSnap = await db.collection('submissions').where('episode_id', '==', episode_id).get();
   if (subsSnap.empty) return;
@@ -2576,15 +2590,23 @@ exports.deleteAccount = functions
 //    이미 검증된 마감/분기/완결 로직 — 브라우저 fire-and-forget 대신 서버에서
 //    끝까지 안정적으로 완료되도록 사람 마감 경로도 동일 함수를 재사용함.
 //    탭이 백그라운드로 넘어가거나 닫혀도 서버 실행은 계속 진행됨) ──
+// 🔒 2026-08-27 보안방: episode_id만 받고 인증이 전혀 없어서, 로그인 없이
+// 아무나 진행 중인 에피소드를 즉시 마감시킬 수 있었음(실제 투표수는
+// _serverCloseEpisode도 검증 안 해서, 1표든 0표든 그대로 채택/포인트분배/
+// 다음 단계 진행까지 트리거됨). 최소한 로그인된 사용자만 호출 가능하도록
+// _requireUser로 막고, 실제 임계값 검증은 _serverCloseEpisode 안(마감
+// 트랜잭션과 동일 트랜잭션)에서 재확인하도록 함께 수정.
 exports.closeEpisode = functions
   .region('asia-northeast3')
   .https.onCall(async (data) => {
     const episode_id = data.episode_id;
     if (!episode_id) throw new functions.https.HttpsError('invalid-argument', 'episode_id가 필요합니다.');
+    await _requireUser(data.user_id, data.token);
     const db = admin.firestore();
     const epSnap = await db.collection('episodes').doc(episode_id).get();
     if (!epSnap.exists) return { ok: true };
-    await _serverCloseEpisode(db, episode_id, epSnap.data());
+    const result = await _serverCloseEpisode(db, episode_id, epSnap.data());
+    if (result === 'below_threshold') return { ok: false, error: '아직 투표 임계값에 도달하지 않았습니다.' };
     return { ok: true };
   });
 
@@ -3232,26 +3254,109 @@ function _serverExtendGenreSequence(seq, uptoLength) {
   return arr;
 }
 
-// ── MVP 공감 포인트 지급 (Callable — 공감한 사람이 아니라 글쓴이에게 점수가 가야 하는데,
-//    그 지급을 클라이언트가 직접 하지 못하게 서버로 이전) ──
+// ── MVP 공감 포인트 지급 ──────────────────────────────────────────
+// 🔒 2026-08-27 보안방 긴급수정 — 완전 비활성화: 이 함수는 mvp_id만 받고
+// 호출자 인증이 전혀 없었고, story_mvp 컬렉션도 클라이언트가 직접 쓸 수
+// 있었음(firestore.rules 참고) — 그 결과 누구나 (1) story_mvp에 임의
+// {nominated_user_id: 내계정, points_granted: false} 문서를 직접 만들고
+// (2) 이 함수를 mvp_id만으로 호출하는 것을 반복해서 로그인조차 없이
+// 무제한으로 포인트를 찍어낼 수 있었음(실제 재현 확인함). voteMvp(아래)로
+// 완전히 대체됐고, 옛 클라이언트가 캐시돼 있다가 이 함수를 호출해도 절대
+// 포인트가 나가지 않도록 본문 자체를 무력화함 — 삭제하지 않고 남겨둔 이유는
+// Cloud Functions 삭제가 별도 배포 조작(functions:delete)이라 이 커밋만으론
+// 실제로 안 지워지고, 무력화된 채로 남겨두는 편이 안전하기 때문.
 exports.grantMvpPoints = functions
   .region('asia-northeast3')
+  .https.onCall(async () => {
+    return { ok: false, error: '이 기능은 더 이상 사용되지 않습니다.' };
+  });
+
+// ── MVP 선정 (Callable — 기존 fbVoteMvp의 검증 전부를 서버로 재구현) ──
+// 🔒 2026-08-27 보안방: 기존엔 클라이언트(fbVoteMvp)가 검증(완결 여부/채택
+// 문장 존재/본인글 아님/SYSTEM 아님/중복투표)을 먼저 하고 story_mvp 문서를
+// 직접 만든 뒤 grantMvpPoints를 호출하는 구조였음 — story_mvp가 공개 쓰기라
+// 이 클라이언트 검증을 통째로 우회할 수 있었음. 이제 검증·문서생성·포인트
+// 지급·알림까지 전부 이 서버 함수 하나가 담당하고, story_mvp는 읽기 전용으로
+// 잠갔음(firestore.rules 참고).
+exports.voteMvp = functions
+  .region('asia-northeast3')
   .https.onCall(async (data) => {
-    const mvp_id = data.mvp_id;
-    if (!mvp_id) throw new functions.https.HttpsError('invalid-argument', 'mvp_id가 필요합니다.');
+    const story_id = data.story_id;
+    const episode_id = data.episode_id;
+    const voter_id = data.user_id;
+    if (!story_id || !episode_id || !voter_id) {
+      throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    }
+    await _requireUser(voter_id, data.token);
+
     const db = admin.firestore();
-    const mvpRef = db.collection('story_mvp').doc(mvp_id);
+    const stSnap = await db.collection('stories').doc(story_id).get();
+    if (!stSnap.exists) return { ok: false, error: '이야기를 찾을 수 없습니다.' };
+    const st = stSnap.data();
+    if (st.status !== 'completed' && st.status !== 'inactive') {
+      return { ok: false, error: '완결된 이야기에서만 가능합니다.' };
+    }
 
-    const nominatedUserId = await db.runTransaction(async tx => {
-      const snap = await tx.get(mvpRef);
-      if (!snap.exists || snap.data().points_granted) return null;
-      tx.update(mvpRef, { points_granted: true });
-      return snap.data().nominated_user_id;
+    const subSnap = await db.collection('submissions')
+      .where('episode_id', '==', episode_id).where('is_adopted', '==', true).limit(1).get();
+    if (subSnap.empty) return { ok: false, error: '채택된 문장을 찾을 수 없습니다.' };
+    const sub = subSnap.docs[0].data();
+    if (sub.author_id === voter_id) return { ok: false, error: '본인 글에는 공감할 수 없습니다.' };
+    if (!sub.author_id || sub.author_id === 'SYSTEM') return { ok: false, error: '공감할 수 없는 글입니다.' };
+    const nominated_user_id = sub.author_id;
+
+    // story_id+voter_id 결정적 ID로 신규 중복(동시요청 포함)을 트랜잭션 안에서
+    // 원자적으로 막고, story_mvp가 공개 쓰기였던 시절 만들어진 랜덤 ID 문서(기존
+    // fbVoteMvp가 fbGenId()로 생성)까지 같이 조회해서 과거 데이터로도 중복
+    // 방지가 되게 함.
+    const mvpRef = db.collection('story_mvp').doc(`${story_id}_${voter_id}`);
+    const legacyDupQuery = db.collection('story_mvp')
+      .where('story_id', '==', story_id).where('voter_id', '==', voter_id).limit(1);
+    const grantPoints = nominated_user_id !== FB_ADMIN_ID && nominated_user_id !== FB_AI_ID;
+    const nomineeRef = grantPoints ? db.collection('users').doc(nominated_user_id) : null;
+
+    const result = await db.runTransaction(async tx => {
+      // Firestore 트랜잭션 규칙상 모든 읽기가 쓰기보다 먼저 와야 해서 한 번에 모음.
+      const [mvpSnap, legacyDupSnap, nomineeSnap] = await Promise.all([
+        tx.get(mvpRef),
+        tx.get(legacyDupQuery),
+        nomineeRef ? tx.get(nomineeRef) : Promise.resolve(null),
+      ]);
+      if (mvpSnap.exists || !legacyDupSnap.empty) {
+        return { ok: false, error: '이미 으뜸 글을 선정하셨습니다.' };
+      }
+
+      tx.set(mvpRef, {
+        story_id, voter_id, nominated_user_id, episode_id,
+        created_at: new Date().toISOString(), points_granted: true,
+      });
+
+      // 기존 _serverAddPoints는 자체 트랜잭션을 열어서 이 트랜잭션 안에서 재사용
+      // 불가(submitYourStory 등과 동일한 이유) — 동일한 total_points/badge/
+      // point_ledger 형식을 여기서 직접 재현해 문서생성과 원자적으로 묶음.
+      if (grantPoints && nomineeSnap && nomineeSnap.exists) {
+        const newTotal = (nomineeSnap.data().total_points || 0) + 10;
+        tx.update(nomineeRef, { total_points: newTotal, badge: _serverCalcBadge(newTotal) });
+        tx.set(db.collection('point_ledger').doc(), {
+          user_id: nominated_user_id, points: 10, reason: 'mvp_nomination', sub_id: '',
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      // 알림도 같은 트랜잭션에 묶어서 처리 — 기존 fbVoteMvp도 관리자/AI 여부와
+      // 무관하게 항상 보냈던 것과 동일하게 무조건 생성(AI/관리자 계정은 어차피
+      // 알림을 안 봄, 기존 동작 그대로 유지).
+      const snippet = (st.opening || '').slice(0, 20);
+      tx.set(db.collection('notifications').doc(), {
+        user_id: nominated_user_id, type: 'story_advance', story_id,
+        message: `"${snippet}…" 이야기에서 내 글이 으뜸 글로 선정됐어요! +10P`,
+        is_read: false, created_at: admin.firestore.Timestamp.now(), push_sent: false,
+      });
+
+      return { ok: true };
     });
-    if (!nominatedUserId) return { ok: true };
 
-    await _serverAddPoints(db, nominatedUserId, 10, 'mvp_nomination', '');
-    return { ok: true };
+    return result;
   });
 
 // ── 연속 출석 끊김 방지 리마인더 푸시 (매일 저녁 9시, 아직 오늘 출석 안 한

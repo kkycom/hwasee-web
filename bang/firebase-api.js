@@ -714,13 +714,18 @@ async function fbGetStory(story_id, user_id) {
       : Promise.resolve(null),
   ]);
 
-  // 마감 대기 에피소드 비동기 복구 — await 제거로 페이지 렌더를 차단하지 않음
-  if (openEp) {
+  // 마감 대기 에피소드 비동기 복구 — await 제거로 페이지 렌더를 차단하지 않음.
+  // closeEpisode가 이제 로그인 필요(2026-08-27 보안방)라 user_id 없으면 애초에
+  // 호출 자체를 안 함 — 비로그인 방문자가 이 복구를 못 트리거해도 무해함(다른
+  // 로그인 유저의 투표/열람이나 aiParticipate 스케줄 함수가 결국 마감시킴).
+  if (openEp && user_id) {
     const stuckMaxV = subsSnap.docs
       .filter(d => d.data().episode_id === openEp.episode_id)
       .reduce((m, d) => Math.max(m, Number(d.data().vote_count) || 0), 0);
     if (stuckMaxV >= (story.vote_threshold || FB_VOTE_THRESHOLD)) {
-      functionsRegion.httpsCallable('closeEpisode')({ episode_id: openEp.episode_id }).catch(() => {});
+      functionsRegion.httpsCallable('closeEpisode')({
+        episode_id: openEp.episode_id, user_id, token: localStorage.getItem('hwasee_token'),
+      }).catch(() => {});
     }
   }
 
@@ -1472,8 +1477,12 @@ async function fbVote(episode_id, sub_ids, voter_id) {
     // 마감 처리(당선작 결정/분기 분리/포인트 지급)는 서버(Cloud Function,
     // _serverCloseEpisode 재사용)에서 수행 — 투표 응답은 기다리지 않고 바로
     // 반환하되, 처리 자체는 브라우저 탭이 닫히거나 백그라운드로 넘어가도
-    // 서버에서 끝까지 안정적으로 완료됨.
-    functionsRegion.httpsCallable('closeEpisode')({ episode_id }).catch(() => {});
+    // 서버에서 끝까지 안정적으로 완료됨. voter_id는 방금 실제로 투표를 마친
+    // (즉 로그인 검증된) 본인 uid라 closeEpisode의 로그인 요구(2026-08-27
+    // 보안방)를 그대로 만족함.
+    functionsRegion.httpsCallable('closeEpisode')({
+      episode_id, user_id: voter_id, token: localStorage.getItem('hwasee_token'),
+    }).catch(() => {});
   }
 
   return { ok: true, total_voters: newTotal, max_votes: maxSubVotes, vote_threshold: voteThreshold };
@@ -2131,37 +2140,23 @@ async function fbBackfillLikeCounts(admin_id) {
 
 // ─── MVP ────────────────────────────────────────────────
 
+// 🔒 2026-08-27 보안방 긴급수정: story_mvp가 공개 쓰기였던 시절엔 이 함수가
+// 위 검증(완결여부/중복/본인글/SYSTEM)을 직접 하고 문서도 직접 .set() 했는데,
+// 그 검증을 거치지 않고 story_mvp에 임의 문서를 직접 만들어 grantMvpPoints를
+// 호출하면 무제한 포인트 발급이 가능했음(실제 재현 확인). 검증·문서생성·
+// 포인트지급·알림을 모두 voteMvp Cloud Function(서버, 같은 트랜잭션)으로
+// 이전 — 클라이언트는 이제 story_mvp를 직접 읽기만 함(firestore.rules 참고).
 async function fbVoteMvp(story_id, episode_id, voter_id) {
   if (!voter_id) return { ok: false, error: '로그인이 필요합니다.' };
   if (!episode_id) return { ok: false, error: '잘못된 요청입니다.' };
-
-  const stSnap = await db.collection('stories').doc(story_id).get();
-  if (!stSnap.exists) return { ok: false, error: '이야기를 찾을 수 없습니다.' };
-  const st = stSnap.data();
-  if (st.status !== 'completed' && st.status !== 'inactive')
-    return { ok: false, error: '완결된 이야기에서만 가능합니다.' };
-
-  const dup = await db.collection('story_mvp')
-    .where('story_id','==',story_id).where('voter_id','==',voter_id).limit(1).get();
-  if (!dup.empty) return { ok: false, error: '이미 으뜸 글을 선정하셨습니다.' };
-
-  const subSnap = await db.collection('submissions')
-    .where('episode_id','==',episode_id).where('is_adopted','==',true).limit(1).get();
-  if (subSnap.empty) return { ok: false, error: '채택된 문장을 찾을 수 없습니다.' };
-  const sub = subSnap.docs[0].data();
-  if (sub.author_id === voter_id) return { ok: false, error: '본인 글에는 공감할 수 없습니다.' };
-  if (!sub.author_id || sub.author_id === 'SYSTEM') return { ok: false, error: '공감할 수 없는 글입니다.' };
-
-  const mvpId = fbGenId();
-  await db.collection('story_mvp').doc(mvpId).set({
-    story_id, voter_id, nominated_user_id: sub.author_id, episode_id, created_at: fbNow()
-  });
-  // 포인트 지급은 클라이언트가 남의 계정에 직접 쓰지 않도록 서버(Cloud Function)로 이전됨
-  await functionsRegion.httpsCallable('grantMvpPoints')({ mvp_id: mvpId }).catch(() => {});
-  const stSnap2 = await db.collection('stories').doc(story_id).get();
-  const snippet = ((stSnap2.exists ? stSnap2.data().opening : '') || '').slice(0, 20);
-  await _fbCreateNotifications([sub.author_id], story_id, `"${snippet}…" 이야기에서 내 글이 으뜸 글로 선정됐어요! +10P`);
-  return { ok: true };
+  try {
+    const r = await functionsRegion.httpsCallable('voteMvp')({
+      story_id, episode_id, user_id: voter_id, token: localStorage.getItem('hwasee_token'),
+    });
+    return r.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
+  }
 }
 
 async function fbGetMvpVotes(story_id, voter_id) {
@@ -2754,8 +2749,13 @@ async function fbAdminForceAdopt(sub_id, admin_id) {
   if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
   if (epSnap.data().status !== 'open') return { ok: false, error: '이미 마감된 에피소드입니다.' };
   await subSnap.ref.update({ vote_count: 9999 });
-  // 투표 마감과 동일하게 서버(Cloud Function)에서 마감 처리 — 응답은 기다리지 않음
-  functionsRegion.httpsCallable('closeEpisode')({ episode_id: sub.episode_id }).catch(() => {});
+  // 투표 마감과 동일하게 서버(Cloud Function)에서 마감 처리 — 응답은 기다리지 않음.
+  // closeEpisode가 이제 로그인 검증을 요구(2026-08-27 보안방)해서 관리자 세션
+  // (admin_id+token)을 그대로 전달 — 위에서 이미 vote_count:9999로 올려뒀으니
+  // _serverCloseEpisode의 임계값 재검증은 항상 통과함(별도 관리자 우회 경로 불필요).
+  functionsRegion.httpsCallable('closeEpisode')({
+    episode_id: sub.episode_id, user_id: admin_id, token: localStorage.getItem('hwasee_token'),
+  }).catch(() => {});
   return { ok: true };
 }
 

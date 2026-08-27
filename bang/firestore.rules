@@ -126,7 +126,13 @@ service cloud.firestore {
     match /bookmarks/{docId} { allow read, write: if true; }
     match /notifications/{docId} { allow read, write: if true; }
     match /story_likes/{docId} { allow read, write: if true; }
-    match /story_mvp/{docId} { allow read, write: if true; }
+    // 🔒 2026-08-27 보안방 긴급수정: 클라이언트가 이 컬렉션에 직접 .set()으로
+    // 문서를 만들 수 있어서(완전 공개 쓰기), fbVoteMvp의 검증(완결 여부/중복투표/
+    // 본인글 여부 등)을 전부 건너뛰고 임의 nominated_user_id로 문서를 만든 뒤
+    // grantMvpPoints를 호출하면 무제한 무료 포인트 발급이 가능했음(실제 재현
+    // 확인함). 생성/수정/삭제는 이제 voteMvp Cloud Function(Admin SDK, 검증
+    // 전부 서버에서 재확인 후 처리)만 가능 — 클라이언트는 읽기만 허용.
+    match /story_mvp/{docId} { allow read: if true; allow create, update, delete: if false; }
     match /boosts/{docId} { allow read, write: if true; }
     match /extra_submits/{docId} { allow read, write: if true; }
     match /reports/{docId} { allow read, write: if true; }

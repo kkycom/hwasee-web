@@ -80,13 +80,20 @@
      현상으로 명시함. swap으로 되돌려 모든 요소가 폰트 로딩 완료 시 다같이
      일괄 교체되도록 해서 전체 일관성을 보장 — preload는 그대로 둬서 교체가
      최대한 빨리(눈에 덜 띄게) 일어나게 함 -->
-<link rel="preload" href="/bang/fonts/GyelonggiBatang-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/bang/fonts/DancingScript-Bold.woff2" as="font" type="font/woff2" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
+/* GyelonggiBatang은 "화씨.방" 로고 4글자(unicode-range 참고)로만 서브셋된
+   2KB짜리 폰트라, 별도 네트워크 요청 없이 base64로 통째로 인라인함 —
+   preload를 아무리 빨리 걸어도 최초 정적 화면이 페인트되는 그 순간엔 아직
+   못 받아온 상태라, 그 찰나에 로고 글자만 시스템 고딕체로 잠깐 보이던
+   문제가 있었음(유저 지적, 2026-08-23). 파일 자체가 CSS 파싱 시점에 이미
+   다 있으니 그 갭이 사라짐. swap/unicode-range는 기존 설계(주석 위 참고)
+   그대로 유지 — 로딩 전략 자체는 안 건드림.
+*/
 @font-face {
   font-family: 'GyelonggiBatang';
-  src: url('/bang/fonts/GyelonggiBatang-Regular.woff2') format('woff2');
+  src: url('data:font/woff2;base64,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') format('woff2');
   font-weight: 400; font-style: normal; font-display: swap;
   unicode-range: U+2E,U+bc29,U+d654,U+c528; /* 화씨.방 */
 }

@@ -776,10 +776,25 @@
 
   /* ── 이야기 상세 상단 툴바(목록으로/책갈피/공감현황/공유) — .home-tabs와
      동일하게 헤더 바로 아래 고정. 스크롤 내려서 목록으로 나가려고 맨 위까지
-     다시 올라가야 하던 문제(유저 제보, 2026-07-20) */
+     다시 올라가야 하던 문제(유저 제보, 2026-07-20).
+     완결작은 역할별 3구역: 좌(목록으로) · 중앙(책갈피/공감현황/공유) ·
+     우(다음 완결작). 데스크톱은 한 줄, 좁은 화면은 [목록으로 … 다음 완결작]
+     주행동 줄 + 책갈피·공감현황·공유 보조 줄로 접힘. */
   .story-toolbar {
     position: sticky; top: 56px; z-index: 90; background: var(--bg);
     padding: 10px 0; margin: 0 0 14px; border-bottom: 1px solid var(--border);
+  }
+  .story-toolbar-row { display: flex; align-items: center; gap: 8px; }
+  .stb-side { flex: 1 1 0; display: inline-flex; align-items: center; min-width: 0; }
+  .stb-side-right { justify-content: flex-end; }
+  .stb-center { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0; }
+  .stb-next-last { font-size: 12px; color: var(--muted); white-space: nowrap; padding: 0 6px; }
+  @media (max-width: 600px) {
+    .story-toolbar--nav .story-toolbar-row { flex-wrap: wrap; row-gap: 2px; }
+    .story-toolbar--nav .stb-side { flex: 1 1 auto; }
+    .story-toolbar--nav .stb-center {
+      order: 3; flex-basis: 100%; justify-content: center; margin-top: 4px;
+    }
   }
   .home-tab {
     flex: 1; text-align: center; padding: 12px 8px; font-size: 13px; font-weight: 600;
@@ -1686,6 +1701,71 @@ function _renderDoneCover(content) {
 }
 function doneOpenCover(story_id) { _doneCoverId = story_id; renderDoneCards(); }
 function doneCloseCover() { _doneCoverId = null; renderDoneCards(); }
+
+// ── 완결작 상세 상단 "다음 완결작" 내비 ────────────────────
+// 완결작 책장(_doneShelfHtml)이 실제로 그리는 것과 똑같은 정렬을 그대로
+// 재사용한다: _sortStories(list, _doneSort). 추천·인기·생성일 기준을 여기서
+// 새로 만들지 않고, 사용자가 책장에서 보고 있던 그 순서의 "다음 책"을 연다.
+// 완결(마지막 책)에서는 순환하지 않고 '마지막 작품입니다'로 비활성 표시한다.
+// _doneCache가 아직 없으면(북마크·검색·딥링크로 곧장 상세 진입) 완성된 이야기
+// 탭이 쓰는 것과 같은 로컬 캐시(_lsc 'done')를 폴백으로 쓰고, 그것도 없으면
+// _hydrateNextDone가 한 번 조회해 슬롯만 다시 그린다.
+function _doneStoryList() {
+  if (_doneCache && Array.isArray(_doneCache.stories)) return _doneCache.stories;
+  const cached = _lsc.getStale('done');
+  if (cached && cached.ok && Array.isArray(cached.stories)) return cached.stories;
+  return null;
+}
+function _nextDoneInfo(story_id) {
+  const list = _doneStoryList();
+  if (!list || !list.length) return { unknown: true };
+  const sorted = _sortStories(list, _doneSort);
+  const idx = sorted.findIndex(x => x.story_id === story_id);
+  if (idx === -1) return { unknown: true };
+  if (idx >= sorted.length - 1) return { last: true };
+  return { next: sorted[idx + 1] };
+}
+function _nextDoneSlotHtml(story_id) {
+  const info = _nextDoneInfo(story_id);
+  // 다음 작품 id를 렌더 시점에 버튼에 박아둔다 — 클릭 시 다시 계산하면, 그새
+  // doToggleStoryLike 등이 _doneCache/_lsc 'done'을 비웠을 때(완결작 상세에서
+  // '이야기 추천해요' 토글 등) 목록을 잃어 버튼이 먹통이 됨.
+  if (info.next) return `<button class="btn btn-ghost btn-sm" style="border:none;font-weight:600;color:var(--muted)" onclick="openNextDone('${esc(info.next.story_id)}')">다음 완결작 →</button>`;
+  if (info.last) return `<span class="stb-next-last">마지막 작품입니다</span>`;
+  return '';
+}
+function openNextDone(next_story_id) {
+  if (!next_story_id) return;
+  // 책장에서 표지를 펼쳐 들어온 흐름이면, '목록으로' 복귀 시 다음 책 표지가
+  // 이어서 열리도록 커버 대상도 함께 옮긴다(표지를 안 거쳐 왔으면 그대로 둠).
+  if (_doneCoverId) _doneCoverId = next_story_id;
+  nav('story', next_story_id);
+}
+// 최신 목록(_doneCache 또는 TTL 이내 _lsc 'done')이 없으면 한 번 조회해 '다음
+// 완결작' 슬롯을 다시 그린다. 최초 렌더는 만료된 stale 캐시로 즉시 표시하고,
+// 여기서 백그라운드로 최신 목록을 받아 슬롯을 갱신한다(완성된 이야기 탭이
+// stale 즉시표시 + 백그라운드 갱신을 쓰는 것과 같은 방식). getStories page:2 =
+// 완결작 목록, 그 탭이 쓰는 것과 같은 읽기 전용 호출. 실패하면 조용히 무시.
+async function _hydrateNextDone() {
+  if (window._nextDoneHydrating) return;
+  if (_doneCache && Array.isArray(_doneCache.stories)) return;
+  window._nextDoneHydrating = true;
+  try {
+    let res = _lsc.get('done'); // TTL 이내(만료 전)만 — 만료된 건 stale로 취급해 새로 조회
+    if (!res || !res.ok) {
+      res = await api('getStories', { page: 2 });
+      if (!res || !res.ok) return;
+      _lsc.set('done', res, 660);
+    }
+    _doneCache = { stories: res.stories, genreTops: (_doneCache && _doneCache.genreTops) || {} };
+  } finally {
+    window._nextDoneHydrating = false;
+  }
+  // 조회하는 사이 다른 완결작으로 이동했을 수 있으므로, 시작 시점 id가 아니라
+  // 지금 열려 있는 완결 상세의 슬롯을 다시 계산한다(active/다른 라우트면 슬롯 없음).
+  const slot = document.getElementById('stb-next-slot');
+  if (slot && currentParam) slot.innerHTML = _nextDoneSlotHtml(currentParam);
+}
 
 // 책장 표지색용 genre_probs 배치 조회 — 부가 정보라 실패해도 조용히 무시,
 // 메인 렌더를 막지 않음(회색 폴백으로 이미 정상 표시되고 있음).
@@ -3022,25 +3102,41 @@ function _applyStoryData(res, story_id) {
 
   const isFinished = s.status === 'completed' || s.status === 'inactive';
 
-  document.getElementById('app').innerHTML = `
-    <div class="story-toolbar" style="display:flex;align-items:center;gap:0;flex-wrap:wrap;row-gap:6px">
-      <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="nav(window._prevRoute || 'home')">← 목록으로</button>
-      <div style="margin-left:auto;display:inline-flex;align-items:center;gap:0">
+  // 툴바 중앙 그룹(책갈피 | 공감 현황 | 공유) — 활성/완결 상세가 공유.
+  // 활성 이야기는 책갈피 뒤에 '주목'이 추가로 붙는다(기존 동작 유지).
+  const _tbSep = `<span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>`;
+  const _tbCenterInner = `
         ${user ? `
           <button id="bm-btn" class="btn btn-ghost btn-sm" data-bm="${is_bookmarked?'1':''}" style="border:none;color:${is_bookmarked?'var(--accent2)':'var(--muted)'};display:inline-flex;align-items:center;gap:4px"
             onclick="toggleBookmark('${esc(s.story_id)}', this)">
             <svg width="9" height="12" viewBox="0 0 9 12" fill="${is_bookmarked?'currentColor':'none'}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M1 1h7v10l-3.5-2.5L1 11z"/></svg>${is_bookmarked ? '책갈피됨' : '책갈피'}
           </button>
-          ${s.status === 'active' ? `
-            <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>
+          ${s.status === 'active' ? `${_tbSep}
             <button class="btn btn-ghost btn-sm" style="border:none;color:var(--muted);display:inline-flex;align-items:center;gap:4px"
               onclick="doBoostStory('${esc(s.story_id)}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><polygon points="12,2 15.1,8.3 22,9.3 17,14.1 18.2,21 12,17.8 5.8,21 7,14.1 2,9.3 8.9,8.3"/></svg>주목</button>` : ''}
-          <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>` : ''}
+          ${_tbSep}` : ''}
         <button class="prose-author-toggle" style="border:none;font-size:13px;opacity:1;display:inline-flex;align-items:center;gap:4px" onclick="window._proseSelMode==='viewvotes'?cancelProseSelMode():enterProseSelMode('viewvotes','${esc(s.story_id)}')"><svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="0" y="5" width="3" height="7" rx="0.5"/><rect x="4.5" y="2" width="3" height="10" rx="0.5"/><rect x="9" y="7" width="3" height="5" rx="0.5"/></svg>공감 현황</button>
-        <span style="width:1px;height:14px;background:var(--border);margin:0 2px;flex-shrink:0"></span>
-        <button class="btn btn-ghost btn-sm" style="border:none;color:var(--muted);display:inline-flex;align-items:center;gap:4px" onclick="shareStory('${esc(s.story_id)}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>공유</button>
+        ${_tbSep}
+        <button class="btn btn-ghost btn-sm" style="border:none;color:var(--muted);display:inline-flex;align-items:center;gap:4px" onclick="shareStory('${esc(s.story_id)}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>공유</button>`;
+  // 완결작: 좌(목록으로) · 중앙(책갈피/공감/공유) · 우(다음 완결작) 3구역.
+  // 활성 이야기: 기존 그대로(좌 + margin-left:auto로 오른쪽에 붙는 중앙 그룹).
+  const _toolbarHtml = isFinished ? `
+    <div class="story-toolbar story-toolbar--nav">
+      <div class="story-toolbar-row">
+        <div class="stb-side stb-side-left">
+          <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="nav(window._prevRoute || 'home')">← 목록으로</button>
+        </div>
+        <div class="stb-center">${_tbCenterInner}</div>
+        <div class="stb-side stb-side-right" id="stb-next-slot">${_nextDoneSlotHtml(s.story_id)}</div>
       </div>
-    </div>
+    </div>` : `
+    <div class="story-toolbar" style="display:flex;align-items:center;gap:0;flex-wrap:wrap;row-gap:6px">
+      <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600" onclick="nav(window._prevRoute || 'home')">← 목록으로</button>
+      <div style="margin-left:auto;display:inline-flex;align-items:center;gap:0">${_tbCenterInner}</div>
+    </div>`;
+
+  document.getElementById('app').innerHTML = `
+    ${_toolbarHtml}
     ${isFinished && s.title ? storyTitleBlockHtml(s) : ''}
     ${s.mode === 'fixed_ending' ? `<div style="margin:12px 0"><span class="step-pill"><span class="step-dot"></span>🎯 ${isFinished ? '완결' : (openEp ? calcDisplayStep(s, openEp.step) : (Number(s.current_step) || 0) + 1) + '/' + (s.max_steps || 10) + '단계'}</span></div>` : ''}
     <div id="prose-select-bar" class="prose-select-bar"></div>
@@ -3090,6 +3186,10 @@ function _applyStoryData(res, story_id) {
   if (isFinished && !story_comments) {
     loadStoryComments(currentParam);
   }
+
+  // '다음 완결작' 슬롯: _doneCache가 없어 순서를 못 정한 채로 그렸으면
+  // 한 번 조회해 채운다(완성된 이야기 탭 경유로 들어왔으면 이미 채워져 no-op).
+  if (isFinished) _hydrateNextDone();
 
   // 왼쪽 탭 마진: 활성 이야기(갈래 선택 시) 또는 완성 이야기(분기 있음)
   if (_hasBranches || (!_isFinishedStory && window._branchChoice && Object.keys(window._branchChoice).length > 0)) {

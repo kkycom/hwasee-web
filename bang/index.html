@@ -359,6 +359,97 @@
   .dcover-card .card-stickers { top:0; right:12px; }
   .dcover-card .card-branch-sticker, .dcover-card .card-bookmark-sticker, .dcover-card .card-new-sticker { background:rgba(250,246,238,.92); }
 
+  /* ── 완결작 공유 카드(공유 모달 안 미리보기 전용, kakao-share-book-card) ──
+     삽입 위치는 #share-modal 뿐. 클릭 불가 미리보기 — 실제 액션은 모달 하단 버튼.
+     표지는 CSS gradient/noise/SVG만: 이끼먹색(거의 검정에 가까운 저채도 회녹색)
+     천 표지 + 압인 테두리 + 스파인 접힘 그림자 + 종이 단면(책배)으로 단색 도형
+     처럼 보이지 않게 함. 완결 책장 dcover/dshelf 계열과는 별도 스코프. */
+  .scard {
+    position:relative; display:flex; gap:16px; align-items:flex-start;
+    background:radial-gradient(130% 90% at 12% -10%, rgba(255,255,255,.5), rgba(255,255,255,0) 55%), var(--bg);
+    border:1px solid var(--border); border-radius:12px; padding:16px;
+    box-shadow:0 1px 0 rgba(255,255,255,.5) inset, 0 6px 18px rgba(28,14,6,.12);
+    text-align:left; pointer-events:none; user-select:none;
+  }
+  .scard::after {
+    content:''; position:absolute; inset:0; pointer-events:none; border-radius:12px;
+    opacity:.4; mix-blend-mode:multiply;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.3'/%3E%3C/svg%3E");
+  }
+  .scover {
+    /* flex item에 %폭 + aspect-ratio를 함께 주면 일부 Chrome이 컨테이너 자동
+       높이 계산에서 표지에 전체 폭을 할당해 본문을 아래로 밀어낸다 — 고정 px로 둔다.
+       440px 모달 기준 약 32%. */
+    position:relative; flex:0 0 140px; width:140px; z-index:1; aspect-ratio:1/1.44;
+    border-radius:2px 5px 5px 2px;
+    background:
+      repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0 1px, rgba(0,0,0,.05) 1px 2px),
+      repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 1px, rgba(0,0,0,.055) 1px 3px),
+      linear-gradient(150deg, #2b322c 0%, #20261f 55%, #171b15 100%);
+    box-shadow:
+      inset 0 0 0 1.5px rgba(0,0,0,.32),
+      inset 0 0 0 2.5px rgba(255,255,255,.05),
+      inset 0 26px 30px -22px rgba(255,255,255,.11),
+      inset 0 -28px 32px -24px rgba(0,0,0,.4),
+      2px 6px 13px rgba(28,14,6,.3);
+  }
+  .scover::before { /* 스파인 접힘 그림자 */
+    content:''; position:absolute; left:0; top:0; bottom:0; width:11px; border-radius:2px 0 0 2px;
+    background:linear-gradient(90deg, rgba(0,0,0,.42), rgba(0,0,0,.04) 70%, rgba(255,255,255,.045));
+  }
+  .scover::after { /* 우측 종이 단면(책배) */
+    content:''; position:absolute; right:-4px; top:3px; bottom:3px; width:5px; border-radius:0 2px 2px 0;
+    background:repeating-linear-gradient(0deg, #f2e9d4 0 1px, #cdbd98 1px 2px);
+    box-shadow:1px 0 3px rgba(28,14,6,.28);
+  }
+  .scover-panel { /* 표지 안쪽 압인 프레임 */
+    position:absolute; inset:9px; border:1px solid rgba(238,231,214,.2); border-radius:2px;
+    box-shadow:0 1px 0 rgba(0,0,0,.25) inset, 0 -1px 0 rgba(255,255,255,.05) inset;
+    display:flex; align-items:center; justify-content:center; padding:8px 7px;
+  }
+  .scover-label {
+    font-family:var(--serif); font-size:11px; font-weight:700; line-height:1.5; text-align:center;
+    color:rgba(238,231,214,.8); letter-spacing:.01em; word-break:keep-all;
+    text-shadow:0 1px 1px rgba(0,0,0,.55), 0 -1px 0 rgba(255,255,255,.05);
+    display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .scover-moon {
+    position:absolute; top:12px; right:12px; width:11px; height:11px; opacity:.45;
+    filter:drop-shadow(0 0 3px rgba(238,231,214,.3));
+  }
+  .scard-body { flex:1; min-width:0; display:flex; flex-direction:column; justify-content:center; position:relative; z-index:1; }
+  .scard-kicker { font-size:10.5px; font-weight:700; color:#a67c4a; letter-spacing:.09em; margin-bottom:6px; }
+  .scard-title {
+    font-family:var(--serif); font-size:17px; font-weight:700; line-height:1.4; color:var(--text);
+    word-break:keep-all; overflow-wrap:anywhere;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .scard-opening {
+    font-family:var(--serif); font-style:italic; font-size:12.5px; line-height:1.7; color:var(--muted);
+    margin-top:7px; word-break:keep-all; overflow-wrap:anywhere;
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .scard-blurb {
+    font-size:11px; color:var(--muted); margin-top:9px; line-height:1.5;
+    display:flex; align-items:center; gap:5px;
+  }
+  .scard-blurb svg { flex:0 0 auto; opacity:.7; }
+  .scard-cta {
+    align-self:flex-start; margin-top:12px;
+    display:inline-flex; align-items:center; gap:6px;
+    background:var(--accent2); color:#fff; font-size:12px; font-weight:700;
+    padding:7px 13px; border-radius:8px; box-shadow:0 2px 6px rgba(200,130,58,.3);
+  }
+  .scard-note { font-size:11px; color:var(--muted); text-align:center; margin:10px 0 0; }
+  @media (max-width:600px) {
+    .scard { flex-direction:column; align-items:center; text-align:center; gap:14px; }
+    .scover { flex-basis:auto; width:112px; }
+    .scard-body { align-items:center; width:100%; }
+    .scard-opening { -webkit-line-clamp:4; }
+    .scard-blurb { justify-content:center; }
+    .scard-cta { align-self:center; }
+  }
+
   /* ── 완결 이야기 제목 수정/신고(상세페이지) ── */
   .story-title-wrap { text-align:center; margin:4px 0 14px; }
   .story-title-main { font-family:var(--serif); font-size:16px; font-weight:700; color:var(--text); }
@@ -8701,22 +8792,73 @@ async function submitMvpVote(story_id) {
 // 그러면 카카오톡을 안 쓰거나 그 자리에서 인증하기 싫은 사람도 강제로
 // 카카오 흐름을 타야 했음(유저 제보, 2026-07-22 — "나조차도 거부감이
 // 들던데"). 링크 복사와 카카오톡 공유 중 고르게 선택지를 먼저 보여줌.
+
+// story 문서의 완결 상태 = 'completed'(마감) 또는 'inactive'(방치). 'closed'는
+// episode 값이라 여기서 안 씀. renderStory()의 지역 _isFinishedStory와 같은 기준
+// (전역 함수라 이름만 다름).
+function _storyIsFinished(s) {
+  return !!s && (s.status === 'completed' || s.status === 'inactive');
+}
+// 완결작 공유 링크는 항상 SSG canonical(트레일링 슬래시)로 고정 — location.href를
+// 쓰면 쿼리/해시/비정규 진입 경로가 카카오 카드에 영구 복제될 수 있음(Codex 지적).
+function _storyShareUrl(story_id) {
+  return `https://hwasee.me/bang/story/${encodeURIComponent(story_id)}/`;
+}
+// 공유 미리보기 카드가 완결작에 붙는 조건 — 초스피드는 전용 렌더러(_renderSpeedrunStory)라
+// 애초에 공유 버튼 자체가 없지만, 방어적으로 여기서도 제외한다.
+function _storyShareCardEligible(s) {
+  return _storyIsFinished(s) && s.mode !== 'speedrun';
+}
+
+// 카드에 넣을 값만 뽑는 작은 view-model. episode tree/_shareStoryLines를 쓰지 않고
+// 씨앗 문장(opening)만 쓰므로 삭제·무효화된 제출 문장이 카드에 샐 여지가 없다.
+function _shareCardModel(s) {
+  const opening = s.opening || '';
+  const title = s.title || (opening.length > 24 ? opening.slice(0, 24) + '…' : opening);
+  return { title, opening, url: _storyShareUrl(s.story_id) };
+}
+// 클릭 불가 미리보기(.scard는 CSS에서 pointer-events:none). 실제 공유 동작은
+// 모달 하단 '링크 복사' / '카카오톡 공유' 버튼뿐이다. title/opening은 유저 입력이라
+// 삽입 지점에서 반드시 esc().
+function _shareCardHtml(s) {
+  const m = _shareCardModel(s);
+  return `
+      <div class="scard" aria-hidden="true">
+        <div class="scover">
+          <svg class="scover-moon" viewBox="0 0 24 24" fill="rgba(238,231,214,.9)"><path d="M15.5 2A10 10 0 1 0 22 15.5 8 8 0 0 1 15.5 2Z"/></svg>
+          <div class="scover-panel"><div class="scover-label">${esc(m.title)}</div></div>
+        </div>
+        <div class="scard-body">
+          <div class="scard-kicker">화씨.방 · 완결 이야기</div>
+          <div class="scard-title">${esc(m.title)}</div>
+          <div class="scard-opening">“${esc(m.opening)}”</div>
+          <div class="scard-blurb"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>여러 사람이 한 문장씩 이어 쓴 이야기</div>
+          <span class="scard-cta">책 펼쳐 읽기 →</span>
+        </div>
+      </div>
+      <p class="scard-note">공유 카드 미리보기 · 카카오톡 메시지에는 제목·도입 문장·기본 이미지가 전송돼요</p>`;
+}
+
 function shareStory() {
   const d = window._storyData;
   if (!d) return;
   const existing = document.getElementById('share-modal');
   if (existing) { existing.remove(); return; }
+  const s = d.story;
+  const withCard = s && _storyShareCardEligible(s);
   const modal = document.createElement('div');
   modal.id = 'share-modal';
   modal.className = 'modal-overlay';
   modal.onclick = e => { if (e.target === modal) modal.remove(); };
   // 카카오 SDK를 이제 부팅 시 미리 안 받아두므로(2026-07-29, 부팅 지연 개선)
   // 여기서 로드 여부로 버튼을 숨기면 사실상 항상 안 보이게 됨 — 버튼은
-  // 항상 보여주고, 실제로 눌렀을 때(_shareStoryKakao) 그 시점에 로드함
+  // 항상 보여주고, 실제로 눌렀을 때(_shareStoryKakao) 그 시점에 로드함.
+  // 완결작이면 그 위에 책장 감성 미리보기 카드를 얹는다(진행 중/초스피드는 기존 그대로).
   modal.innerHTML = `
-    <div class="modal-box" style="max-width:320px;text-align:center">
+    <div class="modal-box" style="max-width:${withCard ? '440px' : '320px'};text-align:center">
       <div style="font-size:16px;font-weight:700;margin-bottom:16px;font-family:var(--serif)">이야기 공유</div>
-      <div style="display:flex;flex-direction:column;gap:8px">
+      ${withCard ? _shareCardHtml(s) : ''}
+      <div style="display:flex;flex-direction:column;gap:8px${withCard ? ';margin-top:16px' : ''}">
         <button class="btn btn-ghost" style="display:flex;align-items:center;justify-content:center;gap:6px" onclick="document.getElementById('share-modal').remove();_shareStoryCopyLink()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>링크 복사</button>
         <button class="btn btn-ghost" style="display:flex;align-items:center;justify-content:center;gap:6px" onclick="document.getElementById('share-modal').remove();_shareStoryKakao()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>카카오톡 공유</button>
       </div>
@@ -8741,9 +8883,13 @@ function _shareStoryLines() {
   return { lines, opening };
 }
 
+// 완결작이면 공유 URL을 canonical로 고정한다. 링크 복사 본문(제목+이어쓴 문장들)은
+// 기존 그대로 — 현재 분기 선택 경로를 따르는 _shareStoryLines 기준이며, 이 본문의
+// 삭제·무효화 문장 필터는 별개 기존 이슈로 이번 범위 밖.
 function _shareStoryCopyLink() {
   const { lines, opening } = _shareStoryLines();
-  const url = location.href;
+  const s = window._storyData && window._storyData.story;
+  const url = _storyShareCardEligible(s) ? _storyShareUrl(s.story_id) : location.href;
   const text = [
     '화씨.방에서 함께 쓴 이야기',
     '',
@@ -8762,14 +8908,24 @@ async function _shareStoryKakao() {
   // 카카오 SDK를 이제 부팅 시 미리 안 받아두므로(2026-07-29, 부팅 지연 개선)
   // 여기서 처음 필요할 때 로드함
   try { await _ensureKakaoLoaded(); } catch (e) { toast('카카오 공유를 사용할 수 없어요. 새로고침 후 다시 시도해주세요.', true); return; }
+  const s = window._storyData && window._storyData.story;
+  const finished = _storyShareCardEligible(s);
   const { lines, opening } = _shareStoryLines();
-  const url = location.href;
-  const snippet = lines.length ? lines[0] : '';
+  // 완결작: canonical URL + 카드와 같은 문구(제목·도입 문장). 진행 중 이야기는
+  // 기존 동작(location.href + 채택 첫 문장). 카드는 opening만, 카카오 description도
+  // opening만 써서 두 표면의 데이터 원천이 일치하고 삭제 문장이 새지 않는다.
+  const url = finished ? _storyShareUrl(s.story_id) : location.href;
+  const title = finished
+    ? ((s.title || opening).length > 40 ? (s.title || opening).slice(0, 40) + '…' : (s.title || opening))
+    : (opening.length > 40 ? opening.slice(0, 40) + '…' : opening);
+  const description = finished
+    ? `“${opening.length > 70 ? opening.slice(0, 70) + '…' : opening}”\n여러 사람이 한 문장씩 이어 쓴 이야기`
+    : (() => { const sn = lines.length ? lines[0] : ''; return sn.length > 80 ? sn.slice(0, 80) + '…' : (sn || '화씨.방에서 함께 쓴 이야기'); })();
   Kakao.Share.sendDefault({
     objectType: 'feed',
     content: {
-      title: opening.length > 40 ? opening.slice(0, 40) + '…' : opening,
-      description: snippet.length > 80 ? snippet.slice(0, 80) + '…' : (snippet || '화씨.방에서 함께 쓴 이야기'),
+      title,
+      description,
       // hwaseebang_landscape.png(여백 없이 로고가 가장자리까지 꽉 찬 구성)는
       // 카카오 Feed 카드가 정사각형에 가깝게 중앙 크롭하면서 좌우 글자가 잘려나감
       // (유저 제보, 2026-07-27) — 6/28 전체 일괄치환(d196dbd)의 흔적으로, 다른
@@ -8778,7 +8934,7 @@ async function _shareStoryKakao() {
       imageUrl: 'https://hwasee.me/bang/hwaseebang_og.png',
       link: { mobileWebUrl: url, webUrl: url },
     },
-    buttons: [{ title: '이야기 보러가기', link: { mobileWebUrl: url, webUrl: url } }],
+    buttons: [{ title: finished ? '책 펼쳐 읽기' : '이야기 보러가기', link: { mobileWebUrl: url, webUrl: url } }],
   });
 }
 

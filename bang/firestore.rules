@@ -130,17 +130,23 @@ service cloud.firestore {
     // 안정화 조건으로 쓰일 예정이라 완전 서버 전용)는 위 화이트리스트에 안 넣고
     // adminEditSubmission/adminMarkAiReviewed(Admin SDK, 이 규칙 자체를 안 탐)로
     // 이관했음.
+    // 🔒 2026-08-29 보안방(A-2): 위 P0 화이트리스트를 전면 차단으로 승격.
+    // 남아있던 클라이언트 직접 쓰기 경로 5개를 전부 Cloud Function으로 이관 완료:
+    //   fbCreateSubmission     → submitEpisode
+    //   fbEditMySubmission     → editMySubmission
+    //   fbDeleteMySubmission   → deleteMySubmission
+    //   fbChangeDisplayName    → changeDisplayName (author_nickname 캐스케이드 포함)
+    //   fbCreateBranch         → createStoryBranch (미채택 제출물 복사)
+    //   fbAdminDeleteSubmission→ adminDeleteSubmission
+    // 이제 submissions에 쓰는 주체는 서버(Admin SDK, 이 규칙을 우회)뿐이고,
+    // 제출 횟수 제한·에피소드 open 여부·소유권·득표/채택 상태 확인이 전부 서버에서
+    // 강제된다 — 예전처럼 앱을 거치지 않고 Firestore에 직접 써서 그 검증을
+    // 통째로 우회하는 경로가 사라짐(2026-08-04 be93ea7에 한계로 기록됐던 문제).
+    // read는 반드시 열어둘 것: bang/index.html이 제출 목록을 onSnapshot 실시간
+    // 구독으로 그리고 있어서, 여기를 막으면 화면이 통째로 비어버림.
     match /submissions/{docId} {
       allow read: if true;
-      allow create: if request.resource.data.vote_count == 0
-        && request.resource.data.is_adopted == false;
-      allow update: if
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['author_nickname'])
-        || (
-          resource.data.vote_count == 0 && resource.data.is_adopted != true
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'is_closing'])
-        );
-      allow delete: if resource.data.vote_count == 0 && resource.data.is_adopted != true;
+      allow create, update, delete: if false;
     }
     // votes는 voteEpisode(Cloud Function)만 씀 — 클라 직접 write 전면 차단.
     match /votes/{docId} { allow read: if true; allow create, update, delete: if false; }

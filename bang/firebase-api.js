@@ -1251,142 +1251,24 @@ async function _fbGetStoryParticipants(story_id) {
 
 // ─── 제출 ────────────────────────────────────────────────
 
-// 제출 속도 제한(어뷰징 대응, 2026-08-04) — 에피소드당 상한(최대 2개)은 있었지만
-// 사이트 전체 시간당/일일 제출 횟수엔 아무 제한이 없어서, 여러 이야기에 걸쳐
-// 하루 200여 개를 제출하는 어뷰징이 가능했음(제출 1건마다 채택 여부 무관하게
-// 10p가 붙어서 물량 자체가 포인트 파밍이 되기도 함). 정상적으로 몰입해서 쓰는
-// 유저도 시간당 30개·하루 60개는 절대 넘기지 않는 수준이라, 이 문턱은 정상
-// 사용엔 전혀 안 걸리고 이번 같은 이상치만 걸러냄. .count() 집계 쿼리라 문서
-// 본문은 안 읽고 개수만 셈(이미 있는 author_id+created_at 복합 인덱스 재사용).
-// ⚠️ 이 컬렉션(submissions)은 클라이언트가 직접 쓰는 완전 개방 구조라, 앱을
-// 거치지 않고 Firestore에 직접 쓰기를 시도하는 작정한 공격자는 이 체크 자체를
-// 우회할 수 있음(client-side best-effort) — 완전한 강제력을 원하면 이 경로를
-// speedrunSubmit처럼 Cloud Function으로 옮겨야 함(범위가 커서 보류, 유저 확인).
-const SUBMIT_RATE_HOURLY_MAX = 30;
-const SUBMIT_RATE_DAILY_MAX  = 60;
-
-async function _checkSubmitRateLimit(author_id) {
-  const now = Date.now();
-  const hourAgo = new Date(now - 60 * 60 * 1000).toISOString();
-  const dayAgo  = new Date(now - 24 * 60 * 60 * 1000).toISOString();
-  // orderBy('created_at','desc')를 명시해야 기존 author_id+created_at(DESC) 복합
-  // 인덱스를 그대로 탐 — 명시 안 하면 Firestore가 암묵적으로 오름차순 인덱스를
-  // 요구해서 새 인덱스가 필요해짐(실제로 배포 전 REST로 재현해서 확인함).
-  // .count() 집계 쿼리는 이 프로젝트가 쓰는 Firebase SDK(9.23.0, compat 모드)에서
-  // 이 체이닝 방식이 지원되지 않아 "count is not a function"으로 터져서 이 체크
-  // 아래의 모든 제출이 통째로 막히는 사이트 전체 장애였음(유저 제보, 2026-08-04).
-  // 문서 개수만 필요하니 limit(threshold)+get()의 size로 동일한 판정을 함 —
-  // 어차피 임계값을 넘는지만 보면 되므로 그 이상은 안 읽어서 count()보다 결과도
-  // 똑같고 호환성 문제도 없음.
-  const [hourSnap, daySnap] = await Promise.all([
-    db.collection('submissions').where('author_id', '==', author_id).where('created_at', '>', hourAgo).orderBy('created_at', 'desc').limit(SUBMIT_RATE_HOURLY_MAX).get(),
-    db.collection('submissions').where('author_id', '==', author_id).where('created_at', '>', dayAgo).orderBy('created_at', 'desc').limit(SUBMIT_RATE_DAILY_MAX).get(),
-  ]);
-  if (hourSnap.size >= SUBMIT_RATE_HOURLY_MAX) return { ok: false, error: '너무 빠르게 많이 작성하고 있어요. 잠시 후 다시 시도해주세요.' };
-  if (daySnap.size >= SUBMIT_RATE_DAILY_MAX) return { ok: false, error: '오늘 작성 가능한 횟수를 다 채웠어요. 내일 다시 시도해주세요.' };
-  return { ok: true };
-}
-
+// 🔒 2026-08-29 보안방(A-2): 제출 생성을 서버 Callable(submitEpisode)로 이관.
+// 예전엔 클라이언트가 submissions에 직접 쓰면서 제출 횟수 제한(시간당 30·하루 60),
+// 에피소드 open 여부, 1인당 제출 수(기본 1 + 추가 제출권 1)를 전부 클라에서
+// 확인했는데, 그 컬렉션이 열려 있어서 앱을 거치지 않고 Firestore에 직접 쓰면
+// 검증 전체를 우회할 수 있었음(2026-08-04 be93ea7 당시 "client-side best-effort"
+// 라는 한계로 명시 기록돼 있던 바로 그 문제). 이제 서버가 세션·정지 여부·상태를
+// 전부 재확인하고, 제출 생성과 10p 지급·카운터 갱신을 한 트랜잭션에서 처리한다.
+// 시그니처·반환 형태·에러 문구는 그대로라 호출부(index.html)는 변경 없음.
 async function fbCreateSubmission(episode_id, content, author_id, derived_from, closing) {
-  const text = (content || '').trim();
-  if (!text) return { ok: false, error: '내용을 입력해주세요.' };
-
-  const rl = await _checkSubmitRateLimit(author_id);
-  if (!rl.ok) return rl;
-
-  const epSnap = await db.collection('episodes').doc(episode_id).get();
-  if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
-  const ep = epSnap.data();
-  if (ep.status !== 'open') return { ok: false, error: '제출이 마감됐습니다.' };
-
-  // 장르 강제 전환 이야기는 글자수 제한이 다름(50자) — fbVote가 vote_threshold를
-  // 읽는 것과 동일하게, 무거운 트랜잭션 전에 story를 한 번 먼저 읽어서 모드만 확인.
-  // 최소 글자수는 따로 두지 않음 — 문장의 좋고 나쁨은 사람들 투표로 가려지니
-  // 별도 최소 기준을 강제할 필요가 없음(유저 확정, 2026-08-04. 이전엔 최소=최대=50으로
-  // 잘못 박혀있어서 정확히 50자가 아니면 전부 막히는 버그가 있었음).
-  const storySnap0 = await db.collection('stories').doc(ep.story_id).get();
-  const story0 = storySnap0.exists ? storySnap0.data() : {};
-  const maxChars = story0.mode === 'genre_switch' ? FB_GENRE_SWITCH_MAX_CHARS : 50;
-  if (text.length > maxChars) return { ok: false, error: `${maxChars}자 이내로 작성해주세요.` };
-
-  const prevSubsSnap = await db.collection('submissions').where('episode_id','==',episode_id).get();
-  const myPrevCount = prevSubsSnap.docs.filter(d => d.data().author_id === author_id && !d.data().is_ai).length;
-  // 기본 1개 + 추가 제출권 구매 시 1개 더(최대 2개) — extra_submits 문서는 소모되지 않고
-  // 계속 남아있어서, 예전엔 "존재 여부"만 확인해 2개를 넘겨도 계속 허용되는 버그가 있었음
-  if (myPrevCount >= 2) return { ok: false, error: '이미 제출하셨습니다.' };
-  if (myPrevCount === 1) {
-    const exSnap = await db.collection('extra_submits')
-      .where('episode_id','==',episode_id).where('user_id','==',author_id).limit(1).get();
-    if (exSnap.empty) return { ok: false, error: '이미 제출하셨습니다.' };
-  }
-
-  const sub_id    = fbGenId();
-  const is_closing = closing === true && Number(ep.step) >= 2;
-  const uDoc = await db.collection('users').doc(author_id).get();
-  const uData = uDoc.exists ? uDoc.data() : {};
-  // 자유 이야기 탭 카드용 open_steps.<episode_id>.sub_count도 같이 갱신 —
-  // 트랜잭션으로 묶어서 항목이 아직 없는(마이그레이션 이전) 스토리여도
-  // step은 이미 알고 있는 ep.step으로 채워 안전하게 자가치유되게 함
-  const storyRef = db.collection('stories').doc(ep.story_id);
-  await db.runTransaction(async tx => {
-    const storySnapTx = await tx.get(storyRef);
-    tx.set(db.collection('submissions').doc(sub_id), {
-      sub_id, episode_id, story_id: ep.story_id, content: text,
-      author_id, author_nickname: uData.display_name || uData.nickname || '익명',
-      author_badge: uData.badge || 'seed',
-      derived_from: derived_from || '', vote_count: 0,
-      is_adopted: false, created_at: fbNow(), is_closing
+  try {
+    const r = await functionsRegion.httpsCallable('submitEpisode')({
+      episode_id, content, derived_from: derived_from || '', closing: closing === true,
+      user_id: author_id, token: localStorage.getItem('hwasee_token'),
     });
-    if (storySnapTx.exists) {
-      const cur = (storySnapTx.data().open_steps || {})[episode_id] || { step: Number(ep.step) || 0, sub_count: 0 };
-      tx.update(storyRef, { [`open_steps.${episode_id}`]: { step: cur.step, sub_count: (Number(cur.sub_count) || 0) + 1 } });
-    }
-  });
-  await _fbAddPoints(author_id, 10, 'submit', sub_id);
-  // 카운터 증가 + 업적 체크는 제출 응답을 기다리게 하지 않고 백그라운드로 미룸
-  const newSubCount = (uData.submission_count || 0) + 1;
-  db.collection('users').doc(author_id).update({ submission_count: firebase.firestore.FieldValue.increment(1) })
-    .then(() => _fbCheckAchievements(author_id, 'submission_count', newSubCount))
-    .catch(() => {});
-
-  // 콘텐츠별 전용 업적(2026-07-28 추가) — 동화각색/결말고정/장르전환은 이
-  // 일반 제출 엔진을 그대로 쓰므로 story0.mode로 분기해서 같이 카운트.
-  // 초스피드는 별도 콜러블(speedrunSubmit)이라 여기 안 걸림.
-  const MODE_ACHIEVEMENT_CATEGORY = { fairytale: 'fairytale_count', fixed_ending: 'fixed_ending_count', genre_switch: 'genre_switch_count' };
-  const modeCat = MODE_ACHIEVEMENT_CATEGORY[story0.mode];
-  if (modeCat) {
-    const newModeCount = (uData[modeCat] || 0) + 1;
-    db.collection('users').doc(author_id).update({ [modeCat]: firebase.firestore.FieldValue.increment(1) })
-      .then(() => _fbCheckAchievements(author_id, modeCat, newModeCount))
-      .catch(() => {});
+    return r.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
   }
-
-  // participant_count 증가 (첫 제출 시) — 복합 인덱스 없이 단일 필드 쿼리 후 클라이언트 필터.
-  // 증가 자체는 트랜잭션으로 묶어서(예전엔 이 조회 따로 + update 따로라 동시 제출 시
-  // 레이스 가능성 있었음 — 실제로 참여자 3명인 이야기가 2명으로 집계된 사례 발견) 안전하게 함
-  const mySubsSnap = await db.collection('submissions')
-    .where('author_id','==',author_id).get();
-  const prevCount = mySubsSnap.docs.filter(d => d.data().story_id === ep.story_id && d.id !== sub_id).length;
-  if (prevCount === 0) {
-    const storyRef = db.collection('stories').doc(ep.story_id);
-    await db.runTransaction(async tx => {
-      const snap = await tx.get(storyRef);
-      if (!snap.exists) return;
-      tx.update(storyRef, { participant_count: (Number(snap.data().participant_count) || 0) + 1 });
-    });
-    // 첫 사람 제출이 step 1이면 해당 오프닝을 used_openings에 기록 (씨앗 중복 방지 — fbCreateStory에서도 마킹하지만 fallback)
-    if (Number(ep.step) === 1) {
-      const storySnap = await storyRef.get();
-      const storyData = storySnap.exists ? storySnap.data() : null;
-      if (storyData?.is_ai_seed && storyData.opening) {
-        await db.collection('config').doc('used_openings').set(
-          { [storyData.opening]: true }, { merge: true }
-        );
-      }
-    }
-  }
-
-  return { ok: true, sub_id };
 }
 
 // ─── 투표 ────────────────────────────────────────────────
@@ -2131,85 +2013,20 @@ async function fbGetMvpVotes(story_id, voter_id) {
 
 // ─── 분기 챌린지 ─────────────────────────────────────────
 
+// 🔒 2026-08-29 보안방(A-2): 분기 만들기를 서버 Callable(createStoryBranch)로 이관.
+// 이 기능은 원본 회차의 미채택 제출물을 새 에피소드로 복사하므로 submissions에
+// 직접 write를 했었고, 그래서 쓰기 잠금과 함께 서버로 옮겨야 했다. 서버는 완결
+// 여부·중복 분기·대상 단계를 모두 재확인한 "뒤에" 30p를 차감한다(예전엔 먼저
+// 차감하고 대상 단계를 찾아서, 못 찾으면 포인트만 날아가는 문제가 있었음).
 async function fbCreateBranch(story_id, branch_from_step, user_id) {
-  if (!user_id) return { ok: false, error: '로그인이 필요합니다.' };
-  const step = Number(branch_from_step);
-  if (step < 2) return { ok: false, error: '1단계는 분기할 수 없습니다.' };
-
-  const stSnap = await db.collection('stories').doc(story_id).get();
-  if (!stSnap.exists) return { ok: false, error: '이야기를 찾을 수 없습니다.' };
-  const st = stSnap.data();
-  if (st.status !== 'completed' && st.status !== 'inactive')
-    return { ok: false, error: '완결된 이야기에서만 분기를 만들 수 있습니다.' };
-
-  const existSnap = await db.collection('stories').where('parent_story_id','==',story_id).get();
-  if (existSnap.docs.some(d => Number(d.data().branch_from_step) === step))
-    return { ok: false, error: '이 단계에는 이미 분기가 있습니다.' };
-
-  const spendRes = await _fbSpendPoints(user_id, 30, 'branch_create');
-  if (!spendRes.ok) return spendRes;
-
-  const epsSnap = await db.collection('episodes').where('story_id','==',story_id).get();
-  const targetEp = epsSnap.docs.map(d => ({ episode_id: d.id, ...d.data() }))
-    .find(e => Number(e.step) === step - 1);
-  if (!targetEp) return { ok: false, error: '해당 단계를 찾을 수 없습니다.' };
-
-  const subsSnap = await db.collection('submissions').where('episode_id','==',targetEp.episode_id).get();
-  const nonAdopted = subsSnap.docs.map(d => d.data())
-    .filter(s => s.is_adopted !== true && s.is_adopted !== 'TRUE');
-
-  const new_story_id = fbGenId();
-  const new_ep_id    = fbGenId();
-  const batch = db.batch();
-
-  // 카드/산문뷰 단계 표시용: 원본 스토리 기준 진짜 이어지는 단계 번호를 정확히 계산
-  const leafDisplayStep = _calcDisplayStepBackend(st, Number(targetEp.step));
-  const branch_display_offset = leafDisplayStep - (step - 1) + 1;
-
-  batch.set(db.collection('stories').doc(new_story_id), {
-    story_id: new_story_id, parent_story_id: story_id, branch_from_step: step,
-    branch_episode_id: targetEp.episode_id,
-    branch_leaf_episode_id: targetEp.episode_id,
-    branch_display_offset,
-    opening: st.opening, max_steps: st.max_steps || 10,
-    current_step: step - 2, status: 'active', creator_id: user_id,
-    created_at: fbNow(),
-    // 분기 시점의 참여자 수는 0부터 새로 세지 않고 원본 스토리의 누적
-    // participant_count를 그대로 물려받음 — branch_display_offset이 단계
-    // 번호를 부모+분기 합산 기준으로 보여주는 것과 일관되게 맞춤(2026-07-08,
-    // 표시 단계 수 대비 참여자 수가 훨씬 적게 보이던 문제 수정)
-    participant_count: Number(st.participant_count) || 0, batch: '',
-    // 자유 이야기 탭 정렬/페이지네이션은 hot_score가 없는 문서를 아예 조회에서
-    // 빠뜨리므로(orderBy 특성), 새로 만드는 스토리는 항상 명시적으로 넣어야 함
-    hot_score: 0,
-    // 새 에피소드에 미채택 제출물(nonAdopted)이 그대로 복사되므로 sub_count도
-    // 그 개수로 맞춤(0으로 두면 카드에 "제출 0개"로 잘못 표시됨)
-    open_steps: { [new_ep_id]: { step: step - 1, sub_count: nonAdopted.length } },
-  });
-  batch.set(db.collection('episodes').doc(new_ep_id), {
-    episode_id: new_ep_id, story_id: new_story_id, step: step - 1,
-    status: 'open', vote_total: 0, created_at: fbNow(),
-    closed_at: '', pending_at: '', parent_sub_id: '',
-  });
-  nonAdopted.forEach(sub => {
-    const sid = fbGenId();
-    batch.set(db.collection('submissions').doc(sid), {
-      ...sub, sub_id: sid, episode_id: new_ep_id, story_id: new_story_id,
-      vote_count: 0, is_adopted: false, derived_from: '',
+  try {
+    const r = await functionsRegion.httpsCallable('createStoryBranch')({
+      story_id, branch_from_step, user_id, token: localStorage.getItem('hwasee_token'),
     });
-  });
-  await batch.commit();
-
-  const votersSnap = await db.collection('votes').where('episode_id','==',targetEp.episode_id).get();
-  const notifyIds = [...new Set([
-    ...nonAdopted.map(s => s.author_id),
-    ...votersSnap.docs.map(d => d.data().voter_id),
-  ])].filter(id => id && id !== user_id);
-  const snippet = st.opening.slice(0, 15);
-  await _fbCreateNotifications(notifyIds, new_story_id,
-    `"${snippet}..." 이야기의 ${step}단계에서 분기 챌린지가 시작됐어요!`);
-
-  return { ok: true, new_story_id };
+    return r.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
+  }
 }
 
 async function fbExtendStory(story_id, user_id) {
@@ -2586,106 +2403,49 @@ async function fbCheckNickname(nickname) {
   return { ok: true, available: snap.empty };
 }
 
+// 🔒 2026-08-29 보안방(A-2): 닉네임 변경을 서버 Callable(changeDisplayName)로 이관.
+// 형식·중복 확인과 최초 무료/이후 20p 정책은 그대로이고, 과거 제출물의
+// author_nickname 일괄 갱신(400건씩)도 서버가 처리한다 — submissions 쓰기가
+// 전면 서버 전용이 되면서 클라이언트가 그 캐스케이드를 더 이상 할 수 없기 때문.
 async function fbChangeDisplayName(user_id, new_display_name) {
-  const dn = (new_display_name || '').trim();
-  if (!dn || dn.length < 2) return { ok: false, error: '닉네임은 2자 이상이어야 합니다.' };
-  if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(dn)) return { ok: false, error: '닉네임은 2~12자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
-
-  const check = await db.collection('users').where('display_name', '==', dn).limit(1).get();
-  if (!check.empty) return { ok: false, error: '이미 사용 중인 닉네임입니다.' };
-
-  const uSnap = await db.collection('users').doc(user_id).get();
-  if (!uSnap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
-  const u = uSnap.data();
-  // 간편가입(구글/카카오)은 "카카오유저6439"류 자동 생성 닉네임으로 시작하는데,
-  // 이걸 원하는 이름으로 바꾸는 첫 시도부터 포인트를 걷으면 신규 유저 입장에서
-  // 강제 비용처럼 느껴짐(유저 지적, 2026-07-30) — 최초 1회(name_history가
-  // 비어있을 때)는 무료로 바꾸고, 그 다음부터는 기존대로 20p.
-  const isFirstChange = !u.name_history || u.name_history.length === 0;
-  if (!isFirstChange && (u.total_points || 0) < 20) return { ok: false, error: '포인트가 부족합니다. 닉네임 변경에는 20p가 필요해요.' };
-
-  const old_name = u.display_name || u.nickname;
-  await db.collection('users').doc(user_id).update({
-    display_name: dn,
-    name_history: firebase.firestore.FieldValue.arrayUnion({ name: old_name, changed_at: fbNow() }),
-  });
-
-  if (!isFirstChange) {
-    const spendRes = await _fbSpendPoints(user_id, 20, 'nickname_change');
-    if (!spendRes.ok) return spendRes;
+  try {
+    const r = await functionsRegion.httpsCallable('changeDisplayName')({
+      display_name: new_display_name, user_id, token: localStorage.getItem('hwasee_token'),
+    });
+    return r.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
   }
-
-  // 과거 제출 문장 닉네임 일괄 업데이트
-  const subsSnap = await db.collection('submissions').where('author_id', '==', user_id).get();
-  for (let i = 0; i < subsSnap.docs.length; i += 400) {
-    const batch = db.batch();
-    subsSnap.docs.slice(i, i + 400).forEach(doc => batch.update(doc.ref, { author_nickname: dn }));
-    await batch.commit();
-  }
-
-  return { ok: true, display_name: dn };
 }
 
+// 🔒 2026-08-29 보안방(A-2): 내 제출 삭제를 서버 Callable(deleteMySubmission)로
+// 이관. 소유권·공감 0개·미채택 확인, 연결된 댓글 정리, 카드용 카운터 감소,
+// 10p 회수까지 전부 서버에서 처리한다(포인트가 부족하면 차감만 건너뛰고 삭제는
+// 그대로 진행 — 기존 정책 유지).
 async function fbDeleteMySubmission(sub_id, user_id) {
-  const subSnap = await db.collection('submissions').doc(sub_id).get();
-  if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
-  const sub = subSnap.data();
-  if (sub.author_id !== user_id) return { ok: false, error: '권한이 없습니다.' };
-  if ((Number(sub.vote_count) || 0) > 0) return { ok: false, error: '공감을 받은 글은 삭제할 수 없습니다.' };
-  if (sub.is_adopted === true || sub.is_adopted === 'TRUE') return { ok: false, error: '채택된 글은 삭제할 수 없습니다.' };
-  await db.collection('submissions').doc(sub_id).delete();
-  // 자유 이야기 탭 카드용 sub_count도 같이 감소 — 카드 표시용 부가 정보라
-  // 삭제 자체를 기다리게 하지 않고 백그라운드로 처리
-  db.collection('stories').doc(sub.story_id).update({
-    [`open_steps.${sub.episode_id}.sub_count`]: firebase.firestore.FieldValue.increment(-1),
-  }).catch(() => {});
-  const cSnap = await db.collection('comments').where('sub_id', '==', sub_id).get();
-  if (!cSnap.empty) {
-    const batch = db.batch();
-    cSnap.docs.forEach(d => batch.delete(d.ref));
-    await batch.commit();
+  try {
+    const r = await functionsRegion.httpsCallable('deleteMySubmission')({
+      sub_id, user_id, token: localStorage.getItem('hwasee_token'),
+    });
+    return r.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
   }
-  // 포인트 차감이 실패해도(권한 규칙 등) 삭제 자체는 이미 끝났으니 실패로 취급하지 않음
-  await _fbSpendPoints(user_id, 10, 'delete_submission').catch(() => {});
-  return { ok: true };
 }
 
-// 삭제와 동일한 기준(공감 0개·미채택)으로만 허용 — 표절/어뷰징 우려로 처음엔
-// 아예 막아뒀는데, 실제로 그런 사례가 거의 없어서(2026-07) 이 기준 안에서는
-// 열어주기로 함. 공감을 이미 받았거나 채택된 글은 사후 내용 변경으로 투표한
-// 사람들을 기만할 수 있어 delete와 동일하게 계속 막음.
-// closing(연재하기/완결하기 재선택)도 이 기준(공감 0개·미채택) 안에서는 안전하게
-// 같이 바꿀 수 있어서 열어줌(유저 의견, 2026-07-26) — 원래 제출 시점에도 같은
-// 기준으로 골랐던 것뿐이라 아직 투표/채택 전이면 다시 골라도 아무 영향 없음.
-// "완결하기"로 바꾸는 건 클라이언트가 보낸 값을 그대로 믿지 않고, 제출 폼과
-// 동일한 조건(이야기가 완결 가능한 길이)을 서버에서 다시 확인함.
+// 🔒 2026-08-29 보안방(A-2): 내 제출 수정을 서버 Callable(editMySubmission)로 이관.
+// 허용 기준(본인 글·공감 0개·미채택·글자수·완결 제출 가능 단계)은 그대로이며,
+// 이제 클라이언트가 아니라 서버가 그 조건을 재확인한다. 득표했거나 채택된 글의
+// 사후 내용 변경은 계속 막힌다(투표한 사람을 기만하는 것을 방지).
 async function fbEditMySubmission(sub_id, user_id, content, closing) {
-  const text = (content || '').trim();
-  if (!text) return { ok: false, error: '문장을 입력해주세요.' };
-  if (text.length > 50) return { ok: false, error: '50자 이내로 작성해주세요.' };
-  const subSnap = await db.collection('submissions').doc(sub_id).get();
-  if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
-  const sub = subSnap.data();
-  if (sub.author_id !== user_id) return { ok: false, error: '권한이 없습니다.' };
-  if ((Number(sub.vote_count) || 0) > 0) return { ok: false, error: '공감을 받은 글은 수정할 수 없습니다.' };
-  if (sub.is_adopted === true || sub.is_adopted === 'TRUE') return { ok: false, error: '채택된 글은 수정할 수 없습니다.' };
-  const update = { content: text };
-  if (typeof closing === 'boolean' && closing !== !!sub.is_closing) {
-    if (closing) {
-      const epSnap = await db.collection('episodes').doc(sub.episode_id).get();
-      if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
-      const ep = epSnap.data();
-      const storySnap = await db.collection('stories').doc(ep.story_id).get();
-      const story = storySnap.exists ? storySnap.data() : {};
-      const closedSnap = await db.collection('episodes')
-        .where('story_id', '==', ep.story_id).where('status', '==', 'closed').get();
-      const parentSteps = story.branch_from_step ? Number(story.branch_from_step) - 1 : 0;
-      if (closedSnap.size + parentSteps < 1) return { ok: false, error: '아직 완결로 제출할 수 없는 단계예요.' };
-    }
-    update.is_closing = closing;
+  try {
+    const r = await functionsRegion.httpsCallable('editMySubmission')({
+      sub_id, content, closing, user_id, token: localStorage.getItem('hwasee_token'),
+    });
+    return r.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
   }
-  await db.collection('submissions').doc(sub_id).update(update);
-  return { ok: true };
 }
 
 // ─── 어드민 ──────────────────────────────────────────────
@@ -2709,26 +2469,20 @@ async function fbAdminForceAdopt(sub_id, admin_id) {
   }
 }
 
+// 🔒 2026-08-29 보안방(A-2): 관리자 제출물 삭제를 서버 Callable로 이관 —
+// submissions 쓰기가 전면 서버 전용이 되면서 클라 직접 delete가 막히기 때문.
+// (P0에서 delete 규칙을 "무투표·미채택"으로 좁힌 뒤로는 관리자가 득표/채택된
+// 글을 지우려 할 때 이미 규칙에 막히고 있었는데, 그 잠재 회귀도 함께 닫힘.)
 async function fbAdminDeleteSubmission(sub_id, admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
-  const subSnap = await db.collection('submissions').doc(sub_id).get();
-  await db.collection('submissions').doc(sub_id).delete();
-  // 자유 이야기 탭 카드용 sub_count도 같이 감소(부가 정보라 백그라운드로 처리)
-  if (subSnap.exists) {
-    const sub = subSnap.data();
-    db.collection('stories').doc(sub.story_id).update({
-      [`open_steps.${sub.episode_id}.sub_count`]: firebase.firestore.FieldValue.increment(-1),
-    }).catch(() => {});
+  try {
+    const r = await functionsRegion.httpsCallable('adminDeleteSubmission')({
+      sub_id, user_id: admin_id, token: localStorage.getItem('hwasee_token'),
+    });
+    return r.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
   }
-  const [vSnap, cSnap, rSnap] = await Promise.all([
-    db.collection('votes').where('sub_id','==',sub_id).get(),
-    db.collection('comments').where('sub_id','==',sub_id).get(),
-    db.collection('reports').where('sub_id','==',sub_id).get(),
-  ]);
-  const batch = db.batch();
-  [...vSnap.docs, ...cSnap.docs, ...rSnap.docs].forEach(d => batch.delete(d.ref));
-  await batch.commit();
-  return { ok: true };
 }
 
 async function fbAdminFixParticipantCount(story_id, admin_id) {

@@ -2778,6 +2778,534 @@ exports.adminMarkAiReviewed = functions
     return { ok: true };
   });
 
+// ══ A-2 (2026-08-29 보안방): 제출(submissions) 쓰기 경로 전면 서버 이관 ══
+//
+// 배경: submissions는 그동안 클라이언트가 직접 쓰는 구조라, fbCreateSubmission의
+// 검증(제출 횟수 제한, 에피소드 open 여부, 1인당 제출 수)이 전부 "앱을 거치는
+// 경로에서만" 유효한 client-side best-effort였음(be93ea7 당시 한계로 명시 기록됨).
+// 앱을 안 거치고 Firestore에 직접 쓰면 그 체크 전부를 우회할 수 있었음.
+// 이제 아래 함수들(+ P0의 voteEpisode/closeEpisode/adminEditSubmission 등)만
+// submissions에 쓸 수 있고, 클라이언트 직접 write는 firestore.rules로 완전 차단됨.
+//
+// ⚠️ 동시성 설계 노트: 제출 rate limit을 별도 카운터 컬렉션 없이 강제하기 위해,
+// 같은 사용자의 동시 요청이 반드시 충돌하도록 users/{author_id} 문서를 제출
+// 트랜잭션 안에서 함께 읽고 쓴다(포인트/카운터 갱신이 원래 그 문서에 필요하므로
+// 추가 비용이 없음). Firestore 트랜잭션은 낙관적 동시성이라 한쪽이 재시도되고,
+// 재시도 시 rate limit 쿼리가 다시 평가되므로 두 요청이 모두 통과할 수 없음.
+
+const SUBMIT_RATE_HOURLY_MAX = 30;
+const SUBMIT_RATE_DAILY_MAX  = 60;
+// bang/firebase-api.js의 FB_GENRE_SWITCH_MAX_CHARS(50)와 같은 값으로 유지할 것.
+const SUBMIT_MAX_CHARS = 50;
+const GENRE_SWITCH_MAX_CHARS = 50;
+const MODE_ACHIEVEMENT_CATEGORY = {
+  fairytale: 'fairytale_count', fixed_ending: 'fixed_ending_count', genre_switch: 'genre_switch_count',
+};
+
+function _submitMaxChars(story) {
+  return (story && story.mode === 'genre_switch') ? GENRE_SWITCH_MAX_CHARS : SUBMIT_MAX_CHARS;
+}
+
+// 이미 열려 있는 트랜잭션 안에서 포인트를 적용하기 위한 필드 계산 —
+// _serverAddPoints는 자체 트랜잭션을 열어서 중첩이 불가능하므로(speedrunSubmit이
+// 같은 이유로 인라인 처리함) 잔액/배지 계산만 떼어 재사용 가능한 형태로 둔다.
+// 실제 tx.update/tx.set은 호출부가 다른 필드와 합쳐서 한 번에 수행한다.
+function _txPointFields(uData, amount) {
+  const newTotal = (Number(uData.total_points) || 0) + amount;
+  return { total_points: newTotal, badge: _serverCalcBadge(newTotal) };
+}
+function _pointsApplicable(user_id) {
+  return !!user_id && user_id !== FB_ADMIN_ID && user_id !== FB_AI_ID;
+}
+function _txLedger(db, tx, user_id, points, reason, sub_id) {
+  tx.set(db.collection('point_ledger').doc(), {
+    user_id, points, reason, sub_id: sub_id || '', created_at: new Date().toISOString(),
+  });
+}
+
+// 500-write 한도를 넘지 않도록 400건씩 나눠 커밋(닉네임 캐스케이드/분기 복사/
+// 관리자 삭제 정리 공통) — 문서 수가 많을 때 단일 batch가 통째로 실패하는 것을 막음.
+async function _commitInChunks(db, docs, apply, chunkSize) {
+  const size = chunkSize || 400;
+  for (let i = 0; i < docs.length; i += size) {
+    const batch = db.batch();
+    docs.slice(i, i + size).forEach(d => apply(batch, d));
+    await batch.commit();
+  }
+}
+
+// ── 제출 생성 (기존 fbCreateSubmission) ──────────────────────
+exports.submitEpisode = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const episode_id = data.episode_id;
+    const author_id = data.user_id;
+    const text = (data.content || '').trim();
+    const derived_from = data.derived_from || '';
+    if (!episode_id || !author_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(author_id, data.token);
+    if (!text) return { ok: false, error: '내용을 입력해주세요.' };
+
+    const db = admin.firestore();
+    const uRef = db.collection('users').doc(author_id);
+    const epRef = db.collection('episodes').doc(episode_id);
+    const now = Date.now();
+    const hourAgo = new Date(now - 60 * 60 * 1000).toISOString();
+    const dayAgo  = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+    // orderBy('created_at','desc')를 반드시 명시 — 기존 author_id ASC + created_at DESC
+    // 복합 인덱스를 그대로 타기 위함(명시 안 하면 Firestore가 암묵적 오름차순 인덱스를
+    // 요구해 "인덱스 필요" 400으로 제출이 통째로 깨짐, be93ea7 때 실제로 겪은 함정).
+    // .count()는 이 프로젝트에서 호환성 문제 전례가 있어 쓰지 않고 limit+size로 판정.
+    const hourQuery = db.collection('submissions').where('author_id', '==', author_id)
+      .where('created_at', '>', hourAgo).orderBy('created_at', 'desc').limit(SUBMIT_RATE_HOURLY_MAX);
+    const dayQuery  = db.collection('submissions').where('author_id', '==', author_id)
+      .where('created_at', '>', dayAgo).orderBy('created_at', 'desc').limit(SUBMIT_RATE_DAILY_MAX);
+    // 회차 내 본인 제출 수는 기존과 동일하게 episode_id 단일 조건으로 읽고 코드에서
+    // 필터한다(복합 인덱스를 새로 요구하지 않기 위함 — 아젠다 제약).
+    const epSubsQuery = db.collection('submissions').where('episode_id', '==', episode_id);
+
+    const result = await db.runTransaction(async tx => {
+      const epSnap = await tx.get(epRef);
+      if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
+      const ep = epSnap.data();
+      // 기존 클라이언트 구현은 이 확인이 트랜잭션 "밖"이라 TOCTOU 허점이 있었음
+      // (speedrunSubmit 주석이 지목한 그 허점) — 트랜잭션 안 첫 읽기로 옮김.
+      if (ep.status !== 'open') return { ok: false, error: '제출이 마감됐습니다.' };
+
+      const storyRef = db.collection('stories').doc(ep.story_id);
+      const [uSnap, storySnap, hourSnap, daySnap, epSubsSnap] = await Promise.all([
+        tx.get(uRef), tx.get(storyRef), tx.get(hourQuery), tx.get(dayQuery), tx.get(epSubsQuery),
+      ]);
+      if (!uSnap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
+      const uData = uSnap.data();
+      const ban = _activeBan(uData);
+      if (ban) return { ok: false, error: ban.error };
+
+      if (hourSnap.size >= SUBMIT_RATE_HOURLY_MAX) return { ok: false, error: '너무 빠르게 많이 작성하고 있어요. 잠시 후 다시 시도해주세요.' };
+      if (daySnap.size >= SUBMIT_RATE_DAILY_MAX) return { ok: false, error: '오늘 작성 가능한 횟수를 다 채웠어요. 내일 다시 시도해주세요.' };
+
+      const story0 = storySnap.exists ? storySnap.data() : {};
+      const maxChars = _submitMaxChars(story0);
+      if (text.length > maxChars) return { ok: false, error: `${maxChars}자 이내로 작성해주세요.` };
+
+      const myPrevCount = epSubsSnap.docs.filter(d => d.data().author_id === author_id && !d.data().is_ai).length;
+      // 기본 1개 + 추가 제출권 1개(최대 2개). extra_submits 문서는 소모되지 않고 남으므로
+      // "존재 여부"만 보던 예전 버그를 반복하지 않도록 개수 기준을 그대로 유지.
+      if (myPrevCount >= 2) return { ok: false, error: '이미 제출하셨습니다.' };
+      if (myPrevCount === 1) {
+        const exSnap = await tx.get(db.collection('extra_submits')
+          .where('episode_id', '==', episode_id).where('user_id', '==', author_id).limit(1));
+        if (exSnap.empty) return { ok: false, error: '이미 제출하셨습니다.' };
+      }
+
+      // ── write ──
+      const sub_id = db.collection('submissions').doc().id;
+      const is_closing = data.closing === true && Number(ep.step) >= 2;
+      const nowIso = new Date().toISOString();
+      tx.set(db.collection('submissions').doc(sub_id), {
+        sub_id, episode_id, story_id: ep.story_id, content: text,
+        author_id, author_nickname: uData.display_name || uData.nickname || '익명',
+        author_badge: uData.badge || 'seed',
+        derived_from, vote_count: 0, is_adopted: false,
+        created_at: nowIso, is_closing,
+        // A-1(번역 스테일 판정)이 원문 변경을 식별할 수 있게 남기는 훅 —
+        // 저장소 관례대로 ISO 문자열. 이 필드가 없는 문서는 "기존 문서"로 취급하면 됨.
+        content_updated_at: nowIso,
+      });
+      if (storySnap.exists) {
+        const cur = (story0.open_steps || {})[episode_id] || { step: Number(ep.step) || 0, sub_count: 0 };
+        tx.update(storyRef, { [`open_steps.${episode_id}`]: { step: cur.step, sub_count: (Number(cur.sub_count) || 0) + 1 } });
+      }
+
+      // 제출 10p + 카운터를 같은 트랜잭션의 users 쓰기로 합침 — 부분 성공(제출은
+      // 됐는데 포인트 미지급)을 없애고, 동시에 이 문서가 per-user 직렬화 지점이 됨.
+      const userUpdate = { submission_count: (Number(uData.submission_count) || 0) + 1 };
+      const modeCat = MODE_ACHIEVEMENT_CATEGORY[story0.mode];
+      if (modeCat) userUpdate[modeCat] = (Number(uData[modeCat]) || 0) + 1;
+      if (_pointsApplicable(author_id)) {
+        Object.assign(userUpdate, _txPointFields(uData, 10));
+        _txLedger(db, tx, author_id, 10, 'submit', sub_id);
+      }
+      tx.update(uRef, userUpdate);
+
+      return {
+        ok: true, sub_id, story_id: ep.story_id, step: Number(ep.step) || 0,
+        newSubCount: userUpdate.submission_count,
+        modeCat: modeCat || null, newModeCount: modeCat ? userUpdate[modeCat] : null,
+      };
+    });
+
+    if (!result.ok) return result;
+
+    // ── 파생 효과(실패해도 제출 성공을 훼손하지 않음, 기존 정책 그대로) ──
+    // 카운터는 위 트랜잭션에서 이미 올렸으므로 여기서는 업적 판정만 한다
+    // (_serverBumpAchievementCounter를 쓰면 카운터가 이중 증가함).
+    try { await _serverCheckAchievements(db, author_id, 'submission_count', result.newSubCount); } catch (e) { console.error('submit achievement error:', e.message); }
+    if (result.modeCat) {
+      try { await _serverCheckAchievements(db, author_id, result.modeCat, result.newModeCount); } catch (e) { console.error('submit mode achievement error:', e.message); }
+    }
+    try {
+      // participant_count 증가(이 이야기에 처음 참여한 경우) — 기존 구현과 동일하게
+      // author_id 단일 조건으로 읽고 story_id로 필터(복합 인덱스 불필요).
+      const mySubsSnap = await db.collection('submissions').where('author_id', '==', author_id).get();
+      const prevCount = mySubsSnap.docs.filter(d => d.data().story_id === result.story_id && d.id !== result.sub_id).length;
+      if (prevCount === 0) {
+        const storyRef = db.collection('stories').doc(result.story_id);
+        await db.runTransaction(async tx => {
+          const snap = await tx.get(storyRef);
+          if (!snap.exists) return;
+          tx.update(storyRef, { participant_count: (Number(snap.data().participant_count) || 0) + 1 });
+        });
+        if (result.step === 1) {
+          const storySnap = await storyRef.get();
+          const storyData = storySnap.exists ? storySnap.data() : null;
+          if (storyData && storyData.is_ai_seed && storyData.opening) {
+            await db.collection('config').doc('used_openings').set({ [storyData.opening]: true }, { merge: true });
+          }
+        }
+      }
+    } catch (e) { console.error('submit participant_count error:', e.message); }
+
+    return { ok: true, sub_id: result.sub_id };
+  });
+
+// ── 내 제출 수정 (기존 fbEditMySubmission) ───────────────────
+exports.editMySubmission = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const sub_id = data.sub_id;
+    const user_id = data.user_id;
+    const text = (data.content || '').trim();
+    const closing = data.closing;
+    if (!sub_id || !user_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(user_id, data.token);
+    if (!text) return { ok: false, error: '문장을 입력해주세요.' };
+
+    const db = admin.firestore();
+    const uRef = db.collection('users').doc(user_id);
+    const subRef = db.collection('submissions').doc(sub_id);
+
+    // 득표/채택 확인과 실제 수정을 반드시 한 트랜잭션에 둔다 — 확인 직후 투표나
+    // 채택이 들어오면 "이미 표를 받은 글"이 수정될 수 있기 때문(최종 검토 지적).
+    return await db.runTransaction(async tx => {
+      const [subSnap, uSnap] = await Promise.all([tx.get(subRef), tx.get(uRef)]);
+      if (!uSnap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
+      const ban = _activeBan(uSnap.data());
+      if (ban) return { ok: false, error: ban.error };
+      if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
+      const sub = subSnap.data();
+      if (sub.author_id !== user_id) return { ok: false, error: '권한이 없습니다.' };
+      if ((Number(sub.vote_count) || 0) > 0) return { ok: false, error: '공감을 받은 글은 수정할 수 없습니다.' };
+      if (sub.is_adopted === true || sub.is_adopted === 'TRUE') return { ok: false, error: '채택된 글은 수정할 수 없습니다.' };
+
+      // 글자수 상한은 생성 경로와 동일한 헬퍼로 계산(구조적으로 어긋나지 않게).
+      const epSnap = await tx.get(db.collection('episodes').doc(sub.episode_id));
+      const storySnap = epSnap.exists
+        ? await tx.get(db.collection('stories').doc(epSnap.data().story_id)) : null;
+      const maxChars = _submitMaxChars(storySnap && storySnap.exists ? storySnap.data() : {});
+      if (text.length > maxChars) return { ok: false, error: `${maxChars}자 이내로 작성해주세요.` };
+
+      const update = { content: text, content_updated_at: new Date().toISOString() };
+      if (typeof closing === 'boolean' && closing !== !!sub.is_closing) {
+        if (closing) {
+          // "완결하기"는 클라이언트가 보낸 값을 그대로 믿지 않고 제출 폼과 동일한
+          // 조건(이야기가 완결 가능한 길이)을 서버에서 다시 확인 — 기존 정책 유지.
+          if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
+          const ep = epSnap.data();
+          const story = (storySnap && storySnap.exists) ? storySnap.data() : {};
+          const closedSnap = await tx.get(db.collection('episodes')
+            .where('story_id', '==', ep.story_id).where('status', '==', 'closed'));
+          const parentSteps = story.branch_from_step ? Number(story.branch_from_step) - 1 : 0;
+          if (closedSnap.size + parentSteps < 1) return { ok: false, error: '아직 완결로 제출할 수 없는 단계예요.' };
+        }
+        update.is_closing = closing;
+      }
+      tx.update(subRef, update);
+      return { ok: true };
+    });
+  });
+
+// ── 내 제출 삭제 (기존 fbDeleteMySubmission) ─────────────────
+exports.deleteMySubmission = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const sub_id = data.sub_id;
+    const user_id = data.user_id;
+    if (!sub_id || !user_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(user_id, data.token);
+
+    const db = admin.firestore();
+    const uRef = db.collection('users').doc(user_id);
+    const subRef = db.collection('submissions').doc(sub_id);
+
+    const result = await db.runTransaction(async tx => {
+      const [subSnap, uSnap] = await Promise.all([tx.get(subRef), tx.get(uRef)]);
+      if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
+      if (!uSnap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
+      const uData = uSnap.data();
+      const ban = _activeBan(uData);
+      if (ban) return { ok: false, error: ban.error };
+      const sub = subSnap.data();
+      if (sub.author_id !== user_id) return { ok: false, error: '권한이 없습니다.' };
+      if ((Number(sub.vote_count) || 0) > 0) return { ok: false, error: '공감을 받은 글은 삭제할 수 없습니다.' };
+      if (sub.is_adopted === true || sub.is_adopted === 'TRUE') return { ok: false, error: '채택된 글은 삭제할 수 없습니다.' };
+
+      tx.delete(subRef);
+      // 10p 회수를 같은 트랜잭션에 넣어 부분 성공을 없애되, 잔액이 부족하면
+      // 차감을 건너뛰고 삭제는 그대로 진행한다 — 기존 정책("포인트 차감이 실패해도
+      // 삭제 자체는 유지")의 사용자 체감 동작을 그대로 보존하기 위함.
+      let spent = false;
+      if (_pointsApplicable(user_id) && (Number(uData.total_points) || 0) >= 10) {
+        tx.update(uRef, _txPointFields(uData, -10));
+        _txLedger(db, tx, user_id, -10, 'delete_submission', '');
+        spent = true;
+      }
+      return { ok: true, story_id: sub.story_id, episode_id: sub.episode_id, spent };
+    });
+
+    if (!result.ok) return result;
+
+    // 카드 표시용 카운터와 댓글 정리는 부가 작업 — 실패해도 삭제 결과를 뒤집지 않음.
+    try {
+      await db.collection('stories').doc(result.story_id).update({
+        [`open_steps.${result.episode_id}.sub_count`]: admin.firestore.FieldValue.increment(-1),
+      });
+    } catch (e) { console.error('delete sub_count error:', e.message); }
+    try {
+      const cSnap = await db.collection('comments').where('sub_id', '==', sub_id).get();
+      await _commitInChunks(db, cSnap.docs, (batch, d) => batch.delete(d.ref));
+    } catch (e) { console.error('delete comments error:', e.message); }
+
+    return { ok: true };
+  });
+
+// ── 닉네임(표시 이름) 변경 (기존 fbChangeDisplayName) ────────
+exports.changeDisplayName = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const user_id = data.user_id;
+    const dn = (data.display_name || '').trim();
+    if (!user_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(user_id, data.token);
+    if (!dn || dn.length < 2) return { ok: false, error: '닉네임은 2자 이상이어야 합니다.' };
+    if (!/^[가-힣a-zA-Z0-9 ._-]{2,12}$/.test(dn)) return { ok: false, error: '닉네임은 2~12자, 한글·영문·숫자·공백·._- 만 사용할 수 있어요.' };
+
+    const db = admin.firestore();
+    const uRef = db.collection('users').doc(user_id);
+    const dupQuery = db.collection('users').where('display_name', '==', dn).limit(1);
+
+    const result = await db.runTransaction(async tx => {
+      // 중복 확인을 트랜잭션 안 읽기로 둬서, 확인~쓰기 사이의 취약 창을 없앰
+      // (완전한 고유성 보장은 예약 문서가 필요하지만 그건 register까지 함께
+      // 바꿔야 하는 별도 과제 — 기존 대비 나빠지지 않으면서 창만 좁힘).
+      const [dupSnap, uSnap] = await Promise.all([tx.get(dupQuery), tx.get(uRef)]);
+      if (!uSnap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
+      const u = uSnap.data();
+      const ban = _activeBan(u);
+      if (ban) return { ok: false, error: ban.error };
+      if (!dupSnap.empty && dupSnap.docs[0].id !== user_id) return { ok: false, error: '이미 사용 중인 닉네임입니다.' };
+
+      // 최초 1회(name_history가 비어있을 때)는 무료, 이후 20p — 간편가입 자동
+      // 생성 닉네임을 처음 바꾸는 데 비용을 물리지 않기 위한 기존 정책 그대로.
+      const isFirstChange = !u.name_history || u.name_history.length === 0;
+      const chargeable = !isFirstChange && _pointsApplicable(user_id);
+      if (chargeable && (Number(u.total_points) || 0) < 20) {
+        return { ok: false, error: '포인트가 부족합니다. 닉네임 변경에는 20p가 필요해요.' };
+      }
+
+      const old_name = u.display_name || u.nickname;
+      const userUpdate = {
+        display_name: dn,
+        name_history: admin.firestore.FieldValue.arrayUnion({ name: old_name, changed_at: new Date().toISOString() }),
+      };
+      // 이름 변경과 20p 차감을 한 트랜잭션에 둬서, "이름은 바뀌었는데 차감이
+      // 실패해 오류가 반환되는" 기존 순서 문제를 없앰.
+      if (chargeable) {
+        Object.assign(userUpdate, _txPointFields(u, -20));
+        _txLedger(db, tx, user_id, -20, 'nickname_change', '');
+      }
+      tx.update(uRef, userUpdate);
+      return { ok: true, display_name: dn };
+    });
+
+    if (!result.ok) return result;
+
+    // 과거 제출물의 표시 닉네임 일괄 갱신 — 400건씩 끝까지 순회(수백 건이라
+    // 트랜잭션에 넣을 수 없고, 표시용 필드라 뒤따라 갱신되어도 안전).
+    try {
+      const subsSnap = await db.collection('submissions').where('author_id', '==', user_id).get();
+      await _commitInChunks(db, subsSnap.docs, (batch, d) => batch.update(d.ref, { author_nickname: dn }));
+    } catch (e) { console.error('nickname cascade error:', e.message); }
+
+    return { ok: true, display_name: dn };
+  });
+
+// ── 분기 만들기 (기존 fbCreateBranch) ────────────────────────
+// 이 함수가 A-2 범위에 포함된 이유: 분기 생성은 원본 회차의 미채택 제출물을
+// 새 에피소드로 "복사"하므로 submissions에 직접 write를 한다 — rules를 잠그면
+// 이 유료(30p) 기능이 통째로 깨진다(아젠다에는 없었으나 전수 grep으로 발견).
+exports.createStoryBranch = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const story_id = data.story_id;
+    const step = Number(data.branch_from_step);
+    const user_id = data.user_id;
+    if (!story_id || !step || !user_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(user_id, data.token);
+
+    const db = admin.firestore();
+    const new_story_id = db.collection('stories').doc().id;
+    const new_ep_id    = db.collection('episodes').doc().id;
+    const nowIso = new Date().toISOString();
+    // 한 회차의 제출물 수는 현실적으로 수~수십 건이지만, 트랜잭션 write 한도(500)를
+    // 넘는 입력이 오면 조용히 일부만 복사되는 대신 명시적으로 거부한다.
+    const BRANCH_COPY_MAX = 400;
+
+    // ⚠️ 상태·중복 분기·대상 회차 검증과 30p 차감, 새 스토리/에피소드 생성,
+    // 미채택 제출물 복사를 전부 한 트랜잭션에 둔다(최종 검토 지적).
+    //  - 검증이 트랜잭션 밖에 있으면 동시 요청이 모두 중복 검사를 통과해 같은
+    //    단계에 분기가 여러 개 생기고 각각 30p가 빠져나갈 수 있음.
+    //  - 제출물 복사가 트랜잭션 밖에 있으면 복사 실패 시에도 스토리와 차감만
+    //    커밋되어, open_steps.sub_count가 실제 복사본 수와 어긋난 채 남음.
+    const txResult = await db.runTransaction(async tx => {
+      const uRef = db.collection('users').doc(user_id);
+      const stRef = db.collection('stories').doc(story_id);
+      const [freshU, stSnap, existSnap, epsSnap] = await Promise.all([
+        tx.get(uRef), tx.get(stRef),
+        tx.get(db.collection('stories').where('parent_story_id', '==', story_id)),
+        tx.get(db.collection('episodes').where('story_id', '==', story_id)),
+      ]);
+      if (!freshU.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
+      const uData = freshU.data();
+      const ban = _activeBan(uData);
+      if (ban) return { ok: false, error: ban.error };
+      if (!stSnap.exists) return { ok: false, error: '이야기를 찾을 수 없습니다.' };
+      const st = stSnap.data();
+      if (st.status !== 'completed' && st.status !== 'inactive') {
+        return { ok: false, error: '완결된 이야기에서만 분기를 만들 수 있습니다.' };
+      }
+      if (existSnap.docs.some(d => Number(d.data().branch_from_step) === step)) {
+        return { ok: false, error: '이 단계에는 이미 분기가 있습니다.' };
+      }
+      const targetEp = epsSnap.docs.map(d => ({ episode_id: d.id, ...d.data() }))
+        .find(e => Number(e.step) === step - 1);
+      // ⚠️ 기존 클라이언트 구현은 30p를 먼저 차감한 뒤에 이 대상 회차를 찾아서,
+      // 못 찾으면 포인트만 날아가는 결함이 있었음 — 모든 검증 통과 후에만 차감한다.
+      if (!targetEp) return { ok: false, error: '해당 단계를 찾을 수 없습니다.' };
+
+      const subsSnap = await tx.get(db.collection('submissions').where('episode_id', '==', targetEp.episode_id));
+      const nonAdopted = subsSnap.docs.map(d => d.data())
+        .filter(s => s.is_adopted !== true && s.is_adopted !== 'TRUE');
+      if (nonAdopted.length > BRANCH_COPY_MAX) {
+        return { ok: false, error: '이 단계는 제출물이 너무 많아 분기를 만들 수 없습니다.' };
+      }
+
+      const chargeable = _pointsApplicable(user_id);
+      if (chargeable && (Number(uData.total_points) || 0) < 30) {
+        return { ok: false, error: '포인트가 부족합니다. (필요: 30P, 보유: ' + (Number(uData.total_points) || 0) + 'P)' };
+      }
+
+      // ── write ──
+      if (chargeable) {
+        tx.update(uRef, _txPointFields(uData, -30));
+        _txLedger(db, tx, user_id, -30, 'branch_create', '');
+      }
+      const leafDisplayStep = _calcDisplayStepBackend(st, Number(targetEp.step));
+      const branch_display_offset = leafDisplayStep - (step - 1) + 1;
+      tx.set(db.collection('stories').doc(new_story_id), {
+        story_id: new_story_id, parent_story_id: story_id, branch_from_step: step,
+        branch_episode_id: targetEp.episode_id,
+        branch_leaf_episode_id: targetEp.episode_id,
+        branch_display_offset,
+        opening: st.opening, max_steps: st.max_steps || 10,
+        current_step: step - 2, status: 'active', creator_id: user_id,
+        created_at: nowIso,
+        // 분기 시점의 참여자 수는 0부터 새로 세지 않고 원본의 누적값을 물려받음
+        // (branch_display_offset이 단계 번호를 합산 기준으로 보여주는 것과 일관되게).
+        participant_count: Number(st.participant_count) || 0, batch: '',
+        // hot_score가 없는 문서는 자유 이야기 탭 orderBy 조회에서 아예 빠지므로 필수.
+        hot_score: 0,
+        open_steps: { [new_ep_id]: { step: step - 1, sub_count: nonAdopted.length } },
+      });
+      tx.set(db.collection('episodes').doc(new_ep_id), {
+        episode_id: new_ep_id, story_id: new_story_id, step: step - 1,
+        status: 'open', vote_total: 0, created_at: nowIso,
+        closed_at: '', pending_at: '', parent_sub_id: '',
+      });
+      // 제출물 복사도 같은 트랜잭션 안에서 — sub_count와 실제 복사본 수가
+      // 어긋날 수 없게 하고, 실패 시 분기 생성과 30p 차감까지 함께 롤백되게 한다.
+      for (const sub of nonAdopted) {
+        const sid = db.collection('submissions').doc().id;
+        tx.set(db.collection('submissions').doc(sid), {
+          ...sub, sub_id: sid, episode_id: new_ep_id, story_id: new_story_id,
+          vote_count: 0, is_adopted: false, derived_from: '',
+        });
+      }
+      return {
+        ok: true,
+        opening: st.opening || '',
+        target_episode_id: targetEp.episode_id,
+        authorIds: nonAdopted.map(s => s.author_id),
+      };
+    });
+    if (!txResult.ok) return txResult;
+
+    // 알림은 분기 생성의 부가 효과 — 실패해도 분기 결과를 뒤집지 않음(기존 정책).
+    try {
+      const votersSnap = await db.collection('votes').where('episode_id', '==', txResult.target_episode_id).get();
+      const notifyIds = [...new Set([
+        ...txResult.authorIds,
+        ...votersSnap.docs.map(d => d.data().voter_id),
+      ])].filter(id => id && id !== user_id);
+      const snippet = (txResult.opening || '').slice(0, 15);
+      const message = `"${snippet}..." 이야기의 ${step}단계에서 분기 챌린지가 시작됐어요!`;
+      await _commitInChunks(db, notifyIds, (batch, uid) => {
+        batch.set(db.collection('notifications').doc(), {
+          user_id: uid, type: 'story_advance', story_id: new_story_id, message,
+          is_read: false, created_at: admin.firestore.Timestamp.now(), push_sent: false,
+        });
+      });
+    } catch (e) { console.error('branch notify error:', e.message); }
+
+    return { ok: true, new_story_id };
+  });
+
+// ── 관리자 제출물 삭제 (기존 fbAdminDeleteSubmission) ────────
+// adminEditSubmission과 동일한 게이트. rules 잠금 후에도 관리자 삭제가 동작해야
+// 하므로 함께 이관한다(P0의 delete 규칙이 무투표·미채택만 허용해서, 관리자가
+// 득표/채택된 글을 지우려 할 때 이미 막히던 잠재 회귀도 이걸로 함께 닫힘).
+exports.adminDeleteSubmission = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const admin_id = data.user_id;
+    const sub_id = data.sub_id;
+    if (!admin_id || !sub_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(admin_id, data.token);
+    if (admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+
+    const db = admin.firestore();
+    const subRef = db.collection('submissions').doc(sub_id);
+    const subSnap = await subRef.get();
+    await subRef.delete();
+
+    if (subSnap.exists) {
+      const sub = subSnap.data();
+      try {
+        await db.collection('stories').doc(sub.story_id).update({
+          [`open_steps.${sub.episode_id}.sub_count`]: admin.firestore.FieldValue.increment(-1),
+        });
+      } catch (e) { console.error('admin delete sub_count error:', e.message); }
+    }
+    const [vSnap, cSnap, rSnap] = await Promise.all([
+      db.collection('votes').where('sub_id', '==', sub_id).get(),
+      db.collection('comments').where('sub_id', '==', sub_id).get(),
+      db.collection('reports').where('sub_id', '==', sub_id).get(),
+    ]);
+    // 연관 문서가 많으면 단일 batch의 500-write 한도를 넘을 수 있어 청크 커밋.
+    await _commitInChunks(db, [...vSnap.docs, ...cSnap.docs, ...rSnap.docs], (batch, d) => batch.delete(d.ref));
+    return { ok: true };
+  });
+
 // ── 초스피드 초장편: 투표 없이 즉시 채택되는 스프린트형 이야기 ──────────
 // fbCreateSubmission(클라이언트 트랜잭션, firestore.rules에서 episodes/submissions가
 // 전부 열려있어 가능한 방식)은 에피소드 open 여부 체크가 트랜잭션 "밖"의 별도

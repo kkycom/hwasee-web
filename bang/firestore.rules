@@ -114,8 +114,36 @@ service cloud.firestore {
         && request.resource.data.get('ai_title', null) == resource.data.get('ai_title', null);
     }
     match /episodes/{docId} { allow read, write: if true; }
-    match /submissions/{docId} { allow read, write: if true; }
-    match /votes/{docId} { allow read, write: if true; }
+    // 🔒 2026-08-29 보안방(P0): submissions.vote_count가 완전 개방이라 closeEpisode의
+    // 임계값 재검증(95cbbd7)을 로그인 계정 하나만으로 위조 통과시킬 수 있었음(실제
+    // 공격 재현 확인) — 일반 투표를 voteEpisode(Cloud Function, 트랜잭션)로 이관하고
+    // 여기서 vote_count/is_adopted 등 구조 필드를 클라이언트가 못 건드리게 잠금.
+    // create는 초기값(0/false)만 강제해서 fbCreateSubmission은 그대로 통과.
+    // update는 딱 두 갈래만 허용:
+    //  (a) author_nickname만 — 닉네임 변경 캐스케이드, 투표/채택 상태와 무관(순수
+    //      표시용 필드라 안전).
+    //  (b) content/is_closing만, 단 그 문서가 아직 무투표·미채택일 때만 —
+    //      fbEditMySubmission이 지금도 클라에서 확인하던 조건을 규칙으로도 강제.
+    //      득표했거나 채택된 후보의 본문을 제3자가 바꿔치기해서 마감 결과를
+    //      훼손하는 것도 막음(vote_count 보호만으론 이 경로가 남아있었음).
+    // 관리자의 content 편집(투표/채택 상태 무관)·ai_reviewed 표시(글로벌화 번역
+    // 안정화 조건으로 쓰일 예정이라 완전 서버 전용)는 위 화이트리스트에 안 넣고
+    // adminEditSubmission/adminMarkAiReviewed(Admin SDK, 이 규칙 자체를 안 탐)로
+    // 이관했음.
+    match /submissions/{docId} {
+      allow read: if true;
+      allow create: if request.resource.data.vote_count == 0
+        && request.resource.data.is_adopted == false;
+      allow update: if
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['author_nickname'])
+        || (
+          resource.data.vote_count == 0 && resource.data.is_adopted != true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'is_closing'])
+        );
+      allow delete: if resource.data.vote_count == 0 && resource.data.is_adopted != true;
+    }
+    // votes는 voteEpisode(Cloud Function)만 씀 — 클라 직접 write 전면 차단.
+    match /votes/{docId} { allow read: if true; allow create, update, delete: if false; }
     // 초스피드 추천/신고 — speedrunUpvote/speedrunReport(Cloud Function) 전용,
     // 클라이언트가 직접 읽거나 쓸 이유 없음(보안방 전수조사 중 규칙 누락 발견,
     // 2026-08-03 — Admin SDK는 이 규칙과 무관하게 이미 정상 동작 중이었어서

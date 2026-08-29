@@ -2605,8 +2605,176 @@ exports.closeEpisode = functions
     const db = admin.firestore();
     const epSnap = await db.collection('episodes').doc(episode_id).get();
     if (!epSnap.exists) return { ok: true };
+
+    // 🔒 2026-08-29 보안방(P0 투표 위조 대응): 관리자 강제채택(원래
+    // fbAdminForceAdopt가 클라에서 submissions.vote_count를 직접 9999로
+    // 썼던 경로)을 여기로 흡수 — vote_count가 서버 전용이 되면서(firestore.rules)
+    // 그 직접 write가 막히므로, 같은 효과를 Admin SDK로 대신 냄. force_sub_id가
+    // 실제로 이 episode_id 소속인지, 에피소드가 아직 open인지 먼저 확인—
+    // 안 그러면 다른 에피소드 문서를 잘못/악의적으로 강제채택시키거나 이미
+    // 닫힌 에피소드에 소급 개입할 수 있음(계획 검토 지적).
+    if (data.force_sub_id) {
+      if (data.user_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+      if (epSnap.data().status !== 'open') return { ok: false, error: '이미 마감된 에피소드입니다.' };
+      const forceSubSnap = await db.collection('submissions').doc(data.force_sub_id).get();
+      if (!forceSubSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
+      if (forceSubSnap.data().episode_id !== episode_id) return { ok: false, error: '잘못된 요청입니다.' };
+      await forceSubSnap.ref.update({ vote_count: 9999 });
+    }
+
     const result = await _serverCloseEpisode(db, episode_id, epSnap.data());
     if (result === 'below_threshold') return { ok: false, error: '아직 투표 임계값에 도달하지 않았습니다.' };
+    return { ok: true };
+  });
+
+// 🔒 2026-08-29 보안방(P0): 일반 에피소드 투표를 서버 Callable로 이관.
+// fbVote가 클라이언트에서 votes/submissions.vote_count를 직접 썼는데, 그
+// 컬렉션들이 완전 개방(firestore.rules)이라 로그인 계정 하나만 있으면
+// vote_count를 위조해 closeEpisode의 임계값 재검증(95cbbd7)을 그대로
+// 통과시킬 수 있었음. 이제 vote_count/is_adopted는 이 함수(Admin SDK)를
+// 거쳐야만 바뀌고, 클라 직접 write는 firestore.rules로 막힘.
+//
+// EPISODE_MAX_VOTE_PICKS: bang/index.html의 selectedSubs 상한(2, "if
+// (selectedSubs.length >= 2)")과 반드시 같은 값으로 유지 — DB에 이 값을 담는
+// 필드가 따로 없어서(전수 확인) 서버가 이 상수로 그 근거를 대신 가짐.
+const EPISODE_MAX_VOTE_PICKS = 2;
+
+exports.voteEpisode = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const episode_id = data.episode_id;
+    const voter_id = data.user_id;
+    const sub_ids = [...new Set(Array.isArray(data.sub_ids) ? data.sub_ids : [])];
+    if (!episode_id || sub_ids.length < 1 || sub_ids.length > EPISODE_MAX_VOTE_PICKS) {
+      throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    }
+    await _requireUser(voter_id, data.token);
+
+    const db = admin.firestore();
+    const userSnap = await db.collection('users').doc(voter_id).get();
+    if (!userSnap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
+    const ban = _activeBan(userSnap.data());
+    if (ban) return { ok: false, error: ban.error };
+
+    const epRef = db.collection('episodes').doc(episode_id);
+    const subRefs = sub_ids.map(sid => db.collection('submissions').doc(sid));
+    const prevVotesQuery = db.collection('votes')
+      .where('episode_id', '==', episode_id).where('voter_id', '==', voter_id);
+
+    const result = await db.runTransaction(async tx => {
+      const [epSnap, subSnaps, prevVoteSnap] = await Promise.all([
+        tx.get(epRef), Promise.all(subRefs.map(r => tx.get(r))), tx.get(prevVotesQuery),
+      ]);
+      if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
+      const ep = epSnap.data();
+      if (ep.status !== 'open') return { ok: false, error: '공감이 마감됐습니다.' };
+
+      for (const s of subSnaps) {
+        if (!s.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
+        const sub = s.data();
+        if (sub.episode_id !== episode_id) return { ok: false, error: '잘못된 요청입니다.' };
+        // 이미 채택된 후보는 투표 대상이 아님(계획 승인 시 추가 요청) — 일반
+        // submissions엔 is_adopted 외 다른 숨김/삭제류 상태 필드가 없음(전수
+        // 확인 — is_deleted는 speedrun/your_story 전용 별개 컬렉션 성격).
+        if (sub.is_adopted === true) return { ok: false, error: '이미 채택된 글이에요.' };
+        if (sub.author_id === voter_id && !sub.is_ai) return { ok: false, error: '본인 제출에는 공감할 수 없습니다.' };
+      }
+
+      // 재투표(표 바꾸기) 대비: 이전에 투표했던 후보 중 이번 sub_ids에 없는
+      // 것들도 읽어야 감소시킬 수 있음(트랜잭션 read-먼저 규칙이라 여기서 미리).
+      const prevVotedSubIds = prevVoteSnap.docs.map(d => d.data().sub_id);
+      const extraPrevIds = prevVotedSubIds.filter(id => !sub_ids.includes(id));
+      const extraPrevSnaps = await Promise.all(extraPrevIds.map(id => tx.get(db.collection('submissions').doc(id))));
+
+      // ── write ──
+      const isRevote = !prevVoteSnap.empty;
+      if (isRevote) {
+        prevVoteSnap.docs.forEach(d => tx.delete(d.ref));
+        extraPrevSnaps.forEach(s => {
+          if (s.exists) tx.update(s.ref, { vote_count: admin.firestore.FieldValue.increment(-1) });
+        });
+      }
+      subRefs.forEach((ref, i) => {
+        // 이전에도 투표했던 후보를 이번에도 다시 고르면 증감이 상쇄돼야 하니
+        // 그 경우만 건드리지 않음(재투표로 표를 안 바꾼 후보는 그대로 유지).
+        if (isRevote && prevVotedSubIds.includes(sub_ids[i])) return;
+        tx.update(ref, { vote_count: admin.firestore.FieldValue.increment(1) });
+      });
+      sub_ids.forEach(sid => {
+        tx.set(db.collection('votes').doc(`${episode_id}_${voter_id}_${sid}`), {
+          episode_id, sub_id: sid, voter_id, created_at: new Date().toISOString(),
+        });
+      });
+
+      const newTotal = isRevote ? (Number(ep.vote_total) || 0) : (Number(ep.vote_total) || 0) + 1;
+      tx.update(epRef, { vote_total: newTotal });
+
+      return { ok: true, isRevote, newTotal, story_id: ep.story_id };
+    });
+
+    if (!result.ok) return result;
+
+    if (!result.isRevote) {
+      try { await _serverAddPoints(db, voter_id, 5, 'vote', ''); } catch (e) { console.error('vote point error:', e.message); }
+      try { await _serverBumpAchievementCounter(db, voter_id, 'vote_count'); } catch (e) { console.error('vote achievement error:', e.message); }
+    }
+
+    // 응답은 기존 fbVote와 동일 형태 — 클라가 이 값으로 closeEpisode 호출
+    // 여부를 그대로 판단(마감 트리거 흐름은 안 건드림, 최소 변경).
+    const [freshSubsSnap, storySnap] = await Promise.all([
+      db.collection('submissions').where('episode_id', '==', episode_id).get(),
+      db.collection('stories').doc(result.story_id).get(),
+    ]);
+    const maxVotes = freshSubsSnap.docs.reduce((m, d) => Math.max(m, Number(d.data().vote_count) || 0), 0);
+    const voteThreshold = (storySnap.exists && storySnap.data().vote_threshold) || AI_VOTE_THRESHOLD;
+    return { ok: true, total_voters: result.newTotal, max_votes: maxVotes, vote_threshold: voteThreshold };
+  });
+
+// 🔒 2026-08-29 보안방(P0): 관리자 제출물 편집을 서버로 이관 — 위 voteEpisode와
+// 세트. submissions의 update firestore.rule을 "content/is_closing은 무투표·
+// 미채택일 때만" 화이트리스트로 좁혔는데(fbEditMySubmission 자기수정용),
+// 관리자는 투표/채택 상태와 무관하게(오타 수정 등) content를 고칠 수 있어야
+// 하는 기존 동작이라 그 화이트리스트로는 커버가 안 됨 — Admin SDK로 이관해서
+// 규칙 자체를 우회. fbAdminEditSub(bang/firebase-api.js)의 로직 그대로.
+exports.adminEditSubmission = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const admin_id = data.user_id;
+    const sub_id = data.sub_id;
+    const new_content = (data.new_content || '').trim();
+    if (!admin_id || !sub_id || !new_content) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(admin_id, data.token);
+    if (admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+
+    const db = admin.firestore();
+    const subRef = db.collection('submissions').doc(sub_id);
+    const subSnap = await subRef.get();
+    if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
+    await subRef.update({ content: new_content });
+    await db.collection('admin_edits').add({
+      sub_id, story_id: data.story_id || '', old_content: data.old_content || '',
+      new_content, edit_type: data.edit_type || 'manual',
+      admin_id, edited_at: new Date().toISOString(),
+    });
+    return { ok: true };
+  });
+
+// 🔒 2026-08-29 보안방(P0): ai_reviewed는 글로벌화(번역) 계획이 "이 문장은
+// 안정화됐다"는 신뢰 조건으로 쓸 예정이라, submissions update 화이트리스트에
+// 아예 안 넣고 완전히 서버 전용으로 둠(계획 검토 지적). fbMarkAiReviewed의
+// 로직 그대로.
+exports.adminMarkAiReviewed = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const admin_id = data.user_id;
+    const sub_ids = Array.isArray(data.sub_ids) ? data.sub_ids : [];
+    if (!admin_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(admin_id, data.token);
+    if (admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+    if (!sub_ids.length) return { ok: true };
+
+    const db = admin.firestore();
+    await Promise.all(sub_ids.map(id => db.collection('submissions').doc(id).update({ ai_reviewed: true })));
     return { ok: true };
   });
 

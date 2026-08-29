@@ -1391,101 +1391,51 @@ async function fbCreateSubmission(episode_id, content, author_id, derived_from, 
 
 // ─── 투표 ────────────────────────────────────────────────
 
+// 🔒 2026-08-29 보안방(P0): 클라이언트가 votes/submissions.vote_count를
+// 직접 쓰던 구조라, 로그인 계정 하나만 있으면 vote_count를 위조해
+// closeEpisode의 임계값 재검증을 그대로 통과시킬 수 있었음(공격 재현
+// 확인됨). 투표 기록·집계는 voteEpisode(Cloud Function, 트랜잭션)로
+// 전부 이관 — 이 함수는 그 얇은 wrapper + 서버가 안 하는 부가 효과
+// (hot_score 갱신, 마감 트리거)만 남김. 시그니처·반환 형태는 그대로라
+// 호출부(index.html)는 무변경.
 async function fbVote(episode_id, sub_ids, voter_id) {
-  if (!Array.isArray(sub_ids) || sub_ids.length < 1 || sub_ids.length > 2)
-    return { ok: false, error: '1개 또는 2개를 선택해주세요.' };
-
-  const [epSnap, prevVoteSnap, subsSnap] = await Promise.all([
-    db.collection('episodes').doc(episode_id).get(),
-    db.collection('votes').where('episode_id','==',episode_id).where('voter_id','==',voter_id).get(),
-    db.collection('submissions').where('episode_id','==',episode_id).get(),
-  ]);
-
-  if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
-  const ep = epSnap.data();
-  if (ep.status !== 'open') return { ok: false, error: '공감이 마감됐습니다.' };
-
-  // 스포트라이트 슬롯 이야기는 vote_threshold(5)가 지정돼있음 — 없으면 기본 3표
-  const storySnap = await db.collection('stories').doc(ep.story_id).get();
-  const storyData = storySnap.exists ? storySnap.data() : {};
-  const voteThreshold = storyData.vote_threshold || FB_VOTE_THRESHOLD;
-
-  const isRevote = !prevVoteSnap.empty;
-  const prevVotedSubIds = prevVoteSnap.docs.map(d => d.data().sub_id);
-  // 추가 제출권으로 한 에피소드에 내 글이 2개 있을 수 있어 find()로 첫 번째만
-  // 잡으면 두 번째 내 글에 자기 자신 투표가 가능했음 — 전부 확인해야 함
-  const mySubIds = subsSnap.docs.filter(d => d.data().author_id === voter_id && !d.data().is_ai).map(d => d.id);
-  if (sub_ids.some(sid => mySubIds.includes(sid))) return { ok: false, error: '본인 제출에는 공감할 수 없습니다.' };
-
-  const batch = db.batch();
-
-  if (isRevote) {
-    prevVoteSnap.docs.forEach(d => batch.delete(d.ref));
-    subsSnap.docs.forEach(d => {
-      if (prevVotedSubIds.includes(d.id))
-        batch.update(d.ref, { vote_count: firebase.firestore.FieldValue.increment(-1) });
+  let res;
+  try {
+    const r = await functionsRegion.httpsCallable('voteEpisode')({
+      episode_id, sub_ids, user_id: voter_id, token: localStorage.getItem('hwasee_token'),
     });
+    res = r.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
   }
+  if (!res.ok) return res;
 
-  sub_ids.forEach(sid => {
-    batch.set(db.collection('votes').doc(fbGenId()), {
-      episode_id, sub_id: sid, voter_id, created_at: fbNow()
-    });
-  });
-  subsSnap.docs.forEach(d => {
-    if (sub_ids.includes(d.id))
-      batch.update(d.ref, { vote_count: firebase.firestore.FieldValue.increment(1) });
-  });
+  // 자유 이야기 탭 정렬용 hot_score — vote_count 신뢰성과는 무관한 표시용
+  // 필드라(위조돼도 정렬 순서만 흔들릴 뿐 투표 결과 자체엔 영향 없음) 서버로
+  // 옮기지 않고 기존처럼 클라에서 갱신. 응답을 기다리게 하지 않고 백그라운드로.
+  (async () => {
+    try {
+      const epSnap = await db.collection('episodes').doc(episode_id).get();
+      if (!epSnap.exists) return;
+      const storySnap = await db.collection('stories').doc(epSnap.data().story_id).get();
+      if (!storySnap.exists) return;
+      const curHot = Number(storySnap.data().hot_score) || 0;
+      if (res.total_voters > curHot) await storySnap.ref.update({ hot_score: res.total_voters });
+    } catch (e) {}
+  })();
 
-  const newTotal = isRevote ? (Number(ep.vote_total) || 0) : (Number(ep.vote_total) || 0) + 1;
-  batch.update(epSnap.ref, { vote_total: newTotal });
-
-  // 자유 이야기 탭 정렬/페이지네이션용 hot_score — 이 스토리의 (분기 포함) 열린
-  // 에피소드들 중 가장 높은 vote_total을 반영. 한 스토리에 동시에 열린 에피소드가
-  // 여럿(분기)일 수 있어 다른 갈래 투표로 낮아지면 안 되므로 기존 값과 비교해
-  // 더 큰 쪽으로만 갱신 — 리셋은 새 에피소드가 열릴 때 서버(_serverCloseEpisode)가 처리
-  const newHotScore = Math.max(Number(storyData.hot_score) || 0, newTotal);
-  if (newHotScore !== (Number(storyData.hot_score) || 0)) {
-    batch.update(db.collection('stories').doc(ep.story_id), { hot_score: newHotScore });
-  }
-
-  // 로컬에서 최고 득표 계산 (Firestore 재조회 불필요)
-  const maxSubVotes = subsSnap.docs.reduce((m, d) => {
-    let c = Number(d.data().vote_count) || 0;
-    if (isRevote && prevVotedSubIds.includes(d.id)) c--;
-    if (sub_ids.includes(d.id)) c++;
-    return Math.max(m, c);
-  }, 0);
-
-  await Promise.all([
-    batch.commit(),
-    isRevote ? Promise.resolve() : _fbAddPoints(voter_id, 5, 'vote', ''),
-  ]);
-  if (!isRevote) {
-    // 카운터 증가 + 업적 체크는 공감(투표) 응답을 기다리게 하지 않고 백그라운드로 미룸
-    (async () => {
-      try {
-        const vSnap = await db.collection('users').doc(voter_id).get();
-        const newCount = (vSnap.exists ? (vSnap.data().vote_count || 0) : 0) + 1;
-        await db.collection('users').doc(voter_id).update({ vote_count: firebase.firestore.FieldValue.increment(1) });
-        await _fbCheckAchievements(voter_id, 'vote_count', newCount);
-      } catch (e) {}
-    })();
-  }
-
-  if (maxSubVotes >= voteThreshold) {
+  if (res.max_votes >= (res.vote_threshold || FB_VOTE_THRESHOLD)) {
     // 마감 처리(당선작 결정/분기 분리/포인트 지급)는 서버(Cloud Function,
     // _serverCloseEpisode 재사용)에서 수행 — 투표 응답은 기다리지 않고 바로
     // 반환하되, 처리 자체는 브라우저 탭이 닫히거나 백그라운드로 넘어가도
     // 서버에서 끝까지 안정적으로 완료됨. voter_id는 방금 실제로 투표를 마친
-    // (즉 로그인 검증된) 본인 uid라 closeEpisode의 로그인 요구(2026-08-27
-    // 보안방)를 그대로 만족함.
+    // (즉 로그인 검증된) 본인 uid라 closeEpisode의 로그인 요구를 그대로 만족함.
     functionsRegion.httpsCallable('closeEpisode')({
       episode_id, user_id: voter_id, token: localStorage.getItem('hwasee_token'),
     }).catch(() => {});
   }
 
-  return { ok: true, total_voters: newTotal, max_votes: maxSubVotes, vote_threshold: voteThreshold };
+  return res;
 }
 
 // ─── 씨앗 문장 ───────────────────────────────────────────
@@ -2740,23 +2690,23 @@ async function fbEditMySubmission(sub_id, user_id, content, closing) {
 
 // ─── 어드민 ──────────────────────────────────────────────
 
+// 🔒 2026-08-29 보안방(P0): submissions.vote_count가 이제 서버(voteEpisode/
+// closeEpisode) 전용이라(firestore.rules), 여기서 직접 9999로 강제 쓰던
+// 걸 더 이상 클라에서 못 함 — closeEpisode의 force_sub_id 경로(Admin SDK,
+// episode_id 소속·open 여부 서버 검증 포함)로 그대로 이관.
 async function fbAdminForceAdopt(sub_id, admin_id) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   const subSnap = await db.collection('submissions').doc(sub_id).get();
   if (!subSnap.exists) return { ok: false, error: '제출을 찾을 수 없습니다.' };
-  const sub    = subSnap.data();
-  const epSnap = await db.collection('episodes').doc(sub.episode_id).get();
-  if (!epSnap.exists) return { ok: false, error: '에피소드를 찾을 수 없습니다.' };
-  if (epSnap.data().status !== 'open') return { ok: false, error: '이미 마감된 에피소드입니다.' };
-  await subSnap.ref.update({ vote_count: 9999 });
-  // 투표 마감과 동일하게 서버(Cloud Function)에서 마감 처리 — 응답은 기다리지 않음.
-  // closeEpisode가 이제 로그인 검증을 요구(2026-08-27 보안방)해서 관리자 세션
-  // (admin_id+token)을 그대로 전달 — 위에서 이미 vote_count:9999로 올려뒀으니
-  // _serverCloseEpisode의 임계값 재검증은 항상 통과함(별도 관리자 우회 경로 불필요).
-  functionsRegion.httpsCallable('closeEpisode')({
-    episode_id: sub.episode_id, user_id: admin_id, token: localStorage.getItem('hwasee_token'),
-  }).catch(() => {});
-  return { ok: true };
+  const episode_id = subSnap.data().episode_id;
+  try {
+    const r = await functionsRegion.httpsCallable('closeEpisode')({
+      episode_id, force_sub_id: sub_id, user_id: admin_id, token: localStorage.getItem('hwasee_token'),
+    });
+    return r.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
+  }
 }
 
 async function fbAdminDeleteSubmission(sub_id, admin_id) {
@@ -3237,16 +3187,23 @@ async function fbMarkPatchNoteSeen(user_id, patch_id) {
 
 // ─── 관리자 글 수정 ──────────────────────────────────────
 
+// 🔒 2026-08-29 보안방(P0): submissions update의 content 화이트리스트를
+// "무투표·미채택일 때만"으로 좁혔는데(fbEditMySubmission 자기수정 기준),
+// 관리자는 투표/채택 상태와 무관하게(오타 수정 등) content를 고칠 수 있어야
+// 하는 기존 동작이라 그 규칙으로는 못 씀 — adminEditSubmission(Admin SDK)로 이관.
 async function fbAdminEditSub(admin_id, sub_id, new_content, old_content, story_id, edit_type) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   if (!new_content?.trim()) return { ok: false, error: '내용을 입력해주세요.' };
-  await db.collection('submissions').doc(sub_id).update({ content: new_content.trim() });
-  await db.collection('admin_edits').add({
-    sub_id, story_id: story_id || '', old_content: old_content || '',
-    new_content: new_content.trim(), edit_type: edit_type || 'manual',
-    admin_id, edited_at: fbNow(),
-  });
-  return { ok: true };
+  try {
+    const r = await functionsRegion.httpsCallable('adminEditSubmission')({
+      sub_id, new_content: new_content.trim(), old_content: old_content || '',
+      story_id: story_id || '', edit_type: edit_type || 'manual',
+      user_id: admin_id, token: localStorage.getItem('hwasee_token'),
+    });
+    return r.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
+  }
 }
 
 // 씨앗 문장(story.opening)은 submissions가 아니라 stories 문서 필드라 위
@@ -3295,11 +3252,20 @@ async function fbGetAdminEdits(admin_id) {
   };
 }
 
+// 🔒 2026-08-29 보안방(P0): ai_reviewed는 글로벌화(번역) 계획이 "이 문장은
+// 안정화됐다"는 신뢰 조건으로 쓸 예정이라 submissions update 화이트리스트에
+// 아예 안 넣고 완전히 서버 전용으로 잠금 — adminMarkAiReviewed(Admin SDK)로 이관.
 async function fbMarkAiReviewed(admin_id, sub_ids) {
   if (admin_id !== FB_ADMIN_ID) return { ok: false, error: '권한이 없습니다.' };
   if (!sub_ids?.length) return { ok: true };
-  await Promise.all(sub_ids.map(id => db.collection('submissions').doc(id).update({ ai_reviewed: true })));
-  return { ok: true };
+  try {
+    const r = await functionsRegion.httpsCallable('adminMarkAiReviewed')({
+      sub_ids, user_id: admin_id, token: localStorage.getItem('hwasee_token'),
+    });
+    return r.data;
+  } catch (e) {
+    return { ok: false, error: e.message || '처리에 실패했습니다.' };
+  }
 }
 
 // ─── AI 활동 ─────────────────────────────────────────────

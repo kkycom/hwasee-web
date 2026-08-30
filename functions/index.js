@@ -2947,9 +2947,20 @@ exports.submitEpisode = functions
     try {
       // participant_count 증가(이 이야기에 처음 참여한 경우) — 기존 구현과 동일하게
       // author_id 단일 조건으로 읽고 story_id로 필터(복합 인덱스 불필요).
+      //
+      // ⚠️ "이번 제출 말고 이전 제출이 없으면 증가"(기존 방식)는 동시 제출에 취약했다 —
+      // 추가 제출권 보유자가 첫 두 건을 동시에 보내면 둘 다 커밋된 뒤 서로 상대를
+      // 발견해 양쪽 다 증가를 건너뛰어 참여자 수가 누락된다(최종 재검토 지적).
+      // 그래서 "내 제출물 중 가장 먼저 만들어진 한 건인가"로 판정을 바꿨다 —
+      // 정렬 기준이 결정론적(created_at, 동률이면 문서 ID)이라 동시에 커밋된 두
+      // 요청이 같은 목록을 보더라도 정확히 한쪽만 참이 된다. 새 컬렉션·필드 없음.
       const mySubsSnap = await db.collection('submissions').where('author_id', '==', author_id).get();
-      const prevCount = mySubsSnap.docs.filter(d => d.data().story_id === result.story_id && d.id !== result.sub_id).length;
-      if (prevCount === 0) {
+      const mineInStory = mySubsSnap.docs
+        .filter(d => d.data().story_id === result.story_id)
+        .map(d => ({ id: d.id, created_at: String(d.data().created_at || '') }))
+        .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : (a.id < b.id ? -1 : 1)));
+      const isFirstParticipation = mineInStory.length > 0 && mineInStory[0].id === result.sub_id;
+      if (isFirstParticipation) {
         const storyRef = db.collection('stories').doc(result.story_id);
         await db.runTransaction(async tx => {
           const snap = await tx.get(storyRef);

@@ -2863,6 +2863,13 @@ exports.submitEpisode = functions
     // 회차 내 본인 제출 수는 기존과 동일하게 episode_id 단일 조건으로 읽고 코드에서
     // 필터한다(복합 인덱스를 새로 요구하지 않기 위함 — 아젠다 제약).
     const epSubsQuery = db.collection('submissions').where('episode_id', '==', episode_id);
+    // "이 이야기에 처음 참여했는가" 판정용 — 예전에는 트랜잭션이 끝난 뒤 이 쿼리를
+    // 따로 돌렸는데, 그러면 동시 제출 시 두 요청이 서로를 보거나(양쪽 다 증가 생략)
+    // 못 보고(양쪽 다 증가) participant_count가 어긋날 수 있었다(최종 재검토 지적).
+    // 트랜잭션 안으로 들여오면 users 문서 충돌로 직렬화된 재시도가 항상 앞선 제출을
+    // 보게 되어 정확히 한 번만 증가한다. 쿼리 자체는 예전 후처리와 동일해서
+    // 읽기 비용도 늘지 않고, 단일 필드 조건이라 새 인덱스도 필요 없다.
+    const mySubsQuery = db.collection('submissions').where('author_id', '==', author_id);
 
     const result = await db.runTransaction(async tx => {
       const epSnap = await tx.get(epRef);
@@ -2873,8 +2880,9 @@ exports.submitEpisode = functions
       if (ep.status !== 'open') return { ok: false, error: '제출이 마감됐습니다.' };
 
       const storyRef = db.collection('stories').doc(ep.story_id);
-      const [uSnap, storySnap, hourSnap, daySnap, epSubsSnap] = await Promise.all([
+      const [uSnap, storySnap, hourSnap, daySnap, epSubsSnap, mySubsSnap] = await Promise.all([
         tx.get(uRef), tx.get(storyRef), tx.get(hourQuery), tx.get(dayQuery), tx.get(epSubsQuery),
+        tx.get(mySubsQuery),
       ]);
       if (!uSnap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
       const uData = uSnap.data();
@@ -2912,9 +2920,15 @@ exports.submitEpisode = functions
         // 저장소 관례대로 ISO 문자열. 이 필드가 없는 문서는 "기존 문서"로 취급하면 됨.
         content_updated_at: nowIso,
       });
+      // 이 이야기에 처음 참여하는가 — 위에서 트랜잭션 안 읽기로 확보한 목록으로
+      // 판정하므로, 동시 제출이 들어와도 직렬화된 재시도가 앞선 제출을 반드시 보게 되어
+      // participant_count가 누락되거나 중복 증가하지 않는다.
+      const isFirstParticipation = !mySubsSnap.docs.some(d => d.data().story_id === ep.story_id);
       if (storySnap.exists) {
         const cur = (story0.open_steps || {})[episode_id] || { step: Number(ep.step) || 0, sub_count: 0 };
-        tx.update(storyRef, { [`open_steps.${episode_id}`]: { step: cur.step, sub_count: (Number(cur.sub_count) || 0) + 1 } });
+        const storyUpdate = { [`open_steps.${episode_id}`]: { step: cur.step, sub_count: (Number(cur.sub_count) || 0) + 1 } };
+        if (isFirstParticipation) storyUpdate.participant_count = (Number(story0.participant_count) || 0) + 1;
+        tx.update(storyRef, storyUpdate);
       }
 
       // 제출 10p + 카운터를 같은 트랜잭션의 users 쓰기로 합침 — 부분 성공(제출은
@@ -2930,7 +2944,7 @@ exports.submitEpisode = functions
 
       return {
         ok: true, sub_id, story_id: ep.story_id, step: Number(ep.step) || 0,
-        newSubCount: userUpdate.submission_count,
+        newSubCount: userUpdate.submission_count, isFirstParticipation,
         modeCat: modeCat || null, newModeCount: modeCat ? userUpdate[modeCat] : null,
       };
     });
@@ -2944,38 +2958,18 @@ exports.submitEpisode = functions
     if (result.modeCat) {
       try { await _serverCheckAchievements(db, author_id, result.modeCat, result.newModeCount); } catch (e) { console.error('submit mode achievement error:', e.message); }
     }
-    try {
-      // participant_count 증가(이 이야기에 처음 참여한 경우) — 기존 구현과 동일하게
-      // author_id 단일 조건으로 읽고 story_id로 필터(복합 인덱스 불필요).
-      //
-      // ⚠️ "이번 제출 말고 이전 제출이 없으면 증가"(기존 방식)는 동시 제출에 취약했다 —
-      // 추가 제출권 보유자가 첫 두 건을 동시에 보내면 둘 다 커밋된 뒤 서로 상대를
-      // 발견해 양쪽 다 증가를 건너뛰어 참여자 수가 누락된다(최종 재검토 지적).
-      // 그래서 "내 제출물 중 가장 먼저 만들어진 한 건인가"로 판정을 바꿨다 —
-      // 정렬 기준이 결정론적(created_at, 동률이면 문서 ID)이라 동시에 커밋된 두
-      // 요청이 같은 목록을 보더라도 정확히 한쪽만 참이 된다. 새 컬렉션·필드 없음.
-      const mySubsSnap = await db.collection('submissions').where('author_id', '==', author_id).get();
-      const mineInStory = mySubsSnap.docs
-        .filter(d => d.data().story_id === result.story_id)
-        .map(d => ({ id: d.id, created_at: String(d.data().created_at || '') }))
-        .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : (a.id < b.id ? -1 : 1)));
-      const isFirstParticipation = mineInStory.length > 0 && mineInStory[0].id === result.sub_id;
-      if (isFirstParticipation) {
-        const storyRef = db.collection('stories').doc(result.story_id);
-        await db.runTransaction(async tx => {
-          const snap = await tx.get(storyRef);
-          if (!snap.exists) return;
-          tx.update(storyRef, { participant_count: (Number(snap.data().participant_count) || 0) + 1 });
-        });
-        if (result.step === 1) {
-          const storySnap = await storyRef.get();
-          const storyData = storySnap.exists ? storySnap.data() : null;
-          if (storyData && storyData.is_ai_seed && storyData.opening) {
-            await db.collection('config').doc('used_openings').set({ [storyData.opening]: true }, { merge: true });
-          }
+    // participant_count 증가는 위 트랜잭션 안에서 이미 원자적으로 처리했다.
+    // 여기 남은 건 씨앗 오프닝 중복 방지 마킹뿐 — config 문서에 대한 부가 쓰기라
+    // 실패해도 제출 결과에 영향이 없다(fbCreateStory에서도 마킹하는 fallback 경로).
+    if (result.isFirstParticipation && result.step === 1) {
+      try {
+        const storySnap = await db.collection('stories').doc(result.story_id).get();
+        const storyData = storySnap.exists ? storySnap.data() : null;
+        if (storyData && storyData.is_ai_seed && storyData.opening) {
+          await db.collection('config').doc('used_openings').set({ [storyData.opening]: true }, { merge: true });
         }
-      }
-    } catch (e) { console.error('submit participant_count error:', e.message); }
+      } catch (e) { console.error('submit used_openings error:', e.message); }
+    }
 
     return { ok: true, sub_id: result.sub_id };
   });

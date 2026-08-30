@@ -1387,13 +1387,33 @@ exports.aiParticipate = functions
         const subsSnap = await db.collection('submissions')
           .where('episode_id', '==', episode_id).get();
         const subs = subsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        if (subs.length === 0) continue;
+        // 예전엔 제출이 하나도 없으면 여기서 이야기 처리 전체를 건너뛰었음 —
+        // 아래 투표 로직은 자체적으로 subs.length>=2 가드를 갖고 있어 문제
+        // 없었지만, 그보다 먼저 있는 이 전역 continue 때문에 막 열려서 아직
+        // 아무도 안 쓴 회차(결말고정/장르전환/동화각색 등)에서는 AI가 절대
+        // 첫 제출자가 될 수 없었음(유저 제보, 2026-08-30 — fixed_ending 슬롯이
+        // 8일간 제출 0건으로 방치됨). 아래 제출 로직은 subs가 빈 배열이어도
+        // 안전하게 동작하므로(aiSubs=[], aiSubs.length<3 통과) 제거함.
 
         const votesSnap = await db.collection('votes')
           .where('episode_id', '==', episode_id).get();
         const votes = votesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-        const lastSubAt = subs.reduce((m, s) => Math.max(m, new Date(s.created_at).getTime()), 0);
+        // 제출이 없을 땐 lastSubAt이 0이 되어 버려서, 아래 인터벌 체크
+        // (now - effectiveLastSubAt >= subIntervalMsJ)가 항상 참이 되어 회차가
+        // 열리자마자 다음 스케줄 틱(최대 30분)에 바로 AI가 써버리는 부작용이
+        // 있었음 — 회차가 열린 시각을 기준 삼아 기존과 동일한 지터 인터벌을
+        // 적용해 다른 회차와 같은 자연스러운 페이싱을 유지함. 에피소드 생성
+        // 경로는 항상 유효한 ISO 문자열을 쓰지만(1036/1262/1302행 등), 방어적으로
+        // created_at이 없거나(undefined→NaN) null(→1970년 epoch=0, 유효한
+        // 숫자라 NaN 체크만으론 못 거름)인 경우까지 같이 걸러 매 실행 now로
+        // 폴백함 — 그런 문서는 이 조건이 절대 안 지나가 AI 제출 대상에서
+        // 계속 제외되지만(자연 해소 아님), 현재 실제 에피소드 문서 중엔 해당
+        // 사례가 없음을 확인함(Codex final-review WARNING 대응).
+        const episodeCreatedAt = new Date(currentEp.created_at).getTime();
+        const lastSubAt = subs.length > 0
+          ? subs.reduce((m, s) => Math.max(m, new Date(s.created_at).getTime()), 0)
+          : (Number.isFinite(episodeCreatedAt) && episodeCreatedAt > 0 ? episodeCreatedAt : now);
 
         // 장르전환(genre_switch) 이야기는 매 단계 장르가 genre_sequence로 강제
         // 지정돼있음 — 제출/투표 둘 다 이 단계가 어떤 장르여야 하는지 알아야

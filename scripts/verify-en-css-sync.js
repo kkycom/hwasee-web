@@ -48,7 +48,8 @@ for (let i = 0; i < max; i++) {
 // 실제로 대조한 규칙 목록을 출력해 무엇을 검증했는지 남긴다.
 console.log('대조한 규칙 ' + (RULES.length + MEDIA_SNIPPETS.length) + '개:');
 console.log('  ' + RULES.join(', '));
-console.log('  (미디어쿼리) ' + MEDIA_SNIPPETS.join(' / '));
+console.log('  (스니펫) ' + MEDIA_SNIPPETS
+  .map(s => (s.query ? '@media ' + s.query + ' ' : '') + s.snippet).join(' / '));
 console.log('한국판 추출본 ' + b.length + '줄 vs ko-shared.css ' + a.length + '줄');
 
 if (diffs) {

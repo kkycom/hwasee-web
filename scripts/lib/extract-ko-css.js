@@ -65,12 +65,44 @@ const RULES = [
   '.toast.err',
   'h2',
   'hr',
+  // PC 세로 랭킹 위젯 — 영어판 포인트·업적 순위표가 한국판과 같은 디자인이어야 한다.
+  // ⚠️ `.pc-side-rank` 자체는 여기 넣지 않는다. 그 셀렉터는 한국판에 두 번
+  // 나오는데(기본 display:none + @media(min-width:1280px)의 display:block),
+  // cutRule은 감싼 미디어쿼리를 보존하지 않으므로 둘을 그냥 이어붙이면
+  // display:block이 조건 없이 이겨 **모바일에도 위젯이 뜬다**. 두 규칙은
+  // 아래 SNIPPETS에서 각자의 조건과 함께 가져온다.
+  '.pc-side-rank-card',
+  '.pc-side-rank-head',
+  '.pc-side-rank-title',
+  '.pc-side-rank-arrow',
+  '.pc-side-rank-arrow:hover',
+  '.pc-side-rank-dots',
+  '.pc-side-rank-dot',
+  '.pc-side-rank-dot.active',
+  '.lb-row',
+  '.lb-row:last-child',
+  '.lb-rank',
+  '.lb-rank.r1',
+  '.lb-rank.r2',
+  '.lb-rank.r3',
+  '.lb-name',
+  '.lb-value',
 ];
 
-// 미디어쿼리 안에 있어서 위 방식으로는 안 잡히는 것들 — 규칙 텍스트를 그대로 찾는다.
+// 규칙 텍스트를 그대로 찾아 옮기는 것들.
+// query가 있으면 그 미디어쿼리로 감싸고, null이면 최상위 규칙 그대로 둔다.
+// (예전에는 배열이 문자열이고 출력 시 max-width:480px로 하드코딩돼 있었는데,
+//  1280px 규칙이 생기면서 조건을 항목별로 들고 있어야 했다.)
 const MEDIA_SNIPPETS = [
-  '.tab { padding: 8px 4px; font-size: 11px; }',
-  '.nav-right { gap: 4px; }',
+  { query: '(max-width: 480px)', snippet: '.tab { padding: 8px 4px; font-size: 11px; }' },
+  { query: '(max-width: 480px)', snippet: '.nav-right { gap: 4px; }' },
+  // 위젯의 기본값(숨김)과 데스크톱 노출 조건을 반드시 **쌍으로** 가져온다.
+  // 한국판의 기존 제약을 그대로 유지하는 것이지 새로 만드는 제약이 아니다.
+  { query: null, snippet: '.pc-side-rank { display: none; }' },
+  {
+    query: '(min-width: 1280px)',
+    snippet: '.pc-side-rank { display: block; position: fixed; top: 132px; left: calc(50% - 384px - 200px); width: 200px; z-index: 5; }',
+  },
 ];
 
 function styleBlock(html) {
@@ -124,10 +156,12 @@ function extract() {
     if (!found.length) { missing.push(sel); continue; }
     parts.push(found.join('\n'));
   }
-  for (const snip of MEDIA_SNIPPETS) {
-    const idx = css.indexOf(snip);
-    if (idx === -1) { missing.push('(media) ' + snip); continue; }
-    parts.push('@media (max-width: 480px) {\n  ' + snip + '\n}');
+  for (const item of MEDIA_SNIPPETS) {
+    const idx = css.indexOf(item.snippet);
+    if (idx === -1) { missing.push('(snippet) ' + item.snippet); continue; }
+    parts.push(item.query
+      ? '@media ' + item.query + ' {\n  ' + item.snippet + '\n}'
+      : item.snippet);
   }
 
   return { css: parts.join('\n\n') + '\n', missing };

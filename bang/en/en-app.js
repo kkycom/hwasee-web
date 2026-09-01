@@ -290,7 +290,50 @@ async function renderCompleted() {
 }
 
 // ── 이야기 상세 ─────────────────────────────────────────────────────────
-let openState = { story: null, episode: null, subs: [], picked: new Set() };
+let openState = { story: null, episode: null, subs: [], picked: new Set(), openEps: [] };
+// 지금 읽고 있는 갈래(episode_id). 동률로 갈라진 이야기에서만 의미가 있다.
+let branchChoice = null;
+
+// 선택된 갈래에서 오프닝 쪽으로 parent_sub_id 체인을 거슬러 올라가 **그 갈래의
+// 문장만** 순서대로 복원한다.
+//
+// 왜 필요한가: 예전에는 닫힌 에피소드를 step 순으로 전부 이어 붙였는데, 동률
+// 분기가 생기면 같은 step에 닫힌 에피소드가 여러 개라 서로 다른 갈래의 문장이
+// 한 이야기처럼 섞여 보인다. 분기가 없는 이야기에서는 기존과 같은 결과가 된다.
+// episodes/subs는 조상 스토리까지 합친 그래프이고, startFrom은 시작점을 고를 때만
+// 쓰는 **이 스토리 자신의** 에피소드 목록이다(조상 쪽에서 시작점을 고르면 남의
+// 갈래를 보여주게 된다).
+function lineageSentences(episodes, subs, leafEp, startFrom) {
+  const epById = new Map(episodes.map(e => [e.episode_id, e]));
+  const subById = new Map(subs.map(s => [s.sub_id, s]));
+  const adoptedByEp = new Map();
+  subs.forEach(s => { if (s.is_adopted) adoptedByEp.set(s.episode_id, s); });
+
+  // 시작점: 열린 갈래가 있으면 그 부모 문장부터, 없으면(이미 완결) 가장 깊은
+  // 채택 문장부터 거슬러 올라간다.
+  let curSubId = null;
+  if (leafEp) curSubId = leafEp.parent_sub_id || null;
+  else {
+    let deepest = null;
+    (startFrom || episodes).forEach(e => {
+      if (e.status !== 'closed' || !adoptedByEp.has(e.episode_id)) return;
+      if (!deepest || Number(e.step) > Number(deepest.step)) deepest = e;
+    });
+    if (deepest) curSubId = (adoptedByEp.get(deepest.episode_id) || {}).sub_id || null;
+  }
+
+  const chain = [];
+  const seen = new Set();
+  while (curSubId && !seen.has(curSubId)) {
+    seen.add(curSubId);
+    const sub = subById.get(curSubId);
+    if (!sub) break;
+    chain.push(sub);
+    const ep = epById.get(sub.episode_id);
+    curSubId = ep ? (ep.parent_sub_id || null) : null;
+  }
+  return chain.reverse();
+}
 
 async function openStory(story_id) {
   app.innerHTML = skeletons(3);
@@ -305,20 +348,52 @@ async function openStory(story_id) {
     const subSnap = await db.collection('submissions_en').where('story_id', '==', story_id).get();
     const subs = subSnap.docs.map(d => ({ sub_id: d.id, ...d.data() }));
 
-    const closed = episodes.filter(e => e.status === 'closed').sort((a, b) => Number(a.step) - Number(b.step));
-    const openEp = episodes.find(e => e.status === 'open');
-    const adopted = closed.map(e => subs.find(s => s.episode_id === e.episode_id && s.is_adopted)).filter(Boolean);
+    // 분기로 갈라져 나온 이야기는 앞부분이 **부모 스토리에 남아 있다** — 스핀오프는
+    // 갈래 에피소드와 그 제출만 옮기고 조상은 원래 자리에 두기 때문이다. 조상까지
+    // 따라가지 않으면 계보가 첫 걸음에서 끊겨 오프닝만 남고 그동안 쌓인 문장이
+    // 통째로 사라져 보인다.
+    let ancestorEps = [], ancestorSubs = [];
+    const seenStories = new Set([story_id]);
+    let parentId = story.parent_story_id || null;
+    while (parentId && !seenStories.has(parentId) && seenStories.size < 8) {
+      seenStories.add(parentId);
+      const [pS, pE, pSub] = await Promise.all([
+        db.collection('stories_en').doc(parentId).get(),
+        db.collection('episodes_en').where('story_id', '==', parentId).get(),
+        db.collection('submissions_en').where('story_id', '==', parentId).get(),
+      ]);
+      ancestorEps = ancestorEps.concat(pE.docs.map(d => ({ episode_id: d.id, ...d.data() })));
+      ancestorSubs = ancestorSubs.concat(pSub.docs.map(d => ({ sub_id: d.id, ...d.data() })));
+      parentId = pS.exists ? (pS.data().parent_story_id || null) : null;
+    }
+
+    // 열린 갈래·후보는 **이 스토리의 것만** 쓴다(조상의 열린 갈래가 섞이면 안 된다).
+    // 순서를 episode_id로 고정해서 다시 그려도 갈래 번호가 뒤바뀌지 않게 한다.
+    const openEps = episodes.filter(e => e.status === 'open')
+      .sort((a, b) => String(a.episode_id).localeCompare(String(b.episode_id)));
+    const openEp = openEps.find(e => e.episode_id === branchChoice) || openEps[0] || null;
+
+    // 산문 계보만 조상까지 합친 그래프에서 복원한다.
+    const adopted = lineageSentences(
+      episodes.concat(ancestorEps), subs.concat(ancestorSubs), openEp, episodes);
     const candidates = openEp ? subs.filter(s => s.episode_id === openEp.episode_id && !s.is_adopted) : [];
 
-    openState = { story, episode: openEp, subs: candidates, picked: new Set() };
-    renderStory(story, adopted, openEp, candidates);
+    openState = { story, episode: openEp, subs: candidates, picked: new Set(), openEps };
+    renderStory(story, adopted, openEp, candidates, openEps);
   } catch (e) {
     app.innerHTML = '<div class="empty">Could not load this story.</div>';
   }
 }
 window.openStory = openStory;
 
-function renderStory(story, adopted, openEp, candidates) {
+// 갈래 선택 — 선택된 갈래가 곧 읽는 대상이자 투표·제출 대상이 된다.
+function pickBranch(episode_id) {
+  branchChoice = episode_id;
+  if (openState.story) openStory(openState.story.story_id);
+}
+window.pickBranch = pickBranch;
+
+function renderStory(story, adopted, openEp, candidates, openEps) {
   // 산문뷰는 한국판 .story-prose(줄무늬 종이 배경) + .prose-opening / .prose-line /
   // .prose-sentence 구조를 그대로 쓴다. 오프닝은 첫 줄로, 이어진 문장은 .prose-line으로.
   const lines = adopted.map(sub =>
@@ -366,13 +441,26 @@ function renderStory(story, adopted, openEp, candidates) {
       </div>
     </div>` : '';
 
+  // 동률로 갈라진 이야기 — 갈래를 고르면 그 갈래만 읽고, 그 갈래에 투표·제출한다.
+  // 고르지 못하면 만들어진 갈래가 화면에서 영영 닿을 수 없는 데이터가 된다.
+  const branches = (openEps && openEps.length > 1) ? `
+    <div class="source-note">
+      <strong>This story has branched.</strong>
+      The vote was tied, so it continues in ${openEps.length} directions.
+      Pick one to read and continue.
+      <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+        ${openEps.map((e, i) => `<button class="btn btn-sm ${e.episode_id === (openEp && openEp.episode_id) ? 'btn-primary' : 'btn-ghost'}"
+          onclick="pickBranch('${esc(e.episode_id)}')">Branch ${i + 1}</button>`).join('')}
+      </div>
+    </div>` : '';
+
   app.innerHTML = `
     <button class="btn-ghost" onclick="showTab('${currentTab}')" style="margin-bottom:16px">&larr; Back</button>
     <div class="story-card-footer" style="margin-bottom:14px">
       <span class="step-pill"><span class="step-dot"></span>Step ${story.current_step || 0}</span>
       <span class="story-meta-text">${adopted.length} sentences &middot; ${story.participant_count || 0} writers</span>
     </div>
-    ${fixedEnding}${genreNow}
+    ${fixedEnding}${genreNow}${branches}
     ${proseHtml}
     ${adSlotHtml('inline')}
     ${writePanel}${votePanel}`;
@@ -444,6 +532,60 @@ async function castVote() {
 }
 window.castVote = castVote;
 
+// ── PC 세로 랭킹 위젯 (포인트/채택 스와이프) ─────────────────────────────
+// 한국판 renderPcSideRank와 같은 동작이다. 데이터는 getLeaderboardEn Callable에서
+// 오고, 그 안의 순위·수치는 전부 user_stats_en(영어판 전용)에서만 나온다 —
+// 한국판 포인트와 절대 섞이지 않는다.
+let _lbData = null;
+let _pcRankTab = 0;
+
+function lbRowsHtml(rows, suffix) {
+  if (!rows.length) {
+    return '<div style="font-size:12px;color:var(--muted);padding:12px 0;text-align:center">No entries yet.</div>';
+  }
+  return rows.map((r, i) => `
+    <div class="lb-row">
+      <span class="lb-rank ${i === 0 ? 'r1' : i === 1 ? 'r2' : i === 2 ? 'r3' : ''}">${i + 1}</span>
+      <span class="lb-name">${esc(r.nickname)}</span>
+      <span class="lb-value">${r.value || 0}${suffix}</span>
+    </div>`).join('');
+}
+
+function renderPcSideRank() {
+  const body = document.getElementById('pc-side-rank-body');
+  if (!body) return;
+  const title = document.getElementById('pc-side-rank-title');
+  if (title) title.textContent = _pcRankTab === 0 ? 'Points' : 'Adoptions';
+  if (_lbData) {
+    const rows = (_pcRankTab === 0 ? (_lbData.points || []) : (_lbData.adoptions || [])).slice(0, 8);
+    body.innerHTML = lbRowsHtml(rows, _pcRankTab === 0 ? 'p' : '');
+  } else {
+    body.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:12px 0;text-align:center">Loading...</div>';
+  }
+  document.querySelectorAll('.pc-side-rank-dot')
+    .forEach((d, i) => d.classList.toggle('active', i === _pcRankTab));
+}
+
+function pcSideRankSwipe(dir) {
+  _pcRankTab = (_pcRankTab + dir + 2) % 2;
+  renderPcSideRank();
+}
+window.pcSideRankSwipe = pcSideRankSwipe;
+
+async function loadLeaderboard() {
+  // 위젯은 1280px 이상에서만 보이므로(한국판과 같은 제약), 보이지 않는 화면에서는
+  // 호출 자체를 하지 않는다 — 모바일 트래픽에서 불필요한 함수 호출 비용을 안 낸다.
+  const widget = document.getElementById('pc-side-rank');
+  if (!widget) return;
+  if (window.matchMedia && !window.matchMedia('(min-width: 1280px)').matches) return;
+  try {
+    const res = await call('getLeaderboardEn');
+    if (res && res.ok) _lbData = res;
+  } catch (e) { /* 랭킹 실패가 본문 렌더를 막지 않는다 */ }
+  if (!_lbData) { widget.remove(); return; }
+  renderPcSideRank();
+}
+
 // ── 부팅 ────────────────────────────────────────────────────────────────
 document.getElementById('acct-btn').addEventListener('click', () => {
   if (session.signedIn) toast(`Signed in as ${session.nickname || 'you'}`);
@@ -453,3 +595,4 @@ if (session.signedIn) {
   document.getElementById('acct-btn').textContent = session.nickname || 'Account';
 }
 showTab('today');
+loadLeaderboard();

@@ -209,8 +209,11 @@ console.log('[2-B] 마감 재개(idempotent)와 인덱스 정의');
     closeSrc.includes("closeResult !== 'closed' && closeResult !== 'resume'"));
   check('채택과 보상이 한 트랜잭션에서 처리된다(중간 실패로 보상 누락 없음)',
     closeSrc.includes('adopt_rewarded') && closeSrc.includes('is_adopted: true, adopt_rewarded: true'));
+  // 1.5단계에서 동률 분기가 들어오면서 ID가 승자별로 파생된다
+  // (episode_id + '__next__' + winnerId). 여전히 결정적이라 재실행·동시실행이
+  // 같은 문서를 쓴다는 성질은 그대로다.
   check('후속 생성물이 결정적 문서 ID를 쓴다(동시 실행에도 중복 없음)',
-    closeSrc.includes("episode_id + '__next'") && closeSrc.includes("episode_id + '__end'"));
+    closeSrc.includes("episode_id + '__next__'") && closeSrc.includes("episode_id + '__end__'"));
   const finalizedWrites = closeSrc.split('close_finalized: true').length - 1;
   check('완결·다음단계·재개 경로 모두 close_finalized:true를 기록', finalizedWrites >= 3, 'found ' + finalizedWrites);
 
@@ -253,7 +256,9 @@ console.log('');
 console.log('[2-C] 마감 경로 실행 — 재개·동시 호출 시 중복이 없는지');
 {
   const src3 = fs.readFileSync(path.join(__dirname, '..', 'functions', 'index.js'), 'utf8');
-  const closeSrc = src3.slice(src3.indexOf('async function _enCloseEpisode'),
+  // _enCloseEpisode는 1.5단계부터 스핀오프 헬퍼들과 함께 동작하므로 블록 전체를
+  // 떼어낸다(EN_VOTE_THRESHOLD부터 — 상수와 헬퍼가 그 안에 있다).
+  const closeSrc = src3.slice(src3.indexOf('const EN_VOTE_THRESHOLD'),
                               src3.indexOf('// 영어 에피소드 마감 — 클라이언트가'));
 
   const stubs = [
@@ -263,8 +268,14 @@ console.log('[2-C] 마감 경로 실행 — 재개·동시 호출 시 중복이 
     "  tx.set(db.collection(ledger).doc('L' + (db.__ledgerSeq++)), { user_id: uid, points: pts, reason });",
     "}",
     "async function _enRefillSlotOnComplete() { return null; }",
+    // 스핀오프가 분기 단계 표시 계산에 쓴다(에디션과 무관한 순수 함수).
+    "function _calcDisplayStepBackend(s, epStep) {",
+    "  if (s.branch_display_offset !== undefined && s.branch_display_offset !== null)",
+    "    return Number(s.branch_display_offset) + Number(epStep);",
+    "  if (s.branch_from_step) return (Number(s.branch_from_step) - 1) + Number(epStep);",
+    "  return Number(epStep) + 1;",
+    "}",
     "const FB_AI_ID = 'AI';",
-    "const EN_MAX_STEPS_DEFAULT = 10;",
   ].join('\n');
 
   const makeClose = new Function('db', 'episode_id', 'ep', '_EDITIONS',
@@ -275,18 +286,30 @@ console.log('[2-C] 마감 경로 실행 — 재개·동시 호출 시 중복이 
   function closeDb(seed) {
     const store = new Map(Object.entries(seed));
     const ver = new Map(); // 문서별 버전 — 트랜잭션 충돌 판정용
-    function qsnap(name) {
+    // 실제 Firestore처럼 where 필터를 적용하고 각 문서에 ref를 붙인다.
+    // (스핀오프가 조회 결과의 d.ref로 batch update를 걸기 때문에 둘 다 필요하다.
+    //  없으면 실제로는 나지 않는 오류가 테스트에서만 난다.)
+    function qsnap(name, filters) {
       const docs = [...store.entries()].filter(([k]) => k.startsWith(name + '/'))
-        .map(([k, v]) => ({ id: k.split('/')[1], data: () => v }));
+        .map(([k, v]) => ({ id: k.slice(name.length + 1), data: () => v, ref: { __col: name, __id: k.slice(name.length + 1) } }))
+        .filter(d => (filters || []).every(([f, v]) => d.data()[f] === v));
       return { docs, size: docs.length, empty: !docs.length };
     }
     const db = {
       __ledgerSeq: 1,
       __store: store,
       collection: (name) => {
+        const mk = (filters) => ({
+          __col: name, __filters: filters,
+          where: (f, op, v) => mk(filters.concat([[f, v]])),
+          orderBy: () => mk(filters), limit: () => mk(filters),
+          doc: (id) => chain.doc(id),
+          get: async () => qsnap(name, filters),
+        });
         const chain = {
-          __col: name,
-          where: () => chain, orderBy: () => chain, limit: () => chain,
+          __col: name, __filters: [],
+          where: (f, op, v) => mk([[f, v]]),
+          orderBy: () => chain, limit: () => chain,
           doc: (id) => {
             const ref = { __col: name, __id: id };
             const k = name + '/' + id;
@@ -302,7 +325,7 @@ console.log('[2-C] 마감 경로 실행 — 재개·동시 호출 시 중복이 
             };
             return ref;
           },
-          get: async () => qsnap(name),
+          get: async () => qsnap(name, chain.__filters),
         };
         return chain;
       },
@@ -315,7 +338,7 @@ console.log('[2-C] 마감 경로 실행 — 재개·동시 호출 시 중복이 
           const pending = [];
           const res = await fn({
             get: async (r) => {
-              if (!r.__id) return qsnap(r.__col);
+              if (!r.__id) return qsnap(r.__col, r.__filters);
               const k = r.__col + '/' + r.__id;
               readVers.set(k, ver.get(k) || 0);
               return { exists: store.has(k), data: () => store.get(k) };
@@ -422,7 +445,12 @@ console.log('[2-C] 마감 경로 실행 — 재개·동시 호출 시 중복이 
 
   {
     const seed = seedFor();
+    // 1.5단계부터 "이 에피소드가 스토리의 다음 정경 단계인가"를 검사하므로,
+    // 마지막 단계 마감을 재현하려면 에피소드 step도 current_step+1이어야 한다.
+    // (예전 시드는 current_step 9에 step 1짜리 에피소드였는데, 그건 실제로는
+    //  뒤늦게 마감된 버려진 갈래라서 이제 스핀오프로 분류된다 — 의도된 변화다.)
     seed['stories_en/st1'] = Object.assign({}, seed['stories_en/st1'], { current_step: 9, max_steps: 10 });
+    seed['episodes_en/ep1'] = Object.assign({}, seed['episodes_en/ep1'], { step: 10 });
     const db = closeDb(seed);
     const r = await makeClose(db, 'ep1', db.__store.get('episodes_en/ep1'), editions);
     check('최대 단계에 도달하면 완결된다', r === 'completed', String(r));

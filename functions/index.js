@@ -10078,10 +10078,18 @@ exports.getEnTranslationStatus = functions
 // 경로(동률 분기, 지나간 단계 스핀오프, 연장 이력 보정 등 사고 이력이 쌓인 곳)를
 // 지금 건드리는 위험이 중복 비용보다 크다고 판단했다.
 //
-// 대신 영어판에 필요한 것만 담은 별도 경로를 둔다. 한국판과 다른 점(1단계 한정):
-//   - 동률이어도 분기(fork)를 만들지 않고 가장 먼저 제출된 승자 하나만 채택한다.
-//   - 지나간 단계 스핀오프·연장 이력 보정을 하지 않는다(영어판엔 아직 그 기능이 없다).
+// 대신 영어판에 필요한 것만 담은 별도 경로를 둔다.
+//
+// 1.5단계에서 한국판의 **동률 분기와 스핀오프를 포팅**했다(아래 _enSpinOffOrphan).
+// 로직은 한국판 _serverSpinOffOrphan / _serverCloseEpisode를 그대로 옮기고 컬렉션만
+// EN 매핑으로 바꿨다. 다만 문서 ID 생성 방식은 한국판을 따르지 않는다 — 한국판은
+// 매번 랜덤 ID로 문서를 만드는데, 영어판 마감은 재개 가능(close_finalized)이라
+// 같은 마감이 두 번 실행될 수 있어 랜덤 ID를 쓰면 갈래나 스토리가 복제된다.
+// 그래서 **로직은 한국판, ID는 영어판의 결정적 규칙**이라는 조합을 쓴다.
+//
+// 아직 한국판과 다른 점:
 //   - 장르 확률 AI 분류를 호출하지 않는다(비용, 그리고 한국어 라벨 체계).
+//   - 연장(이야기 연장하기) 기능이 없어 그 이력 보정도 없다.
 // 이 차이는 사용자 보고에 명시했다.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -10089,19 +10097,231 @@ exports.getEnTranslationStatus = functions
 const EN_VOTE_THRESHOLD = 2;
 const EN_MAX_STEPS_DEFAULT = 10;
 
+// story_id에 속한 전체 에피소드/제출을 맵으로 만든다 — 스핀오프의 조상 체인
+// 추적에 필요하다(한국판 _serverBuildEpisodeMaps 포팅, 컬렉션만 EN).
+async function _enBuildEpisodeMaps(db, story_id) {
+  const EN = _EDITIONS.EN;
+  const [allEpsSnap, allSubsSnap] = await Promise.all([
+    db.collection(EN.episodes).where('story_id', '==', story_id).get(),
+    db.collection(EN.submissions).where('story_id', '==', story_id).get(),
+  ]);
+  const epById = new Map(allEpsSnap.docs.map(d => [d.id, { episode_id: d.id, ...d.data() }]));
+  const subsByEp = new Map();
+  allSubsSnap.docs.forEach(d => {
+    const s = { sub_id: d.id, ...d.data() };
+    if (!subsByEp.has(s.episode_id)) subsByEp.set(s.episode_id, []);
+    subsByEp.get(s.episode_id).push(s);
+  });
+  const subById = new Map(allSubsSnap.docs.map(d => [d.id, { sub_id: d.id, ...d.data() }]));
+  return { epById, subsByEp, subById };
+}
+
+// "버려진 갈래" 에피소드 하나를 독립 스토리로 분리한다.
+// 한국판 _serverSpinOffOrphan을 그대로 포팅했다. 두 시점에서 호출된다:
+//  1) 스토리가 완결될 때 아직 열려 있던 형제 갈래 정리 — resolvedWinners 없이.
+//  2) 형제 갈래가 완결 전에 먼저 자기 임계값을 채워 뒤늦게 마감된 경우 —
+//     그 갈래 자신의 마감 결과(winners/anyClose)를 resolvedWinners로 넘긴다.
+async function _enSpinOffOrphan(db, orphanEp, story, epById, subsByEp, subById, resolvedWinners) {
+  const EN = _EDITIONS.EN;
+  // 한국판은 랜덤 ID를 쓰지만, 영어판 마감은 재개 가능이라 같은 orphan에 대해
+  // 두 번 실행될 수 있다. ID를 orphan 에피소드에서 파생시켜 몇 번을 실행해도
+  // 스토리 하나로 수렴하게 한다.
+  const newStoryId = orphanEp.episode_id + '__spin';
+  const newStoryRef = db.collection(EN.stories).doc(newStoryId);
+
+  // orphan의 조상 체인을 거슬러 올라가며 두 지점을 구분해서 기록
+  let branch_episode_id = null, branch_sub_id = null;
+  let branch_leaf_episode_id = null, branch_leaf_sub_id = null;
+  let curSubId = orphanEp.parent_sub_id || null;
+  let isFirst = true;
+  while (curSubId) {
+    const curSub = subById.get(curSubId);
+    if (!curSub) break;
+    const curEp = epById.get(curSub.episode_id);
+    if (!curEp) break;
+    if (isFirst) {
+      branch_leaf_episode_id = curEp.episode_id;
+      branch_leaf_sub_id = curSubId;
+      isFirst = false;
+    }
+    const adoptedCount = (subsByEp.get(curEp.episode_id) || [])
+      .filter(s => s.is_adopted === true || s.is_adopted === 'TRUE').length;
+    if (adoptedCount > 1) { branch_episode_id = curEp.episode_id; branch_sub_id = curSubId; }
+    curSubId = curEp.parent_sub_id || null;
+  }
+
+  // 카드/산문뷰 단계 표시용 — 원본 기준으로 이어지는 단계 번호를 계산한다.
+  let branch_display_offset = null;
+  if (branch_leaf_episode_id) {
+    const leafEp = epById.get(branch_leaf_episode_id);
+    const leafDisplayStep = _calcDisplayStepBackend(story, Number(leafEp.step));
+    branch_display_offset = leafDisplayStep - Number(orphanEp.step) + 1;
+  }
+
+  const openSteps = {};
+  if (!resolvedWinners) {
+    openSteps[orphanEp.episode_id] = {
+      step: Number(orphanEp.step),
+      sub_count: (subsByEp.get(orphanEp.episode_id) || []).length,
+    };
+  }
+
+  // 재개로 두 번 들어와도 이미 만든 스토리를 덮어쓰지 않는다 — 그 사이 새 참여가
+  // 있었다면 participant_count 같은 누적값이 날아간다.
+  const existing = await newStoryRef.get();
+  const spinBatch = db.batch();
+  if (!existing.exists) {
+    spinBatch.set(newStoryRef, {
+      story_id: newStoryId, parent_story_id: orphanEp.story_id,
+      branch_from_step: Number(orphanEp.step) + 1,
+      branch_episode_id, branch_sub_id,
+      branch_leaf_episode_id, branch_leaf_sub_id,
+      branch_display_offset,
+      opening: story.opening, max_steps: story.max_steps || EN_MAX_STEPS_DEFAULT,
+      current_step: resolvedWinners ? Number(orphanEp.step) : Number(orphanEp.step) - 1,
+      status: (resolvedWinners && resolvedWinners.anyClose) ? 'completed' : 'active',
+      ...((resolvedWinners && resolvedWinners.anyClose) ? { completed_at: new Date().toISOString() } : {}),
+      creator_id: story.creator_id,
+      creator_nickname: story.creator_nickname || 'Anonymous',
+      creator_badge: story.creator_badge || '',
+      // 분기 시점의 참여자 수를 새로 세지 않고 부모의 누적값을 그대로 물려받는다.
+      // "분기 이후 새로 온 사람만" 세면 실제보다 훨씬 적게 표시된다(한국판에서
+      // 2026-07-08 유저 리포트로 확인된 실제 버그). 이후 새 작성자가 오면
+      // 제출 코어의 participant_count 증가로 계속 누적된다.
+      participant_count: Number(story.participant_count) || 0, like_count: 0, adoption_count: 0,
+      has_branch: false, created_at: new Date().toISOString(), batch: '',
+      // hot_score가 없는 문서는 목록 정렬 쿼리에서 아예 빠지므로 필수.
+      hot_score: 0,
+      edition: EN.edition,
+      open_steps: openSteps,
+      // 콘텐츠 모드 설정을 물려주지 않으면 분기된 스토리가 조용히 "그냥 자유
+      // 이야기"로 되돌아가 강제 결말·강제 장르 보장이 전부 풀린다(한국판에서
+      // 2026-07-30에 발견된 실제 버그). 원본에 있던 것만 그대로 이어받는다.
+      ...(story.mode ? { mode: story.mode } : {}),
+      ...(story.fixed_ending ? { fixed_ending: story.fixed_ending } : {}),
+      ...(story.genre_sequence ? { genre_sequence: story.genre_sequence } : {}),
+      ...(story.vote_threshold ? { vote_threshold: story.vote_threshold } : {}),
+      ...(story.challenge_words ? { challenge_words: story.challenge_words } : {}),
+      ...(story.is_ai_seed ? { is_ai_seed: story.is_ai_seed } : {}),
+    });
+  }
+  spinBatch.update(db.collection(EN.episodes).doc(orphanEp.episode_id), { story_id: newStoryId });
+  await spinBatch.commit();
+
+  // 이 에피소드에 달린 제출도 새 스토리로 옮긴다(재실행해도 같은 값이라 안전).
+  const subSnap = await db.collection(EN.submissions)
+    .where('episode_id', '==', orphanEp.episode_id).get();
+  if (!subSnap.empty) {
+    const subBatch = db.batch();
+    subSnap.docs.forEach(d => subBatch.update(d.ref, { story_id: newStoryId }));
+    await subBatch.commit();
+  }
+
+  // 2번 케이스면서 완결이 아니면 — 이미 결론난 이 갈래의 다음 단계를 새 스토리
+  // 밑에 만든다. ID는 결정적이라 재실행해도 중복 생성되지 않는다.
+  //
+  // ⚠️ 여기서도 정경 경로(TX-C)와 **같은 상한·강제 결말 규칙**을 적용한다.
+  // anyClose만 보고 무조건 다음 단계를 열면, 분리된 갈래만 max_steps를 넘겨 계속
+  // 진행되거나 결말 고정 이야기가 정해진 결말 없이 이어진다 — 콘텐츠 모드 설정을
+  // 물려받아도 그것이 실제로 발동하지 않으면 결국 "그냥 자유 이야기"가 되는 것과
+  // 같다(최종 재검토 지적).
+  if (resolvedWinners && !resolvedWinners.anyClose) {
+    // orphanEp.step은 이 갈래가 방금 끝낸 단계 — 정경 경로의 nextStep과 같은 값이다.
+    const stepDone = Number(orphanEp.step);
+    const maxSteps = Number(story.max_steps) || EN_MAX_STEPS_DEFAULT;
+    const isFixedEnd = story.mode === 'fixed_ending' && !!story.fixed_ending;
+    const now = new Date().toISOString();
+
+    if (isFixedEnd && stepDone + 1 >= maxSteps) {
+      // 결말 고정 — 정경 경로와 같이 각 갈래 끝에 정해둔 결말을 씌우고 완결한다.
+      const endBatch = db.batch();
+      resolvedWinners.winners.forEach(w => {
+        const endEpId = orphanEp.episode_id + '__spinend__' + w.id;
+        const endSubId = orphanEp.episode_id + '__spinendsub__' + w.id;
+        endBatch.set(db.collection(EN.episodes).doc(endEpId), {
+          episode_id: endEpId, story_id: newStoryId, step: stepDone + 1,
+          parent_sub_id: w.id, status: 'closed', vote_total: 0,
+          created_at: now, closed_at: now, pending_at: '', close_finalized: true,
+        });
+        endBatch.set(db.collection(EN.submissions).doc(endSubId), {
+          sub_id: endSubId, episode_id: endEpId, story_id: newStoryId,
+          content: story.fixed_ending, author_id: FB_AI_ID, author_nickname: 'Anonymous',
+          author_badge: '', derived_from: '', vote_count: 0,
+          is_adopted: true, adopt_rewarded: true,
+          created_at: now, content_updated_at: now, is_closing: true,
+        });
+      });
+      endBatch.update(newStoryRef, {
+        current_step: stepDone + 1, status: 'completed', completed_at: now,
+      });
+      await endBatch.commit();
+      return newStoryId;
+    }
+
+    if (stepDone >= maxSteps) {
+      // 최대 단계 도달 — 정경 경로와 같이 여기서 끝낸다.
+      await newStoryRef.update({ status: 'completed', completed_at: now });
+      return newStoryId;
+    }
+
+    // ⚠️ 이미 있는 다음 단계 문서를 덮어쓰지 않는다. 이 커밋 뒤 close_finalized를
+    // 남기기 전에 중단되면 재개가 다시 여기로 오는데, 그 사이 사람들이 그 단계에
+    // 제출·투표했을 수 있다. merge 없는 set은 vote_total·status·시각을 처음 값으로
+    // 되돌려 그 활동을 지운다(정경 경로는 다음 단계 생성과 close_finalized가 한
+    // 트랜잭션이라 이 중간 상태가 없다 — 스핀오프만 여러 커밋으로 나뉘어 있다).
+    const nextTargets = resolvedWinners.winners.map(w => ({
+      w, id: orphanEp.episode_id + '__spinnext__' + w.id,
+    }));
+    const existingNext = await Promise.all(
+      nextTargets.map(n => db.collection(EN.episodes).doc(n.id).get()));
+    const toCreate = nextTargets.filter((n, i) => !existingNext[i].exists);
+    if (toCreate.length) {
+      const nextEpBatch = db.batch();
+      const nextOpenSteps = {};
+      toCreate.forEach(n => {
+        nextEpBatch.set(db.collection(EN.episodes).doc(n.id), {
+          episode_id: n.id, story_id: newStoryId,
+          step: stepDone + 1, parent_sub_id: n.w.id,
+          status: 'open', vote_total: 0,
+          created_at: now, closed_at: '', pending_at: '',
+        });
+        nextOpenSteps['open_steps.' + n.id] = { step: stepDone + 1, sub_count: 0 };
+      });
+      await nextEpBatch.commit();
+      await newStoryRef.update(nextOpenSteps);
+    }
+  }
+  return newStoryId;
+}
+
+// 완결된 스토리에 아직 열려 있는 형제 갈래를 전부 독립 스토리로 분리한다.
+// 안 하면 부모가 completed로 바뀌면서 그 갈래가 투표를 못 받는 고아로 방치된다
+// (한국판에서 2026-07-29 유저 지적으로 고쳐진 지점).
+async function _enSpinOffRemainingOpen(db, story_id, story) {
+  const EN = _EDITIONS.EN;
+  const orphanSnap = await db.collection(EN.episodes)
+    .where('story_id', '==', story_id).where('status', '==', 'open').get();
+  if (orphanSnap.empty) return 0;
+  const { epById, subsByEp, subById } = await _enBuildEpisodeMaps(db, story_id);
+  let n = 0;
+  for (const d of orphanSnap.docs) {
+    await _enSpinOffOrphan(db, { episode_id: d.id, ...d.data() }, story, epById, subsByEp, subById, null);
+    n++;
+  }
+  return n;
+}
+
 async function _enCloseEpisode(db, episode_id, ep) {
   const EN = _EDITIONS.EN;
   const epRef = db.collection(EN.episodes).doc(episode_id);
-  const storyRef = db.collection(EN.stories).doc(ep.story_id);
 
   // 마감 선점과 임계값 재확인을 한 트랜잭션에 묶는다 — 확인 직후 표가 바뀌거나
   // 다른 요청이 동시에 마감을 시도하는 경우를 원자적으로 정리한다(한국판과 동일 원칙).
+  // ⚠️ 스토리 참조는 호출부가 넘긴 ep가 아니라 **방금 읽은 에피소드**의 story_id로
+  // 만든다. 스핀오프가 에피소드를 다른 스토리로 옮기므로, 오래된 스냅샷을 믿으면
+  // 이미 남의 것이 된 스토리를 고칠 수 있다.
   const closeResult = await db.runTransaction(async tx => {
-    const [snap, storySnap, subsSnap] = await Promise.all([
-      tx.get(epRef),
-      tx.get(storyRef),
-      tx.get(db.collection(EN.submissions).where('episode_id', '==', episode_id)),
-    ]);
+    const snap = await tx.get(epRef);
     if (!snap.exists) return 'already_closed';
     const epNow = snap.data();
     const stt = epNow.status;
@@ -10110,6 +10330,11 @@ async function _enCloseEpisode(db, episode_id, ep) {
     if (stt !== 'open' && stt !== 'pending') {
       return epNow.close_finalized === true ? 'already_closed' : 'resume';
     }
+    const storyRef = db.collection(EN.stories).doc(epNow.story_id);
+    const [storySnap, subsSnap] = await Promise.all([
+      tx.get(storyRef),
+      tx.get(db.collection(EN.submissions).where('episode_id', '==', episode_id)),
+    ]);
     if (!storySnap.exists) return 'already_closed';
 
     const story = storySnap.data();
@@ -10130,17 +10355,36 @@ async function _enCloseEpisode(db, episode_id, ep) {
   // 'resume'은 이전 실행이 선점만 하고 죽은 경우 — 후속 처리를 이어서 한다.
   if (closeResult !== 'closed' && closeResult !== 'resume') return closeResult;
 
+  // 재개 경로에서는 호출부가 넘긴 ep가 오래된 스냅샷일 수 있다(그 사이 스핀오프로
+  // story_id가 바뀌었을 수 있다). 최신 상태로 다시 읽어 그것만 신뢰한다.
+  const freshSnap = await epRef.get();
+  if (!freshSnap.exists) return 'already_closed';
+  const epNow = { episode_id, ...freshSnap.data() };
+
   const subsSnap = await db.collection(EN.submissions).where('episode_id', '==', episode_id).get();
   if (subsSnap.empty) return 'closed';
   const allSubs = subsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  // 승자 선정 — 동률이면 가장 먼저 제출된 것 하나. 영어판은 아직 분기를 만들지 않는다.
+  // 승자 선정 — 한국판 _serverCloseEpisode와 동일 로직이다.
+  // 표가 하나도 없으면(투표가 없는 speedrun 포함) 분기를 만들지 않고 사람 제출
+  // 우선으로 가장 먼저 제출된 하나만 채택한다. 실제 득표가 있을 때만 동률이
+  // 갈림길이 된다 — 그래서 speedrun에 별도 방어가 필요 없다.
   const maxVotes = Math.max(...allSubs.map(s => Number(s.vote_count) || 0));
-  const tied = maxVotes === 0 ? allSubs : allSubs.filter(s => (Number(s.vote_count) || 0) === maxVotes);
-  const winner = tied.slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0];
-  if (!winner) return 'closed';
+  let winners;
+  if (maxVotes === 0) {
+    const humanSubs = allSubs.filter(s => !s.is_ai);
+    const pool = humanSubs.length > 0 ? humanSubs : allSubs;
+    winners = [pool.slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0]];
+  } else {
+    const tied = allSubs.filter(s => (Number(s.vote_count) || 0) === maxVotes);
+    const humanTied = tied.filter(s => !s.is_ai);
+    winners = humanTied.length > 0 ? humanTied : tied;
+  }
+  winners = winners.filter(Boolean);
+  if (!winners.length) return 'closed';
 
-  const storySnap = await db.collection(EN.stories).doc(ep.story_id).get();
+  const storyRef = db.collection(EN.stories).doc(epNow.story_id);
+  const storySnap = await storyRef.get();
   if (!storySnap.exists) return 'closed';
   const st = storySnap.data();
   const isFixedEnding = st.mode === 'fixed_ending';
@@ -10150,95 +10394,159 @@ async function _enCloseEpisode(db, episode_id, ep) {
   // 실패하면 재개 시 '이미 채택됨'으로 보여 보상이 영구 누락됐고, 동시에 재개된
   // 두 호출이 각각 보상을 줄 수도 있었다(최종 검토 지적). 이제 adopt_rewarded
   // 플래그를 같은 트랜잭션에서 확인·설정해 정확히 한 번만 지급한다.
-  try {
-    await db.runTransaction(async tx => {
-      const wRef = db.collection(EN.submissions).doc(winner.id);
-      const wSnap = await tx.get(wRef);
-      if (!wSnap.exists) return;
-      const w = wSnap.data();
-      if (w.adopt_rewarded === true) return; // 이미 처리됨 — 재개·동시호출 모두 여기서 멈춘다
+  // 동률이면 winners가 여럿이다. adopt_rewarded 게이트는 **제출 문서별**이라
+  // 갈래가 몇 개든 작성자 1인당 정확히 한 번만 지급된다.
+  for (const winner of winners) {
+    try {
+      await db.runTransaction(async tx => {
+        const wRef = db.collection(EN.submissions).doc(winner.id);
+        const wSnap = await tx.get(wRef);
+        if (!wSnap.exists) return;
+        const w = wSnap.data();
+        if (w.adopt_rewarded === true) return; // 이미 처리됨 — 재개·동시호출 모두 여기서 멈춘다
 
-      const pays = _pointsApplicable(winner.author_id);
-      let statsSnap = null;
-      if (pays) statsSnap = await tx.get(db.collection(EN.userStats).doc(winner.author_id));
+        const pays = _pointsApplicable(winner.author_id);
+        let statsSnap = null;
+        if (pays) statsSnap = await tx.get(db.collection(EN.userStats).doc(winner.author_id));
 
-      tx.update(wRef, { is_adopted: true, adopt_rewarded: true });
-      if (pays) {
-        const d = (statsSnap && statsSnap.exists) ? statsSnap.data() : {};
-        tx.set(db.collection(EN.userStats).doc(winner.author_id), {
-          user_id: winner.author_id, edition: EN.edition,
-          adoption_count: (Number(d.adoption_count) || 0) + 1,
-          total_points: (Number(d.total_points) || 0) + 20,
-        }, { merge: true });
-        _txLedger(db, tx, winner.author_id, 20, 'adopted', winner.id, EN.pointLedger);
-      }
-    });
-  } catch (e) { console.error('[en] adopt/reward error:', e.message); }
+        tx.update(wRef, { is_adopted: true, adopt_rewarded: true });
+        if (pays) {
+          const d = (statsSnap && statsSnap.exists) ? statsSnap.data() : {};
+          tx.set(db.collection(EN.userStats).doc(winner.author_id), {
+            user_id: winner.author_id, edition: EN.edition,
+            adoption_count: (Number(d.adoption_count) || 0) + 1,
+            total_points: (Number(d.total_points) || 0) + 20,
+          }, { merge: true });
+          _txLedger(db, tx, winner.author_id, 20, 'adopted', winner.id, EN.pointLedger);
+        }
+      });
+    } catch (e) { console.error('[en] adopt/reward error:', e.message); }
+  }
 
-  const nextStep = (Number(st.current_step) || 0) + 1;
-  const maxSteps = Number(st.max_steps) || EN_MAX_STEPS_DEFAULT;
   // 결말이 정해진 이야기는 유저의 '완결' 선언으로 조기 종료할 수 없다 —
   // 마지막 단계에 미리 정해둔 문장을 주입하는 것이 유일한 완결 경로다.
-  const wantsClose = isFixedEnding ? false : winner.is_closing === true;
+  const anyClose = isFixedEnding ? false : winners.some(w => w.is_closing === true);
 
-  // ── 이후 생성물은 전부 **결정적 문서 ID**를 쓴다 ────────────────────────
-  // 동시에 재개된 두 호출이나 재시도가 각각 새 ID로 문서를 만들면 다음 단계가
-  // 두 개 생기거나 결말이 중복 주입된다. ID를 마감 대상 에피소드에서 파생시키면
-  // 몇 번을 실행해도 같은 문서에 같은 내용이 쓰여 결과가 하나로 수렴한다.
-  // current_step·status도 절대값으로 설정해 멱등하다.
-  const nextEpId = episode_id + '__next';
-  const endEpId = episode_id + '__end';
-  const endSubId = episode_id + '__endsub';
+  // ── TX-C: 정경 판정 + 스토리 진행을 **한 트랜잭션**으로 ─────────────────
+  // 동률로 갈린 형제 갈래 둘이 동시에 마감되면, 판정이 트랜잭션 밖에 있을 때
+  // 둘 다 자기를 "다음 정경 단계"로 보고 스토리를 두 번 진행시킬 수 있다
+  // (설계 검토 BLOCKER). storyRef를 이 트랜잭션 안에서 읽고 쓰므로 Firestore가
+  // 둘을 직렬화하고, 진 쪽은 재시도에서 갱신된 current_step을 보고 반드시
+  // orphan 경로로 빠진다. 결정적 문서 ID는 같은 에피소드의 중복 쓰기만 막을 뿐
+  // 서로 다른 형제를 직렬화하지는 못하므로 이 트랜잭션이 필요하다.
+  //
+  // 생성물이 전부 결정적 ID(마감 대상 에피소드 + 승자에서 파생)인 것은 그대로
+  // 유지한다 — 재개·재시도가 같은 문서에 같은 내용을 써서 하나로 수렴한다.
+  const outcome = await db.runTransaction(async tx => {
+    const [epSnap2, stSnap2] = await Promise.all([tx.get(epRef), tx.get(storyRef)]);
+    if (!epSnap2.exists || !stSnap2.exists) return 'done';
+    // 앞선 실행이 이미 후속 처리를 끝냈으면 아무것도 다시 하지 않는다.
+    if (epSnap2.data().close_finalized === true) return 'done';
 
-  // 결말 고정: 마지막 직전 단계에 도달하면 정해진 결말을 채택 문장으로 주입하고 완결.
-  if (isFixedEnding && nextStep + 1 >= maxSteps && st.fixed_ending) {
+    const st2 = stSnap2.data();
+    const cur = Number(st2.current_step) || 0;
+    const myStep = Number(epSnap2.data().step);
+
+    // 이 에피소드가 스토리의 다음 정경 단계가 아니면 — 동률로 갈린 뒤 형제가
+    // 먼저 진행시켜 놓은 상태에서 뒤늦게 마감된 버려진 갈래다. 원 스토리는
+    // 전혀 건드리지 않고 독립 스토리로 분리한다(한국판 2026-07-19 수정).
+    if (myStep !== cur + 1) return 'orphan';
+
+    const nextStep = cur + 1;
+    const maxSteps = Number(st2.max_steps) || EN_MAX_STEPS_DEFAULT;
     const now = new Date().toISOString();
-    const batch = db.batch();
-    batch.set(db.collection(EN.episodes).doc(endEpId), {
-      episode_id: endEpId, story_id: ep.story_id, step: nextStep + 1, parent_sub_id: winner.id,
-      status: 'closed', vote_total: 0, created_at: now, closed_at: now, pending_at: '',
-      close_finalized: true,
-    });
-    batch.set(db.collection(EN.submissions).doc(endSubId), {
-      sub_id: endSubId, episode_id: endEpId, story_id: ep.story_id,
-      content: st.fixed_ending, author_id: FB_AI_ID, author_nickname: 'Anonymous',
-      author_badge: '', derived_from: '', vote_count: 0, is_adopted: true, adopt_rewarded: true,
-      created_at: now, content_updated_at: now, is_closing: true,
-    });
-    batch.update(db.collection(EN.stories).doc(ep.story_id), {
-      current_step: nextStep + 1, status: 'completed', completed_at: now,
-    });
-    batch.update(db.collection(EN.episodes).doc(episode_id), { close_finalized: true });
-    await batch.commit();
-    await _enRefillSlotOnComplete(db, ep.story_id).catch(e => console.error('[en] refill error:', e.message));
-    return 'completed';
-  }
 
-  // 완결 조건: 참여자가 완결을 선언했거나 최대 단계에 도달.
-  if (wantsClose || nextStep >= maxSteps) {
-    const doneBatch = db.batch();
-    doneBatch.update(db.collection(EN.stories).doc(ep.story_id), {
-      current_step: nextStep, status: 'completed', completed_at: new Date().toISOString(),
-    });
-    doneBatch.update(db.collection(EN.episodes).doc(episode_id), { close_finalized: true });
-    await doneBatch.commit();
-    await _enRefillSlotOnComplete(db, ep.story_id).catch(e => console.error('[en] refill error:', e.message));
-    return 'completed';
-  }
+    // 결말 고정: 마지막 직전 단계면 미리 정해둔 결말을 채택 문장으로 주입하고 완결.
+    // 갈래가 여럿이면 갈래를 버리지 않고 각 끝에 같은 결말을 캡으로 씌운다.
+    if (isFixedEnding && nextStep + 1 >= maxSteps && st2.fixed_ending) {
+      winners.forEach(w => {
+        const endEpId = episode_id + '__end__' + w.id;
+        const endSubId = episode_id + '__endsub__' + w.id;
+        tx.set(db.collection(EN.episodes).doc(endEpId), {
+          episode_id: endEpId, story_id: epNow.story_id, step: nextStep + 1,
+          parent_sub_id: w.id, status: 'closed', vote_total: 0,
+          created_at: now, closed_at: now, pending_at: '', close_finalized: true,
+        });
+        tx.set(db.collection(EN.submissions).doc(endSubId), {
+          sub_id: endSubId, episode_id: endEpId, story_id: epNow.story_id,
+          content: st2.fixed_ending, author_id: FB_AI_ID, author_nickname: 'Anonymous',
+          author_badge: '', derived_from: '', vote_count: 0,
+          is_adopted: true, adopt_rewarded: true,
+          created_at: now, content_updated_at: now, is_closing: true,
+        });
+      });
+      tx.update(storyRef, {
+        current_step: nextStep + 1, status: 'completed', completed_at: now,
+        ...(winners.length > 1 ? { has_branch: true } : {}),
+      });
+      tx.update(epRef, { close_finalized: true });
+      return 'completed';
+    }
 
-  // 다음 단계 열기 — 결정적 ID라 재실행·동시실행이 같은 문서를 쓴다(중복 생성 없음).
-  const now = new Date().toISOString();
-  const batch = db.batch();
-  batch.set(db.collection(EN.episodes).doc(nextEpId), {
-    episode_id: nextEpId, story_id: ep.story_id, step: nextStep + 1, parent_sub_id: winner.id,
-    status: 'open', vote_total: 0, created_at: now, closed_at: '', pending_at: '',
-  }, { merge: true });
-  batch.update(db.collection(EN.stories).doc(ep.story_id), {
-    current_step: nextStep,
-    ['open_steps.' + nextEpId]: { step: nextStep + 1, sub_count: 0 },
+    // 완결: 참여자가 완결을 선언했거나 최대 단계에 도달.
+    if (anyClose || nextStep >= maxSteps) {
+      const storyUpdate = { current_step: nextStep, status: 'completed', completed_at: now };
+      if (winners.length > 1) storyUpdate.has_branch = true;
+      // 동률 중 일부만 완결을 골랐다면 완결이 아닌 갈래가 묻히면 안 된다 — 새
+      // 열린 에피소드를 만들어 두면 아래 정리가 독립 스토리로 분리해 준다
+      // (한국판과 동일). 최대 단계 도달로 인한 강제 완결은 모든 갈래가 같이
+      // 끝나는 것이므로 새로 열지 않는다.
+      if (anyClose) {
+        winners.filter(w => w.is_closing !== true).forEach(w => {
+          const newEpId = episode_id + '__next__' + w.id;
+          tx.set(db.collection(EN.episodes).doc(newEpId), {
+            episode_id: newEpId, story_id: epNow.story_id, step: nextStep + 1,
+            parent_sub_id: w.id, status: 'open', vote_total: 0,
+            created_at: now, closed_at: '', pending_at: '',
+          });
+        });
+      }
+      tx.update(storyRef, storyUpdate);
+      tx.update(epRef, { close_finalized: true });
+      return 'completed';
+    }
+
+    // 정경 진행 — winners 수만큼 다음 단계를 연다(동률이면 여기서 갈림길이 생긴다).
+    // 새 단계는 vote_total 0에서 시작하므로 hot_score도 0으로 리셋한다(안 하면
+    // 이전 단계의 표가 남아 목록 정렬이 실제 활성도와 어긋난다).
+    const storyUpdate = { current_step: nextStep, hot_score: 0 };
+    if (winners.length > 1) storyUpdate.has_branch = true;
+    winners.forEach(w => {
+      const newEpId = episode_id + '__next__' + w.id;
+      tx.set(db.collection(EN.episodes).doc(newEpId), {
+        episode_id: newEpId, story_id: epNow.story_id, step: nextStep + 1,
+        parent_sub_id: w.id, status: 'open', vote_total: 0,
+        created_at: now, closed_at: '', pending_at: '',
+      });
+      storyUpdate['open_steps.' + newEpId] = { step: nextStep + 1, sub_count: 0 };
+    });
+    tx.update(storyRef, storyUpdate);
+    tx.update(epRef, { close_finalized: true });
+    return 'advanced';
   });
-  batch.update(db.collection(EN.episodes).doc(episode_id), { close_finalized: true });
-  await batch.commit();
+
+  if (outcome === 'done') return 'closed';
+
+  if (outcome === 'orphan') {
+    const { epById, subsByEp, subById } = await _enBuildEpisodeMaps(db, epNow.story_id);
+    await _enSpinOffOrphan(db, epNow, st, epById, subsByEp, subById, { winners, anyClose });
+    // ⚠️ 스핀오프 뒤에는 반드시 close_finalized를 남긴다. 안 남기면 다음 호출이
+    // 'resume'으로 다시 들어오는데, 그때 이 에피소드는 이미 **분리된 새 스토리**에
+    // 속해 있어 정경 판정이 또 어긋나고 스핀오프가 무한히 반복된다. 한국판에는
+    // 재개 개념이 없어 존재하지 않는 경로다.
+    await epRef.update({ close_finalized: true });
+    console.log(`[en] ${episode_id}: 이미 지나간 단계라 독립 스토리로 분리함`);
+    return 'spun_off';
+  }
+
+  if (outcome === 'completed') {
+    // 완결 시점에 아직 열려 있던 형제 갈래를 독립 스토리로 분리한다.
+    try { await _enSpinOffRemainingOpen(db, epNow.story_id, st); }
+    catch (e) { console.error('[en] spin-off remaining error:', e.message); }
+    await _enRefillSlotOnComplete(db, epNow.story_id).catch(e => console.error('[en] refill error:', e.message));
+    return 'completed';
+  }
+
   return 'closed';
 }
 
@@ -10258,6 +10566,64 @@ exports.closeEpisodeEn = functions
     const result = await _enCloseEpisode(db, episode_id, epSnap.data());
     if (result === 'below_threshold') return { ok: false, error: 'Not enough votes yet.' };
     return { ok: true, result };
+  });
+
+// 영어 포인트·채택 랭킹.
+//
+// 왜 한국판 fbGetLeaderboard처럼 클라이언트가 직접 읽지 않나: firestore.rules가
+// user_stats_en을 `allow read: if false`로 막고 있다. 포인트 장부·통계는 사용자별
+// 활동 이력이라 전 세계 공개 읽기로 두면 누가 무엇을 언제 했는지 그대로 드러나기
+// 때문에 이전 최종 검토에서 막은 것이다. 그 결정을 되돌리지 않고, 순위표에 필요한
+// 필드만 이 Callable이 돌려준다(rules 주석이 예고한 방식 그대로).
+//
+// ⚠️ 순위와 수치는 **오직 user_stats_en**에서 나온다. 한국판 users 문서의
+// total_points/adoption_count는 읽지 않는다 — 포인트·업적은 에디션별로 완전히
+// 분리한다는 결정 때문이다. users에서 가져오는 것은 표시용 닉네임·배지뿐이고,
+// 그것은 editions.js가 SHARED로 선언한 공용 신원 정보다.
+exports.getLeaderboardEn = functions
+  .region('asia-northeast3')
+  .https.onCall(async () => {
+    const db = admin.firestore();
+    const EN = _EDITIONS.EN;
+
+    // limit(12): 관리자와 AI 계정이 둘 다 상위에 있어도 사람 10명이 남도록
+    // 넉넉히 가져온 뒤 걸러낸다(11이면 최악의 경우 9명만 남는다).
+    const [ptsSnap, adpSnap] = await Promise.all([
+      db.collection(EN.userStats).orderBy('total_points', 'desc').limit(12).get(),
+      db.collection(EN.userStats).orderBy('adoption_count', 'desc').limit(12).get(),
+    ]);
+
+    const pick = (snap, field) => snap.docs
+      .filter(d => d.id !== FB_ADMIN_ID && d.id !== FB_AI_ID && (Number(d.data()[field]) || 0) > 0)
+      .slice(0, 10)
+      .map(d => ({ user_id: d.id, value: Number(d.data()[field]) || 0 }));
+
+    const points = pick(ptsSnap, 'total_points');
+    const adoptions = pick(adpSnap, 'adoption_count');
+
+    // 표시용 이름·배지만 공용 users에서 채운다(상위 20건 이하의 개별 조회).
+    const ids = [...new Set([...points, ...adoptions].map(r => r.user_id))];
+    const nameMap = {};
+    if (ids.length) {
+      const uSnaps = await Promise.all(
+        ids.map(id => db.collection(_EDITIONS.SHARED.users).doc(id).get().catch(() => null)));
+      uSnaps.forEach(s => {
+        if (!s || !s.exists) return;
+        const u = s.data() || {};
+        nameMap[s.id] = {
+          nickname: u.display_name || u.nickname || 'Anonymous',
+          badge: u.badge || '',
+        };
+      });
+    }
+    const fill = rows => rows.map(r => ({
+      user_id: r.user_id,
+      value: r.value,
+      nickname: (nameMap[r.user_id] && nameMap[r.user_id].nickname) || 'Anonymous',
+      badge: (nameMap[r.user_id] && nameMap[r.user_id].badge) || '',
+    }));
+
+    return { ok: true, points: fill(points), adoptions: fill(adoptions) };
   });
 
 // 영어 자유 이야기 시작 — 화면의 "anyone can start"를 실제로 가능하게 하는 경로.

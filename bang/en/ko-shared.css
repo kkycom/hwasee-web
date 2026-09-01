@@ -197,10 +197,48 @@
 
   hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 
+  .pc-side-rank-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 14px; }
+
+  .pc-side-rank-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+
+  .pc-side-rank-title { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .5px; }
+
+  .pc-side-rank-arrow { background: none; border: 1px solid var(--border); border-radius: 6px; width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); padding: 0; font-size: 13px; line-height: 1; }
+
+  .pc-side-rank-arrow:hover { color: var(--text); border-color: var(--muted); }
+
+  .pc-side-rank-dots { display: flex; gap: 4px; justify-content: center; margin-top: 10px; }
+
+  .pc-side-rank-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--border); }
+
+  .pc-side-rank-dot.active { background: var(--accent2); }
+
+  .lb-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+
+  .lb-row:last-child { border-bottom: none; }
+
+  .lb-rank { font-size: 12px; font-weight: 800; color: var(--muted); width: 16px; text-align: center; flex-shrink: 0; }
+
+  .lb-rank.r1 { color: #ffd700; }
+
+  .lb-rank.r2 { color: #b0b0b8; }
+
+  .lb-rank.r3 { color: #cd7f32; }
+
+  .lb-name { font-size: 12px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .lb-value { font-size: 11px; color: var(--text); font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+
 @media (max-width: 480px) {
   .tab { padding: 8px 4px; font-size: 11px; }
 }
 
 @media (max-width: 480px) {
   .nav-right { gap: 4px; }
+}
+
+.pc-side-rank { display: none; }
+
+@media (min-width: 1280px) {
+  .pc-side-rank { display: block; position: fixed; top: 132px; left: calc(50% - 384px - 200px); width: 200px; z-index: 5; }
 }

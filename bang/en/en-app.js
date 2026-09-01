@@ -281,7 +281,9 @@ async function renderCompleted() {
       <button class="story-card" onclick="openStory('${esc(s.story_id)}')">
         <div class="story-card-title">${esc(s.opening)}</div>
         <div class="story-card-footer">
-          <span class="story-meta-text">${s.participant_count || 0} writers</span>
+          <span class="story-meta-text">${s.participant_count || 0} writers${
+            s.parent_story_id ? (s.is_end_branch ? ' &middot; an alternate ending' : ' &middot; a branch') : ''
+          }</span>
         </div>
       </button>`).join('')}` : '';
 
@@ -303,16 +305,30 @@ let branchChoice = null;
 // episodes/subs는 조상 스토리까지 합친 그래프이고, startFrom은 시작점을 고를 때만
 // 쓰는 **이 스토리 자신의** 에피소드 목록이다(조상 쪽에서 시작점을 고르면 남의
 // 갈래를 보여주게 된다).
-function lineageSentences(episodes, subs, leafEp, startFrom) {
+function lineageSentences(episodes, subs, leafEp, startFrom, startSubId) {
   const epById = new Map(episodes.map(e => [e.episode_id, e]));
   const subById = new Map(subs.map(s => [s.sub_id, s]));
+  // 같은 에피소드에 채택 문장이 여럿일 수 있다(동률). 조회 순서에 따라 대표가
+  // 달라지면 안 되므로 서버 _enOrderWinners와 같은 기준(created_at → id)으로
+  // 첫 번째를 고른다. 대표 결말이 서버에 기록돼 있으면 아래에서 그 값이 우선한다.
   const adoptedByEp = new Map();
-  subs.forEach(s => { if (s.is_adopted) adoptedByEp.set(s.episode_id, s); });
+  const earlier = (a, b) => {
+    const t = new Date(a.created_at) - new Date(b.created_at);
+    if (t) return t < 0;
+    return String(a.sub_id).localeCompare(String(b.sub_id)) < 0;
+  };
+  subs.forEach(s => {
+    if (!s.is_adopted) return;
+    const prev = adoptedByEp.get(s.episode_id);
+    if (!prev || earlier(s, prev)) adoptedByEp.set(s.episode_id, s);
+  });
 
-  // 시작점: 열린 갈래가 있으면 그 부모 문장부터, 없으면(이미 완결) 가장 깊은
-  // 채택 문장부터 거슬러 올라간다.
+  // 시작점: 완결 갈래는 자기 마지막 문장이 명시돼 있으면 그 문장까지 포함해서,
+  // 열린 갈래가 있으면 그 부모 문장부터, 둘 다 없으면 가장 깊은 채택 문장부터
+  // 거슬러 올라간다.
   let curSubId = null;
-  if (leafEp) curSubId = leafEp.parent_sub_id || null;
+  if (startSubId) curSubId = startSubId;
+  else if (leafEp) curSubId = leafEp.parent_sub_id || null;
   else {
     let deepest = null;
     (startFrom || episodes).forEach(e => {
@@ -373,9 +389,20 @@ async function openStory(story_id) {
       .sort((a, b) => String(a.episode_id).localeCompare(String(b.episode_id)));
     const openEp = openEps.find(e => e.episode_id === branchChoice) || openEps[0] || null;
 
+    // 완결 시점 동률로 갈라진 결말은 자기 에피소드 없이 부모의 마지막 문장을
+    // 가리키는 완결작이다(is_end_branch). 그 문장을 시작점으로 줘야 그 결말로
+    // 끝나는 계보가 정확히 복원된다.
+    // 완결 갈래는 자기 마지막 문장을, 원작 완결본은 **서버가 못박은 대표 결말**을
+    // 시작점으로 쓴다. 원작이 대표를 스스로 고르면 이미 독립 완결작이 있는 결말을
+    // 중복해서 보여주고 본 줄기 결말은 아무 데서도 못 읽게 된다(최종 검토 지적).
+    // 예전에 완결된 이야기에는 이 필드가 없으므로 기존 폴백이 그대로 쓰인다.
+    const endLeafSubId = (story.is_end_branch && story.branch_leaf_sub_id)
+      ? story.branch_leaf_sub_id
+      : (story.canonical_ending_sub_id || null);
+
     // 산문 계보만 조상까지 합친 그래프에서 복원한다.
     const adopted = lineageSentences(
-      episodes.concat(ancestorEps), subs.concat(ancestorSubs), openEp, episodes);
+      episodes.concat(ancestorEps), subs.concat(ancestorSubs), openEp, episodes, endLeafSubId);
     const candidates = openEp ? subs.filter(s => s.episode_id === openEp.episode_id && !s.is_adopted) : [];
 
     openState = { story, episode: openEp, subs: candidates, picked: new Set(), openEps };
@@ -454,13 +481,24 @@ function renderStory(story, adopted, openEp, candidates, openEps) {
       </div>
     </div>` : '';
 
+  // 갈라져 나온 이야기는 원작과의 관계를 화면에서도 확인할 수 있어야 한다
+  // (데이터의 parent_story_id/branch_* 와 같은 사실을 사람이 읽는 형태로).
+  const origin = story.parent_story_id ? `
+    <div class="source-note">
+      <strong>${story.is_end_branch ? 'One of several endings.' : 'A branch of another story.'}</strong>
+      The vote was tied, so the story split here and this path became its own.
+      <div style="margin-top:8px">
+        <button class="btn btn-ghost btn-sm" onclick="openStory('${esc(story.parent_story_id)}')">Read the original</button>
+      </div>
+    </div>` : '';
+
   app.innerHTML = `
     <button class="btn-ghost" onclick="showTab('${currentTab}')" style="margin-bottom:16px">&larr; Back</button>
     <div class="story-card-footer" style="margin-bottom:14px">
       <span class="step-pill"><span class="step-dot"></span>Step ${story.current_step || 0}</span>
       <span class="story-meta-text">${adopted.length} sentences &middot; ${story.participant_count || 0} writers</span>
     </div>
-    ${fixedEnding}${genreNow}${branches}
+    ${origin}${fixedEnding}${genreNow}${branches}
     ${proseHtml}
     ${adSlotHtml('inline')}
     ${writePanel}${votePanel}`;

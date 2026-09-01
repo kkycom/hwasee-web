@@ -69,7 +69,15 @@ function makeDb(seed) {
       __col: col, __id: id, __key: k,
       get: async () => ({ exists: store.has(k), id, data: () => store.get(k) }),
       set: async (val, opt) => applyVal(k, val, !!(opt && opt.merge)),
-      update: async (val) => { if (store.has(k)) applyVal(k, val, true); },
+      // __failUpdateMatching을 두면 그 접두사로 시작하는 필드를 쓰는 ref.update만
+      // 실패한다 — batch 커밋과 그 뒤 update 사이의 좁은 구간을 정확히 재현한다.
+      update: async (val) => {
+        if (api.__failUpdateMatching
+            && Object.keys(val).some(f => f.indexOf(api.__failUpdateMatching) === 0)) {
+          throw new Error('injected crash: update failed');
+        }
+        if (store.has(k)) applyVal(k, val, true);
+      },
     };
   };
 
@@ -120,7 +128,7 @@ function makeDb(seed) {
 
   // db.__failBatchAfter를 N으로 두면 N번째 커밋까지만 성공하고 그 다음 커밋에서
   // 예외를 던진다 — 여러 커밋에 걸친 스핀오프가 중간에 끊기는 상황을 실제로 재현한다.
-  const api = { __batchCommits: 0, __failBatchAfter: 0 };
+  const api = { __batchCommits: 0, __failBatchAfter: 0, __failUpdateMatching: null, __failTxCommit: false };
   const batch = () => {
     const ops = [];
     return {
@@ -158,6 +166,9 @@ function makeDb(seed) {
       let conflict = false;
       for (const [k, v] of reads) if (verOf(k) !== v) { conflict = true; break; }
       if (conflict) continue; // 다른 트랜잭션이 먼저 썼다 — 재시도
+      // __failTxCommit이면 커밋 직전에 끊는다. 트랜잭션은 all-or-nothing이라
+      // 버퍼된 쓰기를 하나도 적용하지 않아야 한다(부분 상태 없음).
+      if (api.__failTxCommit) throw new Error('injected crash: transaction commit failed');
       writes.forEach(f => f());
       return result;
     }
@@ -564,6 +575,226 @@ async function main() {
       [...db.__store.keys()].filter(k => k.includes('__spinnext__')).length === 1);
     check('재개 후 마감 완료 표시가 남는다',
       db.__store.get('episodes_en/epL').close_finalized === true);
+  }
+
+  // ── 8e. 에피소드 생성과 open_steps 기록 사이의 중단 (최종 재검토 BLOCKER) ─
+  // 두 작업이 별도 커밋이라, 그 사이에 끊기면 재개 시 에피소드는 이미 있어서
+  // 건너뛰고 open_steps만 영구 누락될 수 있었다. 실패를 그 구간에 직접 주입한다.
+  console.log('\n[8e] 다음 단계 생성 후 open_steps 기록 전 중단돼도 재개가 복구한다');
+  {
+    const db = makeDb(lateSeed({ max_steps: 10 }, 3));
+    const en = loadEn(db);
+    db.__failUpdateMatching = 'open_steps.';
+    let crashed = false;
+    try { await en._enCloseEpisode(db, 'epL', db.__store.get('episodes_en/epL')); }
+    catch (e) { crashed = true; }
+    check('open_steps 기록 구간에서 중단이 재현된다', crashed);
+
+    const nextKey = [...db.__store.keys()].find(k => k.indexOf('__spinnext__') !== -1);
+    check('중단 전에 다음 단계 에피소드는 만들어졌다', !!nextKey, String(nextKey));
+    const spinBefore = db.__store.get('stories_en/epL__spin');
+    check('중단 시점에 open_steps가 비어 있다',
+      !spinBefore.open_steps || Object.keys(spinBefore.open_steps).length === 0,
+      JSON.stringify(spinBefore.open_steps));
+    check('중단 시점에 마감 완료 표시가 없다',
+      db.__store.get('episodes_en/epL').close_finalized !== true);
+
+    // 재개
+    db.__failUpdateMatching = null;
+    const nextId = nextKey.slice('episodes_en/'.length);
+    await en._enCloseEpisode(db, 'epL', db.__store.get('episodes_en/epL'));
+    const spinAfter = db.__store.get('stories_en/epL__spin');
+    check('재개가 누락된 open_steps를 복구한다',
+      !!(spinAfter.open_steps && spinAfter.open_steps[nextId]),
+      JSON.stringify(spinAfter.open_steps));
+    check('복구된 항목의 단계 번호가 맞다',
+      spinAfter.open_steps && spinAfter.open_steps[nextId]
+      && Number(spinAfter.open_steps[nextId].step) === 4,
+      JSON.stringify(spinAfter.open_steps && spinAfter.open_steps[nextId]));
+    check('재개가 에피소드를 중복 생성하지 않는다',
+      [...db.__store.keys()].filter(k => k.indexOf('__spinnext__') !== -1).length === 1);
+    check('재개 후 마감 완료 표시가 남는다',
+      db.__store.get('episodes_en/epL').close_finalized === true);
+
+    // 그 단계에 이미 제출이 쌓인 뒤 또 재개돼도 카운트를 되돌리지 않아야 한다.
+    db.__store.set('stories_en/epL__spin', Object.assign({}, spinAfter,
+      { open_steps: { [nextId]: { step: 4, sub_count: 5 } } }));
+    db.__store.set('episodes_en/epL', Object.assign({}, db.__store.get('episodes_en/epL'),
+      { close_finalized: false }));
+    await en._enCloseEpisode(db, 'epL', db.__store.get('episodes_en/epL'));
+    const spin3 = db.__store.get('stories_en/epL__spin');
+    check('이미 있는 open_steps 항목의 sub_count를 되돌리지 않는다',
+      spin3.open_steps && Number(spin3.open_steps[nextId].sub_count) === 5,
+      JSON.stringify(spin3.open_steps && spin3.open_steps[nextId]));
+  }
+
+  // ── 8f. 완결 시점 동률 → 결말마다 독립 완결작 ─────────────────────────
+  // 완결 시점 갈래들은 같은 에피소드 안의 여러 채택 문장이라 에피소드를 옮기는
+  // 스핀오프를 쓸 수 없다. 문장을 복제하지 않고 원본을 가리키는 완결작 문서를
+  // 만든다 — 복제가 없으므로 포인트·통계가 두 번 잡힐 수 없다.
+  console.log('\n[8f] 완결 시점 동률은 결말마다 독립 완결작으로 노출된다');
+  const tie3Seed = (storyExtra, closing) => {
+    const seed = {
+      'stories_en/st1': baseStory(Object.assign({ current_step: 0 }, storyExtra)),
+      'episodes_en/ep1': { episode_id: 'ep1', story_id: 'st1', step: 1, parent_sub_id: '', status: 'open', vote_total: 6 },
+    };
+    ['A', 'B', 'C'].forEach((k, i) => {
+      seed['submissions_en/s' + k] = {
+        sub_id: 's' + k, episode_id: 'ep1', story_id: 'st1', content: 'Ending ' + k,
+        author_id: 'u' + k, vote_count: 2, created_at: `2026-01-0${i + 1}T00:00:00Z`,
+        ...(closing ? { is_closing: true } : {}),
+      };
+    });
+    return seed;
+  };
+  {
+    // 3갈래 동률 + 전원 완결 선언
+    const db = makeDb(tie3Seed({ max_steps: 10 }, true));
+    const en = loadEn(db);
+    const r = await en._enCloseEpisode(db, 'ep1', db.__store.get('episodes_en/ep1'));
+    const parent = db.__store.get('stories_en/st1');
+    const endSpins = [...db.__store.entries()]
+      .filter(([k, v]) => k.startsWith('stories_en/') && v.is_end_branch === true);
+
+    check('원작이 완결된다', r === 'completed' && parent.status === 'completed', String(r));
+    check('3갈래 동률에서 독립 완결작이 2개 생긴다(본 줄기 1 + 갈래 2)',
+      endSpins.length === 2, String(endSpins.length));
+    check('생성된 완결작이 전부 completed 상태다',
+      endSpins.every(([, v]) => v.status === 'completed' && !!v.completed_at));
+    check('각 완결작이 서로 다른 결말 문장을 가리킨다',
+      new Set(endSpins.map(([, v]) => v.branch_leaf_sub_id)).size === 2,
+      endSpins.map(([, v]) => v.branch_leaf_sub_id).join(','));
+    check('본 줄기로 남은 갈래는 완결작이 따로 만들어지지 않는다',
+      !endSpins.some(([, v]) => v.branch_leaf_sub_id === 'sA'),
+      endSpins.map(([, v]) => v.branch_leaf_sub_id).join(','));
+    check('갈래 관계가 데이터에 남는다(parent_story_id/branch_*)',
+      endSpins.every(([, v]) => v.parent_story_id === 'st1'
+        && !!v.branch_leaf_episode_id && !!v.branch_leaf_sub_id));
+    check('참여자 수를 원작에서 물려받는다',
+      endSpins.every(([, v]) => Number(v.participant_count) === 7));
+
+    // 조건: 포인트·통계 중복 금지
+    const ledger = [...db.__store.keys()].filter(k => k.startsWith('point_ledger_en/'));
+    check('채택 보상이 작성자 1인당 정확히 한 번이다', ledger.length === 3, ledger.join(','));
+    check('각 작성자의 채택 수가 1이다',
+      ['uA', 'uB', 'uC'].every(u => Number(db.__store.get('user_stats_en/' + u).adoption_count) === 1));
+    check('제출을 복제하지 않는다(원본 3건 그대로)',
+      [...db.__store.keys()].filter(k => k.startsWith('submissions_en/')).length === 3);
+
+    // 멱등
+    await en._enCloseEpisode(db, 'ep1', db.__store.get('episodes_en/ep1'));
+    check('재호출해도 완결작이 늘지 않는다',
+      [...db.__store.entries()].filter(([k, v]) => k.startsWith('stories_en/') && v.is_end_branch).length === 2);
+    check('재호출해도 보상이 늘지 않는다',
+      [...db.__store.keys()].filter(k => k.startsWith('point_ledger_en/')).length === 3);
+  }
+  {
+    // 3갈래 동률 + 최대 단계 도달(완결 선언 없음)
+    const db = makeDb(tie3Seed({ max_steps: 1 }, false));
+    const en = loadEn(db);
+    const r = await en._enCloseEpisode(db, 'ep1', db.__store.get('episodes_en/ep1'));
+    const endSpins = [...db.__store.entries()]
+      .filter(([k, v]) => k.startsWith('stories_en/') && v.is_end_branch === true);
+    check('최대 단계 도달로 완결돼도 갈래가 독립 완결작이 된다',
+      r === 'completed' && endSpins.length === 2, `${r} / ${endSpins.length}`);
+  }
+  {
+    // 결말 고정 + 3갈래 동률
+    const db = makeDb(tie3Seed(
+      { max_steps: 3, current_step: 1, mode: 'fixed_ending', fixed_ending: 'It ended.' }, false));
+    db.__store.set('episodes_en/ep1', Object.assign({}, db.__store.get('episodes_en/ep1'), { step: 2 }));
+    const en = loadEn(db);
+    const r = await en._enCloseEpisode(db, 'ep1', db.__store.get('episodes_en/ep1'));
+    const endSpins = [...db.__store.entries()]
+      .filter(([k, v]) => k.startsWith('stories_en/') && v.is_end_branch === true);
+    const injected = [...db.__store.entries()]
+      .filter(([k, v]) => k.startsWith('submissions_en/') && v.is_closing === true);
+    check('결말 고정 동률도 갈래마다 독립 완결작이 된다',
+      r === 'completed' && endSpins.length === 2, `${r} / ${endSpins.length}`);
+    check('갈래 수만큼 결말이 주입된다(3)', injected.length === 3, String(injected.length));
+    check('완결작이 각자 자기 결말 에피소드를 가리킨다',
+      endSpins.every(([, v]) => String(v.branch_leaf_episode_id).indexOf('__end__') !== -1),
+      endSpins.map(([, v]) => v.branch_leaf_episode_id).join(','));
+    check('주입 결말에는 보상이 나가지 않는다',
+      injected.every(([, v]) => v.author_id === 'AI' && v.adopt_rewarded === true));
+    check('모드 설정을 완결작이 물려받는다',
+      endSpins.every(([, v]) => v.mode === 'fixed_ending' && v.fixed_ending === 'It ended.'));
+  }
+  {
+    // 트랜잭션이 실제로 중간에 끊기는 경우 — 완결작이 부분만 생기면 안 된다.
+    const db = makeDb(tie3Seed({ max_steps: 10 }, true));
+    const en = loadEn(db);
+    db.__failTxCommit = true;   // TX-C 커밋 시점에 실제로 끊는다
+    let crashed = false;
+    try { await en._enCloseEpisode(db, 'ep1', db.__store.get('episodes_en/ep1')); }
+    catch (e) { crashed = true; }
+    check('완결 트랜잭션 중단이 재현된다', crashed);
+    const partial = [...db.__store.entries()]
+      .filter(([k, v]) => k.startsWith('stories_en/') && v.is_end_branch === true);
+    check('중단 시 완결작이 하나도 남지 않는다(부분 상태 없음)',
+      partial.length === 0, String(partial.length));
+    check('중단 시 원작도 완결로 바뀌지 않는다',
+      db.__store.get('stories_en/st1').status === 'active',
+      db.__store.get('stories_en/st1').status);
+
+    db.__failTxCommit = false;
+    await en._enCloseEpisode(db, 'ep1', db.__store.get('episodes_en/ep1'));
+    const after = [...db.__store.entries()]
+      .filter(([k, v]) => k.startsWith('stories_en/') && v.is_end_branch === true);
+    check('재개하면 완결작 2개가 정확히 만들어진다', after.length === 2, String(after.length));
+    check('재개 후 보상이 1인당 한 번 그대로다',
+      [...db.__store.keys()].filter(k => k.startsWith('point_ledger_en/')).length === 3);
+  }
+
+  // ── 8g. 원작 완결본의 대표 결말 (최종 검토 BLOCKER) ───────────────────
+  // 원작이 대표 결말을 스스로 고르면 조회 순서에 따라 달라져서, 이미 독립
+  // 완결작이 있는 결말을 중복 노출하고 본 줄기 결말은 어디서도 못 읽게 된다.
+  console.log('\n[8g] 원작 완결본은 서버가 못박은 대표 결말을 보여준다');
+  {
+    const db = makeDb(tie3Seed({ max_steps: 10 }, true));
+    const en = loadEn(db);
+    await en._enCloseEpisode(db, 'ep1', db.__store.get('episodes_en/ep1'));
+    const parent = db.__store.get('stories_en/st1');
+    const endSpins = [...db.__store.entries()]
+      .filter(([k, v]) => k.startsWith('stories_en/') && v.is_end_branch === true);
+
+    check('원작에 대표 결말이 기록된다', !!parent.canonical_ending_sub_id,
+      String(parent.canonical_ending_sub_id));
+    check('대표 결말이 본 줄기(가장 먼저 제출된 sA)다',
+      parent.canonical_ending_sub_id === 'sA', String(parent.canonical_ending_sub_id));
+    check('대표 결말은 독립 완결작으로 중복 생성되지 않는다',
+      !endSpins.some(([, v]) => v.branch_leaf_sub_id === parent.canonical_ending_sub_id));
+    check('나머지 결말은 전부 독립 완결작으로 존재한다',
+      ['sB', 'sC'].every(id => endSpins.some(([, v]) => v.branch_leaf_sub_id === id)),
+      endSpins.map(([, v]) => v.branch_leaf_sub_id).join(','));
+
+    // 화면이 그 대표 결말을 실제로 렌더하는지 — 조회 순서를 뒤집어도 같아야 한다.
+    const APP_SRC2 = fs.readFileSync(path.join(__dirname, '..', 'bang', 'en', 'en-app.js'), 'utf8')
+      .replace(/\r\n/g, '\n');
+    const lineageSrc2 = APP_SRC2.slice(APP_SRC2.indexOf('function lineageSentences'),
+                                      APP_SRC2.indexOf('async function openStory'));
+    const lineage = new Function(lineageSrc2 + '\nreturn lineageSentences;')();
+
+    const eps = [{ episode_id: 'ep1', story_id: 'st1', step: 1, parent_sub_id: '', status: 'closed' }];
+    const mkSub = id => Object.assign({}, db.__store.get('submissions_en/' + id), { sub_id: id });
+    const order1 = ['sA', 'sB', 'sC'].map(mkSub);
+    const order2 = ['sC', 'sB', 'sA'].map(mkSub);
+
+    const shown1 = lineage(eps, order1, null, eps, parent.canonical_ending_sub_id);
+    const shown2 = lineage(eps, order2, null, eps, parent.canonical_ending_sub_id);
+    check('원작이 대표 결말 문장으로 끝난다',
+      shown1.length === 1 && shown1[0].sub_id === 'sA',
+      shown1.map(s => s.sub_id).join(','));
+    check('제출 조회 순서를 뒤집어도 같은 결말을 보여준다',
+      shown2.length === 1 && shown2[0].sub_id === 'sA',
+      shown2.map(s => s.sub_id).join(','));
+
+    // 대표 결말 기록이 없는 옛 완결작(마이그레이션 안 함)도 결정적이어야 한다.
+    const old1 = lineage(eps, order1, null, eps, null);
+    const old2 = lineage(eps, order2, null, eps, null);
+    check('대표 기록이 없는 옛 완결작도 조회 순서와 무관하게 같은 결말을 보여준다',
+      old1.length === 1 && old2.length === 1 && old1[0].sub_id === old2[0].sub_id,
+      `${old1.map(s => s.sub_id)} vs ${old2.map(s => s.sub_id)}`);
   }
 
   // ── 9. 랭킹 ────────────────────────────────────────────────────────────

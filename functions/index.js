@@ -10277,7 +10277,6 @@ async function _enSpinOffOrphan(db, orphanEp, story, epById, subsByEp, subById, 
     const toCreate = nextTargets.filter((n, i) => !existingNext[i].exists);
     if (toCreate.length) {
       const nextEpBatch = db.batch();
-      const nextOpenSteps = {};
       toCreate.forEach(n => {
         nextEpBatch.set(db.collection(EN.episodes).doc(n.id), {
           episode_id: n.id, story_id: newStoryId,
@@ -10285,13 +10284,82 @@ async function _enSpinOffOrphan(db, orphanEp, story, epById, subsByEp, subById, 
           status: 'open', vote_total: 0,
           created_at: now, closed_at: '', pending_at: '',
         });
-        nextOpenSteps['open_steps.' + n.id] = { step: stepDone + 1, sub_count: 0 };
       });
       await nextEpBatch.commit();
-      await newStoryRef.update(nextOpenSteps);
     }
+
+    // open_steps는 "이번에 생성한 것"이 아니라 "지금 열려 있어야 하는 것" 기준으로
+    // 매번 보정한다. 에피소드 생성과 이 기록이 별도 커밋이라, 그 사이에 끊기면
+    // 재개 시 에피소드는 이미 있어서 toCreate에서 빠지고 open_steps만 영구
+    // 누락된다(재검토 지적). 그러면 그 갈래가 목록 카드에서 열린 단계로 안 보인다.
+    // 이미 있는 항목은 sub_count가 쌓여 있을 수 있으므로 건드리지 않는다.
+    const storyNow = await newStoryRef.get();
+    const curOpenSteps = (storyNow.exists && storyNow.data().open_steps) || {};
+    const openStepsPatch = {};
+    nextTargets.forEach((n, i) => {
+      const ex = existingNext[i];
+      const stillOpen = !ex.exists || ((ex.data() || {}).status === 'open');
+      if (stillOpen && !curOpenSteps[n.id]) {
+        openStepsPatch['open_steps.' + n.id] = { step: stepDone + 1, sub_count: 0 };
+      }
+    });
+    if (Object.keys(openStepsPatch).length) await newStoryRef.update(openStepsPatch);
   }
   return newStoryId;
+}
+
+// 완결 시점에 동률로 갈린 갈래를 **독립 완결작**으로 노출하기 위한 스토리 문서.
+//
+// 진행 중 동률은 _enSpinOffOrphan이 에피소드를 통째로 새 스토리로 옮기지만, 완결
+// 시점 동률은 갈래들이 **같은 에피소드 안의 여러 채택 문장**이라 그 방식을 쓸 수
+// 없다 — 에피소드를 옮기면 본 줄기가 깨진다. 그래서 문장·제출을 복제하지 않고
+// branch_leaf_* 로 원본 문장을 가리키는 완결작 문서만 만든다.
+//
+// 복제가 없다는 점이 중요하다: 채택 보상은 이미 winners별 adopt_rewarded로 정확히
+// 한 번 지급됐고, 여기서 제출을 복사하지 않으므로 포인트·채택 통계가 두 번 잡힐
+// 여지 자체가 없다. 과거에 완결된 이야기도 건드리지 않는다(마이그레이션 없음) —
+// 이 문서는 마감이 일어나는 순간에만 만들어진다.
+function _enEndBranchDoc(newStoryId, story, parentStoryId, leafEpId, leafSubId, curStep, nowIso) {
+  const EN = _EDITIONS.EN;
+  return {
+    story_id: newStoryId,
+    parent_story_id: parentStoryId,
+    branch_from_step: Number(curStep),
+    branch_episode_id: leafEpId, branch_sub_id: leafSubId,
+    branch_leaf_episode_id: leafEpId, branch_leaf_sub_id: leafSubId,
+    branch_display_offset: null,
+    // 자기 에피소드·제출 없이 계보를 부모에서 읽는 완결 갈래라는 표시.
+    is_end_branch: true,
+    opening: story.opening,
+    max_steps: Number(story.max_steps) || EN_MAX_STEPS_DEFAULT,
+    current_step: Number(curStep),
+    status: 'completed', completed_at: nowIso,
+    creator_id: story.creator_id,
+    creator_nickname: story.creator_nickname || 'Anonymous',
+    creator_badge: story.creator_badge || '',
+    // 참여자 수는 진행 중 스핀오프와 같은 원칙으로 부모의 누적값을 물려받는다.
+    participant_count: Number(story.participant_count) || 0,
+    like_count: 0, adoption_count: 0, has_branch: false,
+    created_at: nowIso, batch: '', hot_score: 0,
+    edition: EN.edition, open_steps: {},
+    // 콘텐츠 모드 설정 승계 — 진행 중 스핀오프와 같은 규칙.
+    ...(story.mode ? { mode: story.mode } : {}),
+    ...(story.fixed_ending ? { fixed_ending: story.fixed_ending } : {}),
+    ...(story.genre_sequence ? { genre_sequence: story.genre_sequence } : {}),
+    ...(story.vote_threshold ? { vote_threshold: story.vote_threshold } : {}),
+    ...(story.challenge_words ? { challenge_words: story.challenge_words } : {}),
+    ...(story.is_ai_seed ? { is_ai_seed: story.is_ai_seed } : {}),
+  };
+}
+
+// 승자 순서를 결정적으로 고정한다 — 어느 갈래가 "본 줄기"로 남는지가 실행마다
+// 달라지면 재개·재시도가 서로 다른 결과로 수렴한다. 동률 수와 무관하게 동작한다.
+function _enOrderWinners(ws) {
+  return ws.slice().sort((a, b) => {
+    const t = new Date(a.created_at) - new Date(b.created_at);
+    if (t) return t;
+    return String(a.id).localeCompare(String(b.id));
+  });
 }
 
 // 완결된 스토리에 아직 열려 있는 형제 갈래를 전부 독립 스토리로 분리한다.
@@ -10382,6 +10450,9 @@ async function _enCloseEpisode(db, episode_id, ep) {
   }
   winners = winners.filter(Boolean);
   if (!winners.length) return 'closed';
+  // 순서를 결정적으로 고정한다 — 완결 시점 동률에서 어느 갈래가 "본 줄기"로
+  // 남는지가 실행마다 달라지면 재개·재시도가 다른 결과로 수렴한다.
+  winners = _enOrderWinners(winners);
 
   const storyRef = db.collection(EN.stories).doc(epNow.story_id);
   const storySnap = await storyRef.get();
@@ -10459,7 +10530,7 @@ async function _enCloseEpisode(db, episode_id, ep) {
     // 결말 고정: 마지막 직전 단계면 미리 정해둔 결말을 채택 문장으로 주입하고 완결.
     // 갈래가 여럿이면 갈래를 버리지 않고 각 끝에 같은 결말을 캡으로 씌운다.
     if (isFixedEnding && nextStep + 1 >= maxSteps && st2.fixed_ending) {
-      winners.forEach(w => {
+      winners.forEach((w, i) => {
         const endEpId = episode_id + '__end__' + w.id;
         const endSubId = episode_id + '__endsub__' + w.id;
         tx.set(db.collection(EN.episodes).doc(endEpId), {
@@ -10474,9 +10545,21 @@ async function _enCloseEpisode(db, episode_id, ep) {
           is_adopted: true, adopt_rewarded: true,
           created_at: now, content_updated_at: now, is_closing: true,
         });
+        // 첫 갈래만 본 줄기로 남기고, 나머지 결말은 각각 독립 완결작으로 노출한다
+        // (갈래가 3개든 그 이상이든 같은 규칙 — 개수를 가정하지 않는다).
+        if (i > 0) {
+          const bId = episode_id + '__endspin__' + w.id;
+          tx.set(db.collection(EN.stories).doc(bId),
+            _enEndBranchDoc(bId, st2, epNow.story_id, endEpId, endSubId, nextStep + 1, now));
+        }
       });
       tx.update(storyRef, {
         current_step: nextStep + 1, status: 'completed', completed_at: now,
+        // 원작이 보여줄 **대표 결말**을 서버가 못박는다. 안 적으면 화면이 같은
+        // 에피소드의 채택 문장 중 조회 순서상 하나를 임의로 고르게 되는데,
+        // 그러면 이미 독립 완결작이 있는 결말을 원작이 또 보여주고 정작 본 줄기
+        // 결말(별도 문서가 없는 winners[0])은 어디서도 읽을 수 없다.
+        canonical_ending_sub_id: episode_id + '__endsub__' + winners[0].id,
         ...(winners.length > 1 ? { has_branch: true } : {}),
       });
       tx.update(epRef, { close_finalized: true });
@@ -10487,6 +10570,23 @@ async function _enCloseEpisode(db, episode_id, ep) {
     if (anyClose || nextStep >= maxSteps) {
       const storyUpdate = { current_step: nextStep, status: 'completed', completed_at: now };
       if (winners.length > 1) storyUpdate.has_branch = true;
+
+      // 이 마감으로 실제로 "끝난" 갈래들 — anyClose면 완결을 선언한 것들,
+      // 최대 단계 도달이면 모든 갈래가 여기서 함께 끝난다. 첫 갈래는 본 줄기로
+      // 남고 나머지 결말은 각각 독립 완결작으로 노출된다(갈래 수 무관).
+      // 이 갈래들은 같은 에피소드 안의 여러 채택 문장이라 에피소드를 옮기는
+      // 스핀오프를 쓸 수 없어서, 문장을 복제하지 않고 원본을 가리키는
+      // 완결작 문서만 만든다(_enEndBranchDoc 주석 참고).
+      const endingWinners = anyClose
+        ? winners.filter(w => w.is_closing === true)
+        : winners;
+      // 원작이 보여줄 대표 결말을 서버가 못박는다(위 fixed_ending 분기와 같은 이유).
+      if (endingWinners.length) storyUpdate.canonical_ending_sub_id = endingWinners[0].id;
+      endingWinners.slice(1).forEach(w => {
+        const bId = episode_id + '__endspin__' + w.id;
+        tx.set(db.collection(EN.stories).doc(bId),
+          _enEndBranchDoc(bId, st2, epNow.story_id, episode_id, w.id, nextStep, now));
+      });
       // 동률 중 일부만 완결을 골랐다면 완결이 아닌 갈래가 묻히면 안 된다 — 새
       // 열린 에피소드를 만들어 두면 아래 정리가 독립 스토리로 분리해 준다
       // (한국판과 동일). 최대 단계 도달로 인한 강제 완결은 모든 갈래가 같이

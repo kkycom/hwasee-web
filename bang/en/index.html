@@ -39,11 +39,11 @@
   .page-lead { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
 
   /* 스포트라이트 카드 안쪽 라벨/설명 — 한국판은 이 자리에 아이콘+제목+정보 모달 버튼을
-     쓰지만, 영어판 1단계는 모달 없이 설명을 카드에 그대로 편다. */
+     쓴다. 영어판도 아이콘+제목까지는 같고, 정보만 모달 대신 카드에 그대로 편다
+     (크기는 한국판 카드 제목과 같은 14px/700). */
   .sp-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
-  .sp-title { font-size: 13px; font-weight: 700; color: var(--text); }
+  .sp-title { font-size: 14px; font-weight: 700; color: var(--text); }
   .sp-info { font-size: 12px; color: var(--muted); margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); line-height: 1.6; }
-  .spotlight-card-shell .story-card { margin-bottom: 0; cursor: pointer; }
   .story-meta-text { font-size: 12px; color: var(--muted); }
 
   /* 투표 후보 — 한국판은 제출 목록 UI가 따로 있고 구조가 달라 그대로 못 가져온다.

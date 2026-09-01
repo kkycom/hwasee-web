@@ -123,6 +123,24 @@ function skeletons(n) {
   return Array.from({ length: n || 3 }, () => '<div class="skeleton"></div>').join('');
 }
 
+// Today 카드 아이콘 — 한국판 SPOTLIGHT_META의 이모지 값과 같은 것을 쓴다.
+// 한국판은 같은 자리에 전용 SVG(hwIcon)를 쓰고 이모지는 폴백으로 남겨두는데,
+// 영어판은 SVG 정의를 옮겨오지 않았으므로 그 폴백 이모지를 그대로 쓴다.
+const EN_SLOT_ICON = {
+  fixed_ending: '🎯', genre_switch: '🎭', speedrun: '⚡', fairytale: '📖', hot: '🔥',
+};
+
+// 카드 전체가 클릭 대상인 목록 카드(자유·완결 탭) — 한국판도 같은 패턴이다
+// (`<div class="story-card" onclick=...>`, 별도 액션 버튼 없음). 한국판과 달리
+// 키보드로도 열 수 있게 role/tabindex와 이 핸들러를 더한다 — 기능을 빼는 게
+// 아니라 더하는 것이라 한국판과의 차이가 회귀가 되지 않는다.
+function cardKey(e, story_id) {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  openStory(story_id);
+}
+window.cardKey = cardKey;
+
 // ── Today ───────────────────────────────────────────────────────────────
 async function renderToday() {
   app.innerHTML = `<div class="page-title">Today's Story</div>
@@ -144,22 +162,43 @@ async function renderToday() {
   }
   app.innerHTML = `<div class="page-title">Today's Story</div>
     <p class="page-lead">Each of these is open right now. Add the next sentence, or vote on what should come next.</p>
-    ${cards.map((c, i) => `
-      <div class="spotlight-card-shell">
-        <div class="sp-head"><span class="sp-title">${esc(c.title)}</span></div>
-        <button class="story-card" onclick="openStory('${esc(c.story_id)}')">
-          <div class="story-card-title">${esc(c.opening)}</div>
-          <div class="story-card-footer">
-            <span class="step-pill"><span class="step-dot"></span>Step ${c.current_step || 0}</span>
-            <span class="story-meta-text">${c.participant_count || 0} ${c.participant_count === 1 ? 'writer' : 'writers'}</span>
-          </div>
-        </button>
-        <div class="sp-info">${esc(c.info)}</div>
-      </div>
-      ${i === 1 ? adSlotHtml('inline') : ''}
-    `).join('')}
+    ${cards.map((c, i) => todayCardHtml(c) + (i === 1 ? adSlotHtml('inline') : '')).join('')}
     ${adSlotHtml('footer')}`;
   loadAds();
+}
+
+// Today 카드 한 장 — 한국판 cardHtml()과 같은 요소 구성이다:
+//   아이콘 + 제목 줄 → 종이 배경 산문(오프닝) → [단계 알약 · 참여자] + 액션 버튼.
+// 예전에는 카드 전체가 하나의 <button>이고 안에 제목과 알약만 있었는데, 그러면
+// 한국판과 나란히 놨을 때 "참여하기"에 해당하는 명확한 CTA가 없어 다른 화면으로
+// 보였다(사용자 지적). 카드는 컨테이너로 두고, 참여는 버튼이 맡는다 — 상호작용
+// 패턴까지 한국판과 같아진다.
+//
+// 한국판에만 있는 신규 배지·장르 확률 패널·챌린지 바로가기는 별개 기능이라
+// 옮기지 않는다. 장르 강제 전환의 "지금 장르" 배너도 지금은 없다 —
+// getEnSpotlight가 genre_sequence를 내려주지 않아 서버를 바꿔야 하기 때문이다.
+function todayCardHtml(c) {
+  // 결말 고정 티저 — 한국판 카드와 같은 자리, 같은 규칙(--accent2 왼쪽 선)이다.
+  const fixedEndingTeaser = c.slot === 'fixed_ending' && c.fixed_ending ? `
+    <div style="font-size:12px;color:var(--accent2);background:var(--surface);border-left:3px solid var(--accent2);border-radius:6px;padding:8px 12px;margin:10px 0">
+      ${EN_SLOT_ICON.fixed_ending} It has to end with: <strong>${esc(c.fixed_ending)}</strong>
+    </div>` : '';
+  const writers = Number(c.participant_count) || 0;
+  return `
+    <div class="spotlight-card-shell">
+      <div class="sp-head"><span class="sp-title">${EN_SLOT_ICON[c.slot] || '✍️'} ${esc(c.title)}</span></div>
+      <div class="story-prose" style="padding:28px 18px 28px 20px;margin:12px 0">
+        <div class="prose-opening">${esc(c.opening)}</div>
+      </div>
+      ${fixedEndingTeaser}
+      <div class="story-card-footer">
+        <span class="step-pill"><span class="step-dot"></span>Step ${c.current_step || 0}</span>
+        <span class="story-meta-text">${writers} ${writers === 1 ? 'writer' : 'writers'}</span>
+        <button class="btn btn-primary btn-sm" style="border-radius:20px;margin-left:auto"
+          onclick="openStory('${esc(c.story_id)}')">Write</button>
+      </div>
+      <div class="sp-info">${esc(c.info)}</div>
+    </div>`;
 }
 
 // ── Free Stories ────────────────────────────────────────────────────────
@@ -187,13 +226,14 @@ async function renderFree() {
     <p class="page-lead">Stories anyone can start and anyone can continue.</p>
     ${startPanelHtml()}
     ${docs.map(s => `
-      <button class="story-card" onclick="openStory('${esc(s.story_id)}')">
+      <div class="story-card" role="button" tabindex="0"
+        onclick="openStory('${esc(s.story_id)}')" onkeydown="cardKey(event,'${esc(s.story_id)}')">
         <div class="story-card-title">${esc(s.opening)}</div>
         <div class="story-card-footer">
           <span class="step-pill"><span class="step-dot"></span>Step ${s.current_step || 0}</span>
           <span class="story-meta-text">${s.participant_count || 0} writers</span>
         </div>
-      </button>`).join('')}
+      </div>`).join('')}
     ${adSlotHtml('footer')}`;
   loadAds();
 }
@@ -278,14 +318,15 @@ async function renderCompleted() {
       Written in English here, one sentence at a time. Not translations.
     </div>
     ${originals.map(s => `
-      <button class="story-card" onclick="openStory('${esc(s.story_id)}')">
+      <div class="story-card" role="button" tabindex="0"
+        onclick="openStory('${esc(s.story_id)}')" onkeydown="cardKey(event,'${esc(s.story_id)}')">
         <div class="story-card-title">${esc(s.opening)}</div>
         <div class="story-card-footer">
           <span class="story-meta-text">${s.participant_count || 0} writers${
             s.parent_story_id ? (s.is_end_branch ? ' &middot; an alternate ending' : ' &middot; a branch') : ''
           }</span>
         </div>
-      </button>`).join('')}` : '';
+      </div>`).join('')}` : '';
 
   app.innerHTML = `<div class="page-title">Completed Stories</div>${translatedHtml}${originalsHtml}${adSlotHtml('footer')}`;
   loadAds();

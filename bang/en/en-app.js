@@ -130,6 +130,36 @@ const EN_SLOT_ICON = {
   fixed_ending: '🎯', genre_switch: '🎭', speedrun: '⚡', fairytale: '📖', hot: '🔥',
 };
 
+// 장르 → 색 토큰 접미사. 한국판 GENRE_META와 같은 원칙이고, 8개 장르가 1:1로
+// 대응해서 색까지 그대로 같다(--g-* 토큰은 ko-shared.css로 이미 공유 중).
+// ⚠️ 키는 functions/lib/en-seeds.js의 EN_GENRES와 반드시 일치해야 한다 —
+// 한국판 GENRE_META가 SPOTLIGHT_GENRES와 일치해야 하는 것과 같은 이중화 주의.
+// 'Sci-Fi'만 토큰 이름(sf)과 철자가 달라서 매핑이 필요하다.
+const EN_GENRE_META = {
+  'Romance': 'romance', 'Mystery': 'mystery', 'Thriller': 'thriller', 'Comedy': 'comedy',
+  'Fantasy': 'fantasy', 'Horror': 'horror', 'Drama': 'drama', 'Sci-Fi': 'sf',
+};
+
+// 장르 강제 전환 전용 배너 — 한국판 genreSwitchBannerHtml()의 이식이다.
+// "확률"이 아니라 확정된 "지금 장르"를 보여주고, 카드 톤이 그 장르 색으로
+// 통일되도록 한국판과 같은 .genre-panel/--g/--wash 토큰을 그대로 쓴다.
+// 한국판은 아이콘이 전용 SVG(hwIcon)지만 영어판은 SVG를 옮겨오지 않았으므로
+// 다른 카드 요소와 같은 규칙으로 폴백 이모지를 쓴다.
+// 문구를 짧게 쓴 이유: 한국판은 좁은 화면에서도 배너가 한 줄로 떨어지는데,
+// 영어로 길게 풀어 쓰면(예: "next step switches to") 430px에서 두 줄이 되어
+// 리본 높이가 한국판과 달라진다. 가장 긴 조합(Thriller+Romance = 15자)에서도
+// 한 줄이 유지되는 길이로 맞췄다 — 실제 렌더 비교로 확인함.
+function enGenreSwitchBannerHtml(genre, nextGenre) {
+  if (!genre) return '';
+  const suffix = EN_GENRE_META[genre] || 'mystery';
+  return `
+    <div class="genre-panel" style="--g:var(--g-${suffix});--wash:var(--g-${suffix}-wash);margin-top:10px">
+      <div class="genre-row">
+        <div class="genre-headline">${EN_SLOT_ICON.genre_switch} Genre now: <span class="genre-pill-primary">${esc(genre)}</span>${nextGenre ? ` &middot; next step: <span class="genre-pill-primary">${esc(nextGenre)}</span>!` : ''}</div>
+      </div>
+    </div>`;
+}
+
 // 카드 전체가 클릭 대상인 목록 카드(자유·완결 탭) — 한국판도 같은 패턴이다
 // (`<div class="story-card" onclick=...>`, 별도 액션 버튼 없음). 한국판과 달리
 // 키보드로도 열 수 있게 role/tabindex와 이 핸들러를 더한다 — 기능을 빼는 게
@@ -175,14 +205,24 @@ async function renderToday() {
 // 패턴까지 한국판과 같아진다.
 //
 // 한국판에만 있는 신규 배지·장르 확률 패널·챌린지 바로가기는 별개 기능이라
-// 옮기지 않는다. 장르 강제 전환의 "지금 장르" 배너도 지금은 없다 —
-// getEnSpotlight가 genre_sequence를 내려주지 않아 서버를 바꿔야 하기 때문이다.
+// 옮기지 않는다. 장르 강제 전환의 "지금 장르" 배너는 한국판과 같은 자리에 있다.
 function todayCardHtml(c) {
   // 결말 고정 티저 — 한국판 카드와 같은 자리, 같은 규칙(--accent2 왼쪽 선)이다.
   const fixedEndingTeaser = c.slot === 'fixed_ending' && c.fixed_ending ? `
     <div style="font-size:12px;color:var(--accent2);background:var(--surface);border-left:3px solid var(--accent2);border-radius:6px;padding:8px 12px;margin:10px 0">
       ${EN_SLOT_ICON.fixed_ending} It has to end with: <strong>${esc(c.fixed_ending)}</strong>
     </div>` : '';
+  // 장르 강제 전환 배너 — 한국판 카드와 같은 자리(오프닝 아래, 푸터 위)이고,
+  // 한국판처럼 genre_switch 슬롯에서만 띄운다(hot에 장르전환 이야기가 올라와도
+  // 한국판은 배너를 안 띄우므로 같은 규칙을 유지한다).
+  // 색인: 한국판은 열린 에피소드 step으로 seq[step-1]을 쓴다. 씨앗은 current_step=0에
+  // 1단계 에피소드로 시작하므로 step === current_step + 1이고, getEnSpotlight는
+  // 에피소드를 안 내려주므로 같은 값을 seq[current_step]으로 구한다
+  // (en-app.js 상세 화면이 이미 쓰는 색인 규칙과 같다).
+  const genreSeq = Array.isArray(c.genre_sequence) ? c.genre_sequence : [];
+  const genreStep = Number(c.current_step) || 0;
+  const genreSwitchTeaser = c.slot === 'genre_switch'
+    ? enGenreSwitchBannerHtml(genreSeq[genreStep], genreSeq[genreStep + 1]) : '';
   const writers = Number(c.participant_count) || 0;
   return `
     <div class="spotlight-card-shell">
@@ -190,7 +230,7 @@ function todayCardHtml(c) {
       <div class="story-prose" style="padding:28px 18px 28px 20px;margin:12px 0">
         <div class="prose-opening">${esc(c.opening)}</div>
       </div>
-      ${fixedEndingTeaser}
+      ${fixedEndingTeaser}${genreSwitchTeaser}
       <div class="story-card-footer">
         <span class="step-pill"><span class="step-dot"></span>Step ${c.current_step || 0}</span>
         <span class="story-meta-text">${writers} ${writers === 1 ? 'writer' : 'writers'}</span>

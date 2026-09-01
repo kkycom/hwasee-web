@@ -9654,6 +9654,17 @@ exports.adminInitEnSpotlight = functions
 // 영어 Today 카드 데이터 — 클라이언트가 슬롯 포인터를 읽고 각 이야기를 가져온다.
 // 포인터는 읽기 공개지만 쓰기는 서버 전용이라, 클라이언트가 카드가 가리키는
 // 이야기를 바꿔치기할 수 없다.
+// 장르 강제 전환 이야기의 확정 장르 배열을 카드 응답에 실어준다.
+// genre_sequence는 AI 실시간 분류가 아니라 씨앗 생성 시 _enRandomGenreSequence(10)로
+// 못박아둔 10단계 배열이라, 그대로 내려주면 화면이 "지금 장르 / 다음 단계 장르"를
+// 추가 조회 없이 계산할 수 있다(한국판 카드가 같은 방식으로 동작한다).
+// 다른 모드에는 필드 자체를 붙이지 않는다 — 없는 키는 화면에서 자연히 배너 없음이 된다.
+function _enGenreSequenceField(story) {
+  return (story && story.mode === 'genre_switch' && Array.isArray(story.genre_sequence))
+    ? { genre_sequence: story.genre_sequence }
+    : {};
+}
+
 exports.getEnSpotlight = functions
   .region('asia-northeast3')
   .https.onCall(async () => {
@@ -9680,6 +9691,7 @@ exports.getEnSpotlight = functions
         participant_count: Number(s.participant_count) || 0,
         mode: s.mode || '',
         fixed_ending: s.fixed_ending || null,
+        ..._enGenreSequenceField(s),
       });
     }
 
@@ -9702,6 +9714,7 @@ exports.getEnSpotlight = functions
           participant_count: Number(hot.participant_count) || 0,
           mode: hot.mode || '',
           fixed_ending: null,
+          ..._enGenreSequenceField(hot),
         });
       }
     } catch (e) {

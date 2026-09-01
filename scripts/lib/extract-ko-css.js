@@ -43,6 +43,15 @@ const RULES = [
   '.step-dot',
   '.story-status',
   '.spotlight-card-shell',
+  // 장르 강제 전환 배너(페넌트 리본) — 영어판 Today 카드의 "지금 장르" 배너가
+  // 한국판과 같은 모양이어야 한다. 색 자체는 :root의 --g-* 토큰으로 이미 공유
+  // 중이고, 여기서 가져오는 건 리본 모양과 글자 스타일이다.
+  // `.genre-headline .n`은 확률 패널(genrePanelHtml) 전용이라 가져오지 않는다 —
+  // 영어판엔 장르 확률 기능이 없다(장르가 생성 시점에 확정된 배열이라 확률이 없음).
+  '.genre-panel',
+  '.genre-row',
+  '.genre-headline',
+  '.genre-pill-primary',
   '.story-prose',
   '.prose-opening',
   '.prose-line',

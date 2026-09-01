@@ -504,6 +504,64 @@ check('장르 8', seeds.EN_GENRES.length === 8);
     seeds.EN_SLOT_KEYS.concat('hot').every(k => typeof seeds.EN_SLOT_INFO[k] === 'string' && seeds.EN_SLOT_INFO[k].length > 10));
 }
 
+// ── 5. 장르 강제 전환 배너 ───────────────────────────────────────────────
+// 장르 이름이 en-seeds.js(서버)와 en-app.js(화면 색 매핑) 두 곳에 있어서, 한쪽만
+// 바뀌면 배너가 조용히 폴백 색으로 떨어진다. 한국판 GENRE_META가 SPOTLIGHT_GENRES와
+// 어긋나면 안 되는 것과 같은 이중화 위험이라 여기서 못박는다.
+console.log('\n[5] 장르 강제 전환 배너');
+{
+  const APP_SRC = fs.readFileSync(path.join(__dirname, '..', 'bang', 'en', 'en-app.js'), 'utf8')
+    .replace(/\r\n/g, '\n');
+  const metaSrc = APP_SRC.slice(APP_SRC.indexOf('const EN_GENRE_META'),
+                                APP_SRC.indexOf('function enGenreSwitchBannerHtml'));
+  const bannerSrc = APP_SRC.slice(APP_SRC.indexOf('function enGenreSwitchBannerHtml'),
+                                  APP_SRC.indexOf('// 카드 전체가 클릭 대상인 목록 카드'));
+  const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const { EN_GENRE_META, enGenreSwitchBannerHtml } = new Function('esc', 'EN_SLOT_ICON',
+    metaSrc + bannerSrc + '\nreturn { EN_GENRE_META, enGenreSwitchBannerHtml };')(esc, { genre_switch: '🎭' });
+
+  check('색 매핑 키가 EN_GENRES와 정확히 일치',
+    JSON.stringify(Object.keys(EN_GENRE_META)) === JSON.stringify(seeds.EN_GENRES),
+    Object.keys(EN_GENRE_META).join(','));
+  check('모든 장르가 폴백 없이 자기 색 토큰을 가진다',
+    seeds.EN_GENRES.every(g => EN_GENRE_META[g] && /^[a-z]+$/.test(EN_GENRE_META[g])));
+  check('색 토큰이 장르마다 서로 다르다',
+    new Set(Object.values(EN_GENRE_META)).size === seeds.EN_GENRES.length);
+
+  const both = enGenreSwitchBannerHtml('Romance', 'Thriller');
+  check('지금 장르와 다음 장르를 함께 보여준다',
+    both.includes('Romance') && both.includes('Thriller') && both.includes('next step'));
+  check('장르 색 토큰이 배너에 실린다', both.includes('--g:var(--g-romance)'));
+  check('한국판과 같은 CSS 클래스를 쓴다',
+    both.includes('class="genre-panel"') && both.includes('genre-row') &&
+    both.includes('genre-headline') && both.includes('genre-pill-primary'));
+
+  // 마지막 단계(10단계)에는 다음 장르가 없다 — 없는 걸 있다고 쓰면 안 된다.
+  const lastOnly = enGenreSwitchBannerHtml('Sci-Fi', undefined);
+  check('마지막 단계면 다음 장르 문구를 빼고 지금 장르만 보여준다',
+    lastOnly.includes('Sci-Fi') && !lastOnly.includes('next step'));
+  check('Sci-Fi는 sf 토큰으로 매핑된다', lastOnly.includes('--g:var(--g-sf)'));
+  check('장르가 없으면 배너 자체를 그리지 않는다', enGenreSwitchBannerHtml(undefined, 'Drama') === '');
+
+  // 서버가 genre_sequence를 실제로 내려줘야 화면이 그릴 수 있다.
+  const idxSrc = fs.readFileSync(path.join(__dirname, '..', 'functions', 'index.js'), 'utf8');
+  const gsField = idxSrc.slice(idxSrc.indexOf('function _enGenreSequenceField'),
+                               idxSrc.indexOf('exports.getEnSpotlight'));
+  const _enGenreSequenceField = new Function(gsField + '\nreturn _enGenreSequenceField;')();
+  check('genre_switch 스토리는 genre_sequence를 응답에 싣는다',
+    JSON.stringify(_enGenreSequenceField({ mode: 'genre_switch', genre_sequence: ['Romance'] }))
+      === JSON.stringify({ genre_sequence: ['Romance'] }));
+  check('다른 모드에는 genre_sequence 필드를 붙이지 않는다',
+    Object.keys(_enGenreSequenceField({ mode: 'fixed_ending', genre_sequence: ['Romance'] })).length === 0);
+  check('배열이 아니면(손상 데이터) 필드를 붙이지 않는다',
+    Object.keys(_enGenreSequenceField({ mode: 'genre_switch', genre_sequence: 'Romance' })).length === 0);
+
+  const spotSrc = idxSrc.slice(idxSrc.indexOf('exports.getEnSpotlight'),
+                               idxSrc.indexOf('const _EN_TRANSLATIONS'));
+  check('슬롯 카드와 hot 카드 둘 다 genre_sequence를 싣는다',
+    (spotSrc.match(/_enGenreSequenceField\(/g) || []).length === 2);
+}
+
   console.log(`\n결과: ${pass} 통과 / ${failCount} 실패`);
   if (failCount) process.exit(1);
 }

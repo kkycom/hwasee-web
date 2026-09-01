@@ -3,3 +3,10 @@ node_modules/
 bang/story/
 .agent-reviews/
 /.claude/worktrees/
+# English 에디션 — 앱 소스(bang/en/index.html, en-app.js)는 커밋하고
+# 빌드가 만드는 정적 발행물만 무시한다.
+bang/en/story/
+bang/en/stories/
+bang/en/sitemap.xml
+.en-manifest.json
+.test-tmp/

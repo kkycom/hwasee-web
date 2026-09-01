@@ -229,5 +229,76 @@ service cloud.firestore {
     // 공동집필 실시간 "쓰는 중" 표시용 — 8초 TTL(클라이언트가 최근 ping만
     // 신뢰) 방식이라 story_visits 등과 동일하게 민감정보 없음, 열어둠.
     match /episode_typing/{docId} { allow read, write: if true; }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // English 에디션 (2026-08-30)
+    //
+    // 한국판과 **물리적으로 다른 컬렉션**을 쓴다. 처음엔 stories.edition 필드 +
+    // 모든 쿼리에 조건을 붙이는 방식을 검토했는데, 조건이 필요한 지점이 19곳이었고
+    // 한 곳만 빠뜨려도 즉시 한국 화면에 영어 콘텐츠가 섞이는 구조였다. 경로를
+    // 나누면 collection('stories')를 읽는 기존 코드는 영어 데이터를 구조적으로
+    // 볼 수 없다 — 빠뜨릴 필터 자체가 없다.
+    //
+    // 위 한국판 규칙은 한 줄도 바꾸지 않았다.
+    //
+    // 쓰기 정책: 영어 이야기 그래프는 **처음부터 전부 서버 전용**이다. 한국판은
+    // 과거 클라이언트 직접 쓰기로 시작해 A-2에서 뒤늦게 잠갔지만(그 사이 위조
+    // 사고가 있었다), 영어는 그 단계를 건너뛴다.
+    // ═══════════════════════════════════════════════════════════════════
+
+    // 이야기 그래프 — 읽기는 공개(목록·본문 렌더), 쓰기는 Cloud Function 전용.
+    match /stories_en/{docId}     { allow read: if true; allow write: if false; }
+    match /episodes_en/{docId}    { allow read: if true; allow write: if false; }
+    match /submissions_en/{docId} { allow read: if true; allow write: if false; }
+    match /votes_en/{docId}       { allow read: if true; allow write: if false; }
+
+    // 이야기에 매달린 콘텐츠 — 집계·상태가 걸린 것은 서버 전용.
+    match /story_likes_en/{docId}       { allow read: if true; allow write: if false; }
+    match /story_mvp_en/{docId}         { allow read: if true; allow write: if false; }
+    match /boosts_en/{docId}            { allow read: if true; allow write: if false; }
+    match /extra_submits_en/{docId}     { allow read: if true; allow write: if false; }
+    match /submission_votes_en/{docId}  { allow read: if true; allow write: if false; }
+    match /story_visits_en/{docId}      { allow read: if true; allow write: if false; }
+    match /story_genre_probs_en/{docId} { allow read: if true; allow write: if false; }
+
+    // 신고·감사 로그 — 내용이 새면 안 되므로 읽기까지 차단(한국판 동일 성격).
+    match /submission_reports_en/{docId}  { allow read, write: if false; }
+    match /reports_en/{docId}             { allow read, write: if false; }
+    match /admin_edits_en/{docId}         { allow read, write: if false; }
+    match /story_title_reports_en/{docId} { allow read, write: if false; }
+
+    // 경제·알림 — 에디션별 완전 분리(상호 사용 불가). 포인트를 users 문서가 아니라
+    // 여기 두는 이유: users update는 클라이언트에 열려 있고 증가폭 가드가
+    // total_points에만 걸려 있어서, users에 en_ 필드를 두면 그 가드를 안 타
+    // 무제한 위조가 가능하다. 별도 컬렉션은 쓰기를 통째로 막을 수 있다.
+    // 읽기까지 막는다 — 알림과 포인트 장부는 사용자별 활동 이력이라 전 세계
+    // 공개 읽기로 두면 누가 무엇을 언제 했는지 그대로 드러난다(최종 검토 지적).
+    // 현재 영어 앱은 이 컬렉션들을 직접 읽지 않는다. 나중에 프로필·알림 화면을
+    // 열 때 필요한 필드만 반환하는 Callable로 노출한다.
+    match /user_stats_en/{docId}    { allow read, write: if false; }
+    match /point_ledger_en/{docId}  { allow read, write: if false; }
+    match /notifications_en/{docId} { allow read, write: if false; }
+
+    // 실시간 "쓰는 중" 표시 — 8초 TTL, 민감정보 없음(한국판 episode_typing과 동일).
+    match /episode_typing_en/{docId} { allow read, write: if true; }
+
+    // 댓글·북마크 — 한국판은 과거 경위로 열려 있지만, 영어판은 **처음부터 잠근다**.
+    // 무인증 전체 쓰기로 열면 누구나 남의 댓글을 위조·수정·삭제하고 북마크를 들여다볼
+    // 수 있다(최종 검토 지적). 현재 영어 앱은 이 경로를 쓰지도 않으므로 열어둘 이유가
+    // 없다 — 나중에 댓글 기능을 열 때 서버 Callable로 만든다.
+    match /comments_en/{docId}  { allow read: if true; allow write: if false; }
+    match /bookmarks_en/{docId} { allow read, write: if false; }
+
+    // Today 슬롯 포인터 — 클라이언트가 카드를 그리려면 읽어야 하지만, 쓰기를 열면
+    // 누구나 카드가 가리키는 이야기를 바꿔치기할 수 있다. config/{configId}가
+    // secrets 외 전부 쓰기 공개라 거기 두지 않고 별도 컬렉션으로 뺐다.
+    match /en_spotlight/{docId} { allow read: if true; allow write: if false; }
+
+    // 번역·승인·비용 — 미승인 번역문이 새면 안 되고 킬스위치를 누가 켜서도 안 되므로
+    // 읽기까지 완전 차단. 관리자 Callable(Admin SDK)로만 접근한다.
+    match /story_translations/{docId} { allow read, write: if false; }
+    match /translation_control/{docId} { allow read, write: if false; }
+    match /translation_usage/{docId}   { allow read, write: if false; }
+    match /translation_logs/{docId}    { allow read, write: if false; }
   }
 }

@@ -11,7 +11,10 @@
 // 경로를 sessionStorage에 남겨두고 /bang/으로 돌려보냄. bang/index.html의
 // window.onload 부트스트랩이 그 경로를 다시 복원해 정상 렌더함(2026-07-21,
 // 해시→경로 라우팅 전환의 짝 — bang/index.html 주석 참고).
-if (location.pathname.indexOf('/bang/') === 0) {
+// 단, /bang/en/(English 에디션)은 SPA 라우트가 아니라 별도 앱·정적 파일이다.
+// 존재하지 않는 영어 URL을 한국어 참여 앱으로 돌려보내면 읽기 흐름이 끊기고,
+// 아직 발행되지 않은 페이지가 200처럼 보이게 된다 — 그냥 이 404를 보여준다.
+if (location.pathname.indexOf('/bang/') === 0 && location.pathname.indexOf('/bang/en/') !== 0) {
   sessionStorage.setItem('spa-redirect-path', location.pathname + location.search + location.hash);
   location.replace('/bang/');
 }

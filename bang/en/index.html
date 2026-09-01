@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<base href="/bang/en/">
+<title>Hwasee.bang — Write a story one sentence at a time</title>
+<meta name="description" content="A relay-fiction community. Someone writes one sentence, everyone proposes what comes next, and the community votes. Nobody knows how it ends.">
+<!-- 진행 중 이야기 화면은 색인하지 않는다 — 얇은 콘텐츠가 검색에 노출되면
+     과거 애드센스 저가치 콘텐츠 반려와 같은 문제가 생긴다. 검색 노출은 품질이
+     확인된 완결작 정적 페이지(/bang/en/story/{id}/)부터 단계적으로 연다. -->
+<meta name="robots" content="noindex,follow">
+<link rel="canonical" href="https://hwasee.me/bang/en/">
+<link rel="alternate" hreflang="ko" href="https://hwasee.me/bang/">
+<link rel="alternate" hreflang="en" href="https://hwasee.me/bang/en/">
+<link rel="icon" type="image/png" href="/bang/hwaseebang_sum.png">
+<meta name="theme-color" content="#f0ead8">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://hwasee.me/bang/en/">
+<meta property="og:title" content="Hwasee.bang — Write a story one sentence at a time">
+<meta property="og:description" content="A relay-fiction community where each sentence is written by a different person and chosen by vote.">
+<meta property="og:image" content="https://hwasee.me/bang/hwaseebang_og.png">
+<meta property="og:locale" content="en_US">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- ⚠️ 공통 컴포넌트 CSS는 한국판 bang/index.html에서 **잘라낸 사본**이다.
+     생성: node scripts/sync-en-css.js  /  검증: node scripts/verify-en-css-sync.js
+     값을 여기에 다시 적지 마세요 — 한국판을 고친 뒤 sync를 다시 도세요. -->
+<link rel="stylesheet" href="ko-shared.css">
+
+<style>
+/* 한국판에 대응 요소가 없어서 영어판에만 있는 것들.
+   전부 한국판 토큰(--card/--surface/--paper/--accent 등)만 쓴다 — 새 색을 만들지 않는다. */
+
+  /* 화면 제목 — 한국판은 화면마다 다른 헤딩을 쓰지만 영어판은 탭 3개가 고정이라 공통 제목이 필요하다. */
+  .page-title { font-family: var(--serif); font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+  .page-lead { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
+
+  /* 스포트라이트 카드 안쪽 라벨/설명 — 한국판은 이 자리에 아이콘+제목+정보 모달 버튼을
+     쓰지만, 영어판 1단계는 모달 없이 설명을 카드에 그대로 편다. */
+  .sp-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+  .sp-title { font-size: 13px; font-weight: 700; color: var(--text); }
+  .sp-info { font-size: 12px; color: var(--muted); margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); line-height: 1.6; }
+  .spotlight-card-shell .story-card { margin-bottom: 0; cursor: pointer; }
+  .story-meta-text { font-size: 12px; color: var(--muted); }
+
+  /* 투표 후보 — 한국판은 제출 목록 UI가 따로 있고 구조가 달라 그대로 못 가져온다.
+     카드/종이 토큰만 재사용해 같은 재질로 보이게 했다. */
+  .candidate { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 13px 15px; margin-bottom: 9px; }
+  .candidate.picked { border-color: var(--accent2); background: var(--paper); }
+  .candidate-text { font-family: var(--serif); font-size: 15px; line-height: 1.65; }
+  .candidate-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 9px; font-size: 12px; color: var(--muted); }
+
+  /* 번역작 출처 구분 — 한국판에 대응 화면이 없다(번역이라는 개념 자체가 없음). */
+  .source-note {
+    background: var(--paper); border: 1px solid var(--paper-edge);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius); padding: 13px 16px; margin: 14px 0;
+    font-size: 13px; color: var(--muted); line-height: 1.7;
+  }
+  .source-note a { color: var(--accent2); }
+
+  /* 로딩 자리표시 */
+  .skeleton { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); height: 96px; margin-bottom: 12px; opacity: .5; }
+  @media (prefers-reduced-motion: no-preference) {
+    .skeleton { animation: pulse 1.5s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:.35} 50%{opacity:.6} }
+  }
+
+  /* 푸터 — 한국판 푸터는 링크망이 달라 공유하지 않는다. */
+  footer { border-top: 1px solid var(--border); padding: 24px 20px; text-align: center; font-size: 12px; color: var(--muted); }
+  footer a { color: var(--muted); }
+
+  /* 광고 — 자리를 미리 잡지 않는다. 실제로 채워진 것이 확인될 때만 열린다.
+     한국판은 min-height로 자리를 예약하지만, 영미권은 무필 확률이 높아 그 방식이
+     빈 여백을 남긴다(코드 주석에도 그 트레이드오프가 적혀 있다). */
+  .ad-slot { display: none; text-align: center; margin: 20px 0; }
+  .ad-slot[data-filled="1"] { display: block; }
+  .ad-label { font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+  /* 접근성 — 한국판에 없는 포커스 표시를 더한다(제거가 아니라 추가라 회귀가 아니다). */
+  .tab:focus-visible, .btn:focus-visible, .btn-ghost:focus-visible, .story-card:focus-visible {
+    outline: 2px solid var(--accent2); outline-offset: 2px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="logo" href="/bang/en/" style="text-decoration:none">화씨.방</a>
+  <div class="nav-right">
+    <button class="btn btn-ghost btn-sm" id="acct-btn" type="button">Sign in</button>
+    <a class="btn btn-ghost btn-sm" href="/bang/" style="text-decoration:none">한국어</a>
+  </div>
+</header>
+
+<main>
+  <div class="tabs" role="tablist">
+    <button class="tab active" role="tab" id="tab-today" aria-selected="true" onclick="showTab('today')">Today's Story</button>
+    <button class="tab" role="tab" id="tab-free" aria-selected="false" onclick="showTab('free')">Free Stories</button>
+    <button class="tab" role="tab" id="tab-done" aria-selected="false" onclick="showTab('done')">Completed</button>
+  </div>
+  <div id="app">
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<footer>
+  <p>화씨.방 &middot; a relay-fiction community</p>
+  <p style="margin-top:6px"><a href="/bang/">한국어 사이트로 이동</a></p>
+</footer>
+
+<script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+<script defer src="en-app.js"></script>
+</body>
+</html>

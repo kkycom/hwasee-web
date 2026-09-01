@@ -68,6 +68,31 @@
       ]
     },
     {
+      "collectionGroup": "submissions_en",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "author_id",  "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "stories_en",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status",            "order": "ASCENDING" },
+        { "fieldPath": "participant_count", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "stories_en",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status",     "order": "ASCENDING" },
+        { "fieldPath": "hot_score",  "order": "DESCENDING" },
+        { "fieldPath": "created_at", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "hint_pool",
       "queryScope": "COLLECTION",
       "fields": [

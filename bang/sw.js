@@ -47,7 +47,7 @@ self.addEventListener('notificationclick', e => {
 
 // ── 캐시 전략 ───────────────────────────────────────────────
 
-const CACHE = 'hwasee-bang-v590';
+const CACHE = 'hwasee-bang-v591';
 const PRECACHE = [
   '/bang/',
   '/bang/index.html',
@@ -89,6 +89,13 @@ self.addEventListener('fetch', e => {
       e.request.url.includes('kakaocdn.net') ||
       e.request.url.includes('pagead2') ||
       e.request.method !== 'GET') return;
+
+  // /bang/en/ (English 에디션)은 서비스워커가 아예 관여하지 않는다.
+  // 이 핸들러는 문서 요청을 캐시에 저장하고 오프라인일 때 /bang/index.html로
+  // 폴백하는데, 영어 페이지에 그게 적용되면 (1) 승인이 철회되거나 원문이 바뀐
+  // 뒤에도 예전 번역이 오프라인에서 계속 보이고, (2) 영어 화면 자리에 한국어
+  // 앱이 대신 뜬다. 브라우저가 직접 네트워크로 받게 둔다.
+  if (new URL(e.request.url).pathname.indexOf('/bang/en/') === 0) return;
 
   // 문서(HTML 내비게이션) 요청은 네트워크 우선 — 나머지 정적 자산과 달리
   // 이것만 캐시 우선으로 두면, install()의 PRECACHE 단계가 GitHub Pages 앞단

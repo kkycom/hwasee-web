@@ -337,6 +337,24 @@ function storyPageBodyHtml({ opening, lines, meta, candidates, related }) {
   </div>`;
 }
 
+// English 에디션 — 영어판이 실제로 발행된 완결작 id 집합. build-en-pages.js가
+// 먼저 돌면서 남긴 .en-manifest.json에서 읽는다. 양쪽 빌드가 같은 판정을 써야
+// 한쪽만 상대를 가리키는 일방향 hreflang이 생기지 않는다. manifest가 없으면
+// (영어 빌드 미실행/실패) 빈 집합이라 hreflang을 전혀 붙이지 않고 기존 동작 그대로 간다.
+function loadEnPublishedIds() {
+  const p = path.join(ROOT, '.en-manifest.json');
+  if (!fs.existsSync(p)) return new Set();
+  try {
+    const m = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (m.build_completed !== true) return new Set();
+    return new Set(m.publishable_ids || []);
+  } catch (e) {
+    console.error('.en-manifest.json 파싱 실패 — hreflang 없이 진행:', e.message);
+    return new Set();
+  }
+}
+const EN_PUBLISHED_IDS = loadEnPublishedIds();
+
 function renderStoryPage(indexHtmlSrc, { id, title, description, url, bodyHtml, lastmod, creatorNickname }) {
   // title/description은 유저가 쓴 오프닝·채택문장에서 옴(글자수만 제한되고
   // 문자 종류 제한은 없음) — JSON.stringify는 '<'나 '/'를 이스케이프하지
@@ -382,6 +400,25 @@ function renderStoryPage(indexHtmlSrc, { id, title, description, url, bodyHtml, 
   const canonicalMatch = html.match(/<link rel="canonical" href="[^"]*">/);
   if (!canonicalMatch) throw new Error(`canonical 태그를 못 찾음(story ${id}) — bang/index.html 구조가 바뀌었을 수 있음`);
   html = html.replace(canonicalMatch[0], `<link rel="canonical" href="${url}">`);
+
+  // 영어판이 실제로 발행된 완결작에만 상호 hreflang을 붙인다. canonical은 양쪽 다
+  // 자기 자신을 유지해서(위에서 이미 자기 URL로 바꿨다) 한국어 원본과 영어판이
+  // 중복 콘텐츠로 묶이지 않게 하고, hreflang으로만 서로를 언어 대체본이라고 알린다.
+  // 위 canonicalMatch 하드체크가 실패하면 여기 오기 전에 throw되므로, 태그 구조가
+  // 바뀌었을 때 이 주입이 조용히 누락되지 않는다.
+  if (EN_PUBLISHED_IDS.has(id)) {
+    const enUrl = `${SITE_ORIGIN}/bang/en/story/${id}/`;
+    html = html.replace(
+      `<link rel="canonical" href="${url}">`,
+      `<link rel="canonical" href="${url}">
+`
+      + `<link rel="alternate" hreflang="ko" href="${url}">
+`
+      + `<link rel="alternate" hreflang="en" href="${enUrl}">
+`
+      + `<link rel="alternate" hreflang="x-default" href="${url}">`
+    );
+  }
   // 예전엔 JSON-LD 내용 전체를 문자열로 그대로 박아넣어 정확히 일치해야만
   // 치환됐음 — bang/index.html 쪽 JSON-LD 필드(alternateName 등)가 나중에
   // 바뀌면서 두 사본이 어긋났고, 그 결과 이 매칭이 계속 실패해 완결작 SSG

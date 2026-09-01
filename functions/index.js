@@ -10,6 +10,12 @@ admin.initializeApp();
 
 // (CI 자동배포 워크플로 동작 확인용 트리거 — 기능 변경 없음)
 
+// 에디션별 컬렉션 맵 — 영어 에디션은 stories_en 등 별도 경로를 쓴다.
+// 선택은 항상 서버가 하며, 클라이언트가 보낸 값으로 경로가 정해지는 일이 없다.
+const _EDITIONS = require('./lib/editions.js');
+const _autoGate = require('./lib/auto-task-gate.js');
+const _enSeeds = require('./lib/en-seeds.js');
+
 const FB_ADMIN_ID = 'c50c82b2-fe0e-4ee9-be8c-8132f03b9cb6';
 const FB_AI_ID    = '578873e7-47b7-48d3-9cd8-894546196205'; // AI 자동참여 전용 봇 계정 (관리자 계정과 분리)
 // 애널리틱스 집계에서 "실유저 활동"만 세기 위한 공용 필터 — 관리자/AI봇 계정 제외.
@@ -321,8 +327,12 @@ exports.aiReviewCompletedStories = functions
       return null;
     }
 
-    // 완성된 이야기 전체 조회
-    const storiesSnap = await db.collection('stories')
+    // 완성된 이야기 전체 조회.
+    // ⚠️ 한국 컬렉션만 읽는다. 영어 이야기는 stories_en에 있어 이 쿼리에 애초에
+    // 들어오지 않지만, 이 작업이 ko 전용이라는 결정을 코드에도 남겨 둔다 —
+    // 이 배치는 한국어 교정 프롬프트로 본문을 실제로 덮어쓰고 Claude 비용을 쓴다.
+    if (!_autoGate.isEditionAllowed('ai_review_completed', _EDITIONS.KO.edition)) return null;
+    const storiesSnap = await db.collection(_EDITIONS.KO.stories)
       .where('status', '==', 'completed')
       .get();
 
@@ -335,9 +345,11 @@ exports.aiReviewCompletedStories = functions
       const story_id = storyDoc.id;
       const story    = storyDoc.data();
 
-      // 쿼리 결과 방어 검증 — status가 completed인 것만 처리
-      if (story.status !== 'completed') {
-        console.warn(`Story ${story_id} has status "${story.status}", skipping.`);
+      // 쿼리 결과 방어 검증 — status가 completed인 것만 처리.
+      // 공용 게이트도 함께 태워서 관리자가 특정 이야기를 자동 처리에서 빼둘 수 있게 한다.
+      const gateResult = _autoGate.shouldProcessStory('ai_review_completed', _EDITIONS.KO.edition, story, { requireStatus: 'completed' });
+      if (!gateResult.ok) {
+        console.warn(`Story ${story_id} skipped by auto-task gate: ${gateResult.reason}`);
         continue;
       }
 
@@ -462,6 +474,9 @@ ${JSON.stringify(sortedAdopted.map(s => ({ sub_id: s.sub_id, content: s.content 
       if (changedCount > 0) {
         totalChanged += changedCount;
         totalStories++;
+        // 원문이 실제로 바뀌었으므로 저장된 영어 번역은 그 즉시 낡은 것이 된다 —
+        // 승인을 바로 내려서 다음 영어 빌드가 이 작품을 발행 대상에서 빼게 한다.
+        await _unapproveEnTranslation(db, story_id, 'ai_review');
       }
     }
 
@@ -2659,9 +2674,10 @@ exports.closeEpisode = functions
 // 필드가 따로 없어서(전수 확인) 서버가 이 상수로 그 근거를 대신 가짐.
 const EPISODE_MAX_VOTE_PICKS = 2;
 
-exports.voteEpisode = functions
-  .region('asia-northeast3')
-  .https.onCall(async (data) => {
+// ── 투표 코어 (한국·영어 공용) ──────────────────────────────────────────
+// 제출 코어와 같은 원칙: 컬렉션 이름은 cols에서만 오고, cols는 호출한 Callable이
+// 서버 상수로 고정한다. 투표 포인트도 에디션별 장부로 분리된다.
+async function _voteEpisodeCore(db, cols, data) {
     const episode_id = data.episode_id;
     const voter_id = data.user_id;
     const sub_ids = [...new Set(Array.isArray(data.sub_ids) ? data.sub_ids : [])];
@@ -2670,15 +2686,14 @@ exports.voteEpisode = functions
     }
     await _requireUser(voter_id, data.token);
 
-    const db = admin.firestore();
-    const userSnap = await db.collection('users').doc(voter_id).get();
+    const userSnap = await db.collection(_EDITIONS.SHARED.users).doc(voter_id).get();
     if (!userSnap.exists) return { ok: false, error: '사용자를 찾을 수 없습니다.' };
     const ban = _activeBan(userSnap.data());
     if (ban) return { ok: false, error: ban.error };
 
-    const epRef = db.collection('episodes').doc(episode_id);
-    const subRefs = sub_ids.map(sid => db.collection('submissions').doc(sid));
-    const prevVotesQuery = db.collection('votes')
+    const epRef = db.collection(cols.episodes).doc(episode_id);
+    const subRefs = sub_ids.map(sid => db.collection(cols.submissions).doc(sid));
+    const prevVotesQuery = db.collection(cols.votes)
       .where('episode_id', '==', episode_id).where('voter_id', '==', voter_id);
 
     const result = await db.runTransaction(async tx => {
@@ -2704,7 +2719,7 @@ exports.voteEpisode = functions
       // 것들도 읽어야 감소시킬 수 있음(트랜잭션 read-먼저 규칙이라 여기서 미리).
       const prevVotedSubIds = prevVoteSnap.docs.map(d => d.data().sub_id);
       const extraPrevIds = prevVotedSubIds.filter(id => !sub_ids.includes(id));
-      const extraPrevSnaps = await Promise.all(extraPrevIds.map(id => tx.get(db.collection('submissions').doc(id))));
+      const extraPrevSnaps = await Promise.all(extraPrevIds.map(id => tx.get(db.collection(cols.submissions).doc(id))));
 
       // ── write ──
       const isRevote = !prevVoteSnap.empty;
@@ -2721,7 +2736,7 @@ exports.voteEpisode = functions
         tx.update(ref, { vote_count: admin.firestore.FieldValue.increment(1) });
       });
       sub_ids.forEach(sid => {
-        tx.set(db.collection('votes').doc(`${episode_id}_${voter_id}_${sid}`), {
+        tx.set(db.collection(cols.votes).doc(`${episode_id}_${voter_id}_${sid}`), {
           episode_id, sub_id: sid, voter_id, created_at: new Date().toISOString(),
         });
       });
@@ -2734,21 +2749,51 @@ exports.voteEpisode = functions
 
     if (!result.ok) return result;
 
+    // 포인트·업적은 에디션별로 완전히 분리한다(사용자 확정). 한국은 기존 경로를
+    // 그대로 쓰고, 영어는 전용 통계 문서와 장부에 쌓는다. 영어 업적 체계는 1단계
+    // 범위가 아니므로 카운터만 올린다.
     if (!result.isRevote) {
-      try { await _serverAddPoints(db, voter_id, 5, 'vote', ''); } catch (e) { console.error('vote point error:', e.message); }
-      try { await _serverBumpAchievementCounter(db, voter_id, 'vote_count'); } catch (e) { console.error('vote achievement error:', e.message); }
+      if (!cols.userStats) {
+        try { await _serverAddPoints(db, voter_id, 5, 'vote', ''); } catch (e) { console.error('vote point error:', e.message); }
+        try { await _serverBumpAchievementCounter(db, voter_id, 'vote_count'); } catch (e) { console.error('vote achievement error:', e.message); }
+      } else {
+        try {
+          await db.runTransaction(async tx => {
+            const ref = db.collection(cols.userStats).doc(voter_id);
+            const snap = await tx.get(ref);
+            const d = snap.exists ? snap.data() : {};
+            tx.set(ref, {
+              user_id: voter_id, edition: cols.edition,
+              vote_count: (Number(d.vote_count) || 0) + 1,
+              total_points: (Number(d.total_points) || 0) + 5,
+            }, { merge: true });
+            _txLedger(db, tx, voter_id, 5, 'vote', '', cols.pointLedger);
+          });
+        } catch (e) { console.error('[en] vote point error:', e.message); }
+      }
     }
 
     // 응답은 기존 fbVote와 동일 형태 — 클라가 이 값으로 closeEpisode 호출
     // 여부를 그대로 판단(마감 트리거 흐름은 안 건드림, 최소 변경).
     const [freshSubsSnap, storySnap] = await Promise.all([
-      db.collection('submissions').where('episode_id', '==', episode_id).get(),
-      db.collection('stories').doc(result.story_id).get(),
+      db.collection(cols.submissions).where('episode_id', '==', episode_id).get(),
+      db.collection(cols.stories).doc(result.story_id).get(),
     ]);
     const maxVotes = freshSubsSnap.docs.reduce((m, d) => Math.max(m, Number(d.data().vote_count) || 0), 0);
     const voteThreshold = (storySnap.exists && storySnap.data().vote_threshold) || AI_VOTE_THRESHOLD;
     return { ok: true, total_voters: result.newTotal, max_votes: maxVotes, vote_threshold: voteThreshold };
-  });
+}
+
+// 한국판 투표 — 기존 Callable 이름·응답 유지(클라이언트 무변경).
+exports.voteEpisode = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => _voteEpisodeCore(admin.firestore(), _EDITIONS.KO, data));
+
+// 영어판 투표 — 컬렉션 맵을 서버가 여기서 고정한다.
+exports.voteEpisodeEn = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => _voteEpisodeCore(admin.firestore(), _EDITIONS.EN, data));
+
 
 // 🔒 2026-08-29 보안방(P0): 관리자 제출물 편집을 서버로 이관 — 위 voteEpisode와
 // 세트. submissions의 update firestore.rule을 "content/is_closing은 무투표·
@@ -2776,6 +2821,10 @@ exports.adminEditSubmission = functions
       new_content, edit_type: data.edit_type || 'manual',
       admin_id, edited_at: new Date().toISOString(),
     });
+    // 관리자 편집도 원문 변경이므로 저장된 영어 번역의 승인을 즉시 내린다.
+    // story_id는 클라이언트가 보내주는 값이라 없을 수도 있어서, 없으면 제출 문서에서 읽는다.
+    const editedStoryId = data.story_id || (subSnap.data() || {}).story_id;
+    if (editedStoryId) await _unapproveEnTranslation(db, editedStoryId, 'admin_edit');
     return { ok: true };
   });
 
@@ -2837,8 +2886,10 @@ function _txPointFields(uData, amount) {
 function _pointsApplicable(user_id) {
   return !!user_id && user_id !== FB_ADMIN_ID && user_id !== FB_AI_ID;
 }
-function _txLedger(db, tx, user_id, points, reason, sub_id) {
-  tx.set(db.collection('point_ledger').doc(), {
+// ledgerCollection을 생략하면 한국판 point_ledger — 기존 호출부는 그대로 동작한다.
+// 영어판은 point_ledger_en을 넘겨 포인트 장부를 완전히 분리한다(상호 사용 불가).
+function _txLedger(db, tx, user_id, points, reason, sub_id, ledgerCollection) {
+  tx.set(db.collection(ledgerCollection || 'point_ledger').doc(), {
     user_id, points, reason, sub_id: sub_id || '', created_at: new Date().toISOString(),
   });
 }
@@ -2855,9 +2906,16 @@ async function _commitInChunks(db, docs, apply, chunkSize) {
 }
 
 // ── 제출 생성 (기존 fbCreateSubmission) ──────────────────────
-exports.submitEpisode = functions
-  .region('asia-northeast3')
-  .https.onCall(async (data) => {
+// ── 제출 코어 (한국·영어 공용) ──────────────────────────────────────────
+// 검증·트랜잭션 로직은 하나로 유지하고, 컬렉션 이름만 cols에서 받는다.
+// ⚠️ cols는 **호출한 Callable이 서버 상수로 고정**해서 넘긴다. 클라이언트가 보낸
+// 어떤 값(data.edition 등)도 여기 도달하지 않는다 — 클라이언트 입력이 컬렉션
+// 경로를 고를 수 있으면 한 계정으로 남의 에디션 데이터에 쓸 수 있게 된다.
+//
+// 포인트·업적은 에디션별로 완전히 분리된다(사용자 확정): 한국은 기존처럼 users
+// 문서와 point_ledger를, 영어는 user_stats_en과 point_ledger_en을 쓴다. users
+// 문서는 계정·차단·닉네임·배지 확인용으로만 공유한다.
+async function _submitEpisodeCore(db, cols, data) {
     const episode_id = data.episode_id;
     const author_id = data.user_id;
     const text = (data.content || '').trim();
@@ -2866,9 +2924,10 @@ exports.submitEpisode = functions
     await _requireUser(author_id, data.token);
     if (!text) return { ok: false, error: '내용을 입력해주세요.' };
 
-    const db = admin.firestore();
-    const uRef = db.collection('users').doc(author_id);
-    const epRef = db.collection('episodes').doc(episode_id);
+    const uRef = db.collection(_EDITIONS.SHARED.users).doc(author_id);
+    // 영어판은 포인트·카운터를 users가 아니라 전용 통계 문서에 쌓는다.
+    const statsRef = cols.userStats ? db.collection(cols.userStats).doc(author_id) : null;
+    const epRef = db.collection(cols.episodes).doc(episode_id);
     const now = Date.now();
     const hourAgo = new Date(now - 60 * 60 * 1000).toISOString();
     const dayAgo  = new Date(now - 24 * 60 * 60 * 1000).toISOString();
@@ -2876,20 +2935,20 @@ exports.submitEpisode = functions
     // 복합 인덱스를 그대로 타기 위함(명시 안 하면 Firestore가 암묵적 오름차순 인덱스를
     // 요구해 "인덱스 필요" 400으로 제출이 통째로 깨짐, be93ea7 때 실제로 겪은 함정).
     // .count()는 이 프로젝트에서 호환성 문제 전례가 있어 쓰지 않고 limit+size로 판정.
-    const hourQuery = db.collection('submissions').where('author_id', '==', author_id)
+    const hourQuery = db.collection(cols.submissions).where('author_id', '==', author_id)
       .where('created_at', '>', hourAgo).orderBy('created_at', 'desc').limit(SUBMIT_RATE_HOURLY_MAX);
-    const dayQuery  = db.collection('submissions').where('author_id', '==', author_id)
+    const dayQuery  = db.collection(cols.submissions).where('author_id', '==', author_id)
       .where('created_at', '>', dayAgo).orderBy('created_at', 'desc').limit(SUBMIT_RATE_DAILY_MAX);
     // 회차 내 본인 제출 수는 기존과 동일하게 episode_id 단일 조건으로 읽고 코드에서
     // 필터한다(복합 인덱스를 새로 요구하지 않기 위함 — 아젠다 제약).
-    const epSubsQuery = db.collection('submissions').where('episode_id', '==', episode_id);
+    const epSubsQuery = db.collection(cols.submissions).where('episode_id', '==', episode_id);
     // "이 이야기에 처음 참여했는가" 판정용 — 예전에는 트랜잭션이 끝난 뒤 이 쿼리를
     // 따로 돌렸는데, 그러면 동시 제출 시 두 요청이 서로를 보거나(양쪽 다 증가 생략)
     // 못 보고(양쪽 다 증가) participant_count가 어긋날 수 있었다(최종 재검토 지적).
     // 트랜잭션 안으로 들여오면 users 문서 충돌로 직렬화된 재시도가 항상 앞선 제출을
     // 보게 되어 정확히 한 번만 증가한다. 쿼리 자체는 예전 후처리와 동일해서
     // 읽기 비용도 늘지 않고, 단일 필드 조건이라 새 인덱스도 필요 없다.
-    const mySubsQuery = db.collection('submissions').where('author_id', '==', author_id);
+    const mySubsQuery = db.collection(cols.submissions).where('author_id', '==', author_id);
 
     const result = await db.runTransaction(async tx => {
       const epSnap = await tx.get(epRef);
@@ -2899,7 +2958,7 @@ exports.submitEpisode = functions
       // (speedrunSubmit 주석이 지목한 그 허점) — 트랜잭션 안 첫 읽기로 옮김.
       if (ep.status !== 'open') return { ok: false, error: '제출이 마감됐습니다.' };
 
-      const storyRef = db.collection('stories').doc(ep.story_id);
+      const storyRef = db.collection(cols.stories).doc(ep.story_id);
       const [uSnap, storySnap, hourSnap, daySnap, epSubsSnap, mySubsSnap] = await Promise.all([
         tx.get(uRef), tx.get(storyRef), tx.get(hourQuery), tx.get(dayQuery), tx.get(epSubsQuery),
         tx.get(mySubsQuery),
@@ -2908,6 +2967,9 @@ exports.submitEpisode = functions
       const uData = uSnap.data();
       const ban = _activeBan(uData);
       if (ban) return { ok: false, error: ban.error };
+      // 영어판 통계 문서는 첫 활동 시점에 없을 수 있다 — 없으면 빈 통계로 시작한다.
+      const statsSnap = statsRef ? await tx.get(statsRef) : null;
+      const statsData = statsRef ? (statsSnap.exists ? statsSnap.data() : {}) : uData;
 
       if (hourSnap.size >= SUBMIT_RATE_HOURLY_MAX) return { ok: false, error: '너무 빠르게 많이 작성하고 있어요. 잠시 후 다시 시도해주세요.' };
       if (daySnap.size >= SUBMIT_RATE_DAILY_MAX) return { ok: false, error: '오늘 작성 가능한 횟수를 다 채웠어요. 내일 다시 시도해주세요.' };
@@ -2921,16 +2983,16 @@ exports.submitEpisode = functions
       // "존재 여부"만 보던 예전 버그를 반복하지 않도록 개수 기준을 그대로 유지.
       if (myPrevCount >= 2) return { ok: false, error: '이미 제출하셨습니다.' };
       if (myPrevCount === 1) {
-        const exSnap = await tx.get(db.collection('extra_submits')
+        const exSnap = await tx.get(db.collection(cols.extraSubmits)
           .where('episode_id', '==', episode_id).where('user_id', '==', author_id).limit(1));
         if (exSnap.empty) return { ok: false, error: '이미 제출하셨습니다.' };
       }
 
       // ── write ──
-      const sub_id = db.collection('submissions').doc().id;
+      const sub_id = db.collection(cols.submissions).doc().id;
       const is_closing = data.closing === true && Number(ep.step) >= 2;
       const nowIso = new Date().toISOString();
-      tx.set(db.collection('submissions').doc(sub_id), {
+      tx.set(db.collection(cols.submissions).doc(sub_id), {
         sub_id, episode_id, story_id: ep.story_id, content: text,
         author_id, author_nickname: uData.display_name || uData.nickname || '익명',
         author_badge: uData.badge || 'seed',
@@ -2951,16 +3013,22 @@ exports.submitEpisode = functions
         tx.update(storyRef, storyUpdate);
       }
 
-      // 제출 10p + 카운터를 같은 트랜잭션의 users 쓰기로 합침 — 부분 성공(제출은
+      // 제출 10p + 카운터를 같은 트랜잭션의 사용자 통계 쓰기로 합침 — 부분 성공(제출은
       // 됐는데 포인트 미지급)을 없애고, 동시에 이 문서가 per-user 직렬화 지점이 됨.
-      const userUpdate = { submission_count: (Number(uData.submission_count) || 0) + 1 };
+      // 한국은 users 문서, 영어는 user_stats_en 문서가 그 지점이다(경제 완전 분리).
+      const userUpdate = { submission_count: (Number(statsData.submission_count) || 0) + 1 };
       const modeCat = MODE_ACHIEVEMENT_CATEGORY[story0.mode];
-      if (modeCat) userUpdate[modeCat] = (Number(uData[modeCat]) || 0) + 1;
+      if (modeCat) userUpdate[modeCat] = (Number(statsData[modeCat]) || 0) + 1;
       if (_pointsApplicable(author_id)) {
-        Object.assign(userUpdate, _txPointFields(uData, 10));
-        _txLedger(db, tx, author_id, 10, 'submit', sub_id);
+        Object.assign(userUpdate, _txPointFields(statsData, 10));
+        _txLedger(db, tx, author_id, 10, 'submit', sub_id, cols.pointLedger);
       }
-      tx.update(uRef, userUpdate);
+      if (statsRef) {
+        // 영어 통계 문서는 처음엔 존재하지 않으므로 set+merge로 만든다.
+        tx.set(statsRef, Object.assign({ user_id: author_id, edition: cols.edition }, userUpdate), { merge: true });
+      } else {
+        tx.update(uRef, userUpdate);
+      }
 
       return {
         ok: true, sub_id, story_id: ep.story_id, step: Number(ep.step) || 0,
@@ -2974,25 +3042,41 @@ exports.submitEpisode = functions
     // ── 파생 효과(실패해도 제출 성공을 훼손하지 않음, 기존 정책 그대로) ──
     // 카운터는 위 트랜잭션에서 이미 올렸으므로 여기서는 업적 판정만 한다
     // (_serverBumpAchievementCounter를 쓰면 카운터가 이중 증가함).
-    try { await _serverCheckAchievements(db, author_id, 'submission_count', result.newSubCount); } catch (e) { console.error('submit achievement error:', e.message); }
-    if (result.modeCat) {
-      try { await _serverCheckAchievements(db, author_id, result.modeCat, result.newModeCount); } catch (e) { console.error('submit mode achievement error:', e.message); }
+    // 업적도 에디션별로 분리하기로 했고(사용자 확정), 영어판 업적 체계는 1단계
+    // 범위가 아니므로 한국 경로에서만 판정한다. 영어는 카운터만 쌓아둔다.
+    if (!cols.userStats) {
+      try { await _serverCheckAchievements(db, author_id, 'submission_count', result.newSubCount); } catch (e) { console.error('submit achievement error:', e.message); }
+      if (result.modeCat) {
+        try { await _serverCheckAchievements(db, author_id, result.modeCat, result.newModeCount); } catch (e) { console.error('submit mode achievement error:', e.message); }
+      }
     }
     // participant_count 증가는 위 트랜잭션 안에서 이미 원자적으로 처리했다.
-    // 여기 남은 건 씨앗 오프닝 중복 방지 마킹뿐 — config 문서에 대한 부가 쓰기라
-    // 실패해도 제출 결과에 영향이 없다(fbCreateStory에서도 마킹하는 fallback 경로).
+    // 여기 남은 건 씨앗 오프닝 중복 방지 마킹뿐 — 부가 쓰기라 실패해도 제출 결과에
+    // 영향이 없다(fbCreateStory에서도 마킹하는 fallback 경로).
     if (result.isFirstParticipation && result.step === 1) {
       try {
-        const storySnap = await db.collection('stories').doc(result.story_id).get();
+        const storySnap = await db.collection(cols.stories).doc(result.story_id).get();
         const storyData = storySnap.exists ? storySnap.data() : null;
         if (storyData && storyData.is_ai_seed && storyData.opening) {
-          await db.collection('config').doc('used_openings').set({ [storyData.opening]: true }, { merge: true });
+          await db.collection(cols.usedOpeningsDoc.collection).doc(cols.usedOpeningsDoc.doc)
+            .set({ [storyData.opening]: true }, { merge: true });
         }
       } catch (e) { console.error('submit used_openings error:', e.message); }
     }
 
     return { ok: true, sub_id: result.sub_id };
-  });
+}
+
+// 한국판 제출 — 기존 Callable 이름·응답을 그대로 유지한다(클라이언트 무변경).
+exports.submitEpisode = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => _submitEpisodeCore(admin.firestore(), _EDITIONS.KO, data));
+
+// 영어판 제출 — 별도 Callable. 컬렉션 맵을 서버가 여기서 고정하므로,
+// 클라이언트는 어느 에디션에 쓸지 고를 수 없다.
+exports.submitEpisodeEn = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => _submitEpisodeCore(admin.firestore(), _EDITIONS.EN, data));
 
 // ── 내 제출 수정 (기존 fbEditMySubmission) ───────────────────
 exports.editMySubmission = functions
@@ -5222,10 +5306,13 @@ const SPOTLIGHT_AI_OPENINGS = [
 // 잘 안 채워질 만큼 투표량이 적어서, 5로 두면 오히려 진행이 지나치게
 // 느려짐 — 유저 판단으로 3으로 되돌림(2026-08-03), 그마저도 회전이 느리다고
 // 판단해 2로 추가 하향(2026-08-17). 나중에 투표량이 다시 늘어나면 재조정 검토.
-function _serverCreateSeedStory(db, writer, opening, extraFields) {
-  const story_id = db.collection('stories').doc().id;
-  const episode_id = db.collection('episodes').doc().id;
-  writer.set(db.collection('stories').doc(story_id), {
+// cols를 생략하면 한국판(stories/episodes) — 기존 호출부는 그대로 동작한다.
+// 영어 슬롯은 _EDITIONS.EN을 넘겨 stories_en/episodes_en에 씨앗을 심는다.
+function _serverCreateSeedStory(db, writer, opening, extraFields, cols) {
+  const c = cols || _EDITIONS.KO;
+  const story_id = db.collection(c.stories).doc().id;
+  const episode_id = db.collection(c.episodes).doc().id;
+  writer.set(db.collection(c.stories).doc(story_id), {
     story_id, opening: opening.trim(), max_steps: 10, current_step: 0,
     status: 'active', creator_id: FB_AI_ID, creator_nickname: '익명', creator_badge: '',
     created_at: new Date().toISOString(), batch: '', participant_count: 0, like_count: 0,
@@ -5236,9 +5323,12 @@ function _serverCreateSeedStory(db, writer, opening, extraFields) {
     // 단어챌린지 우승작으로 만들어진 씨앗이면 그 3단어를 같이 저장(challenge_words) —
     // 스포트라이트 카드 오프닝 문장에서 boldChallengeWords()로 강조 표시하기 위함
     // (유저 요청, 2026-07-21). 다른 슬롯(문장 제안/AI)은 extraFields 없이 호출됨.
+    // 어느 에디션에서 만들어진 이야기인지 문서에도 남긴다. 격리는 컬렉션이 담당하지만,
+    // 감사·디버깅 때 문서만 보고도 출처를 알 수 있어야 한다.
+    edition: c.edition,
     ...(extraFields || {}),
   });
-  writer.set(db.collection('episodes').doc(episode_id), {
+  writer.set(db.collection(c.episodes).doc(episode_id), {
     episode_id, story_id, step: 1, parent_sub_id: '',
     status: 'open', vote_total: 0, created_at: new Date().toISOString(), closed_at: '', pending_at: '',
   });
@@ -9369,4 +9459,824 @@ exports.getDiaryEndingStats = functions
     })).sort((a, b) => a.book_id - b.book_id);
     byEnding.sort((a, b) => a.book_id - b.book_id || b.count - a.count);
     return { ok: true, by_book, by_ending: byEnding, generated_at: new Date().toISOString() };
+  });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// English 에디션 — Today 슬롯 엔진
+//
+// 한국판 스포트라이트(config/spotlight_slots + spotlight_*_pool)와 **완전히 분리**된다.
+// 포인터는 en_spotlight/slots, 소진 기록은 en_spotlight/used_openings, 씨앗은
+// functions/lib/en-seeds.js의 정적 배열(사용자 승인본)이다.
+//
+// 한국판 _serverRefillSpotlightSlot을 건드리지 않는 이유: 그 함수는 config 포인터
+// 하나만 보고 돌며, 영어 이야기는 stories_en에 있어 애초에 그 경로로 들어올 수 없다.
+// 영어 완결이 한국 슬롯을 교체하는 사고가 구조적으로 불가능하다.
+//
+// 1단계 슬롯: fixed_ending / genre_switch / speedrun / fairytale (+ hot은 실시간 계산)
+// hint(초성 퀴즈)는 한글 자모 기반이라 이식 불가, word(단어 챌린지)는 인프라 선행 필요.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _enPick(list, used) {
+  const available = list.filter(o => !used[o]);
+  const src = available.length ? available : list;
+  return src[Math.floor(Math.random() * src.length)];
+}
+
+function _enRandomGenreSequence(steps) {
+  const arr = [];
+  for (let i = 0; i < steps; i++) {
+    const prev = arr[i - 1];
+    const pool = prev ? _enSeeds.EN_GENRES.filter(g => g !== prev) : _enSeeds.EN_GENRES;
+    arr.push(pool[Math.floor(Math.random() * pool.length)]);
+  }
+  return arr;
+}
+
+// 슬롯 하나에 새 씨앗 이야기를 만든다. writer는 tx 또는 batch.
+function _enCreateSlotStory(db, writer, slotKey, used) {
+  const EN = _EDITIONS.EN;
+  if (slotKey === 'speedrun') {
+    const opening = _enPick(_enSeeds.EN_SPEEDRUN_OPENINGS, used);
+    // 초스피드는 투표가 없어 vote_threshold를 붙이지 않는다(한국판과 동일 규칙).
+    const story_id = db.collection(EN.stories).doc().id;
+    const episode_id = db.collection(EN.episodes).doc().id;
+    writer.set(db.collection(EN.stories).doc(story_id), {
+      story_id, opening: opening.trim(), max_steps: 100, current_step: 0,
+      status: 'active', creator_id: FB_AI_ID, creator_nickname: 'Anonymous', creator_badge: '',
+      created_at: new Date().toISOString(), batch: '', participant_count: 0, like_count: 0,
+      is_ai_seed: true, hot_score: 0, mode: 'speedrun', edition: EN.edition,
+      open_steps: { [episode_id]: { step: 1, sub_count: 0 } },
+    });
+    writer.set(db.collection(EN.episodes).doc(episode_id), {
+      episode_id, story_id, step: 1, parent_sub_id: '',
+      status: 'open', vote_total: 0, created_at: new Date().toISOString(), closed_at: '', pending_at: '',
+    });
+    return { story_id, opening };
+  }
+
+  if (slotKey === 'fixed_ending') {
+    const opening = _enPick(_enSeeds.EN_OPENINGS, used);
+    const ending = _enSeeds.EN_FIXED_ENDING_POOL[Math.floor(Math.random() * _enSeeds.EN_FIXED_ENDING_POOL.length)];
+    const story_id = _serverCreateSeedStory(db, writer, opening, {
+      mode: 'fixed_ending', fixed_ending: ending,
+    }, EN);
+    return { story_id, opening };
+  }
+
+  if (slotKey === 'genre_switch') {
+    const opening = _enPick(_enSeeds.EN_OPENINGS, used);
+    const story_id = _serverCreateSeedStory(db, writer, opening, {
+      mode: 'genre_switch', genre_sequence: _enRandomGenreSequence(10),
+    }, EN);
+    return { story_id, opening };
+  }
+
+  if (slotKey === 'fairytale') {
+    const opening = _enPick(_enSeeds.EN_FAIRYTALE_OPENINGS, used);
+    const story_id = _serverCreateSeedStory(db, writer, opening, { mode: 'fairytale' }, EN);
+    return { story_id, opening };
+  }
+
+  throw new Error(`알 수 없는 영어 슬롯: ${slotKey}`);
+}
+
+// 영어 슬롯이 비어 있으면 채운다. 이미 있는 슬롯은 건드리지 않는다(재실행 안전).
+async function _enEnsureSlots(db, onlySlotKey) {
+  const EN = _EDITIONS.EN;
+  const ptrRef = db.collection(EN.slotsDoc.collection).doc(EN.slotsDoc.doc);
+  const usedRef = db.collection(EN.usedOpeningsDoc.collection).doc(EN.usedOpeningsDoc.doc);
+  const created = [];
+
+  await db.runTransaction(async tx => {
+    const [ptrSnap, usedSnap] = await Promise.all([tx.get(ptrRef), tx.get(usedRef)]);
+    const slots = ptrSnap.exists ? (ptrSnap.data() || {}) : {};
+    const used = usedSnap.exists ? (usedSnap.data() || {}) : {};
+    const keys = onlySlotKey ? [onlySlotKey] : _enSeeds.EN_SLOT_KEYS;
+
+    const ptrUpdate = {};
+    const usedUpdate = {};
+    for (const key of keys) {
+      if (slots[key] && slots[key].story_id) continue; // 이미 채워져 있음
+      const r = _enCreateSlotStory(db, tx, key, Object.assign({}, used, usedUpdate));
+      ptrUpdate[key] = { story_id: r.story_id };
+      usedUpdate[r.opening] = true;
+      created.push({ slot: key, story_id: r.story_id });
+    }
+    if (Object.keys(ptrUpdate).length) {
+      tx.set(ptrRef, ptrUpdate, { merge: true });
+      tx.set(usedRef, usedUpdate, { merge: true });
+    }
+  });
+
+  return created;
+}
+
+// 영어 이야기가 완결되면 그 슬롯을 다음 씨앗으로 교체한다.
+// ⚠️ 포인터가 실제로 그 story를 가리키고 있을 때만 교체한다 — 완결 이벤트가 늦게
+// 도착하거나 중복 트리거되면 이미 새로 채워진 슬롯을 또 갈아치울 수 있다(Codex 지적).
+async function _enRefillSlotOnComplete(db, completed_story_id) {
+  const EN = _EDITIONS.EN;
+  const ptrRef = db.collection(EN.slotsDoc.collection).doc(EN.slotsDoc.doc);
+  const usedRef = db.collection(EN.usedOpeningsDoc.collection).doc(EN.usedOpeningsDoc.doc);
+  let newStoryId = null;
+
+  await db.runTransaction(async tx => {
+    const [ptrSnap, usedSnap] = await Promise.all([tx.get(ptrRef), tx.get(usedRef)]);
+    if (!ptrSnap.exists) return;
+    const slots = ptrSnap.data() || {};
+    const used = usedSnap.exists ? (usedSnap.data() || {}) : {};
+
+    const slotKey = _enSeeds.EN_SLOT_KEYS.find(k => slots[k] && slots[k].story_id === completed_story_id);
+    if (!slotKey) return; // 이 이야기는 지금 어떤 영어 슬롯도 차지하고 있지 않다
+
+    const r = _enCreateSlotStory(db, tx, slotKey, used);
+    tx.set(ptrRef, { [slotKey]: { story_id: r.story_id } }, { merge: true });
+    tx.set(usedRef, { [r.opening]: true }, { merge: true });
+    newStoryId = r.story_id;
+  });
+
+  if (newStoryId) console.log(`[en] 슬롯 리필 완료: ${completed_story_id} → ${newStoryId}`);
+  return newStoryId;
+}
+
+// 관리자 전용 — 영어 Today 슬롯 초기화(재실행 안전). 승인 전까지 호출하지 않는다.
+exports.adminInitEnSpotlight = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const admin_id = data.user_id;
+    if (!admin_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(admin_id, data.token);
+    if (admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+
+    const created = await _enEnsureSlots(admin.firestore(), data.slot_key || null);
+    return { ok: true, created, slot_keys: _enSeeds.EN_SLOT_KEYS };
+  });
+
+// 영어 Today 카드 데이터 — 클라이언트가 슬롯 포인터를 읽고 각 이야기를 가져온다.
+// 포인터는 읽기 공개지만 쓰기는 서버 전용이라, 클라이언트가 카드가 가리키는
+// 이야기를 바꿔치기할 수 없다.
+exports.getEnSpotlight = functions
+  .region('asia-northeast3')
+  .https.onCall(async () => {
+    const db = admin.firestore();
+    const EN = _EDITIONS.EN;
+    const ptrSnap = await db.collection(EN.slotsDoc.collection).doc(EN.slotsDoc.doc).get();
+    const slots = ptrSnap.exists ? (ptrSnap.data() || {}) : {};
+
+    const cards = [];
+    for (const key of _enSeeds.EN_SLOT_KEYS) {
+      const sid = slots[key] && slots[key].story_id;
+      if (!sid) continue;
+      const sSnap = await db.collection(EN.stories).doc(sid).get();
+      if (!sSnap.exists) continue;
+      const s = sSnap.data();
+      cards.push({
+        slot: key,
+        title: _enSeeds.EN_SLOT_TITLE[key],
+        info: _enSeeds.EN_SLOT_INFO[key],
+        story_id: sid,
+        opening: s.opening || '',
+        status: s.status,
+        current_step: Number(s.current_step) || 0,
+        participant_count: Number(s.participant_count) || 0,
+        mode: s.mode || '',
+        fixed_ending: s.fixed_ending || null,
+      });
+    }
+
+    // hot 슬롯 — 진행 중 영어 자유 이야기 중 참여자가 가장 많은 것(실시간).
+    try {
+      const hotSnap = await db.collection(EN.stories)
+        .where('status', '==', 'active').orderBy('participant_count', 'desc').limit(5).get();
+      const slotIds = new Set(cards.map(c => c.story_id));
+      const hot = hotSnap.docs.map(d => ({ story_id: d.id, ...d.data() }))
+        .find(s => !slotIds.has(s.story_id) && (Number(s.participant_count) || 0) > 0);
+      if (hot) {
+        cards.push({
+          slot: 'hot',
+          title: _enSeeds.EN_SLOT_TITLE.hot,
+          info: _enSeeds.EN_SLOT_INFO.hot,
+          story_id: hot.story_id,
+          opening: hot.opening || '',
+          status: hot.status,
+          current_step: Number(hot.current_step) || 0,
+          participant_count: Number(hot.participant_count) || 0,
+          mode: hot.mode || '',
+          fixed_ending: null,
+        });
+      }
+    } catch (e) {
+      // 인덱스 미생성 등으로 실패해도 나머지 카드는 정상 노출한다.
+      console.error('[en] hot slot error:', e.message);
+    }
+
+    return { ok: true, cards, generated_at: new Date().toISOString() };
+  });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// A-1 영어 읽기 전용 발행 — 번역 생성 / 승인 / 비용 통제
+//
+// 설계 원칙 (사용자 확정 + Codex 검토 반영):
+//  1) 생성 ≠ 공개. translateStoryForEn은 번역문만 만들고, 공개는 관리자가
+//     approveStoryForEn으로 따로 승인해야 한다.
+//  2) 승인·상한·번역 데이터는 전부 신규 컬렉션에 둔다. bang/firestore.rules에는
+//     이 컬렉션들에 대한 match가 없고, 그 파일에 catch-all(match /{document=**})도
+//     없으므로 Firestore 기본 거부가 적용돼 클라이언트는 읽기·쓰기 모두 불가능하다.
+//     (stories/config에 두면 안 되는 이유: stories update 규칙은 title/ai_title과
+//     spotlight status만 막고 임의 필드 추가를 허용하며, config/{configId}는
+//     secrets 외 전부 공개라 킬스위치를 누구나 켤 수 있다. 그래서 rules 파일을
+//     건드리지 않고 잠긴 신규 컬렉션을 쓰는 쪽을 택했다 — rules 배포는 파일
+//     전체를 덮어쓰므로 병행 중인 다른 작업의 규칙 변경을 되돌릴 위험이 있다.)
+//  3) 비용은 API 호출 "전에" 트랜잭션으로 예약한다. 단순 조회 후 호출 방식은
+//     동시 호출로 상한을 넘길 수 있다.
+//  4) 설정 문서가 없거나 손상됐으면 fail-closed(거부). 기본 활성화하지 않는다.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const _EN_TRANSLATIONS = 'story_translations';
+const _EN_CONTROL      = 'translation_control';
+const _EN_USAGE        = 'translation_usage';
+const _EN_LOGS         = 'translation_logs';
+const _EN_PROMPT_VERSION = 'en-v1';
+
+// 원문이 바뀐 순간 저장된 번역은 낡은 것이 된다. 해시 비교만으로도 빌드가
+// 걸러내지만, 승인 플래그를 그대로 두면 "관리자는 승인 상태인 줄 아는데 실제로는
+// 스테일"인 구간이 생긴다. 그래서 원문 변경 경로에서 승인을 즉시 내린다.
+// 주의: 이건 다음 빌드에 반영된다. 이미 배포된 정적 페이지는 다음 성공 빌드
+// 전까지 라이브에 남으므로, 실제 공개 운영 시에는 허용 지연을 별도로 합의해야 한다.
+async function _unapproveEnTranslation(db, story_id, reason) {
+  try {
+    const ref = db.collection(_EN_TRANSLATIONS).doc(story_id);
+    const snap = await ref.get();
+    if (!snap.exists) return;
+    const d = snap.data() || {};
+    if (d.en_publish_approved !== true) return;
+    await ref.update({
+      en_publish_approved: false,
+      approved_at: null,
+      approved_by: null,
+      approved_source_hash: null,
+      unapproved_reason: reason || 'source_changed',
+      unapproved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    console.log('[en] 원문 변경으로 승인 해제: ' + story_id + ' (' + reason + ')');
+  } catch (e) {
+    // 번역 승인 해제 실패가 원문 편집 자체를 롤백시키면 안 된다(원문 편집이 본업).
+    console.error('[en] 승인 해제 실패(' + story_id + '):', e.message);
+  }
+}
+
+// 완결작의 정경 문장 + 현재 원문 해시를 계산한다. 번역 함수와 빌드 스크립트가
+// functions/lib/canonical-en.js의 같은 규칙을 공유한다.
+async function _loadEnCanonical(db, story_id) {
+  const canon = require('./lib/canonical-en.js');
+  const storySnap = await db.collection('stories').doc(story_id).get();
+  if (!storySnap.exists) return { error: '이야기를 찾을 수 없습니다.' };
+  const story = storySnap.data() || {};
+  if (story.status !== 'completed') return { error: '완결된 이야기만 번역할 수 있습니다.' };
+  if (story.mode === 'speedrun') return { error: '초스피드 이야기는 이번 범위가 아닙니다.' };
+
+  const [epsSnap, subsSnap] = await Promise.all([
+    db.collection('episodes').where('story_id', '==', story_id).get(),
+    db.collection('submissions').where('story_id', '==', story_id).get(),
+  ]);
+  const episodes = epsSnap.docs.map(d => Object.assign({ episode_id: d.id }, d.data()));
+  const submissions = subsSnap.docs.map(d => Object.assign({ sub_id: d.id }, d.data()));
+
+  const subs = canon.collectCanonicalSubs(episodes, submissions);
+  if (!subs || !subs.length) return { error: '채택된 문장이 없습니다.' };
+
+  // 안정화 게이트 — 정경 문장이 전부 ai_reviewed여야 번역한다. 아직 다듬기가
+  // 안 끝났으면 번역해도 곧 원문이 바뀌어 스테일이 되고 API 비용만 버린다.
+  const unreviewed = subs.filter(s => s.ai_reviewed !== true);
+  if (unreviewed.length) {
+    return { error: 'AI 문장 다듬기가 아직 끝나지 않았습니다(' + unreviewed.length + '문장). 다듬기 완료 후 다시 시도하세요.' };
+  }
+
+  return {
+    story: story,
+    subs: subs,
+    opening: story.opening || '',
+    source_text_hash: canon.hashCanonical(story.opening || '', subs),
+  };
+}
+
+// 상한·킬스위치 로직은 functions/lib/en-quota.js에 있다 — "상한과 킬스위치가
+// 실제로 API 호출을 막는지"가 필수 검증 항목이라, Firestore 없이 가짜 db로
+// 단위 테스트할 수 있게 분리했다.
+const _enQuota = require('./lib/en-quota.js');
+const _parseEnLimits = _enQuota.parseEnLimits;
+const _enBuckets = _enQuota.enBuckets;
+const _reserveEnQuota = db => _enQuota.reserveEnQuota(db);
+
+// 관리자 전용 — 번역 상한·킬스위치 설정(재실행 안전). 문서가 없으면 번역이
+// fail-closed로 막히므로, 이 함수가 최초 생성 경로를 겸한다.
+exports.setTranslationLimits = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const admin_id = data.user_id;
+    if (!admin_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(admin_id, data.token);
+    if (admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+
+    const db = admin.firestore();
+    const ref = db.collection(_EN_CONTROL).doc('flags');
+    const prev = await ref.get();
+    const prevData = prev.exists ? (prev.data() || {}) : {};
+
+    const enabled = typeof data.translation_enabled === 'boolean'
+      ? data.translation_enabled
+      : (typeof prevData.translation_enabled === 'boolean' ? prevData.translation_enabled : false);
+    const hourly = Number.isInteger(data.hourly_limit) ? data.hourly_limit
+      : (Number.isInteger(prevData.hourly_limit) ? prevData.hourly_limit : 30);
+    const daily = Number.isInteger(data.daily_limit) ? data.daily_limit
+      : (Number.isInteger(prevData.daily_limit) ? prevData.daily_limit : 300);
+
+    if (hourly < 0 || daily < 0) throw new functions.https.HttpsError('invalid-argument', '상한은 0 이상이어야 합니다.');
+
+    await ref.set({
+      translation_enabled: enabled,
+      hourly_limit: hourly,
+      daily_limit: daily,
+      updated_at: new Date().toISOString(),
+      updated_by: admin_id,
+    }, { merge: true });
+
+    return { ok: true, translation_enabled: enabled, hourly_limit: hourly, daily_limit: daily };
+  });
+
+// 관리자 전용 — 영어 번역 "생성"만. 공개는 approveStoryForEn이 따로 한다.
+exports.translateStoryForEn = functions
+  .region('asia-northeast3')
+  .runWith({ timeoutSeconds: 300 })
+  .https.onCall(async (data) => {
+    const admin_id = data.user_id;
+    const story_id = data.story_id;
+    if (!admin_id || !story_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(admin_id, data.token);
+    if (admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+
+    const db = admin.firestore();
+
+    const loaded = await _loadEnCanonical(db, story_id);
+    if (loaded.error) return { ok: false, error: loaded.error };
+
+    // 비용 예약이 API 호출보다 반드시 먼저다.
+    const reserved = await _reserveEnQuota(db);
+    if (!reserved.ok) return { ok: false, error: reserved.message, code: reserved.code };
+
+    const secretsSnap = await db.collection('config').doc('secrets').get();
+    const claudeKey = secretsSnap.exists ? secretsSnap.data().claude_key : null;
+    if (!claudeKey) return { ok: false, error: 'Claude API 키가 설정돼 있지 않습니다.' };
+
+    const lines = loaded.subs.map(s => s.content);
+    const numbered = lines.map((l, i) => (i + 1) + '. ' + l).join('\n');
+    const prompt = 'You are translating a Korean relay novel into natural literary English.\n\n'
+      + 'This story was written collaboratively: many different people each contributed one sentence, in order. '
+      + 'Preserve that voice — do not smooth it into a single uniform style, and do not merge or split sentences.\n\n'
+      + 'Rules:\n'
+      + '- Translate the title and each numbered sentence separately.\n'
+      + '- Keep proper nouns, character relationships, point of view, and any twist intact.\n'
+      + '- Return ONLY valid JSON, no commentary, in exactly this shape:\n'
+      + '{"title":"...","description":"...","lines":["...","..."]}\n'
+      + '- "lines" must have exactly ' + lines.length + ' items, in the same order as the input.\n'
+      + '- "description" is a one-sentence English summary (max 160 characters) for search results.\n\n'
+      + 'Title (Korean): ' + loaded.opening + '\n\n'
+      + 'Sentences (Korean), in order:\n' + numbered;
+
+    let result = null;
+    let apiError = null;
+    try {
+      result = await _callClaude(claudeKey, prompt, 8000);
+    } catch (e) {
+      apiError = e.message;
+    }
+
+    const logBase = {
+      story_id: story_id, admin_id: admin_id, prompt_version: _EN_PROMPT_VERSION,
+      model: 'claude-haiku-4-5-20251001',
+      line_count: lines.length,
+      hour_used: reserved.hourUsed, day_used: reserved.dayUsed,
+      created_at: new Date().toISOString(),
+    };
+
+    if (!result) {
+      // 예약은 되돌리지 않는다 — 요청을 실제로 보냈으면 비용 관점에서 사용으로 센다.
+      await db.collection(_EN_LOGS).add(Object.assign({}, logBase, { status: 'failed', error: apiError || 'empty_response' }));
+      return { ok: false, error: '번역 생성에 실패했습니다: ' + (apiError || '빈 응답') };
+    }
+
+    let parsed;
+    try {
+      const match = result.match(/\{[\s\S]*\}/);
+      parsed = JSON.parse(match ? match[0] : result);
+    } catch (e) {
+      await db.collection(_EN_LOGS).add(Object.assign({}, logBase, { status: 'parse_failed' }));
+      return { ok: false, error: '번역 결과를 해석하지 못했습니다.' };
+    }
+
+    if (!parsed || !Array.isArray(parsed.lines) || parsed.lines.length !== lines.length) {
+      await db.collection(_EN_LOGS).add(Object.assign({}, logBase, { status: 'shape_mismatch' }));
+      return { ok: false, error: '번역 문장 수가 원문과 다릅니다(원문 ' + lines.length + ').' };
+    }
+
+    const existing = await db.collection(_EN_TRANSLATIONS).doc(story_id).get();
+    const now = new Date().toISOString();
+    // ⚠️ 재번역 시 승인을 반드시 초기화한다. 이게 없으면 이미 승인된 작품을
+    // 재번역했을 때 승인이 켜진 채 새 번역이 저장돼, 관리자가 확인하지 않은
+    // 번역문이 다음 빌드에서 그대로 공개된다("생성≠공개" 위반).
+    const payload = {
+      story_id: story_id,
+      target_language: 'en',
+      title_en: String(parsed.title || '').trim(),
+      description_en: String(parsed.description || '').trim(),
+      lines_en: parsed.lines.map(l => String(l == null ? '' : l).trim()),
+      source_text_hash: loaded.source_text_hash,
+      source_line_count: lines.length,
+      source_sub_ids: loaded.subs.map(s => s.sub_id),
+      en_publish_approved: false,
+      approved_at: null,
+      approved_by: null,
+      approved_source_hash: null,
+      model: 'claude-haiku-4-5-20251001',
+      prompt_version: _EN_PROMPT_VERSION,
+      translated_at: now,
+      updated_at: now,
+      last_error: null,
+    };
+    if (!existing.exists) payload.created_at = now;
+    await db.collection(_EN_TRANSLATIONS).doc(story_id).set(payload, { merge: true });
+
+    await db.collection(_EN_LOGS).add(Object.assign({}, logBase, { status: 'ok' }));
+
+    return {
+      ok: true,
+      story_id: story_id,
+      source_text_hash: loaded.source_text_hash,
+      line_count: lines.length,
+      note: '번역만 생성됐습니다. 공개하려면 별도로 승인해야 합니다.',
+    };
+  });
+
+// 관리자 전용 — 번역 결과를 확인하고 공개 승인 / 승인 철회.
+exports.approveStoryForEn = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const admin_id = data.user_id;
+    const story_id = data.story_id;
+    const approved = data.approved;
+    if (!admin_id || !story_id || typeof approved !== 'boolean') {
+      throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    }
+    await _requireUser(admin_id, data.token);
+    if (admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+
+    const db = admin.firestore();
+    const ref = db.collection(_EN_TRANSLATIONS).doc(story_id);
+    const snap = await ref.get();
+    if (!snap.exists) return { ok: false, error: '이 작품의 번역이 아직 없습니다.' };
+
+    const now = new Date().toISOString();
+
+    if (!approved) {
+      await ref.update({
+        en_publish_approved: false, approved_at: null, approved_by: null,
+        approved_source_hash: null, unapproved_reason: 'admin', unapproved_at: now, updated_at: now,
+      });
+      return { ok: true, en_publish_approved: false };
+    }
+
+    // 승인은 원문이 번역 시점과 동일할 때만 허용 — 스테일 상태로는 공개할 수 없다.
+    const loaded = await _loadEnCanonical(db, story_id);
+    if (loaded.error) return { ok: false, error: loaded.error };
+    const stored = snap.data() || {};
+    if (stored.source_text_hash !== loaded.source_text_hash) {
+      return { ok: false, error: '원문이 번역 이후 변경됐습니다. 다시 번역한 뒤 승인하세요.', code: 'stale' };
+    }
+
+    await ref.update({
+      en_publish_approved: true,
+      approved_at: now,
+      approved_by: admin_id,
+      approved_source_hash: stored.source_text_hash,
+      unapproved_reason: null,
+      updated_at: now,
+    });
+    return { ok: true, en_publish_approved: true, approved_source_hash: stored.source_text_hash };
+  });
+
+// 관리자 전용 — 번역 결과·해시 일치 여부·승인 상태 조회(승인 판단용).
+// 미승인 번역이 일반 사용자에게 새면 안 되므로 관리자 전용이다.
+exports.getEnTranslationStatus = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const admin_id = data.user_id;
+    if (!admin_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(admin_id, data.token);
+    if (admin_id !== FB_ADMIN_ID) throw new functions.https.HttpsError('permission-denied', '권한이 없습니다.');
+
+    const db = admin.firestore();
+
+    if (data.story_id) {
+      const snap = await db.collection(_EN_TRANSLATIONS).doc(data.story_id).get();
+      if (!snap.exists) return { ok: true, exists: false };
+      const d = snap.data() || {};
+      const loaded = await _loadEnCanonical(db, data.story_id);
+      const currentHash = loaded.error ? null : loaded.source_text_hash;
+      return {
+        ok: true, exists: true,
+        story_id: data.story_id,
+        title_en: d.title_en, description_en: d.description_en, lines_en: d.lines_en,
+        en_publish_approved: d.en_publish_approved === true,
+        source_text_hash: d.source_text_hash,
+        approved_source_hash: d.approved_source_hash || null,
+        current_source_hash: currentHash,
+        hash_matches: !!currentHash && currentHash === d.source_text_hash,
+        publishable: d.en_publish_approved === true
+          && !!currentHash && currentHash === d.source_text_hash
+          && d.approved_source_hash === d.source_text_hash,
+        translated_at: d.translated_at, updated_at: d.updated_at,
+        source_error: loaded.error || null,
+      };
+    }
+
+    const allSnap = await db.collection(_EN_TRANSLATIONS).get();
+    const controlSnap = await db.collection(_EN_CONTROL).doc('flags').get();
+    const items = allSnap.docs.map(doc => {
+      const d = doc.data() || {};
+      return {
+        story_id: doc.id,
+        en_publish_approved: d.en_publish_approved === true,
+        approved_matches: d.approved_source_hash === d.source_text_hash,
+        translated_at: d.translated_at || null,
+      };
+    });
+    const limits = _parseEnLimits(controlSnap);
+    const buckets = _enBuckets();
+    const hSnap = await db.collection(_EN_USAGE).doc(buckets.hour).get();
+    const dSnap = await db.collection(_EN_USAGE).doc(buckets.day).get();
+    return {
+      ok: true,
+      count: items.length,
+      items: items,
+      limits: limits || null,
+      limits_valid: !!limits,
+      usage: {
+        hour_used: Number((hSnap.exists && hSnap.data().count) || 0),
+        day_used: Number((dSnap.exists && dSnap.data().count) || 0),
+      },
+    };
+  });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// English 에디션 — 에피소드 마감·채택
+//
+// 왜 한국판 _serverCloseEpisode를 공용화하지 않았나: 그 함수는 264줄이고
+// _serverDistributePoints / _serverSpinOffOrphan / _serverBuildEpisodeMaps /
+// _classifyStoryGenre / _serverRefillSpotlightSlot 등 헬퍼 여섯 개가 연쇄로
+// 물려 있으며, 그 헬퍼들도 컬렉션이 하드코딩돼 있다. 게다가 포인트를 에디션별로
+// 분리하기로 해서 배분 로직까지 분기해야 한다. 이제 막 배포·검증된 한국 마감
+// 경로(동률 분기, 지나간 단계 스핀오프, 연장 이력 보정 등 사고 이력이 쌓인 곳)를
+// 지금 건드리는 위험이 중복 비용보다 크다고 판단했다.
+//
+// 대신 영어판에 필요한 것만 담은 별도 경로를 둔다. 한국판과 다른 점(1단계 한정):
+//   - 동률이어도 분기(fork)를 만들지 않고 가장 먼저 제출된 승자 하나만 채택한다.
+//   - 지나간 단계 스핀오프·연장 이력 보정을 하지 않는다(영어판엔 아직 그 기능이 없다).
+//   - 장르 확률 AI 분류를 호출하지 않는다(비용, 그리고 한국어 라벨 체계).
+// 이 차이는 사용자 보고에 명시했다.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// speedrun은 투표 없이 "쓰는 순간 채택"이다. 그 외 모드는 임계값 도달 시 마감.
+const EN_VOTE_THRESHOLD = 2;
+const EN_MAX_STEPS_DEFAULT = 10;
+
+async function _enCloseEpisode(db, episode_id, ep) {
+  const EN = _EDITIONS.EN;
+  const epRef = db.collection(EN.episodes).doc(episode_id);
+  const storyRef = db.collection(EN.stories).doc(ep.story_id);
+
+  // 마감 선점과 임계값 재확인을 한 트랜잭션에 묶는다 — 확인 직후 표가 바뀌거나
+  // 다른 요청이 동시에 마감을 시도하는 경우를 원자적으로 정리한다(한국판과 동일 원칙).
+  const closeResult = await db.runTransaction(async tx => {
+    const [snap, storySnap, subsSnap] = await Promise.all([
+      tx.get(epRef),
+      tx.get(storyRef),
+      tx.get(db.collection(EN.submissions).where('episode_id', '==', episode_id)),
+    ]);
+    if (!snap.exists) return 'already_closed';
+    const epNow = snap.data();
+    const stt = epNow.status;
+    // 이미 닫혔더라도 후속 처리(채택·다음 단계 생성)가 끝나지 않았으면 재개한다.
+    // 그렇지 않으면 마감 도중 함수가 죽었을 때 이야기가 영구 정지한다.
+    if (stt !== 'open' && stt !== 'pending') {
+      return epNow.close_finalized === true ? 'already_closed' : 'resume';
+    }
+    if (!storySnap.exists) return 'already_closed';
+
+    const story = storySnap.data();
+    const isSpeedrun = story.mode === 'speedrun';
+    const subs = subsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (!subs.length) return 'below_threshold';
+
+    if (!isSpeedrun) {
+      const threshold = Number(story.vote_threshold) || EN_VOTE_THRESHOLD;
+      const maxVotes = subs.reduce((m, s) => Math.max(m, Number(s.vote_count) || 0), 0);
+      if (maxVotes < threshold) return 'below_threshold';
+    }
+
+    tx.update(epRef, { status: 'closed', closed_at: new Date().toISOString(), close_finalized: false });
+    tx.update(storyRef, { [`open_steps.${episode_id}`]: admin.firestore.FieldValue.delete() });
+    return 'closed';
+  });
+  // 'resume'은 이전 실행이 선점만 하고 죽은 경우 — 후속 처리를 이어서 한다.
+  if (closeResult !== 'closed' && closeResult !== 'resume') return closeResult;
+
+  const subsSnap = await db.collection(EN.submissions).where('episode_id', '==', episode_id).get();
+  if (subsSnap.empty) return 'closed';
+  const allSubs = subsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // 승자 선정 — 동률이면 가장 먼저 제출된 것 하나. 영어판은 아직 분기를 만들지 않는다.
+  const maxVotes = Math.max(...allSubs.map(s => Number(s.vote_count) || 0));
+  const tied = maxVotes === 0 ? allSubs : allSubs.filter(s => (Number(s.vote_count) || 0) === maxVotes);
+  const winner = tied.slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0];
+  if (!winner) return 'closed';
+
+  const storySnap = await db.collection(EN.stories).doc(ep.story_id).get();
+  if (!storySnap.exists) return 'closed';
+  const st = storySnap.data();
+  const isFixedEnding = st.mode === 'fixed_ending';
+
+  // ── 채택과 보상을 **한 트랜잭션**으로 ──────────────────────────────────
+  // 예전엔 is_adopted를 먼저 쓰고 보상을 별도 트랜잭션으로 했다. 그 사이에
+  // 실패하면 재개 시 '이미 채택됨'으로 보여 보상이 영구 누락됐고, 동시에 재개된
+  // 두 호출이 각각 보상을 줄 수도 있었다(최종 검토 지적). 이제 adopt_rewarded
+  // 플래그를 같은 트랜잭션에서 확인·설정해 정확히 한 번만 지급한다.
+  try {
+    await db.runTransaction(async tx => {
+      const wRef = db.collection(EN.submissions).doc(winner.id);
+      const wSnap = await tx.get(wRef);
+      if (!wSnap.exists) return;
+      const w = wSnap.data();
+      if (w.adopt_rewarded === true) return; // 이미 처리됨 — 재개·동시호출 모두 여기서 멈춘다
+
+      const pays = _pointsApplicable(winner.author_id);
+      let statsSnap = null;
+      if (pays) statsSnap = await tx.get(db.collection(EN.userStats).doc(winner.author_id));
+
+      tx.update(wRef, { is_adopted: true, adopt_rewarded: true });
+      if (pays) {
+        const d = (statsSnap && statsSnap.exists) ? statsSnap.data() : {};
+        tx.set(db.collection(EN.userStats).doc(winner.author_id), {
+          user_id: winner.author_id, edition: EN.edition,
+          adoption_count: (Number(d.adoption_count) || 0) + 1,
+          total_points: (Number(d.total_points) || 0) + 20,
+        }, { merge: true });
+        _txLedger(db, tx, winner.author_id, 20, 'adopted', winner.id, EN.pointLedger);
+      }
+    });
+  } catch (e) { console.error('[en] adopt/reward error:', e.message); }
+
+  const nextStep = (Number(st.current_step) || 0) + 1;
+  const maxSteps = Number(st.max_steps) || EN_MAX_STEPS_DEFAULT;
+  // 결말이 정해진 이야기는 유저의 '완결' 선언으로 조기 종료할 수 없다 —
+  // 마지막 단계에 미리 정해둔 문장을 주입하는 것이 유일한 완결 경로다.
+  const wantsClose = isFixedEnding ? false : winner.is_closing === true;
+
+  // ── 이후 생성물은 전부 **결정적 문서 ID**를 쓴다 ────────────────────────
+  // 동시에 재개된 두 호출이나 재시도가 각각 새 ID로 문서를 만들면 다음 단계가
+  // 두 개 생기거나 결말이 중복 주입된다. ID를 마감 대상 에피소드에서 파생시키면
+  // 몇 번을 실행해도 같은 문서에 같은 내용이 쓰여 결과가 하나로 수렴한다.
+  // current_step·status도 절대값으로 설정해 멱등하다.
+  const nextEpId = episode_id + '__next';
+  const endEpId = episode_id + '__end';
+  const endSubId = episode_id + '__endsub';
+
+  // 결말 고정: 마지막 직전 단계에 도달하면 정해진 결말을 채택 문장으로 주입하고 완결.
+  if (isFixedEnding && nextStep + 1 >= maxSteps && st.fixed_ending) {
+    const now = new Date().toISOString();
+    const batch = db.batch();
+    batch.set(db.collection(EN.episodes).doc(endEpId), {
+      episode_id: endEpId, story_id: ep.story_id, step: nextStep + 1, parent_sub_id: winner.id,
+      status: 'closed', vote_total: 0, created_at: now, closed_at: now, pending_at: '',
+      close_finalized: true,
+    });
+    batch.set(db.collection(EN.submissions).doc(endSubId), {
+      sub_id: endSubId, episode_id: endEpId, story_id: ep.story_id,
+      content: st.fixed_ending, author_id: FB_AI_ID, author_nickname: 'Anonymous',
+      author_badge: '', derived_from: '', vote_count: 0, is_adopted: true, adopt_rewarded: true,
+      created_at: now, content_updated_at: now, is_closing: true,
+    });
+    batch.update(db.collection(EN.stories).doc(ep.story_id), {
+      current_step: nextStep + 1, status: 'completed', completed_at: now,
+    });
+    batch.update(db.collection(EN.episodes).doc(episode_id), { close_finalized: true });
+    await batch.commit();
+    await _enRefillSlotOnComplete(db, ep.story_id).catch(e => console.error('[en] refill error:', e.message));
+    return 'completed';
+  }
+
+  // 완결 조건: 참여자가 완결을 선언했거나 최대 단계에 도달.
+  if (wantsClose || nextStep >= maxSteps) {
+    const doneBatch = db.batch();
+    doneBatch.update(db.collection(EN.stories).doc(ep.story_id), {
+      current_step: nextStep, status: 'completed', completed_at: new Date().toISOString(),
+    });
+    doneBatch.update(db.collection(EN.episodes).doc(episode_id), { close_finalized: true });
+    await doneBatch.commit();
+    await _enRefillSlotOnComplete(db, ep.story_id).catch(e => console.error('[en] refill error:', e.message));
+    return 'completed';
+  }
+
+  // 다음 단계 열기 — 결정적 ID라 재실행·동시실행이 같은 문서를 쓴다(중복 생성 없음).
+  const now = new Date().toISOString();
+  const batch = db.batch();
+  batch.set(db.collection(EN.episodes).doc(nextEpId), {
+    episode_id: nextEpId, story_id: ep.story_id, step: nextStep + 1, parent_sub_id: winner.id,
+    status: 'open', vote_total: 0, created_at: now, closed_at: '', pending_at: '',
+  }, { merge: true });
+  batch.update(db.collection(EN.stories).doc(ep.story_id), {
+    current_step: nextStep,
+    ['open_steps.' + nextEpId]: { step: nextStep + 1, sub_count: 0 },
+  });
+  batch.update(db.collection(EN.episodes).doc(episode_id), { close_finalized: true });
+  await batch.commit();
+  return 'closed';
+}
+
+// 영어 에피소드 마감 — 클라이언트가 투표·제출 후 호출한다. 임계값 미달이면
+// 아무것도 바꾸지 않고 돌아간다(한국판과 동일하게 서버가 재검증한다).
+exports.closeEpisodeEn = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const episode_id = data.episode_id;
+    if (!episode_id) throw new functions.https.HttpsError('invalid-argument', 'episode_id가 필요합니다.');
+    await _requireUser(data.user_id, data.token);
+
+    const db = admin.firestore();
+    const epSnap = await db.collection(_EDITIONS.EN.episodes).doc(episode_id).get();
+    if (!epSnap.exists) return { ok: true };
+
+    const result = await _enCloseEpisode(db, episode_id, epSnap.data());
+    if (result === 'below_threshold') return { ok: false, error: 'Not enough votes yet.' };
+    return { ok: true, result };
+  });
+
+// 영어 자유 이야기 시작 — 화면의 "anyone can start"를 실제로 가능하게 하는 경로.
+// 클라이언트가 stories_en에 직접 쓸 수 없으므로(rules에서 차단) 반드시 서버를 거친다.
+exports.createStoryEn = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    const author_id = data.user_id;
+    const opening = (data.opening || '').trim();
+    if (!author_id) throw new functions.https.HttpsError('invalid-argument', '잘못된 요청입니다.');
+    await _requireUser(author_id, data.token);
+    if (!opening) return { ok: false, error: 'Write an opening sentence first.' };
+    if (opening.length > 300) return { ok: false, error: 'Keep the opening under 300 characters.' };
+
+    const db = admin.firestore();
+    const EN = _EDITIONS.EN;
+    const uSnap = await db.collection(_EDITIONS.SHARED.users).doc(author_id).get();
+    if (!uSnap.exists) return { ok: false, error: 'User not found.' };
+    const ban = _activeBan(uSnap.data());
+    if (ban) return { ok: false, error: 'This account is suspended.' };
+
+    // 새 이야기 생성 남용 방지 — 한 시간에 3편까지.
+    // 조회 후 생성 방식은 동시 호출로 우회되므로, 사용자별 카운터 문서를
+    // 트랜잭션으로 예약한다(번역 쿼터와 같은 방식). 복합 인덱스도 필요 없어진다.
+    const hourBucket = new Date().toISOString().slice(0, 13);
+    const rlRef = db.collection(EN.userStats).doc(author_id);
+    const allowed = await db.runTransaction(async tx => {
+      const snap = await tx.get(rlRef);
+      const d = snap.exists ? (snap.data() || {}) : {};
+      const cur = (d.create_bucket === hourBucket) ? (Number(d.create_count) || 0) : 0;
+      if (cur >= 3) return false;
+      tx.set(rlRef, {
+        user_id: author_id, edition: EN.edition,
+        create_bucket: hourBucket, create_count: cur + 1,
+      }, { merge: true });
+      return true;
+    });
+    if (!allowed) return { ok: false, error: 'You have started several stories recently. Try again later.' };
+
+    const now = new Date().toISOString();
+    const story_id = db.collection(EN.stories).doc().id;
+    const episode_id = db.collection(EN.episodes).doc().id;
+    const batch = db.batch();
+    batch.set(db.collection(EN.stories).doc(story_id), {
+      story_id, opening, max_steps: EN_MAX_STEPS_DEFAULT, current_step: 0,
+      status: 'active', creator_id: author_id,
+      creator_nickname: uSnap.data().display_name || uSnap.data().nickname || 'Anonymous',
+      creator_badge: uSnap.data().badge || '',
+      created_at: now, batch: '', participant_count: 0, like_count: 0,
+      is_ai_seed: false, hot_score: 0, edition: EN.edition,
+      vote_threshold: EN_VOTE_THRESHOLD,
+      open_steps: { [episode_id]: { step: 1, sub_count: 0 } },
+    });
+    batch.set(db.collection(EN.episodes).doc(episode_id), {
+      episode_id, story_id, step: 1, parent_sub_id: '',
+      status: 'open', vote_total: 0, created_at: now, closed_at: '', pending_at: '',
+    });
+    await batch.commit();
+
+    return { ok: true, story_id, episode_id };
   });

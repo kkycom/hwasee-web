@@ -1,0 +1,206 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   이 파일은 손으로 쓴 것이 아니라 **한국판 bang/index.html에서 잘라낸 사본**이다.
+   생성: node scripts/sync-en-css.js
+   검증: node scripts/verify-en-css-sync.js  (한 글자라도 다르면 실패)
+
+   English 에디션은 한국판과 같은 디자인이어야 한다. 값을 다시 타이핑하면
+   어딘가 미묘하게 달라져도 아무도 모르기 때문에, 규칙을 원본 텍스트 그대로
+   옮기고 스크립트로 대조한다. 한국판 디자인이 바뀌면 검증이 실패해서 알려준다.
+
+   ⚠️ 이 파일을 직접 수정하지 마세요. 한국판을 고친 뒤 sync 스크립트를 다시 도세요.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@font-face {
+  font-family: 'GyelonggiBatang';
+  src: url('data:font/woff2;base64,d09GMk9UVE8AAAfcAA0AAAAACwwAAAeQAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAADY4jGwwGYA4IAEwBNgIkAxQEBgWDAgcgFyQYDBsoClHUI0oqHtmPg3IM9e1MGaslo2m4cOHCoV+Onqx2Dk2Dqacs2u91ZvbehwsQqhKSaqrKwgCTYpmkFhH+553uswM9Hfci1nO6DrJg6oWpdFpRjTRLNn8u+vU8PDoYAfz9at7+3dY7PbAWP4sSP8AKoLbopMKkrP//3mlj28NwHg85kb/rNieVDSraE6TEwsKitYEXFYZRGAbGUdqimzSITwxxPfuPMxHOgWRKV0erTqvRdOxvNDdqNefPqA8TReSg3KJkbkgtmkzmFsU4h/FYIjckRLBs47BL/a654v7/Qdm/n+bgo/HZ2LLcI29MLjaSYhfkEWDDBBkFB5NCbBW7iH5Op9iFCJHt5giD1z9UHE41Un/FWLBmkg0msBleOVt5fLG68uyZk/v2U8e0zVeXYT+w7IzPZKajmNYtUekZgtNm0/XnlGkyiadHYtC1W+ezDUEACeGL0WlxKiMIAEErsRLi0rGLc4k4sA5NNmJn/Jo/+8oMhePPm4KZMYKIIlmGPMUq1dFIS211ctRJ51Sp00xDz8ojrEOvQUPGzVi0asuhM+eu3Xvw6pOkEIxRJjCDpZzHZVzFDdzGXTzA07zARnawhwY66GGIcabJUOQgb+QdfITP8GWe42Xe4F0+5gu+42f+lVOMEpSquZqvRVqh9dqindqvIzqrC6pRs7SyyKuIUmIkaFg3607dq0f0hu7pt8GceUu0+bbUVtk622TbbJfts0N2zE7ZOfuIi4ZRCCRtSWwDmxCKUIBVwMpxpVefA/TCj2tyy3z/GkC5O+MAHBpOCaUYz+XYPh5jOwGzOlDGFG/yKF/rkQ+YAQ2sL+vRiUHMbAe8J+UC9CwGJKsEfzZg5vB2QbihDPUgRJ2ADM2KvSqMxuLBbFADKC8UxU6BThbgmHh/6TDIULbB43wvbWkNyOdXAMbFCIm5BBvFzFbATJCN41G4+uwA4C0NORJvSHL7Abv7yIYRJ+c6BCg/CBjqjx8B1PYdB1S0B2S4EzdW93AnODh38MXOgsegQnKVUAkYAbdW9JfgaRhFWdh+AfA8sHxyFeAlEJGRudWA9SAsB0xdbBF7uqECiWVm2p0LdAAmCg67UYG83SdB0/dlqWsWbsKrHPThnU2AiipAOTOUug5EDC0BlN+T2gsYd+8GrIY47vBDQUxCNtipwifvU+EI8Nr8asAFng7YRwTTnpyPzIboRRVCHJ+4Rs4rRu2AUux00CSV6GODJWiEhhGUBy2AXfDkvSrMRnUqpO9OGABZnmbbemQmWOzLoQlSkWSgw3DuAZCvAGQ0o0rsTzAsyYl34mhiNIYHYGocchyD4d4YORrCfGkI8OZ6msRG2NTU45IWjTzWwGPJ71ZM09gOU8+AtTccpQATgXSYi6HcEQs7yYKlpdt1NP+FyjBxkS+JalOAfWT9iJPDw3D1mQ12z9kUBsynmTSLMZm0YSxgLVygZes81kFJqUfrZsBCuQfuuQXDivn3OkqTvtvjy1+korVQYH6M4mVN+amjdZfWbBj+zDsnqw9fF6ByjY+OCQxP5+jYUPhWZeTmKGcXbf0+3jmELEj1MR4DDA7OKbBgv6PNYqTO3YrbzANgHoTr++H6IZi64dLq7EEUOfChTgBU7ngUzbffhtf3dCuinp4T3Eai1DKHbs6OoZ4gJvJliIlAIBwiqGN7UP8rNGPq1QwepP1LoTDy7/HmrOiUG4P7gMslY7VdIE39/6UcxlaPB6nIBy/+iPzYlaYFfyE6vDCp/7rIjcrozSHOLthEr+AY7rmjDwafyb+wfCzBjwCvyy81h1fsxd8ouPhwBp49XH31uTBDuTyci9BxU4dJa07DA3d/+PjQ9ynfKwonu2H748zR57bsrz6OSFu/d2uEey+//CatnwkNe+kw7WWiiSOmjY6dvuJfwj+vOzj7MPuPPW//JgpRm26LN57u9ru/YGm4jYEbJVdTLMX+jLT10u7vifN8c0I5tkk6lP/pgfoTx+tqdm8f8/ibpw8sf1ng/zvtjaUny/fmNIAYF5bCQJJx9hoGlB4ukq6PeBMno+cTxd+Fb0wJ3fx6iJQMOnvggLwraU10pOsz1ZkaLtqqDIAQGk3cnnlt2XPM0eL0VOogAE/sA5itIY0EnBaqAgR6KpM4BuvDYkAKTKQYAMAyaNd+FScpop3Vl+oJ1P+tYIU4IQ1/KV9re7QQQE8ZACjdAKQyUEEOzd7hEYEg1FlZtrv0Y/X4OMEYNP7Bgc+2f7HsXiJfI99HrTpwDNRP2/m12OwFAFerp4OSNv7LtWsTJ5hYnFkJqEpa3fwA0fifPVCEhyTAHr8cjrIojB7+PxbtRBbo57kojBEmgC4KYKEeQ0U0MF4lxGOMylCqRaMLVgVoAdzQJkO0MjLpoKNFqa9OVKj3NBQqvvqasjAuCOwQ7qCR+T1OS+MIh1Y6o1ujwzv2vDPUDivQipBFd+fGyBTTikJwQJLpORiRRns/SqWOllWsdJYGKjtoUdT7qXTcYoM+e9YZJ+2zH6U7rWarFWqvWzcqc4PJAq3AbgUrAy2RHIaHxv8PEWUSmQh++TfZXtBD/Y+PvzyxGBhcoHekUD8jDwA=') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+  unicode-range: U+2E,U+bc29,U+d654,U+c528; /* 화씨.방 */
+}
+@font-face {
+  font-family: 'DancingScript';
+  src: url('/bang/fonts/DancingScript-Bold.woff2') format('woff2');
+  font-weight: 700; font-style: normal; font-display: swap;
+  unicode-range: U+20-7E; /* 완결 연출 "The End" 문구 전용, 영문/기본기호만 */
+}
+
+  :root {
+    --bg:      #f0ead8;
+    --surface: #e6dac8;
+    --card:    #ddd0b8;
+    --border:  #c4b090;
+    --accent:  #80978c;
+    --accent2: #c8823a;
+    --text:    #1c0e06;
+    --muted:   #7a5c40;
+    --success: #5a7a3a;
+    --paper:      #faf6ee; /* 산문뷰/카드 안쪽 "종이" 배경 — 기능마다 조금씩
+      다른 크림색(#f5f0e6, #ede0c8 등)을 새로 만들어 쓰던 걸 정리(2026-08-19) */
+    --paper-edge: #c8b090;
+    --radius:  12px;
+    --font:    'Noto Sans KR', system-ui, sans-serif;
+    --serif:   'Gowun Batang', Georgia, serif;
+
+    /* 스포트라이트 장르 확률 패널용 — 8개 고정 카테고리(functions/index.js
+       SPOTLIGHT_GENRES와 이름 반드시 일치, GENRE_META에서 이 변수들을 참조) */
+    /* 장르 8색 — "더스티 라벤더"/"뮤트 모브브라운"으로 고르신 판타지·드라마
+       톤(저채도·중명도 "dusty" 계열)에 맞춰 나머지 6색도 전부 같은 채도/
+       명도대로 재조정함(2026-08-26, claude.ai 목업으로 비교 후 확정).
+       색상(hue)만 장르별로 다르게 두고 채도·명도는 통일된 느낌으로.
+       여러 곳(장르 확률 패널, 차트 범례, 책장 표지 등)이 공유하는
+       토큰이라 전체에 반영됨. */
+    --g-romance:  #936281; --g-romance-wash:  rgba(147,98,129,.22);
+    --g-mystery:  #606e90; --g-mystery-wash:  rgba(96,110,144,.24);
+    --g-thriller: #875a5b; --g-thriller-wash: rgba(135,90,91,.22);
+    --g-comedy:   #a29367; --g-comedy-wash:   rgba(162,147,103,.24);
+    --g-fantasy:  #7d6a99; --g-fantasy-wash:  rgba(125,106,153,.20);
+    --g-horror:   #64825e; --g-horror-wash:   rgba(100,130,94,.22);
+    --g-drama:    #7d685f; --g-drama-wash:    rgba(125,104,95,.20);
+    --g-sf:       #5e8487; --g-sf-wash:       rgba(94,132,135,.20);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; overflow-x: clip; max-width: 100vw; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+  header {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(240,234,216,.92); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px; height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .logo {
+    font-size: 20px; font-weight: 400; letter-spacing: .5px;
+    font-family: 'GyelonggiBatang', var(--serif); color: var(--text); cursor: pointer;
+  }
+
+  .nav-right { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; }
+    .nav-right { gap: 4px; }
+
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 48px; }
+
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+
+  .tab { flex: 1; text-align: center; padding: 10px 8px; font-size: 13px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted); margin-bottom: -1px; transition: .15s; white-space: nowrap; border-right: 1px solid var(--border); }
+    .tab { padding: 8px 4px; font-size: 11px; }
+
+  .tab:last-child { border-right: none; }
+
+  .tab.active { color: #3a5548; background: var(--accent); border-bottom-color: var(--accent); }
+
+  .btn { padding: 8px 18px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: .15s; }
+
+  .btn-primary { background: var(--accent); color: #3a5548; font-weight: 550; }
+
+  .btn-sm { padding: 5px 12px; font-size: 13px; }
+
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+
+  .story-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px 20px; margin-bottom: 12px; cursor: pointer; transition: .15s; position: relative;
+  }
+
+  .story-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(154,104,64,.18); }
+    .story-card:hover { transform:none; box-shadow:none; border-color:var(--border); }
+
+  .story-card-title { font-size: 15px; line-height: 1.6; margin-bottom: 10px; font-family: var(--serif); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+
+  .story-card-footer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+  .step-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 600;
+  }
+
+  .step-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+  .story-status { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+
+  .spotlight-card-shell { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px; position:relative; }
+
+  .story-prose {
+    background-color: var(--paper);
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 28px,
+      rgba(160,130,80,.18) 28px,
+      rgba(160,130,80,.18) 29px
+    );
+    border: 1px solid var(--paper-edge);
+    border-left: 3px solid rgba(154,104,64,.35);
+    border-radius: var(--radius);
+    padding: 28px 24px 28px 28px;
+  }
+
+  .prose-opening {
+    font-family: var(--serif); font-size: 16px; line-height: 29px;
+    color: #2c1a0e;
+  }
+
+  .prose-line { margin-top: 29px; position: relative; }
+
+  .prose-sentence { font-family: var(--serif); font-size: 16px; line-height: 29px; display: block; color: #2c1a0e; }
+
+  .prose-author { font-size: 11px; color: #9a7060; display: none; text-align: right; line-height: 29px; }
+
+  .prose-author.visible { display: block; }
+
+  .prose-divider {
+    display: flex; align-items: center; gap: 12px; margin: 24px 0;
+    font-size: 12px; font-weight: 600; color: #8a6a50;
+  }
+
+  .prose-divider::before, .prose-divider::after { content:''; flex:1; height:1px; background:#cfc0a0; }
+
+  .form-group { margin-bottom: 16px; }
+
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+
+  input, textarea {
+    width: 100%; padding: 10px 14px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-family: var(--font); font-size: 15px;
+    outline: none; transition: .15s;
+  }
+
+  input:focus, textarea:focus { border-color: var(--accent); }
+
+  textarea { resize: vertical; min-height: 80px; }
+
+  .char-count { font-size: 12px; color: var(--muted); text-align: right; margin-top: 4px; }
+
+  .char-count.warn { color: #e0a040; }
+
+  .char-count.over { color: var(--accent2); }
+
+  .empty   { text-align: center; padding: 48px 0; color: var(--muted); }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 20px; font-size: 14px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.18); z-index: 9999;
+    opacity: 0; transition: opacity .2s; pointer-events: none; white-space: nowrap;
+  }
+
+  .toast.show { opacity: 1; }
+
+  .toast.err { border-color: var(--accent2); }
+
+  h2 { font-size: 18px; margin-bottom: 16px; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+@media (max-width: 480px) {
+  .tab { padding: 8px 4px; font-size: 11px; }
+}
+
+@media (max-width: 480px) {
+  .nav-right { gap: 4px; }
+}

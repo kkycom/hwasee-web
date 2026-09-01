@@ -6,3 +6,4 @@ Allow: /
 
 Sitemap: https://hwasee.me/sitemap.xml
 Sitemap: https://hwasee.me/bang/sitemap.xml
+Sitemap: https://hwasee.me/bang/en/sitemap.xml

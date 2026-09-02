@@ -1,3 +1,13 @@
+// A-2 (2026-09-02) — 정적 페이지에도 카카오 애드핏 추가. 처음엔 "광고 스크립트
+// 없음"이 의도였으나(아래 주석 참고), 실제 목적이 외국인 트래픽 eCPM 수익화라는
+// 게 확인돼 방향이 바뀜 — 크롤러/비-JS 방문자가 보는 이 정적 페이지에 광고가
+// 하나도 없으면 그 트래픽 전체가 수익화 기회를 놓친다. bang/en/en-app.js(라이브
+// 앱)가 이미 쓰는 것과 동일한 유닛(DAN-tFQi1kE1l4fdDOhZ, 320x100)을 재사용 —
+// 새 유닛 승인 대기 불필요. 이 페이지들은 SPA처럼 반복 재렌더되지 않는 진짜
+// 정적 HTML이라, en-app.js의 "채워졌는지 감시 후 안 채워지면 자리 제거" 로직은
+// 필요 없음 — 한국어 SSG 완결작 정적 페이지의 푸터 광고와 동일하게 raw
+// <ins>+<script>를 그대로 심어서 일반 파싱 시 자동 실행되게 함.
+//
 // A-1 — 영어 읽기 전용 정적 발행(/bang/en/).
 //
 // 기존 scripts/build-static-stories.js(한국어 SSG)와 **별도 스크립트**다.
@@ -63,6 +73,19 @@ function jsonLdSafe(obj) {
 // ── 영어 전용 경량 셸 ────────────────────────────────────────────────────
 // bang/index.html 복제가 아니다. 광고 스크립트 없음, 서비스워커 등록 없음,
 // 로그인·메뉴·글쓰기 UI 없음. 색상 토큰은 한국어 정적 허브 페이지와 동일.
+// 정적 페이지 공용 카카오 애드핏 — en-app.js AD_UNITS.footer와 같은 유닛.
+// raw <ins>+<script>라 브라우저 기본 파싱만으로 자동 실행됨(동적 삽입이 아니므로
+// 별도 로더 호출 불필요, 한국어 SSG 완결작 페이지 푸터 광고와 동일한 방식).
+function enFooterAdHtml() {
+  return `<div style="text-align:center;margin:24px 0">
+  <ins class="kakao_ad_area" style="display:none;"
+  data-ad-unit = "DAN-tFQi1kE1l4fdDOhZ"
+  data-ad-width = "320"
+  data-ad-height = "100"></ins>
+  <script type="text/javascript" src="//t1.kakaocdn.net/kas/static/ba.min.js" async></script>
+</div>`;
+}
+
 function enPageShell({ title, description, canonical, robots, bodyHtml, hreflangKo, jsonLd }) {
   const alt = hreflangKo
     ? `<link rel="alternate" hreflang="ko" href="${hreflangKo}">\n`
@@ -144,6 +167,7 @@ ${jsonLd ? `<script type="application/ld+json">\n${jsonLd}\n</script>\n` : ''}</
   <a class="to-ko" href="/bang/">한국어</a>
 </header>
 ${bodyHtml}
+${enFooterAdHtml()}
 <footer>
   <p>Hwasee.bang &middot; a Korean relay-fiction community</p>
   <p style="margin-top:6px"><a href="/bang/">Go to the Korean site</a></p>
@@ -422,7 +446,7 @@ async function main() {
   console.log(`영어 발행 완료 — 작품 ${publishable.length}건, 재확인 ${stale.length}건, sitemap URL ${publishable.length + 1}개(아카이브 포함)`);
 }
 
-module.exports = { renderEnStoryPage, renderEnIndex, renderEnSitemap, enPageShell, esc, jsonLdSafe };
+module.exports = { renderEnStoryPage, renderEnIndex, renderEnSitemap, enPageShell, enFooterAdHtml, esc, jsonLdSafe };
 
 if (require.main === module) {
   main().catch(e => {

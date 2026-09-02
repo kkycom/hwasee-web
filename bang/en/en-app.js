@@ -68,7 +68,15 @@ function toast(msg) {
 const AD_UNITS = { inline: 'DAN-XrJSiDdqNhNDEgMD', footer: 'DAN-tFQi1kE1l4fdDOhZ', pcSide: 'DAN-9ylORAM6xK6SUwLT' };
 const AD_SIZES = { inline: [320, 50], footer: [320, 100], pcSide: [160, 600] };
 
+// 쿠키 동의 상태 — 'accepted' | 'rejected' | null(미결정). 저장·배너·Consent
+// Mode update는 전부 bang/en/consent.js가 맡고, 여기서는 읽기만 한다.
+// consent.js나 head 스니펫이 없는 상태에서도 안전하게 "미결정"으로 떨어진다.
+const consentDecision = () => (typeof window.hwConsentGet === 'function' ? window.hwConsentGet() : null);
+
 function adSlotHtml(kind) {
+  // 거부한 방문자에게는 광고 자리 마크업 자체를 만들지 않는다. 화면을 다시 그릴
+  // 때마다(SPA라 탭 전환마다 innerHTML을 새로 씀) 빈 <ins>가 되살아나는 걸 막는다.
+  if (consentDecision() === 'rejected') return '';
   const unit = AD_UNITS[kind] || AD_UNITS.inline;
   const [w, h] = AD_SIZES[kind] || AD_SIZES.inline;
   return `<div class="ad-slot" data-ad-provider="kakao" data-ad-pending="1">
@@ -79,6 +87,12 @@ function adSlotHtml(kind) {
 }
 
 function loadAds() {
+  // 쿠키 동의 전(미결정)·거부 상태에서는 애드핏 스크립트를 붙이지 않는다.
+  // 애드핏은 Google Consent Mode 대상이 아니라 동의 신호로 제어할 수 없어서,
+  // "스크립트를 로드하지 않는다"가 유일한 차단 수단이다. 수락하면 consent.js가
+  // 이 함수를 다시 부르고, 그때 이미 그려져 있던 pending 슬롯이 한 번에 채워진다
+  // (ba.min.js는 로드 시점의 미처리 .kakao_ad_area를 스캔하는 방식).
+  if (consentDecision() !== 'accepted') return;
   const pending = document.querySelectorAll('.ad-slot[data-ad-pending="1"]');
   if (!pending.length) return;
   const s = document.createElement('script');

@@ -86,13 +86,20 @@ function jsonLdSafe(obj) {
 // padding-bottom을 줘서(위 body 규칙 참고) 실제 콘텐츠·사이트 footer가
 // 가려지지 않게 함. 페이지당 광고는 여전히 이거 1개뿐(애드핏 5.2 "한 페이지당
 // 4개 초과 금지" 여유 있게 준수).
+//
+// ⚠️ 2026-09-02(쿠키 동의): ba.min.js를 여기서 직접 싣지 않는다. 이 바는
+// display:none으로 대기하고, /bang/en/consent.js가 방문자의 저장된 선택이
+// 'accepted'일 때만 바를 열고 스크립트를 붙인다. 거부하면 이 바 자체를
+// DOM에서 제거한다. 애드핏은 Google Consent Mode 대상이 아니라서 동의 신호로는
+// 제어할 수 없고, "스크립트를 안 붙이는 것"이 유일한 차단 수단이다.
+// body의 padding-bottom도 같은 이유로 CSS에서 빼서 consent.js가 이 바를 열
+// 때만 주도록 옮겼다 — 광고가 안 뜨는 방문자에게 130px 빈 여백이 남지 않게.
 function enFooterAdHtml() {
-  return `<div style="position:fixed;bottom:0;left:0;right:0;z-index:50;background:var(--bg);border-top:1px solid var(--border);padding:8px 0;text-align:center">
+  return `<div id="en-ad-footer" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:50;background:var(--bg);border-top:1px solid var(--border);padding:8px 0;text-align:center">
   <ins class="kakao_ad_area" style="display:none;"
   data-ad-unit = "DAN-tFQi1kE1l4fdDOhZ"
   data-ad-width = "320"
   data-ad-height = "100"></ins>
-  <script type="text/javascript" src="//t1.kakaocdn.net/kas/static/ba.min.js" async></script>
 </div>`;
 }
 
@@ -125,13 +132,35 @@ function enPageShell({ title, description, canonical, robots, bodyHtml, hreflang
 <!-- 한국판과 같은 GA4 속성 재사용(G-G7M4WPYHQK) — bang/en/index.html(라이브 앱)과
      동일 태그. pagePath로 필터해서 /bang/en/ 트래픽만 따로 볼 수 있음
      (functions/index.js getGa4EnSourceTrend 참고). -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-G7M4WPYHQK"></script>
+<!-- ⚠️ 이 인라인 스니펫은 gtag.js 로드 태그보다 **앞**에 있어야 한다(2026-09-02).
+     Google 공식 요구사항: consent default는 측정 데이터를 보내는 명령(config·
+     event)보다 먼저 실행돼야 한다. bang/en/index.html에 같은 스니펫이 있다 —
+     한쪽만 고치지 말 것. -->
 <script>
+  window.HW_CONSENT_KEY = 'hwasee_en_cookie_consent';
+  window.hwConsentGet = function () {
+    try { return localStorage.getItem(window.HW_CONSENT_KEY); } catch (e) { return null; }
+  };
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
+  gtag('consent', 'default', {
+    'ad_storage': 'denied',
+    'ad_user_data': 'denied',
+    'ad_personalization': 'denied',
+    'analytics_storage': 'denied'
+  });
+  if (window.hwConsentGet() === 'accepted') {
+    gtag('consent', 'update', {
+      'ad_storage': 'granted',
+      'ad_user_data': 'granted',
+      'ad_personalization': 'granted',
+      'analytics_storage': 'granted'
+    });
+  }
   gtag('js', new Date());
   gtag('config', 'G-G7M4WPYHQK');
 </script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-G7M4WPYHQK"></script>
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">
 <meta name="robots" content="${robots}">
@@ -158,11 +187,12 @@ ${alt}<link rel="icon" type="image/png" href="/bang/hwaseebang_sum.png">
     --serif: 'Gowun Batang', Georgia, serif;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  /* padding-bottom은 하단 고정 광고 바(enFooterAdHtml) 높이만큼 여유를 둬서
-     실제 콘텐츠(본문 마지막 줄·사이트 자체 footer)가 그 밑에 가려지지 않게
-     함(2026-09-02) — 애드핏 정책 "콘텐츠를 덮거나 가리는 영역에 광고 배치
-     금지" 대응. */
-  body { background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.7; padding-bottom: 130px; }
+  /* 하단 고정 광고 바(enFooterAdHtml) 높이만큼의 padding-bottom은 여기에 두지
+     않는다 — 쿠키 동의 전·거부 시에는 그 바가 아예 안 열리는데 CSS로 박아두면
+     130px 빈 여백만 남기 때문(2026-09-02). consent.js가 바를 여는 순간에만
+     같은 값을 준다. 애드핏 정책 "콘텐츠를 덮거나 가리는 영역에 광고 배치 금지"
+     대응은 그대로 유지된다. */
+  body { background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.7; }
   header {
     position: sticky; top: 0; z-index: 10; background: rgba(240,234,216,.92); backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border); padding: 0 24px; height: 56px;
@@ -211,6 +241,11 @@ ${enFooterAdHtml()}
   <p>Hwasee.bang &middot; a Korean relay-fiction community</p>
   <p style="margin-top:6px"><a href="/bang/">Go to the Korean site</a></p>
 </footer>
+<!-- 쿠키 동의 배너 — 라이브 앱(bang/en/index.html)과 같은 파일을 공유한다.
+     배너 마크업을 여기 HTML로 넣지 않고 스크립트가 런타임에 만드는 이유:
+     verify-en-pages.js가 이 정적 페이지들에 버튼 요소나 인라인 이벤트 핸들러가
+     있으면 배포를 막기 때문이다(그 검사는 주석 안의 문자열까지 본다). -->
+<script defer src="/bang/en/consent.js"></script>
 </body>
 </html>
 `;

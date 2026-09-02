@@ -41,6 +41,29 @@ const FORBIDDEN_PATTERNS = [
   { re: /adsbygoogle/i, what: '광고 스크립트' },
 ];
 
+// 쿠키 동의 배선이 정적 페이지에서 풀리지 않았는지 확인한다(2026-09-02).
+// 이 세 가지가 깨지면 "동의 전에 추적·광고가 로드되는" 상태로 되돌아가는데,
+// 눈으로는 티가 안 나고 라이브에서만 드러나므로 배포 게이트에서 잡는다.
+function checkConsentWiring(html, label) {
+  // 1) 애드핏 스크립트가 HTML에 직접 박혀 있으면 동의와 무관하게 즉시 로드된다.
+  //    (consent.js가 수락 시에만 동적으로 붙이는 것이 정상 경로다.)
+  if (/ba\.min\.js/i.test(html)) {
+    fail(`${label}: 동의 없이 즉시 로드되는 카카오 애드핏 스크립트(ba.min.js)가 HTML에 있음`);
+  }
+  // 2) 동의 배너·광고 로더가 아예 빠지면 배너가 안 뜬다.
+  if (!/\/bang\/en\/consent\.js/.test(html)) {
+    fail(`${label}: 쿠키 동의 스크립트(/bang/en/consent.js) 참조가 없음`);
+  }
+  // 3) Consent Mode 기본값은 측정 명령(config)보다 먼저 실행돼야 한다(Google 요구사항).
+  const defaultAt = html.indexOf("gtag('consent', 'default'");
+  const configAt = html.indexOf("gtag('config'");
+  if (defaultAt === -1) {
+    fail(`${label}: gtag('consent','default') 기본값 설정이 없음`);
+  } else if (configAt !== -1 && defaultAt > configAt) {
+    fail(`${label}: gtag('consent','default')가 gtag('config')보다 뒤에 있음`);
+  }
+}
+
 function readManifest() {
   if (!fs.existsSync(MANIFEST_PATH)) return null;
   try {
@@ -94,6 +117,7 @@ function main() {
     for (const p of FORBIDDEN_PATTERNS) {
       if (p.re.test(html)) fail(`en/stories/index.html: 금지 요소 발견 — ${p.what}`);
     }
+    checkConsentWiring(html, 'en/stories/index.html');
     // 미승인/스테일 작품이 목록에 링크로 노출되면 안 된다.
     for (const id of staleIds) {
       if (html.includes(`/bang/en/story/${id}/`)) fail(`en/stories/index.html: 재확인 대상 작품이 목록에 노출됨 — ${id}`);
@@ -131,6 +155,7 @@ function main() {
     for (const pat of FORBIDDEN_PATTERNS) {
       if (pat.re.test(html)) fail(`en/story/${id}: 금지 요소 발견 — ${pat.what}`);
     }
+    checkConsentWiring(html, `en/story/${id}`);
 
     const hasHreflang = /rel="alternate" hreflang="en"/.test(html);
 

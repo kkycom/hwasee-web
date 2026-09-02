@@ -76,8 +76,18 @@ function jsonLdSafe(obj) {
 // 정적 페이지 공용 카카오 애드핏 — en-app.js AD_UNITS.footer와 같은 유닛.
 // raw <ins>+<script>라 브라우저 기본 파싱만으로 자동 실행됨(동적 삽입이 아니므로
 // 별도 로더 호출 불필요, 한국어 SSG 완결작 페이지 푸터 광고와 동일한 방식).
+//
+// ⚠️ 2026-09-02: 원래 문서 흐름 맨 아래(본문 뒤)에 있었는데, 완결작 목록
+// (renderEnIndex)처럼 스크롤이 긴 페이지에선 끝까지 내려야만 보여서 사실상
+// 아무도 못 보는 자리였음(유저 지적) — 화면 하단에 고정(position:fixed)해서
+// 스크롤 위치와 무관하게 항상 보이게 바꿈. 애드핏 정책상 고정 배치 자체는
+// 허용되고("광고가 배치되는 공간은 고정되어야 함") "콘텐츠를 덮거나 가리는
+// 영역에 광고 배치 금지" 조건만 있어서, body에 이 바 높이만큼
+// padding-bottom을 줘서(위 body 규칙 참고) 실제 콘텐츠·사이트 footer가
+// 가려지지 않게 함. 페이지당 광고는 여전히 이거 1개뿐(애드핏 5.2 "한 페이지당
+// 4개 초과 금지" 여유 있게 준수).
 function enFooterAdHtml() {
-  return `<div style="text-align:center;margin:24px 0">
+  return `<div style="position:fixed;bottom:0;left:0;right:0;z-index:50;background:var(--bg);border-top:1px solid var(--border);padding:8px 0;text-align:center">
   <ins class="kakao_ad_area" style="display:none;"
   data-ad-unit = "DAN-tFQi1kE1l4fdDOhZ"
   data-ad-width = "320"
@@ -148,7 +158,11 @@ ${alt}<link rel="icon" type="image/png" href="/bang/hwaseebang_sum.png">
     --serif: 'Gowun Batang', Georgia, serif;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.7; }
+  /* padding-bottom은 하단 고정 광고 바(enFooterAdHtml) 높이만큼 여유를 둬서
+     실제 콘텐츠(본문 마지막 줄·사이트 자체 footer)가 그 밑에 가려지지 않게
+     함(2026-09-02) — 애드핏 정책 "콘텐츠를 덮거나 가리는 영역에 광고 배치
+     금지" 대응. */
+  body { background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.7; padding-bottom: 130px; }
   header {
     position: sticky; top: 0; z-index: 10; background: rgba(240,234,216,.92); backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border); padding: 0 24px; height: 56px;

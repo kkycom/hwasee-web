@@ -9730,15 +9730,32 @@ exports.getEnSpotlight = functions
   .https.onCall(async () => {
     const db = admin.firestore();
     const EN = _EDITIONS.EN;
-    const ptrSnap = await db.collection(EN.slotsDoc.collection).doc(EN.slotsDoc.doc).get();
+
+    // 슬롯 포인터 조회와 hot 후보 조회는 서로 값을 참조하지 않아 동시에 시작
+    // 가능한데, 원래는 순서대로(포인터 → 슬롯 4개 → hot) 기다리고 있었음 —
+    // 영어판 초기 로딩이 1~2초 걸린다는 제보로 확인(2026-09-02, 디버그방).
+    // hot 쿼리는 원래도 인덱스 미생성 등으로 실패할 수 있어 나머지 카드는 그대로
+    // 노출해야 하므로(기존 try/catch와 동일 의도), 여기서 자체 .catch로 감싸
+    // Promise.all 전체가 실패하지 않게 함.
+    const [ptrSnap, hotSnap] = await Promise.all([
+      db.collection(EN.slotsDoc.collection).doc(EN.slotsDoc.doc).get(),
+      db.collection(EN.stories)
+        .where('status', '==', 'active').orderBy('participant_count', 'desc').limit(5).get()
+        .catch(e => { console.error('[en] hot slot error:', e.message); return null; }),
+    ]);
     const slots = ptrSnap.exists ? (ptrSnap.data() || {}) : {};
 
+    // 슬롯 4개도 서로 무관해서 순차 await 대신 병렬로 조회. 카드 순서는
+    // Promise.all이 입력 배열 순서를 그대로 보존하므로 EN_SLOT_KEYS 순서 유지됨.
+    const slotEntries = _enSeeds.EN_SLOT_KEYS.map(key => ({ key, sid: slots[key] && slots[key].story_id }));
+    const slotSnaps = await Promise.all(
+      slotEntries.map(({ sid }) => sid ? db.collection(EN.stories).doc(sid).get() : null)
+    );
+
     const cards = [];
-    for (const key of _enSeeds.EN_SLOT_KEYS) {
-      const sid = slots[key] && slots[key].story_id;
-      if (!sid) continue;
-      const sSnap = await db.collection(EN.stories).doc(sid).get();
-      if (!sSnap.exists) continue;
+    slotEntries.forEach(({ key, sid }, i) => {
+      const sSnap = slotSnaps[i];
+      if (!sid || !sSnap || !sSnap.exists) return;
       const s = sSnap.data();
       cards.push({
         slot: key,
@@ -9753,12 +9770,11 @@ exports.getEnSpotlight = functions
         fixed_ending: s.fixed_ending || null,
         ..._enGenreSequenceField(s),
       });
-    }
+    });
 
     // hot 슬롯 — 진행 중 영어 자유 이야기 중 참여자가 가장 많은 것(실시간).
-    try {
-      const hotSnap = await db.collection(EN.stories)
-        .where('status', '==', 'active').orderBy('participant_count', 'desc').limit(5).get();
+    // 쿼리 자체는 위에서 이미 병렬로 마쳤고(실패 시 null), 여기선 결과 가공만 함.
+    if (hotSnap) {
       const slotIds = new Set(cards.map(c => c.story_id));
       const hot = hotSnap.docs.map(d => ({ story_id: d.id, ...d.data() }))
         .find(s => !slotIds.has(s.story_id) && (Number(s.participant_count) || 0) > 0);
@@ -9777,9 +9793,6 @@ exports.getEnSpotlight = functions
           ..._enGenreSequenceField(hot),
         });
       }
-    } catch (e) {
-      // 인덱스 미생성 등으로 실패해도 나머지 카드는 정상 노출한다.
-      console.error('[en] hot slot error:', e.message);
     }
 
     return { ok: true, cards, generated_at: new Date().toISOString() };

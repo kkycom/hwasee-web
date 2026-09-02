@@ -80,6 +80,18 @@
   .ad-slot[data-filled="1"] { display: block; }
   .ad-label { font-size: 10px; color: var(--muted); margin-top: 4px; }
 
+  /* .story-card를 진짜 링크(<a href>)로 쓰는 자리 — 한국판엔 이 사례가 없다.
+     한국판 카드는 전부 <div>라(SPA 내부 이동) ko-shared.css의 .story-card에는
+     display도 color도 없고, 그래서 <a>가 브라우저 기본값 그대로 떨어진다:
+     display:inline이라 카드가 내용만큼 쪼그라들어 뒤 텍스트에 겹쳐 보이고,
+     제목이 파란 밑줄 링크색이 된다(다크 모드 모바일 제보, 2026-09-02 —
+     "완성된 이야기" 탭의 Browse translated stories 카드).
+     <div>로 바꾸면 간단하지만 /bang/en/stories/ 로 가는 유일한 실제 링크가
+     사라진다(sitemap에도 없고, 이 화면은 noindex,**follow**라 링크가 크롤 경로다).
+     그래서 링크는 그대로 두고 다른 카드와 같은 모양이 되게만 맞춘다.
+     한 자리 땜질이 아니라 a.story-card 전체에 걸어서 다음 링크 카드도 안전하다. */
+  a.story-card { display: block; color: inherit; text-decoration: none; }
+
   /* 접근성 — 한국판에 없는 포커스 표시를 더한다(제거가 아니라 추가라 회귀가 아니다). */
   .tab:focus-visible, .btn:focus-visible, .btn-ghost:focus-visible, .story-card:focus-visible {
     outline: 2px solid var(--accent2); outline-offset: 2px;

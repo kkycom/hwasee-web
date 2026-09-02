@@ -529,20 +529,43 @@ function renderStory(story, adopted, openEp, candidates, openEps) {
   //    current_step이 지금 읽는 갈래의 단계와 어긋날 수 있다.
   // 그래서 한국판처럼 openEp가 있을 때만, openEp.step 기준으로 그린다.
   const genreSeq = Array.isArray(story.genre_sequence) ? story.genre_sequence : [];
-  const genreNow = (story.mode === 'genre_switch' && openEp)
-    ? enGenreSwitchBannerHtml(genreSeq[Number(openEp.step) - 1], genreSeq[Number(openEp.step)])
+  // curGenre는 배너와 입력창이 함께 쓴다 — 한 곳에서만 구해야 둘이 갈라지지 않는다.
+  const curGenre = (story.mode === 'genre_switch' && openEp)
+    ? genreSeq[Number(openEp.step) - 1] : null;
+  const genreNow = curGenre
+    ? enGenreSwitchBannerHtml(curGenre, genreSeq[Number(openEp.step)])
     : '';
 
   // 서버의 _submitMaxChars와 같은 규칙 — genre_switch 모드는 50자다.
   const maxChars = story.mode === 'genre_switch' ? 50 : 300;
+
+  // 장르 강제 전환이면 입력창까지 그 장르로 물들인다 — 한국판
+  // buildStoryActionHtml()의 cardStyle/subPlaceholder와 같은 규칙이다.
+  // 배너만 장르색이고 바로 아래 입력창은 중립색이면 "이번 단계는 이 장르로
+  // 쓰라"는 신호가 정작 쓰는 순간에 끊긴다.
+  //  - 안내 문구(placeholder)에 지금 장르를 넣는다. 한국판의
+  //    "OO 분위기로 이어서, N자 이내로…"와 같은 구성이다.
+  //  - 카드에 --g/--wash를 실어 배경·왼쪽 띠를, 제출 버튼에 --g를 준다.
+  //    한국판처럼 style 속성을 하나로 합쳐 넣는다(둘로 나누면 HTML 파서가
+  //    뒤쪽 속성을 통째로 버려서 톤이 안 먹힌다 — 2026-07-28 한국판 버그).
+  // 한국판은 이 카드의 padding까지 16px로 줄이지만, 영어판 .card 여백(20px)은
+  // 다른 화면과 공유하는 값이라 장르 전환에서만 흐트러지지 않게 그대로 둔다.
+  const genreSuffix = curGenre ? (EN_GENRE_META[curGenre] || 'mystery') : null;
+  const writeCardStyle = genreSuffix
+    ? ` style="--g:var(--g-${genreSuffix});--wash:var(--g-${genreSuffix}-wash);background:var(--wash);border-left:3px solid var(--g)"`
+    : '';
+  const writeBtnStyle = genreSuffix ? ` style="background:var(--g);color:#fff"` : '';
+  const writePlaceholder = curGenre
+    ? `Continue in a ${curGenre} mood, in ${maxChars} characters or less...`
+    : 'Continue the story in one sentence...';
   const writePanel = openEp ? `
-    <div class="card">
+    <div class="card"${writeCardStyle}>
       <h3>Write the next sentence</h3>
-      <textarea id="sub-input" maxlength="${maxChars}" placeholder="Continue the story in one sentence..."
+      <textarea id="sub-input" maxlength="${maxChars}" placeholder="${esc(writePlaceholder)}"
         oninput="document.getElementById('sub-count').textContent = this.value.length"></textarea>
       <div class="char-count"><span id="sub-count">0</span> / ${maxChars}</div>
       <div style="text-align:right;margin-top:8px">
-        <button class="btn btn-primary" id="sub-btn" onclick="submitSentence()">Submit</button>
+        <button class="btn btn-primary" id="sub-btn"${writeBtnStyle} onclick="submitSentence()">Submit</button>
       </div>
     </div>` : '';
 

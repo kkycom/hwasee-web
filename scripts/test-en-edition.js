@@ -613,6 +613,101 @@ console.log('\n[5] 장르 강제 전환 배너');
   const KO_SRC = fs.readFileSync(path.join(__dirname, '..', 'bang', 'index.html'), 'utf8');
   check('한국판 상세도 열린 에피소드 step 기준 색인을 쓴다',
     KO_SRC.includes("genreSwitchBannerHtml((s.genre_sequence || [])[Number(openEp.step) - 1], (s.genre_sequence || [])[Number(openEp.step)])"));
+
+  // ── 제출 입력창의 장르 물들이기 ─────────────────────────────────────
+  // 배너만 장르색이고 입력창이 중립색이면 "이번 단계는 이 장르로 쓰라"는 신호가
+  // 정작 쓰는 순간에 끊긴다. 한국판 buildStoryActionHtml()과 같은 규칙인지 못박는다.
+  // 입력창은 배너와 같은 curGenre를 써야 한다 — 둘이 다른 값을 구하면 배너와
+  // 안내 문구가 서로 다른 장르를 말하는 최악의 회귀가 된다. 그래서 detailSrc와
+  // 이어 붙여 한 함수로 평가한다.
+  const writeSrc = APP_SRC.slice(APP_SRC.indexOf('  // 서버의 _submitMaxChars와 같은 규칙'),
+                                 APP_SRC.indexOf('  const votePanel'));
+  check('제출 입력창 코드를 추출했다', writeSrc.includes('writePanel'));
+  const writePanelOf = new Function('esc', 'EN_SLOT_ICON',
+    metaSrc + bannerSrc + '\nreturn function (story, openEp) {\n' + detailSrc + writeSrc +
+    '\nreturn writePanel; };')(esc, { genre_switch: '🎭' });
+
+  const gsWrite = writePanelOf(gsStory, { step: 3 }); // seq[2] = Thriller
+  check('입력창 안내 문구에 지금 장르가 들어간다', gsWrite.includes('Thriller'), gsWrite);
+  check('안내 문구가 배너와 같은 장르를 말한다(한 단계 밀리지 않음)',
+    !gsWrite.includes('Comedy') && !gsWrite.includes('Mystery'), gsWrite);
+  check('입력 카드가 그 장르 색으로 물든다',
+    gsWrite.includes('--g:var(--g-thriller)') && gsWrite.includes('--wash:var(--g-thriller-wash)') &&
+    gsWrite.includes('background:var(--wash)') && gsWrite.includes('border-left:3px solid var(--g)'), gsWrite);
+  check('제출 버튼도 그 장르 색으로 물든다',
+    gsWrite.includes('background:var(--g);color:#fff'), gsWrite);
+  // 한국판 버그 재발 방지(2026-07-28): style 속성을 둘로 나누면 HTML 파서가
+  // 뒤쪽을 통째로 버려서 톤이 전혀 안 먹힌다. 카드 태그의 style은 하나여야 한다.
+  const cardTag = gsWrite.slice(gsWrite.indexOf('<div class="card"'), gsWrite.indexOf('>', gsWrite.indexOf('<div class="card"')));
+  check('카드 style 속성이 하나로 합쳐져 있다', (cardTag.match(/style=/g) || []).length === 1, cardTag);
+  check('글자 수 제한은 장르 전환 50자 그대로', gsWrite.includes('maxlength="50"'), gsWrite);
+
+  // 장르 전환이 아닌 이야기는 예전과 똑같아야 한다 — 중립색·고정 문구·300자.
+  const plainWrite = writePanelOf({ mode: 'fixed_ending', current_step: 2 }, { step: 3 });
+  check('장르 전환이 아니면 입력창은 중립색 그대로',
+    plainWrite.includes('<div class="card">') && !plainWrite.includes('--g:var('), plainWrite);
+  check('장르 전환이 아니면 안내 문구도 예전 그대로',
+    plainWrite.includes('Continue the story in one sentence...'), plainWrite);
+  check('장르 전환이 아니면 300자 그대로', plainWrite.includes('maxlength="300"'), plainWrite);
+
+  // 완결된 이야기엔 열린 에피소드가 없다 — 입력창 자체가 없어야 한다.
+  check('완결된 이야기엔 입력창을 그리지 않는다', writePanelOf(gsStory, null) === '');
+  // genre_sequence가 손상돼도 중립 입력창으로 떨어질 뿐 터지면 안 된다.
+  const brokenWrite = writePanelOf({ mode: 'genre_switch', genre_sequence: null }, { step: 3 });
+  check('genre_sequence가 손상되면 중립 입력창으로 안전하게 떨어진다',
+    brokenWrite.includes('Continue the story in one sentence...') && !brokenWrite.includes('--g:var('), brokenWrite);
+
+  // 한국판도 같은 규칙인지 — 한쪽만 바뀌면 두 판이 다시 갈라진다.
+  check('한국판 입력창도 안내 문구에 지금 장르를 넣는다',
+    KO_SRC.includes('const subPlaceholder = isGenreSwitch && curGenre'));
+  check('한국판 입력창도 카드와 버튼을 장르 색으로 물들인다',
+    KO_SRC.includes('background:var(--wash);border-left:3px solid var(--g)') &&
+    KO_SRC.includes('style="background:var(--g);color:#fff"'));
+}
+
+// ── 6. 카드 태그의 display 기본값 ────────────────────────────────────────
+// 한국판 .story-card는 전부 <div>라 ko-shared.css에 display가 없다. 영어판이
+// 같은 클래스를 <a> 같은 inline 기본 태그에 붙이면 카드가 내용만큼 쪼그라들어
+// 깨진다(2026-09-02 다크 모드 모바일 제보 — "완성된 이야기" 탭의 Browse
+// translated stories 카드가 파란 밑줄 링크에 좁은 상자였다). CSS에 없는 것을
+// 화면 코드가 가정하는 구조라 조용히 재발하기 쉬워서 여기서 못박는다.
+console.log('\n[6] 카드 태그의 display 기본값');
+{
+  const APP_SRC = fs.readFileSync(path.join(__dirname, '..', 'bang', 'en', 'en-app.js'), 'utf8');
+  const SHELL = fs.readFileSync(path.join(__dirname, '..', 'bang', 'en', 'index.html'), 'utf8');
+  const KO_CSS = fs.readFileSync(path.join(__dirname, '..', 'bang', 'en', 'ko-shared.css'), 'utf8');
+
+  // 브라우저 기본이 block이 아닌 태그 — 이 목록에 없다고 안전한 게 아니라,
+  // 실제로 쓰인 태그가 block 기본인지를 확인하는 용도다.
+  const BLOCK_DEFAULT = new Set(['div', 'section', 'article', 'li', 'p', 'nav', 'aside']);
+
+  // class="story-card" 정확히(-title/-footer/-wrap 같은 파생 클래스는 제외).
+  const tags = [...APP_SRC.matchAll(/<([a-z]+)[^>]*class="story-card(?![-\w])[^"]*"/g)].map(m => m[1]);
+  check('story-card 카드를 실제로 찾았다', tags.length >= 3, String(tags.length));
+
+  check('ko-shared.css의 .story-card에는 display가 없다(그래서 태그 기본값이 그대로 드러난다)',
+    !/\.story-card \{[^}]*display:/.test(KO_CSS));
+
+  const inlineTags = [...new Set(tags.filter(t => !BLOCK_DEFAULT.has(t)))];
+  // inline 기본 태그를 썼다면, 영어판 전용 CSS가 그 태그를 block으로 되돌려야 한다.
+  inlineTags.forEach(t => {
+    const rule = new RegExp(t + '\\.story-card\\s*\\{[^}]*display:\\s*block');
+    check(`<${t}> 카드는 영어판 CSS에서 display:block으로 되돌린다`, rule.test(SHELL));
+  });
+  check('block 기본이 아닌 태그는 전부 CSS로 보정됐다',
+    inlineTags.every(t => new RegExp(t + '\\.story-card\\s*\\{[^}]*display:\\s*block').test(SHELL)),
+    inlineTags.join(','));
+
+  // <a>를 쓰는 카드는 링크 기본 스타일(파란 글씨·밑줄)도 지워야 다른 카드와 같아 보인다.
+  if (inlineTags.includes('a')) {
+    const aRule = (SHELL.match(/a\.story-card\s*\{[^}]*\}/) || [''])[0];
+    check('<a> 카드는 링크 글씨색을 상속으로 되돌린다', /color:\s*inherit/.test(aRule), aRule);
+    check('<a> 카드는 링크 밑줄을 지운다', /text-decoration:\s*none/.test(aRule), aRule);
+  }
+
+  // 링크 카드의 href가 실제 목적지를 잃지 않았는지(=<div>로 바꿔치기되지 않았는지).
+  check('번역작 아카이브로 가는 실제 링크가 남아 있다',
+    /<a class="story-card" href="\/bang\/en\/stories\/">/.test(APP_SRC));
 }
 
   console.log(`\n결과: ${pass} 통과 / ${failCount} 실패`);

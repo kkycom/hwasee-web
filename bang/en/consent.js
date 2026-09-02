@@ -132,7 +132,8 @@
     // 저장은 남고, 승인 전에도 Google 태그 자체는 익명 모드로 동작한다
     // ("추적이 전혀 없다"고 말하지 않는다 — 고급 Consent Mode의 실제 동작).
     text.innerHTML = 'We use cookies and similar storage for analytics and advertising. '
-      + 'Until you accept, analytics and ad storage stay off and no ad script is loaded. '
+      + 'Until you accept, analytics and advertising storage are not used. Google may still receive '
+      + 'limited cookieless consent signals; no AdFit ad script is loaded. '
       + 'Your choice is saved in this browser, and the storage needed to keep you signed in is always kept. '
       + '<a href="/bang/en/privacy.html">Privacy policy</a>';
 

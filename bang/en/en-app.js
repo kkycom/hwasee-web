@@ -515,9 +515,23 @@ function renderStory(story, adopted, openEp, candidates, openEps) {
     ? `<div class="source-note"><strong>This story has to end with:</strong><br>
        &ldquo;${esc(story.fixed_ending)}&rdquo;</div>` : '';
 
-  const genreNow = story.mode === 'genre_switch' && Array.isArray(story.genre_sequence)
-    ? `<div class="source-note"><strong>Genre for this step:</strong>
-       ${esc(story.genre_sequence[Number(story.current_step) || 0] || story.genre_sequence[0])}</div>` : '';
+  // 장르 강제 전환 배너 — 카드 목록과 같은 컴포넌트(enGenreSwitchBannerHtml)를 쓴다.
+  // 예전엔 상세만 밋밋한 .source-note 한 줄이라 카드와 따로 놀았다.
+  //
+  // 색인은 한국판 상세(bang/index.html의 genreSwitchBannerHtml 호출부)와 같은
+  // 규칙 — 열린 에피소드 step 기준으로 지금 장르 seq[step-1], 다음 장르 seq[step].
+  // 서버도 같은 식으로 단계 장르를 강제한다(functions/index.js의 gsGenre).
+  // 카드 목록은 getEnSpotlight가 에피소드를 안 내려줘서 같은 값을 seq[current_step]
+  // 으로 우회해 구하지만, 상세는 openEp를 실제로 갖고 있으므로 그쪽이 정확하다.
+  // current_step 기준을 그대로 쓰면 두 경우에 틀린다:
+  //  - 완결된 이야기엔 열린 에피소드가 없는데도 "지금 장르"를 계속 띄운다.
+  //  - 동률로 갈라진 이야기는 고른 갈래마다 step이 달라서, 스토리 문서의
+  //    current_step이 지금 읽는 갈래의 단계와 어긋날 수 있다.
+  // 그래서 한국판처럼 openEp가 있을 때만, openEp.step 기준으로 그린다.
+  const genreSeq = Array.isArray(story.genre_sequence) ? story.genre_sequence : [];
+  const genreNow = (story.mode === 'genre_switch' && openEp)
+    ? enGenreSwitchBannerHtml(genreSeq[Number(openEp.step) - 1], genreSeq[Number(openEp.step)])
+    : '';
 
   // 서버의 _submitMaxChars와 같은 규칙 — genre_switch 모드는 50자다.
   const maxChars = story.mode === 'genre_switch' ? 50 : 300;
@@ -579,9 +593,10 @@ function renderStory(story, adopted, openEp, candidates, openEps) {
       <span class="step-pill"><span class="step-dot"></span>Step ${story.current_step || 0}</span>
       <span class="story-meta-text">${adopted.length} sentences &middot; ${story.participant_count || 0} writers</span>
     </div>
-    ${origin}${fixedEnding}${genreNow}${branches}
+    ${origin}${fixedEnding}${branches}
     ${proseHtml}
     ${adSlotHtml('inline')}
+    ${genreNow}
     ${writePanel}${votePanel}`;
   loadAds();
 }

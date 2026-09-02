@@ -284,14 +284,17 @@ ${COMING_SOON_NOTICE}
 }
 
 function renderEnIndex(items) {
-  // 카드 5장마다 얇은 배너 하나(2026-09-02, 유저 요청) — 목록이 길 수 있어서
-  // (완결작 최대 200편) 광고 하나로 몰아넣기보다 훑어보는 중간중간에 노출.
+  // ⚠️ 2026-09-02: 카드 5장마다 배너를 넣었었는데(완결작 최대 200편 → 최대
+  // 40개), 카카오 애드핏 운영정책 5.2 "지나치게 많은 광고"(한 페이지당 4개
+  // 초과 게재 금지)를 정면으로 위반해서 바로 되돌림. 여러 개를 안전하게
+  // 넣으려면 목록 자체를 페이지네이션해서 한 화면엔 몇 개만 보이게 해야
+  // 하는데, 그건 별도 작업 — 지금은 기존처럼 페이지 하단 배너 1개만 유지.
   const list = items.length
-    ? items.map((it, i) => `  <a class="story-item" href="/bang/en/story/${it.story_id}/">
+    ? items.map(it => `  <a class="story-item" href="/bang/en/story/${it.story_id}/">
     <div class="story-item-title">${esc(it.title_en)}</div>
     <div class="story-item-teaser">${esc(it.description_en)}</div>
     <div class="story-item-meta">${it.lines_en.length} sentences &middot; written by many hands</div>
-  </a>${(i + 1) % 5 === 0 ? enInlineAdHtml() : ''}`).join('\n')
+  </a>`).join('\n')
     : `  <div class="empty">No English translations have been published yet.<br>
   They are added one at a time, after a human check.</div>`;
 

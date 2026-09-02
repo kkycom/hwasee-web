@@ -84,10 +84,20 @@
 
   /* 광고 — 자리를 미리 잡지 않는다. 실제로 채워진 것이 확인될 때만 열린다.
      한국판은 min-height로 자리를 예약하지만, 영미권은 무필 확률이 높아 그 방식이
-     빈 여백을 남긴다(코드 주석에도 그 트레이드오프가 적혀 있다). */
-  .ad-slot { display: none; text-align: center; margin: 20px 0; }
-  .ad-slot[data-filled="1"] { display: block; }
-  .ad-label { font-size: 10px; color: var(--muted); margin-top: 4px; }
+     빈 여백을 남긴다(코드 주석에도 그 트레이드오프가 적혀 있다).
+     ⚠️ 2026-09-02 수정: 처음엔 이 래퍼(.ad-slot) 자체를 display:none으로 숨겨
+     뒀었는데, 그러면 안의 <ins>가 화면에 보이는 상태가 될 일이 아예 없음 —
+     카카오 스크립트가 "안 보이는 자리엔 채우지 않는" 방식으로 동작한다면(다른
+     광고 네트워크들의 일반적인 관행), 채워졌는지 확인하려고 숨겨둔 자리가
+     역설적으로 영영 안 채워지는 원인이 됨(실사용자 제보: 한국판은 뜨는데
+     영어판만 광고가 전혀 안 뜸, 2026-09-02). 그래서 래퍼는 항상 보이는 상태로
+     두고(margin도 채워졌을 때만 줘서 안 채워지면 시각적으로 자리를 거의
+     안 차지함), 실제로 숨겨야 할 건 카카오 표준 스니펫이 원래 그렇게 주는
+     <ins style="display:none">뿐 — 그건 카카오 스크립트 자신이 채우면서 풀어줌. */
+  .ad-slot { text-align: center; }
+  .ad-slot[data-filled="1"] { margin: 20px 0; }
+  .ad-slot .ad-label { display: none; }
+  .ad-slot[data-filled="1"] .ad-label { display: block; font-size: 10px; color: var(--muted); margin-top: 4px; }
 
   /* .story-card를 진짜 링크(<a href>)로 쓰는 자리 — 한국판엔 이 사례가 없다.
      한국판 카드는 전부 <div>라(SPA 내부 이동) ko-shared.css의 .story-card에는

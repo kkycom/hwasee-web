@@ -97,6 +97,16 @@ function enPageShell({ title, description, canonical, robots, bodyHtml, hreflang
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- 한국판과 같은 GA4 속성 재사용(G-G7M4WPYHQK) — bang/en/index.html(라이브 앱)과
+     동일 태그. pagePath로 필터해서 /bang/en/ 트래픽만 따로 볼 수 있음
+     (functions/index.js getGa4EnSourceTrend 참고). -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-G7M4WPYHQK"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-G7M4WPYHQK');
+</script>
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">
 <meta name="robots" content="${robots}">

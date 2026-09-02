@@ -4963,6 +4963,66 @@ exports.getGa4DeviceTrend = functions
     return { ok: true, series, generated_at: new Date().toISOString() };
   });
 
+// /bang/en/ 유입 소스(구글/빙/기타) — 영어판 SEO(라운드로빈 키워드 보강)·
+// 애드핏(외국인 트래픽 eCPM) 작업이 실제로 어느 채널에서 유입을 만드는지
+// 확인용(2026-09-02). pagePath로 /bang/en/만 걸러서 한국어판 트래픽과 안
+// 섞이게 하고, sessionSource는 롱테일 리퍼러가 많아서 구글/빙만 남기고
+// 나머지는 direct/other로 뭉뚱그림 — 관심사가 "이 두 채널 유입이 느는가"라
+// 세분화가 오히려 안 읽힘. getGa4DeviceTrend와 동일한 (date, category) 집계 구조.
+exports.getGa4EnSourceTrend = functions
+  .region('asia-northeast3')
+  .https.onCall(async (data) => {
+    await _requireAdmin(data.user_id, data.token);
+    const db = admin.firestore();
+    const secretsSnap = await db.collection('config').doc('secrets').get();
+    const s = secretsSnap.exists ? secretsSnap.data() : {};
+    if (!s.ga4_service_account_json || !s.ga4_property_id) {
+      return { ok: false, error: 'GA4 연동이 아직 설정되지 않았어요.' };
+    }
+
+    const start_date = data.start_date, end_date = data.end_date;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start_date) || !/^\d{4}-\d{2}-\d{2}$/.test(end_date)) {
+      throw new functions.https.HttpsError('invalid-argument', '날짜 형식이 올바르지 않습니다.');
+    }
+
+    let credentials;
+    try { credentials = JSON.parse(s.ga4_service_account_json); }
+    catch (e) { return { ok: false, error: '저장된 GA4 서비스 계정 키가 손상됐어요. 애널리틱스 대시보드에서 다시 저장해주세요.' }; }
+
+    const byDate = {};
+    try {
+      const { BetaAnalyticsDataClient } = require('@google-analytics/data');
+      const client = new BetaAnalyticsDataClient({ credentials });
+      const [reportResponse] = await client.runReport({
+        property: `properties/${s.ga4_property_id}`,
+        dateRanges: [{ startDate: start_date, endDate: end_date }],
+        dimensions: [{ name: 'date' }, { name: 'sessionSource' }],
+        metrics: [{ name: 'activeUsers' }],
+        dimensionFilter: {
+          filter: {
+            fieldName: 'pagePath',
+            stringFilter: { matchType: 'BEGINS_WITH', value: '/bang/en/' },
+          },
+        },
+        orderBys: [{ dimension: { dimensionName: 'date' } }],
+      });
+      (reportResponse.rows || []).forEach(row => {
+        const raw = row.dimensionValues[0].value; // 'YYYYMMDD'
+        const dateStr = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+        const src = (row.dimensionValues[1].value || '(direct)').toLowerCase();
+        const users = Number(row.metricValues[0].value) || 0;
+        const bucket = src.includes('google') ? 'google' : src.includes('bing') ? 'bing' : src === '(direct)' ? 'direct' : 'other';
+        if (!byDate[dateStr]) byDate[dateStr] = { date: dateStr, google: 0, bing: 0, direct: 0, other: 0 };
+        byDate[dateStr][bucket] += users;
+      });
+    } catch (e) {
+      return { ok: false, error: 'GA4 조회 실패: ' + e.message };
+    }
+
+    const series = Object.values(byDate).sort((a, b) => (a.date < b.date ? -1 : 1));
+    return { ok: true, series, generated_at: new Date().toISOString() };
+  });
+
 // ── 오늘의 단어 챌린지: 안 어울리는 단어 3개를 매일 던져주고 그걸로 문장을
 //    지어 투표받는 이벤트. 씨앗 탭의 "명예의 전당" 자리를 대체함(2026-07-09).
 //    라운드는 매일 00:00(KST) 시작 ~ 21:00(KST) 마감, 우승자(최다 득표, 동점이면

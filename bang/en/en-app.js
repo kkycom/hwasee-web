@@ -57,14 +57,18 @@ function toast(msg) {
 //
 // 쿠팡 배너는 이 파일 어디에도 없다. 한국판 하단 블록을 재사용하지 않는 방식으로
 // 구조적으로 배제했다(문구만 영어로 바꾸는 방식은 누락 위험이 있어 쓰지 않았다).
-const AD_UNITS = { inline: 'DAN-XrJSiDdqNhNDEgMD', footer: 'DAN-tFQi1kE1l4fdDOhZ' };
+//
+// pcSide(160x600)는 한국판 PC 세로 광고와 같은 유닛(DAN-9ylORAM6xK6SUwLT) 재사용
+// — 이미 승인된 유닛이라 새로 만들 필요 없음(2026-09-02, 유저 요청).
+const AD_UNITS = { inline: 'DAN-XrJSiDdqNhNDEgMD', footer: 'DAN-tFQi1kE1l4fdDOhZ', pcSide: 'DAN-9ylORAM6xK6SUwLT' };
+const AD_SIZES = { inline: [320, 50], footer: [320, 100], pcSide: [160, 600] };
 
 function adSlotHtml(kind) {
   const unit = AD_UNITS[kind] || AD_UNITS.inline;
-  const h = kind === 'footer' ? 100 : 50;
+  const [w, h] = AD_SIZES[kind] || AD_SIZES.inline;
   return `<div class="ad-slot" data-ad-provider="kakao" data-ad-pending="1">
     <ins class="kakao_ad_area" style="display:none"
-      data-ad-unit="${unit}" data-ad-width="320" data-ad-height="${h}"></ins>
+      data-ad-unit="${unit}" data-ad-width="${w}" data-ad-height="${h}"></ins>
     <div class="ad-label">Advertisement</div>
   </div>`;
 }
@@ -102,6 +106,40 @@ function loadAds() {
     }, 6000);
   });
 }
+
+// PC 세로 광고 자리(#pc-side-ad, 160x600, position:fixed) — 한국판 PC 세로
+// 광고와 같은 이유로 두 가지를 신경 씀(2026-09-02):
+//  1) matchMedia로 실제 PC 폭일 때만 주입 — 그냥 CSS(min-width:1280px)로만
+//     숨기면 모바일도 <ins> 마크업 자체는 받게 되는데, 카카오 스크립트가
+//     그걸 보고 요청을 만들 여지가 있어(위 en-app.js 광고 전체의 "모바일
+//     불필요 요청 방지" 원칙과 동일) 아예 안 만듦.
+//  2) 짧은 페이지에서 스크롤을 끝까지 내리면 이 fixed 박스가 푸터를 덮어버릴
+//     수 있어(한국판이 실제로 겪은 문제, bang/index.html의 같은 로직 참고) —
+//     푸터가 뷰포트에 보이기 시작하면 fixed를 풀고 푸터 바로 위에 absolute로
+//     고정한다.
+function initPcSideAd() {
+  const ad = document.getElementById('pc-side-ad');
+  if (!ad) return;
+  if (window.matchMedia('(min-width: 1280px)').matches) {
+    ad.innerHTML = adSlotHtml('pcSide');
+    loadAds();
+  }
+  const foot = document.querySelector('footer');
+  if (!foot || !window.IntersectionObserver) return;
+  let pinned = false;
+  function reposition() {
+    if (!pinned) return;
+    ad.style.top = (foot.getBoundingClientRect().top + window.scrollY - ad.offsetHeight - 24) + 'px';
+  }
+  const io = new IntersectionObserver(([entry]) => {
+    pinned = entry.isIntersecting;
+    if (pinned) { ad.style.position = 'absolute'; reposition(); }
+    else { ad.style.position = ''; ad.style.top = ''; }
+  }, { threshold: 0 });
+  io.observe(foot);
+  if (window.ResizeObserver) new ResizeObserver(reposition).observe(ad);
+}
+initPcSideAd();
 
 // ── 라우팅 ──────────────────────────────────────────────────────────────
 let currentTab = 'today';

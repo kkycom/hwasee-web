@@ -140,6 +140,12 @@
   </div>
 </main>
 
+<!-- PC 세로 광고 자리 — 한국판 .pc-side-ad와 같은 구조(CSS는 ko-shared.css로
+     추출된 사본). 랭킹 위젯과 대칭으로 오른쪽에 배치, 1280px 이상에서만.
+     내용물은 en-app.js의 initPcSideAd()가 채움(.ad-slot 패턴 재사용 —
+     안 채워지면 자리가 안 남는 것도 다른 광고 자리와 동일). -->
+<div class="pc-side-ad" id="pc-side-ad"></div>
+
 <!-- PC 세로 랭킹 위젯 — 한국판 .pc-side-rank와 같은 구조·디자인이다(CSS는
      ko-shared.css로 추출된 사본이라 값이 한 글자도 다르지 않다). 1280px
      이상에서만 보인다 — 모바일엔 원래 없는 위젯이고, 그 제약을 그대로 따른다. -->

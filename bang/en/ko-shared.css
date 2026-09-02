@@ -254,3 +254,9 @@
 @media (min-width: 1280px) {
   .pc-side-rank { display: block; position: fixed; top: 132px; left: calc(50% - 384px - 200px); width: 200px; z-index: 5; }
 }
+
+.pc-side-ad { display: none; }
+
+@media (min-width: 1280px) {
+  .pc-side-ad { display: block; position: fixed; top: 132px; left: calc(50% + 384px); width: 160px; z-index: 5; }
+}

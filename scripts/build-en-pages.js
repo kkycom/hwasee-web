@@ -86,6 +86,21 @@ function enFooterAdHtml() {
 </div>`;
 }
 
+// 완결작 목록(renderEnIndex)처럼 카드가 여러 장 나열되는 곳에서 몇 장마다 끼워
+// 넣는 얇은 배너(en-app.js AD_UNITS.inline과 같은 유닛/크기, 320x50). 이 배너는
+// <script> 태그를 안 갖고 다닌다 — 같은 페이지에 항상 있는 enFooterAdHtml()의
+// 스크립트가 문서 전체의 .kakao_ad_area를 한 번에 스캔해서 채워주므로(라이브
+// 앱의 loadAds()가 이미 슬롯 여러 개를 스크립트 한 번으로 채우는 것과 같은
+// 동작), 목록 길 때(200편) 같은 스크립트를 수십 번 중복 삽입하지 않으려는 것.
+function enInlineAdHtml() {
+  return `<div style="text-align:center;margin:20px 0">
+  <ins class="kakao_ad_area" style="display:none;"
+  data-ad-unit = "DAN-XrJSiDdqNhNDEgMD"
+  data-ad-width = "320"
+  data-ad-height = "50"></ins>
+</div>`;
+}
+
 function enPageShell({ title, description, canonical, robots, bodyHtml, hreflangKo, jsonLd }) {
   const alt = hreflangKo
     ? `<link rel="alternate" hreflang="ko" href="${hreflangKo}">\n`
@@ -269,12 +284,14 @@ ${COMING_SOON_NOTICE}
 }
 
 function renderEnIndex(items) {
+  // 카드 5장마다 얇은 배너 하나(2026-09-02, 유저 요청) — 목록이 길 수 있어서
+  // (완결작 최대 200편) 광고 하나로 몰아넣기보다 훑어보는 중간중간에 노출.
   const list = items.length
-    ? items.map(it => `  <a class="story-item" href="/bang/en/story/${it.story_id}/">
+    ? items.map((it, i) => `  <a class="story-item" href="/bang/en/story/${it.story_id}/">
     <div class="story-item-title">${esc(it.title_en)}</div>
     <div class="story-item-teaser">${esc(it.description_en)}</div>
     <div class="story-item-meta">${it.lines_en.length} sentences &middot; written by many hands</div>
-  </a>`).join('\n')
+  </a>${(i + 1) % 5 === 0 ? enInlineAdHtml() : ''}`).join('\n')
     : `  <div class="empty">No English translations have been published yet.<br>
   They are added one at a time, after a human check.</div>`;
 
@@ -457,7 +474,7 @@ async function main() {
   console.log(`영어 발행 완료 — 작품 ${publishable.length}건, 재확인 ${stale.length}건, sitemap URL ${publishable.length + 1}개(아카이브 포함)`);
 }
 
-module.exports = { renderEnStoryPage, renderEnIndex, renderEnSitemap, enPageShell, enFooterAdHtml, esc, jsonLdSafe };
+module.exports = { renderEnStoryPage, renderEnIndex, renderEnSitemap, enPageShell, enFooterAdHtml, enInlineAdHtml, esc, jsonLdSafe };
 
 if (require.main === module) {
   main().catch(e => {

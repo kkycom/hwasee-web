@@ -112,6 +112,14 @@ const MEDIA_SNIPPETS = [
     query: '(min-width: 1280px)',
     snippet: '.pc-side-rank { display: block; position: fixed; top: 132px; left: calc(50% - 384px - 200px); width: 200px; z-index: 5; }',
   },
+  // PC 세로 광고 자리 — 영어판도 랭킹 위젯과 대칭으로 오른쪽에 카카오 애드핏을
+  // 붙인다(2026-09-02, 유저 요청). 랭킹 위젯과 같은 쌍(기본 숨김 + 데스크톱
+  // 노출 조건)으로 가져온다.
+  { query: null, snippet: '.pc-side-ad { display: none; }' },
+  {
+    query: '(min-width: 1280px)',
+    snippet: '.pc-side-ad { display: block; position: fixed; top: 132px; left: calc(50% + 384px); width: 160px; z-index: 5; }',
+  },
 ];
 
 function styleBlock(html) {

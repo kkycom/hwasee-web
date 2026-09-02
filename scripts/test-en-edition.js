@@ -560,6 +560,59 @@ console.log('\n[5] 장르 강제 전환 배너');
                                idxSrc.indexOf('const _EN_TRANSLATIONS'));
   check('슬롯 카드와 hot 카드 둘 다 genre_sequence를 싣는다',
     (spotSrc.match(/_enGenreSequenceField\(/g) || []).length === 2);
+
+  // ── 상세 화면 배너의 색인 규칙 ──────────────────────────────────────
+  // 상세는 카드 목록과 기준 시점이 다르다. 카드는 에피소드를 못 받아서
+  // seq[current_step]으로 우회하지만, 상세는 열린 에피소드를 실제로 갖고 있어
+  // 한국판과 같이 seq[openEp.step - 1] / seq[openEp.step]을 쓴다. 이 둘은 씨앗
+  // 이야기에선 우연히 같은 값이라, current_step으로 되돌아가는 회귀가 평상시엔
+  // 눈에 안 띈다 — 완결·분기에서만 틀리므로 여기서 못박는다.
+  const detailSrc = APP_SRC.slice(APP_SRC.indexOf('  const genreSeq = Array.isArray(story.genre_sequence)'),
+                                  APP_SRC.indexOf('  // 서버의 _submitMaxChars와 같은 규칙'));
+  check('상세 배너 색인 코드를 추출했다', detailSrc.includes('enGenreSwitchBannerHtml'));
+  const detailBanner = new Function('esc', 'EN_SLOT_ICON',
+    metaSrc + bannerSrc + '\nreturn function (story, openEp) {\n' + detailSrc + '\nreturn genreNow; };')(
+      esc, { genre_switch: '🎭' });
+
+  const seq10 = ['Romance', 'Mystery', 'Thriller', 'Comedy', 'Fantasy',
+                 'Horror', 'Drama', 'Sci-Fi', 'Romance', 'Mystery'];
+  const gsStory = { mode: 'genre_switch', genre_sequence: seq10, current_step: 2 };
+
+  // 3단계 에피소드가 열려 있으면 지금 장르는 seq[2]=Thriller, 다음은 seq[3]=Comedy.
+  const atStep3 = detailBanner(gsStory, { step: 3 });
+  check('상세: 열린 에피소드 step 기준으로 지금/다음 장르를 고른다',
+    atStep3.includes('Thriller') && atStep3.includes('Comedy'), atStep3);
+  check('상세: 한 단계 밀리거나 당겨지지 않는다',
+    !atStep3.includes('Mystery') && !atStep3.includes('Fantasy'), atStep3);
+
+  // 완결된 이야기엔 열린 에피소드가 없다 — 한국판도 배너를 안 그린다.
+  check('상세: 완결된 이야기(열린 에피소드 없음)에는 배너를 안 그린다',
+    detailBanner({ ...gsStory, current_step: 10 }, null) === '');
+
+  // 동률로 갈라진 갈래는 스토리 문서의 current_step과 어긋날 수 있다.
+  // 지금 읽는 갈래(openEp)를 따라야지 스토리 문서를 따르면 안 된다.
+  const branchAt7 = detailBanner({ ...gsStory, current_step: 2 }, { step: 7 });
+  check('상세: 갈래의 step이 스토리 current_step과 달라도 갈래를 따른다',
+    branchAt7.includes('Drama'), branchAt7);
+
+  // 마지막 단계엔 다음 장르가 없다.
+  const atLast = detailBanner(gsStory, { step: 10 });
+  check('상세: 마지막 단계면 다음 장르 문구가 빠진다',
+    atLast.includes('Mystery') && !atLast.includes('next step'), atLast);
+
+  check('상세: 장르 전환이 아닌 이야기엔 배너가 없다',
+    detailBanner({ mode: 'fixed_ending', current_step: 2 }, { step: 3 }) === '');
+  check('상세: genre_sequence가 손상돼도 터지지 않는다',
+    detailBanner({ mode: 'genre_switch', genre_sequence: null }, { step: 3 }) === '');
+
+  // 옛 .source-note 텍스트 표시가 남아 있으면 카드와 다시 갈라진다.
+  check('상세에 옛 "Genre for this step" source-note가 남아 있지 않다',
+    !APP_SRC.includes('Genre for this step'));
+
+  // 한국판 상세도 같은 색인을 쓰는지 — 한쪽만 바뀌면 두 판이 갈라진다.
+  const KO_SRC = fs.readFileSync(path.join(__dirname, '..', 'bang', 'index.html'), 'utf8');
+  check('한국판 상세도 열린 에피소드 step 기준 색인을 쓴다',
+    KO_SRC.includes("genreSwitchBannerHtml((s.genre_sequence || [])[Number(openEp.step) - 1], (s.genre_sequence || [])[Number(openEp.step)])"));
 }
 
   console.log(`\n결과: ${pass} 통과 / ${failCount} 실패`);

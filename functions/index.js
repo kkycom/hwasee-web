@@ -1244,6 +1244,13 @@ async function _serverCloseEpisode(db, episode_id, ep) {
     }
 
     try { await _generateStoryTitle(db, ep.story_id); } catch (e) { console.error('title generate error:', e.message); }
+    // anyClose 분기와 같은 이유의 안전망 — fixed_ending은 보통 vote_threshold가
+    // 있어 위(1178행) 매 단계 트리거로 이미 커버되지만, 고아 분기로 갈라져 나온
+    // 경우 등 vote_threshold가 없는 채로 여기 도달할 가능성을 대비함(중복 호출
+    // 방지 목적으로만 조건을 걸었을 뿐, 있어도 안전한 호출이라 방어적으로 둠).
+    if (!st.vote_threshold && st.mode !== 'genre_switch') {
+      try { await _classifyStoryGenre(db, ep.story_id, nextStep + 1); } catch (e) { console.error('genre classify(free) error:', e.message); }
+    }
     console.log(`serverCloseEpisode: ${episode_id} → fixed_ending 완결 (step ${nextStep + 1})`);
     return;
   }
@@ -1259,6 +1266,17 @@ async function _serverCloseEpisode(db, episode_id, ep) {
     // 단어챌린지 등 대부분의 완결을 커버함(fixed_ending/초스피드는 각자
     // 완결 경로가 따로 있어 그쪽에도 별도로 호출 필요).
     try { await _generateStoryTitle(db, ep.story_id); } catch (e) { console.error('title generate error:', e.message); }
+
+    // 책장 표지 장르색 — 스포트라이트 슬롯(vote_threshold 있음)은 위(1178행)에서
+    // 매 단계 마감마다 이미 갱신되지만, 자유 이야기는 그 트리거가 없어 완결돼도
+    // 표지가 영구히 회색으로 남았음(2026-08-26 발견, 2026-09-01에 그때까지
+    // 밀린 183건을 일회성 백필했지만 그 이후 완결된 자유 이야기는 다시 회색으로
+    // 쌓임 — 유저 재제보, 2026-09-02). anyClose가 사람/AI 마감 공용의 일반 완결
+    // 지점이라(_generateStoryTitle과 같은 이유로 여기 한 곳이면 충분) 여기서
+    // 한 번만 호출 — vote_threshold 있는 스토리는 이미 갱신됐으니 중복 호출 안 함.
+    if (!st.vote_threshold && st.mode !== 'genre_switch') {
+      try { await _classifyStoryGenre(db, ep.story_id, nextStep); } catch (e) { console.error('genre classify(free) error:', e.message); }
+    }
 
     // 동률 중 일부만 완결을 선택한 경우 — 완결 아닌 갈래는 그대로 묻히면 안
     // 되므로, else 분기와 동일하게 새 열린 에피소드를 만들어줌. 그래야 바로

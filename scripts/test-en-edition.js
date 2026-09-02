@@ -710,6 +710,171 @@ console.log('\n[6] 카드 태그의 display 기본값');
     /<a class="story-card" href="\/bang\/en\/stories\/">/.test(APP_SRC));
 }
 
+// ── 7. Today 직접 읽기 (en-app.js의 fbGetEnSpotlight) ────────────────────
+// Today 카드는 원래 getEnSpotlight Callable을 거쳤는데, 순수 읽기라 서버가 할 일이
+// 없는데도 왕복이 하나 더 붙어 첫 화면이 늦었다(2026-09-02). 그 조회 로직을 그대로
+// 클라이언트로 옮겼으므로, 여기서 두 가지를 못박는다:
+//  1) 격리 — 클라이언트 직접 읽기가 된 뒤에도 영어 화면은 _en/en_spotlight만 읽고
+//     한국 컬렉션(stories/episodes/config)을 절대 건드리지 않는다. 이게 이 파일
+//     전체의 목적(에디션 격리)이고, 읽기가 클라이언트로 내려오면서 새로 생긴
+//     위험이라 실제 실행으로 확인한다.
+//  2) 폴백 — 슬롯이 비거나 hot 쿼리가 실패해도 나머지 카드는 그대로 나온다.
+//     서버에 있던 방어 로직을 옮기면서 빠뜨리면 카드가 통째로 사라진다.
+console.log('\n[7] Today 직접 읽기 — 에디션 격리와 폴백');
+{
+  const APP_SRC = fs.readFileSync(path.join(__dirname, '..', 'bang', 'en', 'en-app.js'), 'utf8')
+    .replace(/\r\n/g, '\n');
+
+  check('renderToday가 더는 getEnSpotlight Callable을 호출하지 않는다',
+    !/call\(\s*['"]getEnSpotlight['"]/.test(APP_SRC));
+  check('renderToday가 직접 읽기 함수를 쓴다',
+    /res\s*=\s*await\s+fbGetEnSpotlight\(\)/.test(APP_SRC));
+
+  const spotSrc = APP_SRC.slice(APP_SRC.indexOf('const EN_SLOT_KEYS'),
+                                APP_SRC.indexOf('// ── Today ─'));
+  check('직접 읽기 코드를 소스에서 찾을 수 있음',
+    spotSrc.includes('async function fbGetEnSpotlight'));
+
+  // 서버 씨앗과 이중화된 슬롯 상수 — 한쪽만 고치면 화면 제목·안내가 어긋난다.
+  const quiet = { error: () => {}, log: () => {} };
+  const load = (db) => new Function('db', 'console', spotSrc +
+    '\nreturn { EN_SLOT_KEYS, EN_SLOT_TITLE, EN_SLOT_INFO, enGenreSequenceField, fbGetEnSpotlight };')(db, quiet);
+
+  const constsOnly = load(null);
+  check('화면 슬롯 키가 서버 EN_SLOT_KEYS와 정확히 일치',
+    JSON.stringify(constsOnly.EN_SLOT_KEYS) === JSON.stringify(seeds.EN_SLOT_KEYS),
+    constsOnly.EN_SLOT_KEYS.join(','));
+  check('화면 슬롯 제목이 서버 EN_SLOT_TITLE과 정확히 일치',
+    JSON.stringify(constsOnly.EN_SLOT_TITLE) === JSON.stringify(seeds.EN_SLOT_TITLE));
+  check('화면 슬롯 안내 문구가 서버 EN_SLOT_INFO와 정확히 일치',
+    JSON.stringify(constsOnly.EN_SLOT_INFO) === JSON.stringify(seeds.EN_SLOT_INFO));
+
+  // 카드에 싣는 필드가 서버 Callable과 같은지 — 화면이 읽는 필드가 하나라도 빠지면
+  // 카드가 조용히 빈 값으로 그려진다.
+  const cardKeys = (text) => [...text.matchAll(/cards\.push\(\{([\s\S]*?)\n\s*\}\);/g)]
+    .map(m => [...m[1].matchAll(/^\s*(\w+):/gm)].map(k => k[1]).join(','));
+  const srvSpotSrc = src.slice(src.indexOf('exports.getEnSpotlight'),
+                               src.indexOf('const _EN_TRANSLATIONS'));
+  const srvCards = cardKeys(srvSpotSrc), cliCards = cardKeys(spotSrc);
+  check('슬롯 카드와 hot 카드 두 블록을 양쪽에서 추출했다',
+    srvCards.length === 2 && cliCards.length === 2);
+  check('카드 필드 구성이 서버 Callable과 동일하다',
+    JSON.stringify(srvCards) === JSON.stringify(cliCards),
+    'server=' + srvCards.join(' | ') + ' client=' + cliCards.join(' | '));
+
+  // ── 가짜 Firestore (클라이언트 compat SDK 모양) ────────────────────────
+  // 위 makeFakeDb는 서버 admin SDK용이라 쿼리 체인에 .get()이 없다. 클라이언트
+  // 코드는 where().orderBy().limit().get()을 쓰므로 그 모양으로 따로 만든다.
+  function fakeClientDb(docs, hotDocs, opts) {
+    const o = opts || {};
+    const touched = new Set();
+    return {
+      __touched: touched,
+      collection(name) {
+        touched.add(name);
+        const chain = {
+          where: () => chain, orderBy: () => chain, limit: () => chain,
+          get: async () => {
+            if (o.hotFails) throw new Error('index not ready');
+            return { docs: (hotDocs || []).map(d => ({ id: d.story_id, data: () => d })) };
+          },
+          doc: (id) => ({
+            get: async () => {
+              const v = docs[name + '/' + id];
+              return { exists: !!v, data: () => v, id };
+            },
+          }),
+        };
+        return chain;
+      },
+    };
+  }
+
+  const SEQ = ['Romance', 'Mystery', 'Thriller', 'Comedy', 'Fantasy', 'Horror', 'Drama', 'Sci-Fi', 'Romance', 'Mystery'];
+  const fullDocs = {
+    'en_spotlight/slots': {
+      fixed_ending: { story_id: 'fe1' }, genre_switch: { story_id: 'gs1' },
+      speedrun: { story_id: 'sp1' }, fairytale: { story_id: 'ft1' },
+    },
+    'stories_en/fe1': { status: 'active', opening: 'A', current_step: 2, participant_count: 3, mode: 'fixed_ending', fixed_ending: 'The end.' },
+    'stories_en/gs1': { status: 'active', opening: 'B', current_step: 1, participant_count: 4, mode: 'genre_switch', genre_sequence: SEQ },
+    'stories_en/sp1': { status: 'active', opening: 'C', current_step: 9, participant_count: 5, mode: 'speedrun' },
+    'stories_en/ft1': { status: 'active', opening: 'D', current_step: 0, participant_count: 1, mode: 'fairytale' },
+  };
+  const hotList = [{ story_id: 'hot1', status: 'active', opening: 'E', current_step: 7, participant_count: 42, mode: '' }];
+  const slotsOf = r => r.cards.map(c => c.slot);
+
+  {
+    const db = fakeClientDb(fullDocs, hotList);
+    const res = await load(db).fbGetEnSpotlight();
+    check('카드 순서가 fixed_ending → genre_switch → speedrun → fairytale → hot',
+      JSON.stringify(slotsOf(res)) === JSON.stringify(['fixed_ending', 'genre_switch', 'speedrun', 'fairytale', 'hot']),
+      slotsOf(res).join(','));
+    check('영어 화면은 _en/en_spotlight 컬렉션만 읽는다',
+      JSON.stringify([...db.__touched].sort()) === JSON.stringify(['en_spotlight', 'stories_en']),
+      [...db.__touched].join(','));
+    const koCols = ['stories', 'episodes', 'submissions', 'config', 'votes'];
+    check('한국 컬렉션을 하나도 건드리지 않는다',
+      !koCols.some(c => db.__touched.has(c)), [...db.__touched].join(','));
+    check('genre_switch 카드에만 genre_sequence가 실린다',
+      res.cards.filter(c => c.genre_sequence).length === 1
+      && res.cards.find(c => c.slot === 'genre_switch').genre_sequence.length === 10);
+    check('카드 제목·안내가 서버 씨앗 문구 그대로다',
+      res.cards[0].title === seeds.EN_SLOT_TITLE.fixed_ending
+      && res.cards[0].info === seeds.EN_SLOT_INFO.fixed_ending);
+    check('결말 고정 카드가 fixed_ending 문장을 싣는다', res.cards[0].fixed_ending === 'The end.');
+    check('hot 카드는 fixed_ending을 싣지 않는다',
+      res.cards[4].fixed_ending === null && res.cards[4].story_id === 'hot1');
+  }
+
+  {
+    // hot 쿼리 실패(인덱스 미생성 등) — 나머지 카드는 그대로 나와야 한다.
+    const db = fakeClientDb(fullDocs, hotList, { hotFails: true });
+    const res = await load(db).fbGetEnSpotlight();
+    check('hot 쿼리가 실패해도 슬롯 카드 4장은 정상 노출된다',
+      JSON.stringify(slotsOf(res)) === JSON.stringify(['fixed_ending', 'genre_switch', 'speedrun', 'fairytale']),
+      slotsOf(res).join(','));
+  }
+
+  {
+    // 슬롯 하나는 포인터가 없고, 하나는 포인터가 없는 문서를 가리킨다.
+    const docs = Object.assign({}, fullDocs, {
+      'en_spotlight/slots': {
+        fixed_ending: { story_id: 'fe1' }, genre_switch: {},
+        speedrun: { story_id: 'missing' }, fairytale: { story_id: 'ft1' },
+      },
+    });
+    const res = await load(fakeClientDb(docs, hotList)).fbGetEnSpotlight();
+    check('빈 슬롯과 사라진 이야기는 건너뛰고 나머지는 순서대로 노출된다',
+      JSON.stringify(slotsOf(res)) === JSON.stringify(['fixed_ending', 'fairytale', 'hot']),
+      slotsOf(res).join(','));
+  }
+
+  {
+    // 슬롯 포인터 문서 자체가 없는 경우(아직 씨앗 전) — 터지지 않고 hot만 남는다.
+    const res = await load(fakeClientDb({}, hotList)).fbGetEnSpotlight();
+    check('슬롯 포인터가 아직 없어도 터지지 않는다', res.ok === true);
+    check('포인터가 없으면 hot 카드만 노출된다',
+      JSON.stringify(slotsOf(res)) === JSON.stringify(['hot']), slotsOf(res).join(','));
+  }
+
+  {
+    // hot 후보가 이미 슬롯에 걸린 이야기뿐이면 hot 카드를 만들지 않는다(중복 방지).
+    const dup = [{ story_id: 'sp1', status: 'active', participant_count: 99 }];
+    const res = await load(fakeClientDb(fullDocs, dup)).fbGetEnSpotlight();
+    check('hot 후보가 슬롯 이야기와 겹치면 중복 카드를 만들지 않는다',
+      !slotsOf(res).includes('hot'), slotsOf(res).join(','));
+  }
+
+  {
+    // 아무도 안 쓴 이야기(participant_count 0)는 "지금 인기"가 아니다.
+    const cold = [{ story_id: 'z1', status: 'active', participant_count: 0 }];
+    const res = await load(fakeClientDb(fullDocs, cold)).fbGetEnSpotlight();
+    check('참여자가 0인 이야기는 hot 카드로 올리지 않는다',
+      !slotsOf(res).includes('hot'), slotsOf(res).join(','));
+  }
+}
+
   console.log(`\n결과: ${pass} 통과 / ${failCount} 실패`);
   if (failCount) process.exit(1);
 }

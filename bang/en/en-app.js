@@ -2,9 +2,14 @@
 //  Hwasee.bang — English edition app
 //
 //  한국판 bang/index.html(약 11,000줄)을 복제하지 않는다. 필요한 화면만 담은
-//  별도 앱이고, 서버 호출은 영어 전용 Callable(submitEpisodeEn / voteEpisodeEn /
-//  getEnSpotlight)만 쓴다. 어느 에디션에 쓸지는 **서버가 Callable별로 고정**하므로
-//  이 클라이언트가 보내는 값으로는 컬렉션 경로가 바뀌지 않는다.
+//  별도 앱이고, **쓰기**는 영어 전용 Callable(submitEpisodeEn / voteEpisodeEn)만
+//  쓴다. 어느 에디션에 쓸지는 **서버가 Callable별로 고정**하므로 이 클라이언트가
+//  보내는 값으로는 컬렉션 경로가 바뀌지 않는다.
+//
+//  읽기는 한국판 bang/firebase-api.js와 같이 브라우저가 Firestore를 직접 조회한다
+//  (자유·완결 탭과 상세 화면이 원래부터 그랬고, Today도 2026-09-02에 같은 방식으로
+//  통일했다 — 아래 fbGetEnSpotlight 주석 참고). 읽기 전용 데이터라 Callable을 거칠
+//  보안 이유가 없고, 서버 왕복 하나가 그대로 첫 화면 지연이 된다.
 //
 //  한국판 bang/firebase-api.js는 건드리지 않는다(회귀 위험 0).
 // ═══════════════════════════════════════════════════════════════════════
@@ -209,6 +214,112 @@ function cardKey(e, story_id) {
 }
 window.cardKey = cardKey;
 
+// ── Today 데이터 조회 ───────────────────────────────────────────────────
+// 원래 getEnSpotlight Callable(functions/index.js)을 호출했다. 그 함수는 순수
+// 읽기라 서버에서 할 일이 없었는데도 브라우저→Cloud Functions(asia-northeast3)
+// →Firestore 왕복이 하나 더 붙어서, 콜드 스타트 때 첫 화면이 1~4초 비어 있다는
+// 제보로 확인됐다(2026-09-02). stories_en/en_spotlight는 bang/firestore.rules에서
+// `allow read: if true`(쓰기는 서버 전용)라 클라이언트가 직접 읽어도 보안 차이가
+// 없고, Callable 안에 번역 게이팅·관측 같은 다른 로직도 없었다. 그래서 한국판
+// fbGetSpotlight(bang/firebase-api.js)와 같은 방식으로 브라우저가 직접 읽는다.
+//
+// 아래 조회 로직은 그 Callable의 것을 **그대로** 옮긴 것이다(조회 순서·필드·
+// 실패 시 폴백 동일). 재해석하지 않았다.
+//
+// ⚠️ 슬롯 키·제목·안내 문구는 서버 functions/lib/en-seeds.js와 이중화된 값이다
+// (EN_GENRE_META가 EN_GENRES와 이중화된 것과 같은 주의). 한쪽만 고치면 화면과
+// 씨앗이 어긋나므로 scripts/test-en-edition.js가 두 곳의 일치를 못박는다.
+const EN_SLOT_KEYS = ['fixed_ending', 'genre_switch', 'speedrun', 'fairytale'];
+
+const EN_SLOT_TITLE = {
+  fixed_ending: 'Fixed Ending',
+  genre_switch: 'Genre Switch',
+  speedrun: 'Speedrun',
+  fairytale: 'Fairytale Retold',
+  hot: 'Hot Story',
+};
+
+const EN_SLOT_INFO = {
+  fixed_ending: 'The last sentence is already written. Get the story there any way you like.',
+  genre_switch: 'The genre changes at random every step. Keep each sentence under 50 characters.',
+  speedrun: 'No voting here — whatever you write is accepted instantly. One short sentence at a time, up to 100 steps.',
+  fairytale: 'Start from an opening everyone knows, then take it somewhere new. Use the original characters as much as you like.',
+  hot: 'The open story with the most people writing in it right now. This changes as you visit.',
+};
+
+// 서버 _enGenreSequenceField의 이식 — 장르 강제 전환 이야기에만 확정 장르 배열을
+// 카드에 싣는다. 다른 모드에는 키 자체를 붙이지 않는다(없는 키 = 배너 없음).
+function enGenreSequenceField(story) {
+  return (story && story.mode === 'genre_switch' && Array.isArray(story.genre_sequence))
+    ? { genre_sequence: story.genre_sequence }
+    : {};
+}
+
+async function fbGetEnSpotlight() {
+  // 슬롯 포인터 조회와 hot 후보 조회는 서로 값을 참조하지 않아 동시에 시작한다.
+  // hot 쿼리는 인덱스 미생성 등으로 실패할 수 있고 그때도 나머지 카드는 그대로
+  // 노출해야 하므로, 자체 .catch로 감싸 Promise.all 전체가 실패하지 않게 한다.
+  const [ptrSnap, hotSnap] = await Promise.all([
+    db.collection('en_spotlight').doc('slots').get(),
+    db.collection('stories_en')
+      .where('status', '==', 'active').orderBy('participant_count', 'desc').limit(5).get()
+      .catch(e => { console.error('[en] hot slot error:', e.message); return null; }),
+  ]);
+  const slots = ptrSnap.exists ? (ptrSnap.data() || {}) : {};
+
+  // 슬롯 4개도 서로 무관해서 순차 await 대신 병렬로 조회. 카드 순서는
+  // Promise.all이 입력 배열 순서를 그대로 보존하므로 EN_SLOT_KEYS 순서 유지됨.
+  const slotEntries = EN_SLOT_KEYS.map(key => ({ key, sid: slots[key] && slots[key].story_id }));
+  const slotSnaps = await Promise.all(
+    slotEntries.map(({ sid }) => sid ? db.collection('stories_en').doc(sid).get() : null)
+  );
+
+  const cards = [];
+  slotEntries.forEach(({ key, sid }, i) => {
+    const sSnap = slotSnaps[i];
+    if (!sid || !sSnap || !sSnap.exists) return;
+    const s = sSnap.data();
+    cards.push({
+      slot: key,
+      title: EN_SLOT_TITLE[key],
+      info: EN_SLOT_INFO[key],
+      story_id: sid,
+      opening: s.opening || '',
+      status: s.status,
+      current_step: Number(s.current_step) || 0,
+      participant_count: Number(s.participant_count) || 0,
+      mode: s.mode || '',
+      fixed_ending: s.fixed_ending || null,
+      ...enGenreSequenceField(s),
+    });
+  });
+
+  // hot 슬롯 — 진행 중 영어 자유 이야기 중 참여자가 가장 많은 것(실시간).
+  // 쿼리 자체는 위에서 이미 병렬로 마쳤고(실패 시 null), 여기선 결과 가공만 함.
+  if (hotSnap) {
+    const slotIds = new Set(cards.map(c => c.story_id));
+    const hot = hotSnap.docs.map(d => ({ story_id: d.id, ...d.data() }))
+      .find(s => !slotIds.has(s.story_id) && (Number(s.participant_count) || 0) > 0);
+    if (hot) {
+      cards.push({
+        slot: 'hot',
+        title: EN_SLOT_TITLE.hot,
+        info: EN_SLOT_INFO.hot,
+        story_id: hot.story_id,
+        opening: hot.opening || '',
+        status: hot.status,
+        current_step: Number(hot.current_step) || 0,
+        participant_count: Number(hot.participant_count) || 0,
+        mode: hot.mode || '',
+        fixed_ending: null,
+        ...enGenreSequenceField(hot),
+      });
+    }
+  }
+
+  return { ok: true, cards, generated_at: new Date().toISOString() };
+}
+
 // ── Today ───────────────────────────────────────────────────────────────
 async function renderToday() {
   app.innerHTML = `<div class="page-title">Today's Story</div>
@@ -216,7 +327,7 @@ async function renderToday() {
     ${skeletons(4)}`;
   let res;
   try {
-    res = await call('getEnSpotlight');
+    res = await fbGetEnSpotlight();
   } catch (e) {
     app.innerHTML = `<div class="page-title">Today's Story</div>
       <div class="empty">Could not load today's stories.<br>Please try again in a moment.</div>`;
@@ -254,8 +365,8 @@ function todayCardHtml(c) {
   // 한국판처럼 genre_switch 슬롯에서만 띄운다(hot에 장르전환 이야기가 올라와도
   // 한국판은 배너를 안 띄우므로 같은 규칙을 유지한다).
   // 색인: 한국판은 열린 에피소드 step으로 seq[step-1]을 쓴다. 씨앗은 current_step=0에
-  // 1단계 에피소드로 시작하므로 step === current_step + 1이고, getEnSpotlight는
-  // 에피소드를 안 내려주므로 같은 값을 seq[current_step]으로 구한다
+  // 1단계 에피소드로 시작하므로 step === current_step + 1이고, fbGetEnSpotlight는
+  // 에피소드를 안 읽으므로 같은 값을 seq[current_step]으로 구한다
   // (en-app.js 상세 화면이 이미 쓰는 색인 규칙과 같다).
   const genreSeq = Array.isArray(c.genre_sequence) ? c.genre_sequence : [];
   const genreStep = Number(c.current_step) || 0;
@@ -559,7 +670,7 @@ function renderStory(story, adopted, openEp, candidates, openEps) {
   // 색인은 한국판 상세(bang/index.html의 genreSwitchBannerHtml 호출부)와 같은
   // 규칙 — 열린 에피소드 step 기준으로 지금 장르 seq[step-1], 다음 장르 seq[step].
   // 서버도 같은 식으로 단계 장르를 강제한다(functions/index.js의 gsGenre).
-  // 카드 목록은 getEnSpotlight가 에피소드를 안 내려줘서 같은 값을 seq[current_step]
+  // 카드 목록은 fbGetEnSpotlight가 에피소드를 안 읽어서 같은 값을 seq[current_step]
   // 으로 우회해 구하지만, 상세는 openEp를 실제로 갖고 있으므로 그쪽이 정확하다.
   // current_step 기준을 그대로 쓰면 두 경우에 틀린다:
   //  - 완결된 이야기엔 열린 에피소드가 없는데도 "지금 장르"를 계속 띄운다.

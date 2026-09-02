@@ -1482,7 +1482,7 @@ let _freeSort   = 'activity';
 let _freeFilter = 'others'; // 'others'=미참여(기본, 새 글 찾기 우선), 'mine'=참여중
 let _freeCache  = null; // { mine, others }
 let _freeLimit  = 20;
-let _doneSort  = 'activity';
+let _doneSort  = 'latest';
 let _doneCache = null; // { stories, genreTops }
 let _doneLimit = 20;
 let _doneCoverId = null; // 책장에서 표지가 펼쳐진 story_id(null=책장 그리드)
@@ -1517,7 +1517,14 @@ function _sortDisplayStep(s) {
 
 function _sortStories(stories, key) {
   const arr = [...stories];
-  if (key === 'activity')    return arr.sort((a, b) => (Number(b.activity_count)||0) - (Number(a.activity_count)||0));
+  // 자유 이야기 탭 데이터(fbGetStories page:1)는 activity_count를 채워서 내려주지만,
+  // 완성된 이야기 탭 데이터(page:2)는 그 필드 자체가 없음(raw participant_count만
+  // 있음) — activity_count만 보면 전부 undefined→0으로 동률 처리돼 "참여도 순"이
+  // 사실상 아무 순서도 안 바꾸는 무동작이었음(완성된 이야기 탭에서만 재현되던
+  // "가끔 안 바뀐다" 제보, 2026-09-02 — 최신순으로 정렬해서 보여준 뒤라 우연히
+  // 서버 기본 정렬과 겹치면 진짜로 변화가 없어 보였음). _doneParticipantCount와
+  // 같은 폴백을 여기도 적용.
+  if (key === 'activity')    return arr.sort((a, b) => (Number(b.activity_count ?? b.participant_count)||0) - (Number(a.activity_count ?? a.participant_count)||0));
   if (key === 'step')        return arr.sort((a, b) => _sortDisplayStep(b) - _sortDisplayStep(a));
   if (key === 'likes')       return arr.sort((a, b) => (Number(b.like_count)||0)     - (Number(a.like_count)||0));
   if (key === 'submissions') return arr.sort((a, b) => _currentSubCount(b) - _currentSubCount(a));

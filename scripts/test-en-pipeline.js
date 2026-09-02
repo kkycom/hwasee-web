@@ -56,6 +56,13 @@ function runVerify(setup) {
     fs.mkdirSync(path.join(tmp, 'bang', 'story'), { recursive: true });
     fs.mkdirSync(path.join(tmp, 'scripts'), { recursive: true });
     fs.copyFileSync(path.join(ROOT, 'scripts', 'verify-en-pages.js'), path.join(tmp, 'scripts', 'verify-en-pages.js'));
+    // 검증기는 빌드 산출물뿐 아니라 저장소에 항상 있는 영어판 소스 파일도 본다
+    // (방침 페이지 존재·링크 배선). 실제 저장소를 흉내내야 하므로 그 원본을
+    // 그대로 복사해 기본 상태로 깔아둔다. 이것들이 없는 상태를 시험하고 싶은
+    // 시나리오는 setup에서 지우면 된다.
+    for (const rel of [['bang', 'en', 'privacy.html'], ['bang', 'en', 'consent.js'], ['bang', 'en', 'index.html']]) {
+      fs.copyFileSync(path.join(ROOT, ...rel), path.join(tmp, ...rel));
+    }
     setup(tmp);
     let code = 0, out = '';
     try {
@@ -247,6 +254,51 @@ async function main() {
 
   v = runVerify(tmp => { fs.rmSync(path.join(tmp, 'bang', 'en', 'story'), { recursive: true, force: true }); });
   check('영어 빌드 미실행 → 통과(검사 대상 없음)', v.code === 0, v.out.slice(0, 200));
+
+  // ── 영어 방침 페이지 배선(2026-09-02) ────────────────────────────────
+  // 원래 버그: 영어 동의 배너의 "Privacy policy"가 한국어 전용 페이지로 갔다.
+  // 화면상으로는 멀쩡해 보이는 종류의 회귀라 게이트로 잡는다.
+  v = runVerify(tmp => {
+    writeGood(tmp, ['a']);
+    fs.rmSync(path.join(tmp, 'bang', 'en', 'privacy.html'));
+  });
+  check('영어 방침 페이지가 없으면 → 배포 차단',
+    v.code !== 0 && /privacy\.html이 없음/.test(v.out), v.out.slice(0, 200));
+
+  v = runVerify(tmp => {
+    writeGood(tmp, ['a']);
+    const p = path.join(tmp, 'bang', 'en', 'consent.js');
+    fs.writeFileSync(p, fs.readFileSync(p, 'utf8')
+      .replace('href="/bang/en/privacy.html"', 'href="/bang/privacy.html"'));
+  });
+  check('배너가 한국어 전용 방침으로 링크되면 → 배포 차단',
+    v.code !== 0 && /한국어 전용 방침/.test(v.out), v.out.slice(0, 300));
+
+  v = runVerify(tmp => {
+    writeGood(tmp, ['a']);
+    const p = path.join(tmp, 'bang', 'en', 'privacy.html');
+    fs.writeFileSync(p, fs.readFileSync(p, 'utf8')
+      .replace('<meta name="robots" content="noindex,follow">', '<meta name="robots" content="index,follow">'));
+  });
+  check('영어 방침 페이지가 색인 대상이면 → 배포 차단(한국어 원본과 중복)',
+    v.code !== 0 && /noindex가 아님/.test(v.out), v.out.slice(0, 300));
+
+  v = runVerify(tmp => {
+    writeGood(tmp, ['a']);
+    fs.writeFileSync(path.join(tmp, 'bang', 'en', 'sitemap.xml'),
+      enBuild.renderEnSitemap([{ story_id: 'a', title_en: 'A' }])
+        .replace('</urlset>', `  <url><loc>${'https://hwasee.me'}/bang/en/privacy.html</loc></url>\n</urlset>`));
+  });
+  check('noindex 방침 페이지가 sitemap에 실리면 → 배포 차단',
+    v.code !== 0 && /방침 페이지가 sitemap에 실려/.test(v.out), v.out.slice(0, 300));
+
+  v = runVerify(tmp => {
+    writeGood(tmp, ['a']);
+    const p = path.join(tmp, 'bang', 'en', 'story', 'a', 'index.html');
+    fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace(/<a href="\/bang\/en\/privacy\.html">[^<]*<\/a> &middot; /, ''));
+  });
+  check('정적 완결작 페이지 푸터에서 방침 링크가 빠지면 → 배포 차단',
+    v.code !== 0 && /푸터에 영어 방침 링크가 없음/.test(v.out), v.out.slice(0, 300));
 
   console.log(`\n결과: ${pass} 통과 / ${failCount} 실패`);
   if (failCount) process.exit(1);

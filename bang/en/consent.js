@@ -131,10 +131,10 @@
     // 문구는 실제 동작과 어긋나지 않게 쓴다: 거부해도 로그인 유지에 필요한
     // 저장은 남고, 승인 전에도 Google 태그 자체는 익명 모드로 동작한다
     // ("추적이 전혀 없다"고 말하지 않는다 — 고급 Consent Mode의 실제 동작).
-    text.innerHTML = 'We use cookies for analytics and advertising. '
+    text.innerHTML = 'We use cookies and similar storage for analytics and advertising. '
       + 'Until you accept, analytics and ad storage stay off and no ad script is loaded. '
-      + 'Your choice is saved in this browser, and cookies needed to keep you signed in are always kept. '
-      + '<a href="/bang/privacy.html">Privacy policy</a>';
+      + 'Your choice is saved in this browser, and the storage needed to keep you signed in is always kept. '
+      + '<a href="/bang/en/privacy.html">Privacy policy</a>';
 
     var actions = document.createElement('div');
     actions.className = 'hw-consent-actions';

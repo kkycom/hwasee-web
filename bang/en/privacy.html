@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy &amp; Terms of Use — Hwasee.bang</title>
+<meta name="description" content="Privacy policy and terms of use for the English edition of Hwasee.bang: what we collect, how cookies and browser storage are used, advertising, retention, and your rights.">
+<!-- 검색 노출 대상이 아니다. 한국어 원본(/bang/privacy.html)이 색인되는 정본이고,
+     이 문서는 영어판 방문자를 위한 안내다. 상호 hreflang은 붙이지 않는다 —
+     역방향 링크를 넣으려면 한국판 파일을 고쳐야 하는데 이번 범위가 아니고,
+     일방향 hreflang은 이 저장소가 명시적으로 실패로 취급하는 패턴이다
+     (scripts/verify-en-pages.js 참고). -->
+<meta name="robots" content="noindex,follow">
+<link rel="canonical" href="https://hwasee.me/bang/en/privacy.html">
+<link rel="icon" type="image/png" href="/bang/hwaseebang_sum.png">
+<meta name="theme-color" content="#f0ead8">
+<!-- 이 문서에는 GA4(gtag.js)도 카카오 애드핏도 싣지 않는다. 방침 페이지 자체가
+     추적을 하지 않는 편이 문서 내용("this page loads no analytics or advertising")과
+     일치하기 때문. 그래서 consent default 스니펫도 필요 없다.
+     다만 동의 배너는 그대로 띄운다 — 아래 consent.js가 저장된 선택을 읽어
+     미결정이면 배너를, 결정돼 있으면 아무것도 띄우지 않는다. 배너에서
+     Accept/Reject를 누르면 그 선택이 다른 영어 페이지에 그대로 적용된다.
+     consent.js는 window.gtag가 없으면 consent update를 건너뛰고(83-92행),
+     광고 슬롯이 없으면 아무것도 붙이지 않으므로(47-69행) 단독으로 안전하다. -->
+<script>
+  window.HW_CONSENT_KEY = 'hwasee_en_cookie_consent';
+  window.hwConsentGet = function () {
+    try { return localStorage.getItem(window.HW_CONSENT_KEY); } catch (e) { return null; }
+  };
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* 색·폰트·헤더·푸터는 영어 정적 페이지 셸(scripts/build-en-pages.js의
+     enPageShell)과 같은 토큰·같은 규칙을 쓴다. 새 hex를 만들지 않는다. */
+  :root {
+    --bg: #f0ead8; --surface: #e6dac8; --card: #ddd0b8; --border: #c4b090;
+    --accent: #80978c; --accent2: #c8823a; --text: #1c0e06; --muted: #7a5c40;
+    --radius: 12px;
+    --font: Georgia, 'Times New Roman', serif;
+    --serif: 'Gowun Batang', Georgia, serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.7; }
+  header {
+    position: sticky; top: 0; z-index: 10; background: rgba(240,234,216,.92); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border); padding: 0 24px; height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo { font-size: 20px; font-weight: 400; letter-spacing: .5px; font-family: var(--serif); color: var(--text); text-decoration: none; }
+  .to-ko { font-size: 13px; color: var(--muted); text-decoration: none; }
+  main { max-width: 720px; margin: 0 auto; padding: 44px 20px 80px; }
+  h1 { font-family: var(--serif); font-size: 25px; font-weight: 700; margin-bottom: 8px; line-height: 1.4; }
+  .updated { font-size: 13px; color: var(--muted); margin-bottom: 36px; }
+  h2 { font-family: var(--serif); font-size: 17px; font-weight: 700; color: var(--accent2); margin: 38px 0 12px; }
+  h3 { font-size: 14px; font-weight: 700; margin: 18px 0 6px; }
+  p { font-size: 14.5px; margin-bottom: 12px; }
+  ul { padding-left: 20px; margin-bottom: 12px; }
+  li { font-size: 14.5px; margin-bottom: 6px; }
+  a { color: var(--accent2); }
+  .section { border-top: 1px solid var(--border); padding-top: 6px; }
+  .highlight {
+    background: var(--card); border-left: 3px solid var(--accent2);
+    padding: 16px 20px; border-radius: 0 var(--radius) var(--radius) 0; margin: 16px 0;
+    font-size: 14px;
+  }
+  .note {
+    background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: var(--radius); padding: 16px 18px; margin: 20px 0; font-size: 13.5px; color: var(--muted);
+  }
+  .note strong { color: var(--text); }
+  .table-wrap { overflow-x: auto; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border: 1px solid var(--border); padding: 10px 14px; text-align: left; vertical-align: top; }
+  th { background: var(--surface); color: var(--muted); font-weight: 700; }
+  .contact { margin-top: 40px; padding: 20px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); font-size: 14px; }
+  .consent-box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px 20px; margin: 20px 0;
+  }
+  .consent-state { font-size: 13.5px; color: var(--muted); margin-bottom: 12px; }
+  .consent-state strong { color: var(--text); }
+  .consent-btn {
+    font: inherit; font-size: 13px; cursor: pointer; padding: 8px 16px; border-radius: 8px;
+    border: 1px solid var(--border); background: transparent; color: var(--muted);
+  }
+  .consent-btn:hover { color: var(--text); }
+  .consent-btn:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+  footer { text-align: center; font-size: 12px; color: var(--muted); padding: 26px 20px; border-top: 1px solid var(--border); }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <a class="logo" href="/bang/en/">Hwasee.bang</a>
+  <a class="to-ko" href="/bang/">한국어</a>
+</header>
+
+<main>
+  <h1>Privacy Policy &amp; Terms of Use</h1>
+  <p class="updated">Effective 26 June 2026 &nbsp;|&nbsp; English edition published 2 September 2026</p>
+
+  <div class="note">
+    <strong>About this document.</strong> Hwasee.bang is operated from South Korea, and the
+    <a href="/bang/privacy.html">Korean policy</a> is the authoritative original. This English
+    edition covers the same terms and the same data practices; it adds detail about cookies and
+    advertising on the English pages at <code>/bang/en/</code>. If the two versions ever conflict,
+    the Korean version governs.
+  </div>
+
+  <h2>1. About the service</h2>
+  <div class="section">
+    <p>Hwasee.bang (the "Service") is a collaborative writing platform operated by Hwasee
+    (contact: <a href="mailto:kkycokr@gmail.com">kkycokr@gmail.com</a>). Members sign up and build
+    stories together, one sentence at a time.</p>
+  </div>
+
+  <h2>2. Terms of use</h2>
+  <div class="section">
+    <h3>2.1 Eligibility</h3>
+    <p>Anyone aged 14 or older may create an account. You use the Service with the nickname and
+    password you choose at sign-up.</p>
+
+    <h3>2.2 Prohibited conduct</h3>
+    <ul>
+      <li>Posting content that defames or disparages another person</li>
+      <li>Posting sexual, violent, or hateful content</li>
+      <li>Using someone else's work without permission</li>
+      <li>Interfering with the normal operation of the Service</li>
+      <li>Creating multiple accounts to obtain points dishonestly</li>
+    </ul>
+    <p>Accounts found engaging in the above may be deleted without prior notice.</p>
+  </div>
+
+  <h2>3. Rights in your content</h2>
+  <div class="section">
+    <div class="highlight">
+      <strong>You keep the copyright in everything you write</strong> on the Service — sentences,
+      stories, and all other posts.<br><br>
+      By posting content to the Service, however, you grant Hwasee the following rights:
+    </div>
+    <ul>
+      <li>Reproduction, transmission, and display in order to operate the Service and provide its features</li>
+      <li>Use in promotional and marketing material for the Service</li>
+      <li>Use for advertising and monetisation purposes</li>
+      <li>Commercial use, including publication, exhibition, and the creation of derivative works</li>
+    </ul>
+    <p>This licence is <strong>non-exclusive, worldwide, perpetual, and royalty-free</strong>. You may
+    stop granting it at any time by deleting your account, although uses that already took place
+    before you left are not retroactively revoked.</p>
+    <p>Where Hwasee makes use of a member's work, Hwasee makes reasonable efforts to credit the
+    original author.</p>
+  </div>
+
+  <h2>4. Personal data we collect</h2>
+  <div class="section">
+    <div class="table-wrap">
+      <table>
+        <tr><th>Data</th><th>How it is collected</th><th>Purpose</th></tr>
+        <tr><td>Nickname</td><td>At sign-up</td><td>Identifying you within the Service</td></tr>
+        <tr><td>Name (alias)</td><td>At sign-up</td><td>Password recovery</td></tr>
+        <tr><td>Email address (optional)</td><td>At sign-up, or added later from your profile</td><td>Recovering your account name or password</td></tr>
+        <tr><td>Password (scrypt hash with salt)</td><td>At sign-up</td><td>Authentication</td></tr>
+        <tr><td>Service usage records</td><td>Collected automatically</td><td>Awarding points, improving the Service</td></tr>
+        <tr><td>IP address and browser information</td><td>Collected automatically</td><td>Security, abuse prevention</td></tr>
+      </table>
+    </div>
+    <p>Passwords are stored as scrypt hashes using a randomly generated per-account salt; the
+    original password is never retained. The email address is optional — leaving it blank places no
+    restriction on your use of the Service.</p>
+  </div>
+
+  <h2>5. Retention and deletion</h2>
+  <div class="section">
+    <p>When you delete your account, your personal data — nickname, name, email address, and
+    password hash — is deleted immediately. Because the stories are collaborative works, posts you
+    contributed may be kept and attributed to "anonymous" so that the story remains coherent for
+    everyone else who wrote in it.</p>
+    <p>Where a law requires records to be retained, they are kept for the period that law specifies.</p>
+  </div>
+
+  <h2>6. Cookies, browser storage, and advertising</h2>
+  <div class="section">
+    <p>The English pages of the Service group cookies and similar browser storage into two
+    categories. The first is always active; the second runs only after you accept it.</p>
+
+    <h3>6.1 Strictly necessary storage (always active)</h3>
+    <p>This is storage the Service cannot work without. It is not used for advertising or
+    measurement, and it is kept even if you reject the second category:</p>
+    <ul>
+      <li>Sign-in state, so you are not logged out between visits. On the English pages this is held
+      in your browser's local storage (<code>hwasee_user_id</code>, <code>hwasee_token</code>,
+      <code>hwasee_nickname</code>) rather than in cookies.</li>
+      <li>Your cookie choice itself (<code>hwasee_en_cookie_consent</code>), so the banner does not
+      ask you again on every page.</li>
+    </ul>
+
+    <h3>6.2 Analytics and advertising (only after you accept)</h3>
+    <p>Until you press <strong>Accept</strong> on the cookie banner, analytics and advertising
+    storage stay switched off:</p>
+    <ul>
+      <li><strong>Google Analytics (GA4).</strong> The English pages use Google Consent Mode with
+      <code>ad_storage</code>, <code>ad_user_data</code>, <code>ad_personalization</code>, and
+      <code>analytics_storage</code> all set to <em>denied</em> by default. In that state the Google
+      tag still loads and may send a cookieless, anonymous signal to Google, but it does not read or
+      write analytics or advertising storage on your device. Pressing Accept switches those four
+      settings to <em>granted</em>.</li>
+      <li><strong>Kakao AdFit advertising.</strong> AdFit is not covered by Google Consent Mode, so
+      it is controlled by not loading it at all: the AdFit script is added to the page only after you
+      press Accept. Before that, no request to AdFit is made.</li>
+    </ul>
+
+    <h3>6.3 What Accept and Reject do</h3>
+    <ul>
+      <li><strong>Accept</strong> — grants the four Consent Mode settings above and loads the AdFit
+      advertising script. Your choice is saved in this browser.</li>
+      <li><strong>Reject</strong> — leaves analytics and advertising storage denied, loads no
+      advertising script, and removes the empty advertising slots from the page. Your sign-in state
+      is unaffected.</li>
+      <li><strong>No choice yet</strong> — treated exactly like Reject until you decide.</li>
+    </ul>
+    <p>Your choice is stored only in the browser you made it in. If you use another browser or
+    device, or clear your site data, the banner will ask again. This policy page itself loads no
+    analytics or advertising scripts.</p>
+
+    <div class="consent-box">
+      <p class="consent-state" id="consent-state">Your current choice on this browser: <strong id="consent-value">checking…</strong></p>
+      <button class="consent-btn" id="consent-reset" type="button">Reset cookie choice</button>
+      <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">Resetting clears the saved
+      choice and reloads this page, so the banner appears again and you can pick Accept or Reject.
+      It does not sign you out.</p>
+    </div>
+
+    <h3>6.4 Advertising partners and disclosure to third parties</h3>
+    <p>Hwasee.bang may display advertising through Google AdSense and Kakao AdFit. Each of these
+    services may use cookies or device identifiers to show you personalised advertising:</p>
+    <ul>
+      <li>Google privacy &amp; terms: <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">policies.google.com/privacy</a></li>
+      <li>Google ad personalisation opt-out: <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener">google.com/settings/ads</a></li>
+      <li>Kakao privacy policy: <a href="https://www.kakao.com/policy/privacy" target="_blank" rel="noopener">kakao.com/policy/privacy</a></li>
+      <li>Kakao personalised advertising opt-out: <a href="https://info.ad.daum.net/optoutko.do" target="_blank" rel="noopener">info.ad.daum.net/optoutko.do</a></li>
+    </ul>
+    <p>Apart from these advertising services and any disclosure required by law, we do not provide
+    your personal data to third parties.</p>
+  </div>
+
+  <h2>7. Your rights</h2>
+  <div class="section">
+    <p>You may exercise the following rights at any time:</p>
+    <ul>
+      <li>Access and correct your personal data (Profile → change password)</li>
+      <li>Delete your account and personal data (Profile → delete account)</li>
+      <li>Ask questions or raise objections about how your data is handled</li>
+    </ul>
+    <p>Account management is available on the Korean site at
+    <a href="https://hwasee.me/bang">hwasee.me/bang</a>, where you sign in with the same account.</p>
+  </div>
+
+  <h2>8. Disclaimer</h2>
+  <div class="section">
+    <p>Hwasee is not liable for interruptions to the Service caused by circumstances beyond its
+    control, such as natural disasters or server failures. Responsibility for any dispute arising
+    from content a member posts rests with that member.</p>
+  </div>
+
+  <h2>9. Changes to these terms</h2>
+  <div class="section">
+    <p>We announce changes to these terms within the Service at least 7 days in advance, and at
+    least 30 days in advance for significant changes.</p>
+  </div>
+
+  <h2>10. Donations</h2>
+  <div class="section">
+    <p>Hwasee.bang is run by an individual operator and offers a voluntary donation feature.
+    Donating is entirely optional and has no effect whatsoever on your use of the Service. Donations
+    are used solely for the costs of running the Service, such as server and domain fees.</p>
+  </div>
+
+  <div class="contact">
+    <strong>Questions about privacy or these terms</strong><br>
+    Operator: Hwasee<br>
+    Email: <a href="mailto:kkycokr@gmail.com">kkycokr@gmail.com</a><br>
+    Service: <a href="https://hwasee.me/bang/en/">hwasee.me/bang/en/</a>
+  </div>
+</main>
+
+<footer>
+  <p>Hwasee.bang &middot; a Korean relay-fiction community</p>
+  <p style="margin-top:6px"><a href="/bang/en/">English home</a> &middot; <a href="/bang/">Go to the Korean site</a> &middot; <a href="/bang/privacy.html">한국어 개인정보처리방침</a></p>
+</footer>
+
+<script>
+  // 저장된 동의 선택을 보여주고, 되돌릴 수단을 준다. 지금까지는 한 번 고르면
+  // 브라우저 저장소를 직접 지우는 것 말고는 바꿀 방법이 없었다.
+  // 이 컨트롤은 '거부'로 바꾸는 게 아니라 선택을 **미결정으로 되돌린다** —
+  // 새로고침하면 consent.js가 배너를 다시 띄우고 거기서 다시 고르게 된다.
+  (function () {
+    var KEY = window.HW_CONSENT_KEY || 'hwasee_en_cookie_consent';
+    var LABEL = {
+      accepted: 'Accepted — analytics and advertising are on',
+      rejected: 'Rejected — analytics and advertising stay off'
+    };
+    var valueEl = document.getElementById('consent-value');
+    var resetEl = document.getElementById('consent-reset');
+
+    function current() {
+      try { return localStorage.getItem(KEY); } catch (e) { return null; }
+    }
+
+    function render() {
+      var v = current();
+      valueEl.textContent = LABEL[v] || 'Not chosen yet — treated the same as Rejected';
+      // 지울 선택이 없으면 버튼을 굳이 누르게 하지 않는다.
+      resetEl.disabled = !v;
+      resetEl.style.opacity = v ? '' : '.5';
+      resetEl.style.cursor = v ? 'pointer' : 'default';
+    }
+
+    resetEl.addEventListener('click', function () {
+      try { localStorage.removeItem(KEY); } catch (e) {}
+      location.reload();
+    });
+
+    render();
+  })();
+</script>
+<!-- 동의 배너 — 다른 영어 페이지와 같은 파일을 공유한다. 저장된 선택이 있으면
+     아무것도 띄우지 않고, 미결정이면 배너를 띄운다. 위 '되돌리기'를 누른 직후
+     새로고침되면 여기서 배너가 다시 뜬다. -->
+<script defer src="/bang/en/consent.js"></script>
+</body>
+</html>

@@ -64,6 +64,55 @@ function checkConsentWiring(html, label) {
   }
 }
 
+// 영어 전용 개인정보처리방침 페이지 배선 검사(2026-09-02).
+//
+// 이 페이지는 빌드 산출물이 아니라 손으로 쓴 정적 파일이라, 아래 산출물 검사
+// 루프가 전혀 건드리지 않는다. 그런데 이 페이지가 사라지거나 링크가 다시 한국어
+// 방침으로 돌아가도 화면상으로는 멀쩡해 보인다 — 원래 고쳤던 버그가 바로 그거였다
+// (영어 배너의 "Privacy policy"가 한국어 전용 페이지로 가고 있었다).
+// 그래서 영어 빌드 실행 여부와 무관하게 **항상** 검사한다.
+const EN_PRIVACY_PATH = path.join(EN_DIR, 'privacy.html');
+const EN_PRIVACY_URL = `${SITE_ORIGIN}/bang/en/privacy.html`;
+const EN_PRIVACY_LINK = '/bang/en/privacy.html';
+
+function checkEnPrivacyPage() {
+  if (!fs.existsSync(EN_PRIVACY_PATH)) {
+    fail('bang/en/privacy.html이 없음 — 영어판 동의 배너가 가리킬 방침 페이지가 사라졌습니다.');
+    return;
+  }
+  const html = fs.readFileSync(EN_PRIVACY_PATH, 'utf8');
+
+  const canonicals = [...html.matchAll(/<link rel="canonical" href="([^"]*)">/g)].map(m => m[1]);
+  if (canonicals.length !== 1) fail(`en/privacy.html: canonical이 정확히 1개가 아님(${canonicals.length}개)`);
+  else if (canonicals[0] !== EN_PRIVACY_URL) fail(`en/privacy.html: canonical이 자기 URL이 아님(${canonicals[0]})`);
+
+  // 한국어 원본이 색인되는 정본이다. 영어판까지 색인되면 중복 방침 문서가 된다.
+  const robots = (html.match(/<meta name="robots" content="([^"]*)">/) || [])[1];
+  if (!robots || !robots.includes('noindex')) {
+    fail(`en/privacy.html: noindex가 아님(${robots}) — 한국어 원본과 중복 색인됩니다.`);
+  }
+
+  // 동의 배너가 이 페이지를 가리키는지. 한국어 전용 방침으로 되돌아가면 실패.
+  const consentPath = path.join(EN_DIR, 'consent.js');
+  if (!fs.existsSync(consentPath)) {
+    fail('bang/en/consent.js가 없음');
+  } else {
+    const consent = fs.readFileSync(consentPath, 'utf8');
+    if (!consent.includes(EN_PRIVACY_LINK)) {
+      fail('bang/en/consent.js: 동의 배너가 영어 방침 페이지를 가리키지 않음');
+    }
+    if (/href="\/bang\/privacy\.html"/.test(consent)) {
+      fail('bang/en/consent.js: 영어 배너가 한국어 전용 방침(/bang/privacy.html)으로 링크됨');
+    }
+  }
+
+  // 영어 SPA 푸터 링크.
+  const spaPath = path.join(EN_DIR, 'index.html');
+  if (fs.existsSync(spaPath) && !fs.readFileSync(spaPath, 'utf8').includes(EN_PRIVACY_LINK)) {
+    fail('bang/en/index.html: 푸터에 영어 방침 링크가 없음');
+  }
+}
+
 function readManifest() {
   if (!fs.existsSync(MANIFEST_PATH)) return null;
   try {
@@ -75,6 +124,10 @@ function readManifest() {
 }
 
 function main() {
+  // 빌드 산출물이 아니라 항상 저장소에 있는 파일이라, 영어 빌드 실행 여부와
+  // 무관하게 먼저 검사한다.
+  checkEnPrivacyPage();
+
   const manifest = readManifest();
 
   // 마커가 없으면 "영어 빌드가 아예 안 돌았음"이다.
@@ -88,6 +141,11 @@ function main() {
     }
     if (fs.existsSync(EN_STORY_DIR)) {
       fail('bang/en/story/는 있는데 .en-manifest.json 완료 마커가 없음 — 영어 빌드가 중간에 실패했을 수 있어 배포를 막습니다.');
+      process.exit(1);
+    }
+    // 산출물 검사는 건너뛰더라도, 위 방침 페이지 검사에서 난 실패는 삼키지 않는다.
+    if (hasFatal) {
+      console.error('\n영어 발행 검증 실패 — 배포를 중단합니다(이전 라이브 버전이 그대로 유지됩니다).');
       process.exit(1);
     }
     console.log('영어 빌드가 실행되지 않음(bang/en/story/ 없음, manifest 없음) — 검사 대상 없어 통과 처리.');
@@ -118,6 +176,7 @@ function main() {
       if (p.re.test(html)) fail(`en/stories/index.html: 금지 요소 발견 — ${p.what}`);
     }
     checkConsentWiring(html, 'en/stories/index.html');
+    if (!html.includes(EN_PRIVACY_LINK)) fail('en/stories/index.html: 푸터에 영어 방침 링크가 없음');
     // 미승인/스테일 작품이 목록에 링크로 노출되면 안 된다.
     for (const id of staleIds) {
       if (html.includes(`/bang/en/story/${id}/`)) fail(`en/stories/index.html: 재확인 대상 작품이 목록에 노출됨 — ${id}`);
@@ -156,6 +215,7 @@ function main() {
       if (pat.re.test(html)) fail(`en/story/${id}: 금지 요소 발견 — ${pat.what}`);
     }
     checkConsentWiring(html, `en/story/${id}`);
+    if (!html.includes(EN_PRIVACY_LINK)) fail(`en/story/${id}: 푸터에 영어 방침 링크가 없음`);
 
     const hasHreflang = /rel="alternate" hreflang="en"/.test(html);
 
@@ -200,6 +260,12 @@ function main() {
     const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => m[1]);
     const storyLocs = locs.filter(l => l.includes('/bang/en/story/'));
     const sitemapIds = storyLocs.map(l => (l.match(/\/bang\/en\/story\/([^/]+)\//) || [])[1]).filter(Boolean);
+
+    // 방침 페이지는 noindex라 sitemap에 실리면 신호가 모순되고, 아래 개수 검사도
+    // 함께 깨진다(그 실패 메시지만으로는 원인을 알기 어려워 따로 잡는다).
+    if (locs.some(l => l.includes('/bang/en/privacy'))) {
+      fail('en/sitemap.xml: noindex인 영어 방침 페이지가 sitemap에 실려 있음');
+    }
 
     // 필수 검증 6: URL 수가 승인된 페이지 수와 정확히 일치(영어 홈 1개 포함).
     if (locs.length !== publishableIds.length + 1) {

@@ -239,7 +239,7 @@ ${bodyHtml}
 ${enFooterAdHtml()}
 <footer>
   <p>Hwasee.bang &middot; a Korean relay-fiction community</p>
-  <p style="margin-top:6px"><a href="/bang/">Go to the Korean site</a></p>
+  <p style="margin-top:6px"><a href="/bang/en/privacy.html">Privacy policy</a> &middot; <a href="/bang/">Go to the Korean site</a></p>
 </footer>
 <!-- 쿠키 동의 배너 — 라이브 앱(bang/en/index.html)과 같은 파일을 공유한다.
      배너 마크업을 여기 HTML로 넣지 않고 스크립트가 런타임에 만드는 이유:

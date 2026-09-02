@@ -270,7 +270,8 @@ function renderEnIndex(items) {
 
   const body = `<main>
   <h1>Stories written one sentence at a time</h1>
-  <p class="lead">Hwasee.bang is a Korean relay-fiction community. These are finished stories,
+  <p class="lead">Hwasee.bang is a Korean relay-fiction community — a collaborative, round-robin way
+  of writing fiction where no single author controls the plot. These are finished stories,
   translated into English.</p>
 
   <div class="how">
@@ -293,8 +294,8 @@ ${COMING_SOON_NOTICE}
 
   return enPageShell({
     title: 'Hwasee.bang — Korean relay fiction, in English',
-    description: 'Finished stories from Hwasee.bang, a Korean relay-fiction community where each '
-      + 'sentence is written by a different person and chosen by vote. Translated into English.',
+    description: 'Finished stories from Hwasee.bang, a Korean collaborative round-robin relay-fiction '
+      + 'community where each sentence is written by a different person and chosen by vote. Translated into English.',
     canonical: `${SITE_ORIGIN}/bang/en/stories/`,
     robots: 'index,follow',
     bodyHtml: body,

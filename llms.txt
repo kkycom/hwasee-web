@@ -20,3 +20,26 @@
 ## 운영
 - 운영사: 화씨 (Hwasee)
 - 문의: kkycokr@gmail.com
+
+---
+
+# Hwasee.bang (English)
+
+> A collaborative, round-robin relay-fiction platform. Someone writes one sentence, everyone
+> proposes what comes next, and the community votes on which sentence continues the story. No
+> single author controls the plot, and nobody knows the ending in advance.
+
+Hwasee.bang is a Korean relay-fiction ("릴레이 소설") community, similar in spirit to round-robin
+story writing, chain novels, and other collaborative fiction traditions — except every single
+sentence is chosen by community vote before the next one can be written.
+
+## Key pages
+- [Hwasee.bang (English)](https://hwasee.me/bang/en/): the live app — stories currently open for writing and voting
+- [Finished stories, translated into English](https://hwasee.me/bang/en/stories/): completed Korean stories, human-translated and reviewed
+- [The Korean-language site](https://hwasee.me/bang/): the original service, in Korean
+
+## How it works
+1. Someone writes the first sentence.
+2. Everyone else proposes a candidate for the next sentence.
+3. The community votes; the winning sentence becomes part of the story, permanently.
+4. Repeat until someone ends it.

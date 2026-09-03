@@ -650,6 +650,16 @@ function _renderDashboard(res) {
       <div class="insight-text" style="font-size:13.5px;line-height:1.6"></div>
     </div>
     ${_kpiCardsHtml(res.series)}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
+      <div class="card" style="padding:12px 18px;margin-bottom:0;min-width:110px">
+        <div style="font-size:11px;color:var(--muted)">🌍 /bang/en/ 방문자(오늘)</div>
+        <div id="en-visitor-today" style="font-size:20px;font-weight:700">…</div>
+      </div>
+      <div class="card" style="padding:12px 18px;margin-bottom:0;min-width:110px">
+        <div style="font-size:11px;color:var(--muted)">🌍 /bang/en/ 방문자(어제)</div>
+        <div id="en-visitor-yesterday" style="font-size:20px;font-weight:700">…</div>
+      </div>
+    </div>
     ${_missingRangeHtml(res.series)}
     <div id="ga4-setup-wrap"></div>
     ${_chartCardHtml('📈 누적 가입자 수 추이 (막대: 일별 신규가입 · 선: 누적, 콘텐츠 업그레이드 기준선 포함)', 'cumulative_users', cumulativeChart, () => _svgComboChart(
@@ -879,14 +889,35 @@ async function _loadGa4EnSourceChart(startDate, endDate) {
     const fn = functionsRegion.httpsCallable('getGa4EnSourceTrend');
     const r = await fn({ user_id: auth.user_id, token: auth.token, start_date: startDate, end_date: endDate });
     const data = r.data;
+    const todayEl0 = document.getElementById('en-visitor-today');
+    const yesterdayEl0 = document.getElementById('en-visitor-yesterday');
     if (!data || !data.ok) {
       el.innerHTML = `<div class="empty" style="padding:16px 0">${_esc((data && data.error) || 'GA4 연동이 설정되지 않았어요.')}</div>`;
+      if (todayEl0) todayEl0.textContent = '-';
+      if (yesterdayEl0) yesterdayEl0.textContent = '-';
       return;
     }
     if (!data.series.length) {
       el.innerHTML = `<div class="empty" style="padding:16px 0">아직 /bang/en/ 방문 데이터가 없어요(태그를 막 추가해서 그럴 수 있어요).</div>`;
+      if (todayEl0) todayEl0.textContent = '0명';
+      if (yesterdayEl0) yesterdayEl0.textContent = '0명';
       return;
     }
+    // 상단 KPI 카드(_kpiCardsHtml)는 배치 집계 특성상 "오늘"이 절대 안 나오는데
+    // (하루 1번 KST 00:15 집계), GA4는 실시간에 가까워서 "오늘"까지 보여줄 수
+    // 있음 — 그래서 선택된 기간(startDate/endDate)과 무관하게 KST 기준
+    // 오늘/어제로 직접 계산(2026-09-02, "en 페이지 방문자 칸" 요청).
+    const kstToday = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+    const kstYesterday = new Date(Date.now() + 9 * 3600 * 1000 - 86400000).toISOString().slice(0, 10);
+    const sumOf = dateStr => {
+      const row = data.series.find(d => d.date === dateStr);
+      return row ? (row.google + row.bing + row.direct + row.other) : 0;
+    };
+    const todayEl = document.getElementById('en-visitor-today');
+    const yesterdayEl = document.getElementById('en-visitor-yesterday');
+    if (todayEl) todayEl.textContent = `${sumOf(kstToday)}명`;
+    if (yesterdayEl) yesterdayEl.textContent = `${sumOf(kstYesterday)}명`;
+
     const eDates = data.series.map(d => d.date);
     const hasOther = data.series.some(d => d.other > 0);
     const buildSeries = () => {

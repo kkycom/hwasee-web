@@ -890,9 +890,11 @@ async function _loadGa4EnSourceChart(startDate, endDate) {
     const eDates = data.series.map(d => d.date);
     const hasOther = data.series.some(d => d.other > 0);
     const buildSeries = () => {
+      // ⚠️ --accent(세이지 그린)와 --success(초록)가 둘 다 초록 계열이라 빙/
+      // 다이렉트가 구분 안 된다는 지적(2026-09-02) — 빙만 파란색 계열로 교체.
       const s = [
         { label: '구글', color: 'var(--accent2)', values: data.series.map(d => d.google) },
-        { label: '빙', color: 'var(--accent)', values: data.series.map(d => d.bing) },
+        { label: '빙', color: '#4a6fa5', values: data.series.map(d => d.bing) },
         { label: '다이렉트(URL 직접입력 등)', color: 'var(--success)', values: data.series.map(d => d.direct) },
       ];
       if (hasOther) s.push({ label: '기타', color: '#7a5c40', values: data.series.map(d => d.other) });

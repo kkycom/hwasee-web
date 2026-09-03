@@ -898,8 +898,13 @@ async function _loadGa4EnSourceChart(startDate, endDate) {
       if (hasOther) s.push({ label: '기타', color: '#7a5c40', values: data.series.map(d => d.other) });
       return s;
     };
-    el.innerHTML = _svgStackedBarChart(eDates, buildSeries());
-    _chartRegistry.en_source = () => _svgStackedBarChart(eDates, buildSeries(), true);
+    // 막대만 보면 정확한 인원수를 알기 어렵다는 지적(2026-09-02)에 대응 —
+    // 선택 기간 합계를 텍스트로 바로 보여줌(마우스오버 title 툴팁에 기대지 않음).
+    const totalsHtml = () => `<div style="display:flex;flex-wrap:wrap;gap:10px;font-size:13px;margin-bottom:10px">
+      ${buildSeries().map(s => `<span><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};margin-right:4px"></span>${_esc(s.label)} <strong>${s.values.reduce((a, b) => a + b, 0)}명</strong></span>`).join('')}
+    </div>`;
+    el.innerHTML = totalsHtml() + _svgStackedBarChart(eDates, buildSeries());
+    _chartRegistry.en_source = () => totalsHtml() + _svgStackedBarChart(eDates, buildSeries(), true);
   } catch (e) {
     el.innerHTML = `<div class="empty" style="padding:16px 0">불러오지 못했습니다: ${_esc(e.message || '알 수 없는 오류')}</div>`;
   }

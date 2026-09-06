@@ -188,11 +188,16 @@
     <p>This is storage the Service cannot work without. It is not used for advertising or
     measurement, and it is kept even if you reject the second category:</p>
     <ul>
-      <li>Sign-in state, so you are not logged out between visits. On the English pages this is held
-      in your browser's local storage (<code>hwasee_user_id</code>, <code>hwasee_token</code>,
-      <code>hwasee_nickname</code>) rather than in cookies.</li>
+      <li>Sign-in state, so you are not logged out between visits. This is the same sign-in used on
+      the Korean site, held in your browser's local storage (<code>hwasee_user</code>,
+      <code>hwasee_token</code>) rather than in cookies. Signing in or out on either site applies to
+      both.</li>
       <li>Your cookie choice itself (<code>hwasee_en_cookie_consent</code>), so the banner does not
       ask you again on every page.</li>
+      <li>If you sign in from the English pages, the page you were reading is held briefly in your
+      browser's session storage (<code>hwasee_en_return_to</code>) so you are brought back to it once
+      you finish signing in on the Korean pages. This is cleared right after and does not persist
+      across browser sessions.</li>
     </ul>
 
     <h3>6.2 Analytics and advertising (only after you accept)</h3>

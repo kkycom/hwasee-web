@@ -29,12 +29,39 @@ const call = (name, payload) => fns.httpsCallable(name)(payload || {}).then(r =>
 
 // 계정은 한국판과 공유한다(같은 로그인). 세션 키도 같은 것을 읽어서, 한국판에서
 // 로그인한 사용자가 영어판에서 다시 로그인할 필요가 없다.
+// ⚠️ 원래 hwasee_user_id/hwasee_nickname을 직접 읽었는데, 한국판 saveUser()
+// (bang/index.html)는 그 키를 쓴 적이 없음 — hwasee_token/hwasee_user(JSON
+// 통째로)/hwasee_uid에만 저장함. 그래서 한국판에서 로그인해도 영어판은 항상
+// signedIn:false로 봐서 제출·투표가 전부 막혀있었음(2026-09-07 발견). 매번
+// localStorage를 직접 읽어서(캐시 안 함) 다른 탭에서 로그아웃/계정전환해도
+// 다음 접근 시 즉시 반영되게 함 — 한국판 로그아웃(saveUser(null))도 이
+// 세 키를 지우는 방식이라 동일하게 즉시 반영됨. 인증 판단 자체는 여전히
+// 서버(_requireUser)가 함 — 여기 값은 UI 표시·요청 파라미터용일 뿐.
+function _enParsedUser() {
+  try { return JSON.parse(localStorage.getItem('hwasee_user') || 'null'); } catch { return null; }
+}
 const session = {
-  get user_id() { return localStorage.getItem('hwasee_user_id') || ''; },
+  get user_id() { return (_enParsedUser() || {}).user_id || ''; },
   get token() { return localStorage.getItem('hwasee_token') || ''; },
-  get nickname() { return localStorage.getItem('hwasee_nickname') || ''; },
+  get nickname() {
+    const u = _enParsedUser();
+    return (u && (u.display_name || u.nickname)) || '';
+  },
   get signedIn() { return !!(this.user_id && this.token); },
 };
+
+// 영어판에서 로그인을 누르면 한국어 로그인 화면으로 이동했다가, 로그인 완료
+// 후 원래 보던 영어 화면으로 돌아와야 함(2026-09-07 요청) — 돌아갈 주소는
+// sessionStorage에 남겨두고(같은 오리진·같은 탭이면 카카오 외부 리다이렉트
+// 왕복에도 살아있음), 한국판 auth() 성공 경로가 그 값을 읽어서 돌아옴.
+// 오픈 리다이렉트 방지: 영어판 경로(/bang/en/)로 시작하는 값만 저장·사용.
+function _goToKoreanSignIn() {
+  const returnPath = location.pathname + location.search;
+  if (returnPath.startsWith('/bang/en/')) {
+    sessionStorage.setItem('hwasee_en_return_to', returnPath);
+  }
+  location.href = '/bang/auth/login?en=1';
+}
 
 const app = document.getElementById('app');
 const esc = s => String(s == null ? '' : s)
@@ -454,7 +481,14 @@ function startPanelHtml() {
 }
 
 async function startStory() {
-  if (!session.signedIn) { toast('Please sign in on the Korean site first — your account works here too.'); return; }
+  if (!session.signedIn) {
+    // 예전엔 토스트만 띄우고 끝 — 실제로 어떻게 로그인하라는 건지 다음 행동이
+    // 없었음. 로그인 화면으로 실제로 데려가고(설명을 읽을 시간을 준 뒤), 로그인
+    // 완료되면 지금 보던 이 화면으로 자동 복귀함(_goToKoreanSignIn 참고).
+    toast('Taking you to sign in (same account works here) — you’ll come right back.');
+    setTimeout(_goToKoreanSignIn, 1400);
+    return;
+  }
   const input = document.getElementById('open-input');
   const opening = (input.value || '').trim();
   if (!opening) { toast('Write an opening sentence first.'); return; }
@@ -798,7 +832,14 @@ function togglePick(sub_id) {
 window.togglePick = togglePick;
 
 async function submitSentence() {
-  if (!session.signedIn) { toast('Please sign in on the Korean site first — your account works here too.'); return; }
+  if (!session.signedIn) {
+    // 예전엔 토스트만 띄우고 끝 — 실제로 어떻게 로그인하라는 건지 다음 행동이
+    // 없었음. 로그인 화면으로 실제로 데려가고(설명을 읽을 시간을 준 뒤), 로그인
+    // 완료되면 지금 보던 이 화면으로 자동 복귀함(_goToKoreanSignIn 참고).
+    toast('Taking you to sign in (same account works here) — you’ll come right back.');
+    setTimeout(_goToKoreanSignIn, 1400);
+    return;
+  }
   const input = document.getElementById('sub-input');
   const text = (input.value || '').trim();
   if (!text) { toast('Write a sentence first.'); return; }
@@ -834,7 +875,14 @@ async function tryClose() {
 }
 
 async function castVote() {
-  if (!session.signedIn) { toast('Please sign in on the Korean site first — your account works here too.'); return; }
+  if (!session.signedIn) {
+    // 예전엔 토스트만 띄우고 끝 — 실제로 어떻게 로그인하라는 건지 다음 행동이
+    // 없었음. 로그인 화면으로 실제로 데려가고(설명을 읽을 시간을 준 뒤), 로그인
+    // 완료되면 지금 보던 이 화면으로 자동 복귀함(_goToKoreanSignIn 참고).
+    toast('Taking you to sign in (same account works here) — you’ll come right back.');
+    setTimeout(_goToKoreanSignIn, 1400);
+    return;
+  }
   if (!openState.picked.size) { toast('Pick at least one sentence.'); return; }
   try {
     const r = await call('voteEpisodeEn', {
@@ -909,7 +957,7 @@ async function loadLeaderboard() {
 // ── 부팅 ────────────────────────────────────────────────────────────────
 document.getElementById('acct-btn').addEventListener('click', () => {
   if (session.signedIn) toast(`Signed in as ${session.nickname || 'you'}`);
-  else location.href = '/bang/';
+  else _goToKoreanSignIn();
 });
 if (session.signedIn) {
   document.getElementById('acct-btn').textContent = session.nickname || 'Account';

@@ -73,6 +73,11 @@ function _goToKoreanSignIn() {
 function _draftKey(story_id, episode_id, uid) {
   return `hwasee_draft_${story_id}_${episode_id}_${uid}`;
 }
+// 마감된 회차의 초안 안내가 무기한 계속 뜨는 문제(디버그방 자체 지적,
+// 2026-09-07) — 저장 후 14일 지난 초안은 읽는 시점에 만료로 보고 조용히
+// 지움(한국판 bang/index.html과 동일 규칙). 계속 쓰는 중인 초안은 매 입력마다
+// saved_at이 갱신돼 절대 안 만료됨.
+const DRAFT_TTL_MS = 14 * 24 * 3600 * 1000;
 function saveDraft(story_id, episode_id, content) {
   if (!story_id || !episode_id) return;
   const uid = session.user_id || '_anon';
@@ -98,10 +103,13 @@ function loadDraft(story_id, episode_id) {
   _claimAnonDraftIfSignedIn(story_id, episode_id);
   const uid = session.user_id || '_anon';
   try {
-    const raw = localStorage.getItem(_draftKey(story_id, episode_id, uid));
+    const key = _draftKey(story_id, episode_id, uid);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const d = JSON.parse(raw);
-    return (d && d.content) ? d.content : null;
+    if (!d || !d.content) return null;
+    if (Date.now() - (d.saved_at || 0) > DRAFT_TTL_MS) { localStorage.removeItem(key); return null; }
+    return d.content;
   } catch (e) { return null; }
 }
 function clearDraft(story_id, episode_id) {
@@ -125,9 +133,9 @@ function _findStaleDraftInStory(story_id, currentEpisodeId) {
       const raw = localStorage.getItem(k);
       if (!raw) continue;
       const d = JSON.parse(raw);
-      if (d && d.content && (!best || (d.saved_at || 0) > best.saved_at)) {
-        best = { episode_id, content: d.content, saved_at: d.saved_at || 0 };
-      }
+      if (!d || !d.content) continue;
+      if (Date.now() - (d.saved_at || 0) > DRAFT_TTL_MS) { localStorage.removeItem(k); continue; }
+      if (!best || d.saved_at > best.saved_at) best = { episode_id, content: d.content, saved_at: d.saved_at || 0 };
     }
   } catch (e) {}
   return best;

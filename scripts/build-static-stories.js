@@ -209,8 +209,17 @@ async function fetchHotCandidateStories(db, excludeStoryIds) {
 // 우승자를 저장함. 이 필드로 게이트를 걸었더니 실제 마감분이 있는데도 전부
 // 빠지는 버그가 있었음(2026-08-20, 라이브 문서 직접 조회로 발견) — winners
 // 배열 기준으로 수정.
-async function fetchClosedWordChallenges(db, limit = 40) {
-  const snap = await db.collection('word_challenges').orderBy('start_at', 'desc').limit(limit).get();
+//
+// ⚠️ 2026-09-06: 원래 limit=40(가장 최근 마감 40개)이었는데, 매일 새 챌린지가
+// 마감될 때마다 40개 창이 밀려나면서 오래된 페이지가 다음 빌드에서 통째로
+// 삭제돼 — 이미 구글이 색인해둔 URL이 나중에 404로 바뀌는 진짜 회귀가
+// 있었음(서치콘솔 "찾을 수 없음" 10건으로 발견). 완결작·영어 아카이브는
+// 전부 무제한 보관인데 이것만 롤링 캡이 걸려있던 게 불일치였던 것 —
+// 캡 제거하고 마감분 전부 영구 보관으로 통일.
+async function fetchClosedWordChallenges(db, limit = null) {
+  let q = db.collection('word_challenges').orderBy('start_at', 'desc');
+  if (limit) q = q.limit(limit);
+  const snap = await q.get();
   return snap.docs
     .map(d => ({ challenge_id: d.id, ...d.data() }))
     .filter(c => c.status === 'closed' && Array.isArray(c.winners) && c.winners.length > 0);

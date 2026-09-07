@@ -903,7 +903,13 @@ function wordChallengePageBodyHtml({ challenge, candidates }) {
 function renderWordChallengePage({ challenge, candidates }) {
   const url = `${SITE_ORIGIN}/bang/word-challenge/${challenge.challenge_id}/`;
   const winner = primaryWinner(challenge);
-  const title = `${(challenge.words || []).join('·')} — 세 단어 챌린지 우승작`;
+  // ⚠️ 2026-09-06: 단어 조합만으로 제목을 만들었더니, 마감분 40개 캡을 없앤
+  // 뒤(위 fetchClosedWordChallenges 참고) 같은 세 단어가 다른 날 재사용된
+  // 챌린지 2건("코끼리·와이파이·도자기", 7/13과 9/1)이 title 완전 동일로
+  // CI 가드레일(verifyWordChallengePages)에 걸려 배포가 막힘 — 날짜를
+  // 앞에 붙여 항상 유일하게 만듦(날짜+단어 조합은 challenge_id 자체가
+  // 유일한 만큼 절대 안 겹침).
+  const title = `${challenge.date || challenge.challenge_id} · ${(challenge.words || []).join('·')} — 세 단어 챌린지 우승작`;
   const description = `"${winner.text}" — ${(challenge.words || []).join(', ')}로 만든 세 단어 챌린지 우승 문장.`;
   return staticHubPageShell({
     title: `${esc(title)} — 화씨.방`, description, canonical: url, robots: 'index,follow',

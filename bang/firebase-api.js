@@ -2214,6 +2214,9 @@ async function fbGetProfile(user_id) {
       is_adopted: s.is_adopted === true || s.is_adopted === 'TRUE',
       ep_status: ep ? ep.status : null,
       story_id: s.story_id,
+      // "완결작에서 내 기여 찾기"(2026-09-07)용 — 채택된 글만 story() 진입 시
+      // 이 회차 문장으로 바로 스크롤할 수 있게 함(writingItemHtml 참고).
+      episode_id: s.episode_id || '',
       story_opening: storyMap[s.story_id] || '',
       step: ep ? Number(ep.step) : 0,
       created_at: s.created_at,
@@ -2330,6 +2333,8 @@ async function fbGetPublicProfile(user_id) {
       is_adopted: s.is_adopted === true || s.is_adopted === 'TRUE',
       ep_status: ep ? ep.status : null,
       story_id: s.story_id,
+      // writingItemHtml이 'my' 목록과 공유하는 필드 — 같은 클릭 동작 유지.
+      episode_id: s.episode_id || '',
       story_opening: storyMap[s.story_id] || '',
       step: ep ? Number(ep.step) : 0,
       created_at: s.created_at,

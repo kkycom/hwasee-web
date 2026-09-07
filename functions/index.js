@@ -257,14 +257,18 @@ exports.onEpisodeClosed = functions
     }
     const allPart = [...new Set(partIds.filter(Boolean))];
 
-    // 알림 생성 헬퍼
-    const createNotifs = async (user_ids, message) => {
+    // 알림 생성 헬퍼 — target_episode_id를 주면 클라이언트가 "완결작에서 내 기여
+    // 찾기"(2026-09-07 요청)로 해당 회차의 채택 문장까지 바로 스크롤·강조할 수
+    // 있음(bang/index.html의 notifClick/_applyStoryData 참고). "이야기가
+    // 완결됐어요"처럼 특정 한 문장을 가리키지 않는 알림은 생략(null).
+    const createNotifs = async (user_ids, message, target_episode_id) => {
       const unique = [...new Set(user_ids)].filter(Boolean);
       if (!unique.length) return;
       const batch = db.batch();
       unique.forEach(uid => {
         batch.set(db.collection('notifications').doc(), {
           user_id: uid, type: 'story_advance', story_id, message,
+          episode_id: target_episode_id || null,
           is_read: false, created_at: admin.firestore.Timestamp.now(), push_sent: false,
         });
       });
@@ -281,7 +285,10 @@ exports.onEpisodeClosed = functions
         if (parent && parent.author_id && !winnerAuthorIds.has(parent.author_id))
           sourceAuthorIds.add(parent.author_id);
       }
-      await createNotifs([...winnerAuthorIds], `"${snippet}" 이야기에서 내 문장이 채택됐어요!`);
+      // 채택된 사람은 지금 막 닫힌 이 회차에 자기 문장이 그대로 남음 —
+      // episode_id를 실어 바로 찾아갈 수 있게 함. "손본 문장" 원저자는 자기
+      // 원문 자체가 채택된 게 아니라(그래서 최종 산문엔 안 남음) 대상에서 제외.
+      await createNotifs([...winnerAuthorIds], `"${snippet}" 이야기에서 내 문장이 채택됐어요!`, episode_id);
       await createNotifs([...sourceAuthorIds], `"${snippet}" 이야기에서 내 글을 손본 문장이 채택됐어요! +10P`);
       const excludeIds = new Set([...winnerAuthorIds, ...sourceAuthorIds]);
       const otherIds = allPart.filter(id => !excludeIds.has(id));

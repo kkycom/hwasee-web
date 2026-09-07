@@ -1106,6 +1106,18 @@
     .theend-fx.play .theend-text { animation: none; clip-path: none; }
   }
 
+  /* ── 완결작에서 내 기여 찾기(2026-09-07) — 알림/"내가 쓴 글" 목록에서 들어왔을
+     때 해당 문장으로 스크롤한 뒤 잠깐 강조. ink-in처럼 재생 여부와 무관하게
+     항상 켤 수 있어야 해서 별도 클래스로 둠(둘이 같은 줄에 동시에 붙어도 안전). */
+  .prose-line.mine-flash { animation: mineFlash 2.4s ease-out; border-radius: 6px; }
+  @keyframes mineFlash {
+    0%   { background: var(--wash, rgba(200,130,58,.18)); }
+    100% { background: transparent; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .prose-line.mine-flash { animation: none; background: var(--wash, rgba(200,130,58,.18)); }
+  }
+
   /* ── 로그인/정보변경 등 짧은 저장 구간용 반투명 오버레이(위 .loading은 화면
      전체를 대체하는 긴 로딩 구간용이라, 버튼 누르고 잠깐 기다리는 정도에는
      과함 — 화면은 그대로 두고 위에 얇게 덮어서 "처리 중"만 표시) */
@@ -3456,6 +3468,23 @@ function _applyStoryData(res, story_id) {
     window._theendPlayedKey = story_id;
     const endEl = document.getElementById('story-ending-fx');
     if (endEl) requestAnimationFrame(() => endEl.classList.add('play'));
+  }
+
+  // 완결작에서 내 기여 찾기 — notifClick/writingItemHtml이 남겨둔 1회용 힌트를
+  // 여기서 소비. 지금 렌더된 갈래에 그 회차의 문장이 실제로 있을 때만 동작
+  // (분기로 다른 갈래에 있으면 조용히 무시 — 안 보이는 갈래로 강제 전환 안 함,
+  // 요청 명시). 다른 스토리로 넘어가도 안 남게 항상 즉시 비움.
+  if (window._scrollToEpisodeId) {
+    const targetEpId = window._scrollToEpisodeId;
+    window._scrollToEpisodeId = null;
+    const mineLine = document.querySelector(`.prose-line[data-episode-id="${targetEpId}"]`);
+    if (mineLine) {
+      requestAnimationFrame(() => {
+        mineLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        mineLine.classList.add('mine-flash');
+        setTimeout(() => mineLine.classList.remove('mine-flash'), 2500);
+      });
+    }
   }
 
   // 지금 열린 단계에 다른 사람이 쓰는 중이면 알려줌 — episode()의 _epUnsubscribe
@@ -7845,11 +7874,16 @@ function writingItemHtml(a) {
         </div>
       </div>`;
   }
+  // 채택된 글만 실제 완결작 산문에 남아있어서 스크롤 대상이 됨 — 채택 안 된
+  // 글은 최종 산문에 없으므로 힌트를 안 남김(완결작에서 내 기여 찾기, 2026-09-07).
+  const _openStoryJs = a.is_adopted && a.episode_id
+    ? `window._scrollToEpisodeId='${esc(a.episode_id)}';nav('story','${esc(a.story_id)}')`
+    : `nav('story','${esc(a.story_id)}')`;
   return `
     <div style="padding:10px 14px;margin-bottom:8px;cursor:pointer;
       border-left:3px solid ${a.is_adopted ? 'var(--success)' : 'var(--border)'};
       border-radius:6px;background:var(--bg)"
-      onclick="nav('story','${esc(a.story_id)}')">
+      onclick="${_openStoryJs}">
       <div style="font-size:11px;color:var(--muted);margin-bottom:4px">
         ${a.step+1}단계 · "${esc((a.story_opening||'').slice(0,30))}${(a.story_opening||'').length>30?'…':''}"
       </div>
@@ -7958,7 +7992,7 @@ function _renderNotifPanel(panel, notifs) {
       <div style="padding:10px 14px;font-size:12px;font-weight:700;border-bottom:1px solid var(--border)">알림</div>
       ${notifs.map(n => `
         <div class="notif-item ${n.is_read === 'false' || n.is_read === false ? 'unread' : ''}"
-          onclick="notifClick('${esc(n.story_id || '')}', '${esc(n.link || '')}')">
+          onclick="notifClick('${esc(n.story_id || '')}', '${esc(n.link || '')}', '${esc(n.episode_id || '')}')">
           <div>${esc(n.message)}</div>
           <div class="notif-time">${timeAgo(n.created_at)}</div>
         </div>`).join('')}`;
@@ -8017,7 +8051,14 @@ async function toggleNotifPanel() {
   }
 }
 
-function notifClick(story_id, link) {
+// "완결작에서 내 기여 찾기"(2026-09-07 요청) — 기존 채택 알림/"내가 쓴 글"
+// 목록에 이미 있던 정보(어느 회차에 내 문장이 채택됐는지)를 실제 완결작 화면의
+// 그 문장까지 스크롤·강조하는 데 씀. URL 파라미터를 바꾸지 않는 1회용 전역
+// 힌트로 두고 _applyStoryData가 소비 후 즉시 비움(다른 스토리로 옮겨가도
+// 안 남게). 분기 작품은 지금 렌더된 갈래에 그 회차의 .prose-line이 실제로
+// 존재할 때만 동작 — 안 보이는 다른 갈래로 강제로 옮기지 않음(요청 명시).
+window._scrollToEpisodeId = null;
+function notifClick(story_id, link, episode_id) {
   const panel = document.getElementById('notif-panel');
   if (panel) panel.style.display = 'none';
   _notifOpen = false;
@@ -8029,7 +8070,10 @@ function notifClick(story_id, link) {
     const [route, param] = hashPart.split('/');
     if (route) { nav(route, param); return; }
   }
-  if (story_id) nav('story', story_id);
+  if (story_id) {
+    window._scrollToEpisodeId = episode_id || null;
+    nav('story', story_id);
+  }
 }
 
 // 패널 밖 클릭 시 닫기

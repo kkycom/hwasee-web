@@ -63,6 +63,83 @@ function _goToKoreanSignIn() {
   location.href = '/bang/auth/login?en=1';
 }
 
+// ── 일반 이어쓰기 초안 보존(2026-09-07 요청, 한국판 bang/index.html과 같은
+// 방식) ──────────────────────────────────────────────────────────────
+// 영어판은 로그인 전에도 이 입력창(#sub-input)에 쓸 수 있고 제출 시점에만
+// 로그인을 요구하므로(submitSentence), 로그인 전엔 계정 구분이 없는 '_anon'
+// 슬롯에 저장해뒀다가 로그인 완료 후(같은 브라우저로 돌아온 뒤) 실제 계정
+// 슬롯으로 옮겨 담는다. 브라우저 저장 실패가 글쓰기를 막지 않도록 모든 호출을
+// try/catch로 감싼다. 범위는 일반 이어쓰기(submitSentence/#sub-input)만.
+function _draftKey(story_id, episode_id, uid) {
+  return `hwasee_draft_${story_id}_${episode_id}_${uid}`;
+}
+function saveDraft(story_id, episode_id, content) {
+  if (!story_id || !episode_id) return;
+  const uid = session.user_id || '_anon';
+  try {
+    const key = _draftKey(story_id, episode_id, uid);
+    if (content) localStorage.setItem(key, JSON.stringify({ content, saved_at: Date.now() }));
+    else localStorage.removeItem(key);
+  } catch (e) { /* 저장 실패해도 글쓰기 자체는 막지 않음 */ }
+}
+function _claimAnonDraftIfSignedIn(story_id, episode_id) {
+  if (!session.signedIn) return;
+  try {
+    const anonKey = _draftKey(story_id, episode_id, '_anon');
+    const raw = localStorage.getItem(anonKey);
+    if (!raw) return;
+    const realKey = _draftKey(story_id, episode_id, session.user_id);
+    if (!localStorage.getItem(realKey)) localStorage.setItem(realKey, raw);
+    localStorage.removeItem(anonKey);
+  } catch (e) {}
+}
+function loadDraft(story_id, episode_id) {
+  if (!story_id || !episode_id) return null;
+  _claimAnonDraftIfSignedIn(story_id, episode_id);
+  const uid = session.user_id || '_anon';
+  try {
+    const raw = localStorage.getItem(_draftKey(story_id, episode_id, uid));
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    return (d && d.content) ? d.content : null;
+  } catch (e) { return null; }
+}
+function clearDraft(story_id, episode_id) {
+  if (!story_id || !episode_id) return;
+  const uid = session.user_id || '_anon';
+  try { localStorage.removeItem(_draftKey(story_id, episode_id, uid)); } catch (e) {}
+}
+// 같은 이야기에서 "지금 열린 회차가 아닌" 곳에 남은 초안 하나(가장 최근 것)를 찾음.
+function _findStaleDraftInStory(story_id, currentEpisodeId) {
+  if (!story_id) return null;
+  const uid = session.user_id || '_anon';
+  const prefix = `hwasee_draft_${story_id}_`;
+  const suffix = `_${uid}`;
+  let best = null;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith(prefix) || !k.endsWith(suffix)) continue;
+      const episode_id = k.slice(prefix.length, k.length - suffix.length);
+      if (!episode_id || episode_id === currentEpisodeId) continue;
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+      const d = JSON.parse(raw);
+      if (d && d.content && (!best || (d.saved_at || 0) > best.saved_at)) {
+        best = { episode_id, content: d.content, saved_at: d.saved_at || 0 };
+      }
+    }
+  } catch (e) {}
+  return best;
+}
+function _copyStaleDraft(content) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(content).then(() => toast('Copied!')).catch(() => toast('Could not copy automatically — please select and copy the text.'));
+  } else {
+    toast('This browser can\'t auto-copy — please select and copy the text.');
+  }
+}
+
 const app = document.getElementById('app');
 const esc = s => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -755,12 +832,31 @@ function renderStory(story, adopted, openEp, candidates, openEps) {
   const writePlaceholder = curGenre
     ? `Continue in a ${curGenre} mood, in ${maxChars} characters or less...`
     : 'Continue the story in one sentence...';
+  // 초안 보존은 일반 이어쓰기만 대상(요청 범위) — 초스피드는 한국판에서도
+  // 제외 대상이고, EN 쪽은 초스피드도 이 같은 화면·submitSentence를 공유하지만
+  // 진행이 빨라 초안 개념이 안 맞으므로 여기서만 걸러냄.
+  const isDraftEligible = openEp && story.mode !== 'speedrun';
+  // 이전 회차(지금은 마감된)에 남은 초안 — 새 회차에 자동으로 붙여넣지 않고
+  // 확인·복사만 하도록 안내(한국판 staleDraftNoticeHtml과 같은 방향, 유저 확정).
+  const staleDraft = isDraftEligible ? _findStaleDraftInStory(story.story_id, openEp.episode_id) : null;
+  const staleDraftHtml = staleDraft ? `
+    <div class="source-note">
+      <strong>You have an unsent sentence from an earlier round of this story.</strong>
+      It wasn't carried over automatically — copy it below if you'd like to continue with it.
+      <div style="font-family:var(--serif);padding:8px 10px;background:var(--paper);border-radius:6px;margin:8px 0">${esc(staleDraft.content)}</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-ghost btn-sm" onclick="_copyStaleDraft('${esc(staleDraft.content).replace(/'/g, "\\'")}')">Copy</button>
+        <button class="btn-ghost btn-sm" onclick="clearDraft('${esc(story.story_id)}','${esc(staleDraft.episode_id)}');openStory('${esc(story.story_id)}')">Dismiss</button>
+      </div>
+    </div>` : '';
+  const draftText = isDraftEligible ? (loadDraft(story.story_id, openEp.episode_id) || '') : '';
   const writePanel = openEp ? `
+    ${staleDraftHtml}
     <div class="card"${writeCardStyle}>
       <h3>Write the next sentence</h3>
       <textarea id="sub-input" maxlength="${maxChars}" placeholder="${esc(writePlaceholder)}"
-        oninput="document.getElementById('sub-count').textContent = this.value.length"></textarea>
-      <div class="char-count"><span id="sub-count">0</span> / ${maxChars}</div>
+        oninput="document.getElementById('sub-count').textContent = this.value.length${isDraftEligible ? `;saveDraft('${esc(story.story_id)}','${esc(openEp.episode_id)}',this.value.trim())` : ''}">${esc(draftText)}</textarea>
+      <div class="char-count"><span id="sub-count">${draftText.length}</span> / ${maxChars}</div>
       <div style="text-align:right;margin-top:8px">
         <button class="btn btn-primary" id="sub-btn"${writeBtnStyle} onclick="submitSentence()">Submit</button>
       </div>
@@ -852,6 +948,8 @@ async function submitSentence() {
       user_id: session.user_id, token: session.token, content: text,
     });
     if (!r || !r.ok) { toast((r && r.error) || 'Could not submit.'); btn.disabled = false; return; }
+    // 제출이 서버로 성공 확인된 지금만 초안을 지움 — 오류·이탈로는 안 지워짐.
+    clearDraft(openState.story.story_id, openState.episode.episode_id);
     toast('Your sentence was submitted.');
     // 마감 조건(투표 임계값 도달, 또는 speedrun의 즉시 채택)을 서버가 다시 확인한다.
     // 미달이면 아무것도 바뀌지 않으므로 매번 불러도 안전하다.

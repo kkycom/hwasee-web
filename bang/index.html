@@ -2895,6 +2895,82 @@ function _clearTypingPresence(episode_id) {
   firebase.firestore().collection('episode_typing').doc(episode_id + '_' + user.user_id).delete().catch(() => {});
 }
 
+// ── 일반 이어쓰기 초안 보존(2026-09-07 요청) ────────────────────────────
+// 스토리·회차·계정별로 로컬에 저장해뒀다가 새로고침·오류·로그인 이동 후에도
+// 쓰던 문장을 잃지 않게 함. 제출이 서버로 성공 확인된 경우에만 지움 —
+// 오류·이탈로는 절대 안 지워짐. 브라우저 저장이 막혀있어도(사생활 보호
+// 모드 등) 글쓰기 자체는 계속 가능해야 하므로 모든 호출을 try/catch로 감쌈.
+// 범위는 일반 이어쓰기(submitSubInStory/#sub-input)만 — 초스피드·단어챌린지·
+// 초성힌트·일기·자유낙서 등 부가 콘텐츠는 대상 아님(요청 범위 밖).
+function _draftKey(story_id, episode_id, user_id) {
+  return `hwasee_draft_${story_id}_${episode_id}_${user_id}`;
+}
+function saveDraft(story_id, episode_id, content) {
+  if (!user || !story_id || !episode_id) return;
+  try {
+    const key = _draftKey(story_id, episode_id, user.user_id);
+    if (content) localStorage.setItem(key, JSON.stringify({ content, saved_at: Date.now() }));
+    else localStorage.removeItem(key);
+  } catch (e) { /* 저장 실패해도 글쓰기 자체는 막지 않음 */ }
+}
+function loadDraft(story_id, episode_id) {
+  if (!user || !story_id || !episode_id) return null;
+  try {
+    const raw = localStorage.getItem(_draftKey(story_id, episode_id, user.user_id));
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    return (d && d.content) ? d.content : null;
+  } catch (e) { return null; }
+}
+function clearDraft(story_id, episode_id) {
+  if (!user || !story_id || !episode_id) return;
+  try { localStorage.removeItem(_draftKey(story_id, episode_id, user.user_id)); } catch (e) {}
+}
+// 같은 이야기에서 "지금 열린 회차가 아닌" 곳에 남은 초안 — 회차가 마감된 뒤에도
+// 안 지워진 것들. 새 회차 입력창에 자동으로 붙여넣지 않고, 확인·복사만
+// 하도록 안내하는 용도(유저 확정 방향, 실수로 다른 맥락에 잘못 제출되는 걸 방지).
+function findStaleDraftsInStory(story_id, currentEpisodeId) {
+  if (!user || !story_id) return [];
+  const prefix = `hwasee_draft_${story_id}_`;
+  const suffix = `_${user.user_id}`;
+  const found = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith(prefix) || !k.endsWith(suffix)) continue;
+      const episode_id = k.slice(prefix.length, k.length - suffix.length);
+      if (!episode_id || episode_id === currentEpisodeId) continue;
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+      const d = JSON.parse(raw);
+      if (d && d.content) found.push({ episode_id, content: d.content, saved_at: d.saved_at || 0 });
+    }
+  } catch (e) {}
+  return found.sort((a, b) => b.saved_at - a.saved_at);
+}
+function staleDraftNoticeHtml(story_id, currentEpisodeId) {
+  const stale = findStaleDraftsInStory(story_id, currentEpisodeId);
+  if (!stale.length) return '';
+  // 회차당 하나씩만 남으므로 보통 1개, 만에 하나 여러 개면 가장 최근 것만 보여줌
+  // (나머지는 findStaleDraftsInStory가 이미 최신순 정렬해둠).
+  const d = stale[0];
+  return `<div style="font-size:12.5px;line-height:1.6;color:var(--text);background:var(--surface);border-left:3px solid var(--accent2);border-radius:6px;padding:10px 14px;margin-bottom:12px">
+    <div style="margin-bottom:6px">✏️ 이 회차가 마감되기 전에 써두신 문장이 있어요. 다음 회차에 이어 쓰시려면 확인 후 직접 복사해주세요.</div>
+    <div style="font-family:var(--serif);padding:8px 10px;background:var(--paper);border-radius:6px;margin-bottom:8px;word-break:break-word">${esc(d.content)}</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost btn-sm" onclick="_copyStaleDraft('${esc(d.content)}')">복사하기</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--muted)" onclick="clearDraft('${esc(story_id)}','${esc(d.episode_id)}');story()">지우기</button>
+    </div>
+  </div>`;
+}
+function _copyStaleDraft(content) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(content).then(() => toast('복사했어요!')).catch(() => toast('복사에 실패했어요. 직접 선택해서 복사해주세요.', true));
+  } else {
+    toast('이 브라우저에서는 자동 복사가 안 돼요. 직접 선택해서 복사해주세요.', true);
+  }
+}
+
 // 초스피드 전용 렌더러 — 정상 스토리의 getEpisodeTree/분기 로직과 완전히
 // 분리(투표·동률·분기 개념이 없음). 각 단계는 episode 하나당 채택 제출 하나
 // (즉시확정이라 경합에서 진 제출은 애초에 안 만들어짐)라 매핑이 단순함.
@@ -6068,6 +6144,8 @@ async function submitSubInStory(episode_id, closing = false) {
     _lsc.expire('free', 'done');
     _lsc.del('story_' + currentParam);
     _clearTypingPresence(episode_id);
+    // 제출이 서버로 성공 확인된 지금만 초안을 지움 — 오류·이탈로는 안 지워짐.
+    if (window._storyData && window._storyData.story) clearDraft(window._storyData.story.story_id, episode_id);
     toast(closing ? '제출 완료! 이야기 마무리 공감이 시작됩니다.' : '제출 완료!');
     story();
   } finally { _submitSubInStoryInFlight = false; }
@@ -8025,14 +8103,24 @@ function buildStoryActionHtml(openEp) {
   // 2026-07-28) — 하나의 style로 합쳐서 수정. 겸사겸사 카드 안 여백도
   // (padding 20→16, 항목간 margin도) 좀 촘촘하게 줄임.
   const cardStyle = `padding:16px;margin-bottom:20px${isGenreSwitch ? `;--g:var(--g-${genreSuffix});--wash:var(--g-${genreSuffix}-wash);background:var(--wash);border-left:3px solid var(--g)` : ''}`;
+  const _draftText = user ? loadDraft(story.story_id, openEp.episode_id) : null;
+  // 초안을 값으로 미리 채워 넣을 때, updateCount()가 나중에 입력 이벤트에서만
+  // 갱신하므로 최초 렌더 시점의 글자수 표시도 같은 규칙(경고/초과 클래스 포함)으로
+  // 직접 맞춰줌 — 안 하면 실제로는 글자가 차 있는데 카운터만 "0자"로 보임.
+  const _draftLen = (_draftText || '').length;
+  const _draftWarnAt = Math.floor(subMax * 0.8);
+  const _draftCountClass = _draftLen > subMax ? 'char-count over' : _draftLen >= _draftWarnAt ? 'char-count warn' : 'char-count';
+  const _draftCountText = _draftLen > subMax || _draftLen >= _draftWarnAt ? `${_draftLen} / ${subMax}자` : `${_draftLen}자`;
   return `
     <div class="prose-divider">이 이야기의 다음 문장을 결정합니다</div>
+    ${user ? staleDraftNoticeHtml(story.story_id, openEp.episode_id) : ''}
     ${user && canSubmitMore ? `
       <div class="card" style="${cardStyle}">
         <div style="font-size:13px;font-weight:700;margin-bottom:8px">✏️ 이어 쓰기</div>
         <div id="polish-indicator" style="display:none;font-size:12px;color:var(--accent2);margin-bottom:8px;padding:6px 10px;background:var(--surface);border-radius:6px;border-left:2px solid var(--accent2)"></div>
         <div id="typing-indicator" style="font-size:12px;color:var(--muted)"></div>
-        <input type="text" id="sub-input" maxlength="${subMax}" placeholder="${esc(subPlaceholder)}" oninput="updateCount('sub-input','sub-cc',${subMax});_pingTyping('${esc(openEp.episode_id)}')">
+        <input type="text" id="sub-input" maxlength="${subMax}" placeholder="${esc(subPlaceholder)}" value="${esc(_draftText || '')}"
+          oninput="updateCount('sub-input','sub-cc',${subMax});_pingTyping('${esc(openEp.episode_id)}');saveDraft('${esc(story.story_id)}','${esc(openEp.episode_id)}',this.value.trim())">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px">
           <div id="sub-submit-actions" style="display:flex;gap:8px;flex-wrap:wrap">
             ${effectiveClosedCount >= 1 && !isFixedEnding
@@ -8040,7 +8128,7 @@ function buildStoryActionHtml(openEp) {
                  <button class="btn btn-sm" style="background:var(--accent2);color:#fff;border:none;font-weight:700" ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', true)" onclick="submitSubInStory('${esc(openEp.episode_id)}', true)">완결하기</button>`
               : `<button class="btn btn-primary btn-sm"${isGenreSwitch ? ` style="background:var(--g);color:#fff"` : ''} ontouchend="event.preventDefault();submitSubInStory('${esc(openEp.episode_id)}', false)" onclick="submitSubInStory('${esc(openEp.episode_id)}', false)">제출</button>`}
           </div>
-          <span class="char-count" id="sub-cc" style="margin-top:0">0자</span>
+          <span class="${_draftCountClass}" id="sub-cc" style="margin-top:0">${_draftCountText}</span>
         </div>
       </div>` : ''}
     ${user && !canSubmitMore ? `

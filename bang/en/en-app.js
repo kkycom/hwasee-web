@@ -132,6 +132,29 @@ function _findStaleDraftInStory(story_id, currentEpisodeId) {
   } catch (e) {}
   return best;
 }
+// ── 참여 흐름 측정(2026-09-07 요청, 한국판 bang/index.html과 같은 방식) ──
+// 이야기 열기 → 입력 시작 → 제출 시도 → 제출 성공/실패를 GA4(기존 gtag)로
+// 구분. 문장 내용·닉네임·이메일·토큰·원본 오류 메시지는 절대 안 보냄 —
+// edition/content_type(스토리 mode)만 붙임. 영어판은 head의 Consent Mode
+// 기본값(denied)이 이미 gtag 호출 자체를 걸러주므로(수락 전엔 아무 것도
+// 전송 안 됨) 여기서 별도 동의 체크가 필요 없음.
+function _trackFunnel(step, content_type) {
+  if (typeof gtag !== 'function') return;
+  gtag('event', step, { edition: 'en', content_type: content_type || 'default' });
+}
+const _writeStartTracked = new Set();
+function _trackWriteStartOnce(episode_id, content_type) {
+  if (!episode_id || _writeStartTracked.has(episode_id)) return;
+  _writeStartTracked.add(episode_id);
+  _trackFunnel('write_start', content_type);
+}
+const _storyOpenTracked = new Set();
+function _trackStoryOpenOnce(episode_id, content_type) {
+  if (!episode_id || _storyOpenTracked.has(episode_id)) return;
+  _storyOpenTracked.add(episode_id);
+  _trackFunnel('story_open', content_type);
+}
+
 function _copyStaleDraft(content) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(content).then(() => toast('Copied!')).catch(() => toast('Could not copy automatically — please select and copy the text.'));
@@ -776,6 +799,10 @@ function pickBranch(episode_id) {
 window.pickBranch = pickBranch;
 
 function renderStory(story, adopted, openEp, candidates, openEps) {
+  // "이야기 열기" — 실제로 쓸 수 있는 열린 회차가 있을 때만 참여 흐름의
+  // 시작점으로 집계(완결작 감상은 참여 기회가 아니므로 제외). 같은 회차를
+  // 다시 그려도(투표 후 재렌더 등) 한 번만 세도록 episode_id로 dedup.
+  if (openEp) _trackStoryOpenOnce(openEp.episode_id, story.mode);
   // 산문뷰는 한국판 .story-prose(줄무늬 종이 배경) + .prose-opening / .prose-line /
   // .prose-sentence 구조를 그대로 쓴다. 오프닝은 첫 줄로, 이어진 문장은 .prose-line으로.
   const lines = adopted.map(sub =>
@@ -855,7 +882,7 @@ function renderStory(story, adopted, openEp, candidates, openEps) {
     <div class="card"${writeCardStyle}>
       <h3>Write the next sentence</h3>
       <textarea id="sub-input" maxlength="${maxChars}" placeholder="${esc(writePlaceholder)}"
-        oninput="document.getElementById('sub-count').textContent = this.value.length${isDraftEligible ? `;saveDraft('${esc(story.story_id)}','${esc(openEp.episode_id)}',this.value.trim())` : ''}">${esc(draftText)}</textarea>
+        oninput="document.getElementById('sub-count').textContent = this.value.length${isDraftEligible ? `;saveDraft('${esc(story.story_id)}','${esc(openEp.episode_id)}',this.value.trim())` : ''};_trackWriteStartOnce('${esc(openEp.episode_id)}','${esc(story.mode || 'default')}')">${esc(draftText)}</textarea>
       <div class="char-count"><span id="sub-count">${draftText.length}</span> / ${maxChars}</div>
       <div style="text-align:right;margin-top:8px">
         <button class="btn btn-primary" id="sub-btn"${writeBtnStyle} onclick="submitSentence()">Submit</button>
@@ -941,13 +968,20 @@ async function submitSentence() {
   if (!text) { toast('Write a sentence first.'); return; }
   const btn = document.getElementById('sub-btn');
   btn.disabled = true;
+  const _submitMode = (openState.story && openState.story.mode) || 'default';
+  _trackFunnel('submit_attempt', _submitMode);
   try {
     // 영어 전용 Callable. 어느 컬렉션에 쓸지는 서버가 이 함수 안에서 고정한다.
     const r = await call('submitEpisodeEn', {
       episode_id: openState.episode.episode_id,
       user_id: session.user_id, token: session.token, content: text,
     });
-    if (!r || !r.ok) { toast((r && r.error) || 'Could not submit.'); btn.disabled = false; return; }
+    if (!r || !r.ok) {
+      // 원본 오류 메시지는 분석으로 안 보냄 — 성공/실패 구분만.
+      _trackFunnel('submit_fail', _submitMode);
+      toast((r && r.error) || 'Could not submit.'); btn.disabled = false; return;
+    }
+    _trackFunnel('submit_success', _submitMode);
     // 제출이 서버로 성공 확인된 지금만 초안을 지움 — 오류·이탈로는 안 지워짐.
     clearDraft(openState.story.story_id, openState.episode.episode_id);
     toast('Your sentence was submitted.');
@@ -956,6 +990,7 @@ async function submitSentence() {
     await tryClose();
     openStory(openState.story.story_id);
   } catch (e) {
+    _trackFunnel('submit_fail', _submitMode);
     toast('Could not submit. Please try again.');
     btn.disabled = false;
   }

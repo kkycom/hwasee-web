@@ -3126,6 +3126,38 @@ async function doSpeedrunReport(sub_id, btnEl) {
   _renderSpeedrunStory(sd.story, sd.episodes, sd.submissions, sid);
 }
 
+// ── 참여 흐름 측정(2026-09-07 요청) ─────────────────────────────────────
+// 이야기 열기 → 입력 시작 → 제출 시도 → 제출 성공/실패를 GA4(기존 gtag,
+// sign_up 이벤트와 같은 방식)로 구분. 문장 내용·닉네임·이메일·토큰·원본
+// 오류 메시지는 절대 안 보냄 — edition/content_type(스토리 mode)만 붙임.
+// 범위는 일반 이어쓰기(story()/submitSubInStory)만 — 초스피드·단어챌린지·
+// 초성힌트 등은 별도 화면·함수라 이번엔 대상 아님(요청 범위 밖 판단).
+// 한국판은 쿠키 동의 배너가 없어(EN만 GDPR 대응 범위) gtag가 항상 즉시
+// 실행되고, 영어판은 head의 Consent Mode 기본값(denied)이 이미 gtag 호출
+// 자체를 걸러주므로 여기서 별도 동의 체크가 필요 없음(기존 sign_up 이벤트와
+// 동일 전제).
+function _trackFunnel(step, content_type) {
+  if (typeof gtag !== 'function') return;
+  gtag('event', step, { edition: 'ko', content_type: content_type || 'default' });
+}
+// "입력 시작"은 회차별로 최초 1회만 — 같은 회차에서 지웠다 다시 써도 중복
+// 집계 안 함(요청 명시). 페이지를 새로 열면(story() 재진입) 다시 카운트될 수
+// 있는데, 이건 "새로운 시도"로 보는 게 맞아서 의도한 동작.
+const _writeStartTracked = new Set();
+function _trackWriteStartOnce(episode_id, content_type) {
+  if (!episode_id || _writeStartTracked.has(episode_id)) return;
+  _writeStartTracked.add(episode_id);
+  _trackFunnel('write_start', content_type);
+}
+// "이야기 열기"도 캐시 렌더+최신 렌더 두 번 호출될 수 있어 같은 회차면
+// 한 번만 세도록 dedup(위 write_start와 같은 이유).
+const _storyOpenTracked = new Set();
+function _trackStoryOpenOnce(episode_id, content_type) {
+  if (!episode_id || _storyOpenTracked.has(episode_id)) return;
+  _storyOpenTracked.add(episode_id);
+  _trackFunnel('story_open', content_type);
+}
+
 function _applyStoryData(res, story_id) {
   // 다른 이야기로 이동 시 _branchChoice 리셋 (이전 이야기 자동경로가 오염 방지)
   if (window._branchChoiceStoryId !== story_id) {
@@ -3177,6 +3209,10 @@ function _applyStoryData(res, story_id) {
 
   // 열린/대기 에피소드 (현재 갈래 선택 반영)
   const openEp    = getChosenOpenEp(episodes, submissions, window._branchChoice);
+  // "이야기 열기" — 실제로 쓸 수 있는 열린 회차가 있을 때만 참여 흐름의
+  // 시작점으로 집계(완결작 감상은 참여 기회가 아니므로 제외). 캐시 렌더+
+  // 최신 렌더 두 번 호출돼도 같은 회차면 한 번만 세도록 story_id+episode_id로 dedup.
+  if (openEp) _trackStoryOpenOnce(openEp.episode_id, s.mode);
 
   // Firestore 투표 조회 결과가 없으면 로컬스토리지 캐시로 보완
   if (openEp && !window._storyData.my_voted_sub_ids.length) {
@@ -6127,6 +6163,8 @@ async function submitSubInStory(episode_id, closing = false) {
   const btns = actionsEl ? [...actionsEl.querySelectorAll('button')] : [];
   const prevTexts = btns.map(b => b.textContent);
   btns.forEach(b => { b.disabled = true; b.textContent = '제출 중...'; });
+  const _submitMode = _storyMode || 'default';
+  _trackFunnel('submit_attempt', _submitMode);
   try {
     const derived_from = window._polishFrom || '';
     const res = await api('createSubmission', { episode_id, content, derived_from, closing });
@@ -6134,12 +6172,14 @@ async function submitSubInStory(episode_id, closing = false) {
       // "이미 제출하셨습니다" — 앞선 시도가 응답만 늦게 왔을 뿐 실제로는 이미
       // 성공했던 경우. 오류 토스트만 띄우고 그대로 두면 화면은 여전히 옛
       // 제출 폼인 채로 남아있어서(나갔다 들어와야만 반영되던 것도 이 때문)
-      // 실제 최신 상태로 바로 새로고침함.
+      // 실제 최신 상태로 바로 새로고침함. 원본 오류 메시지는 분석으로 안 보냄.
+      _trackFunnel('submit_fail', _submitMode);
       if (res.error === '이미 제출하셨습니다.') { toast(res.error, true); story(); return; }
       toast(res.error, true);
       btns.forEach((b, i) => { b.disabled = false; b.textContent = prevTexts[i]; });
       return;
     }
+    _trackFunnel('submit_success', _submitMode);
     window._polishFrom = null;
     _lsc.expire('free', 'done');
     _lsc.del('story_' + currentParam);
@@ -8120,7 +8160,7 @@ function buildStoryActionHtml(openEp) {
         <div id="polish-indicator" style="display:none;font-size:12px;color:var(--accent2);margin-bottom:8px;padding:6px 10px;background:var(--surface);border-radius:6px;border-left:2px solid var(--accent2)"></div>
         <div id="typing-indicator" style="font-size:12px;color:var(--muted)"></div>
         <input type="text" id="sub-input" maxlength="${subMax}" placeholder="${esc(subPlaceholder)}" value="${esc(_draftText || '')}"
-          oninput="updateCount('sub-input','sub-cc',${subMax});_pingTyping('${esc(openEp.episode_id)}');saveDraft('${esc(story.story_id)}','${esc(openEp.episode_id)}',this.value.trim())">
+          oninput="updateCount('sub-input','sub-cc',${subMax});_pingTyping('${esc(openEp.episode_id)}');saveDraft('${esc(story.story_id)}','${esc(openEp.episode_id)}',this.value.trim());_trackWriteStartOnce('${esc(openEp.episode_id)}','${esc(story.mode || 'default')}')">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px">
           <div id="sub-submit-actions" style="display:flex;gap:8px;flex-wrap:wrap">
             ${effectiveClosedCount >= 1 && !isFixedEnding

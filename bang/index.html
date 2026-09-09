@@ -315,6 +315,17 @@
   }
   .dshelf-spine:hover { transform:translateY(-8px) rotate(var(--tilt,0deg)); }
   .dshelf-spine .dshelf-line { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-height:100%; }
+  /* 추천수 배지(2026-09-09 유저 요청) — 책등 글자는 세로쓰기라 그 흐름 안에
+     숫자를 같이 두면 "10년의..." 사고(2026-08-26)가 재현되므로, 별도 absolute
+     배지로 분리하고 이 안에서만 writing-mode를 가로로 되돌린다. 0개인 책은
+     숫자 나열로 시각적 소음만 늘어서(대부분 낮은 참여) 아예 안 그림. */
+  .dshelf-spine .dshelf-likes {
+    position:absolute; left:2px; right:2px; bottom:4px;
+    writing-mode:horizontal-tb; text-orientation:mixed;
+    display:flex; align-items:center; justify-content:center; gap:2px;
+    font-family:var(--font); font-size:9px; font-weight:700;
+    color:rgba(240,234,216,.88); letter-spacing:0; pointer-events:none;
+  }
   .dshelf-back {
     background:none; border:none; color:var(--muted); font-size:12.5px; font-weight:600; cursor:pointer;
     padding:6px 4px; margin-bottom:16px; display:inline-flex; align-items:center; gap:4px;
@@ -1762,6 +1773,27 @@ function _doneMatHash(storyId) {
   const tilt = t === 0 ? '-0.5deg' : t === 1 ? '0.5deg' : '0deg';
   return { tilt, edge, edgeShadow };
 }
+// 추천수 표시 — 0개는 배지 자체를 생략(위 CSS 주석 참고), 두 자리 넘는
+// 숫자는 좁은 책등(최소 28px)에서 안 잘리게 "99+"로 자름.
+function _doneLikeBadgeHtml(s) {
+  const n = Number(s.like_count) || 0;
+  if (!n) return '';
+  return `<span class="dshelf-likes">♥ ${n > 99 ? '99+' : n}</span>`;
+}
+
+// 책장 색 범례(2026-09-09 유저 요청) — "무슨 색이 무슨 장르인지" 알 방법이
+// 없다는 지적. GENRE_META/장르색 토큰은 이미 genrePanelHtml·장르 확률 차트
+// (.genre-chart-legend)가 쓰던 것과 동일 소스라 그대로 재사용, 색만 새로
+// 정의하지 않음(2026-08-19 팔레트 드리프트 정리 원칙). _doneGenreColor의
+// 폴백 회색(장르 미확정 완결작, 백필 전이거나 genre_probs 자체가 없던 옛날
+// 데이터)도 실제로 화면에 보이는 색이라 "미정" 항목으로 같이 설명한다.
+function _doneGenreLegendHtml() {
+  const items = Object.entries(GENRE_META).map(([label, suffix]) =>
+    `<span class="li"><span class="dot" style="background:var(--g-${suffix})"></span>${esc(label)}</span>`
+  ).join('');
+  return `<div class="genre-chart-legend" style="margin:0 0 16px">${items}<span class="li"><span class="dot" style="background:#4a4642"></span>미정</span></div>`;
+}
+
 function _doneShelfHtml(visible, total) {
   const rows = [];
   for (let i = 0; i < visible.length; i += 8) rows.push(visible.slice(i, i + 8));
@@ -1771,7 +1803,7 @@ function _doneShelfHtml(visible, total) {
       const lines = _doneSplitSpineTitle(_doneTitle(s));
       const size = _doneSpineSize(s, lines);
       const m = _doneMatHash(s.story_id);
-      return `<button type="button" class="dshelf-spine" style="--sc:${_doneGenreColor(s)};--tilt:${m.tilt};--edge:${m.edge};--edge-shadow:${m.edgeShadow};width:${size.w}px;height:${size.h}px" onclick="doneOpenCover('${esc(s.story_id)}')">${lines.map(line => `<span class="dshelf-line">${esc(line)}</span>`).join('')}</button>`;
+      return `<button type="button" class="dshelf-spine" style="--sc:${_doneGenreColor(s)};--tilt:${m.tilt};--edge:${m.edge};--edge-shadow:${m.edgeShadow};width:${size.w}px;height:${size.h}px" onclick="doneOpenCover('${esc(s.story_id)}')">${lines.map(line => `<span class="dshelf-line">${esc(line)}</span>`).join('')}${_doneLikeBadgeHtml(s)}</button>`;
     }).join('')}</div><div class="dshelf-plank"></div>`;
   });
   return `<div class="dshelf-frame">${html}</div>`;
@@ -1790,7 +1822,7 @@ function renderDoneCards() {
     : '';
   content.innerHTML = _sortBtns('ds', [['activity','참여도 순'],['likes','추천 순'],['latest','최신 순']], _doneSort)
     + (sorted.length
-      ? _doneShelfHtml(visible, sorted.length) + loadMoreHtml
+      ? _doneGenreLegendHtml() + _doneShelfHtml(visible, sorted.length) + loadMoreHtml
       : `<div class="empty" style="padding-top:40px">아직 완결된 이야기가 없어요.<br>이야기에 참여해 함께 만들어 가요!</div>`);
   _restoreSortMenuOpen('ds', _wasSortOpen);
 }
@@ -1811,7 +1843,7 @@ function _renderDoneCover(content) {
     <button type="button" class="dshelf-back" onclick="doneCloseCover()">‹ 책장으로</button>
     <button type="button" class="dcover-card" style="--g:${_doneGenreColor(s)}" onclick="nav('story','${esc(s.story_id)}')">
       ${cardStickersHtml(s)}
-      <div class="dcover-status">${_doneStepCount(s)}단계 완결<br>${_doneParticipantCount(s)}명 참여</div>
+      <div class="dcover-status">${_doneStepCount(s)}단계 완결<br>${_doneParticipantCount(s)}명 참여${Number(s.like_count) ? `<br>♥ 추천 ${Number(s.like_count)}` : ''}</div>
       <div class="dcover-title">${esc(_doneTitle(s))}</div>
       <div class="dcover-excerpt">"${esc(s.opening || '')}"</div>
     </button>`;

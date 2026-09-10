@@ -7,6 +7,18 @@ const path = require('path');
 
 const OUT_DIR = path.join(__dirname, '..', 'bang', 'story');
 const SUMMARY = path.join(__dirname, '..', 'reading-pilot-summary.md');
+const EXPECTED = process.env.READING_PILOT_EXPECTED_OUT
+  || path.join(__dirname, '..', 'reading-pilot-expected.json');
+
+// 앱 bang/index.html _sortStories(list, 'latest')와 동일 규칙:
+//   arr.sort((a, b) => new Date(b.completed_at || b.created_at) - new Date(a.completed_at || a.created_at))
+// JS Array.prototype.sort는 stable(ES2019+) — 동률(같은 시각/폴백값)이면 입력
+// 순서 유지. 빌드가 덤프한 completed 배열을 그대로 입력으로 쓰므로 빌드의
+// completedByBookshelf와 동률 처리까지 일치한다. completed_at 없으면 created_at 폴백.
+function sortLatest(list) {
+  return [...list].sort((a, b) =>
+    new Date(b.completedAt || b.createdAt) - new Date(a.completedAt || a.createdAt));
+}
 
 const V2 = [
   ['078b460e-d9d0-4642-b75d-44571637f787', '이상한 계단', 2],
@@ -26,6 +38,24 @@ const read = id => {
 L('# 독립 독서 페이지 시범 — 실데이터 빌드 결과 요약');
 L('');
 L(`빌드 검사 시각: ${new Date().toISOString()}`);
+
+// ── 빌드가 덤프한 completed 데이터에 앱 정렬 기준 적용 → 기대 이전/다음 ──
+let expected = null;
+try {
+  if (fs.existsSync(EXPECTED)) expected = JSON.parse(fs.readFileSync(EXPECTED, 'utf8'));
+} catch (e) { /* 아래에서 미검증으로 표시 */ }
+const expectedNeighbors = id => {
+  if (!expected || !Array.isArray(expected.completed)) return null;
+  const sorted = sortLatest(expected.completed);
+  const i = sorted.findIndex(x => x.id === id);
+  if (i < 0) return { notInPool: true };
+  return {
+    prev: i > 0 ? sorted[i - 1].id : null,            // 정렬상 앞 = 더 최신
+    next: i < sorted.length - 1 ? sorted[i + 1].id : null,
+    total: sorted.length,
+    sameAsBuildDump: JSON.stringify(sorted.map(x => x.id)) === JSON.stringify(expected.completed.map(x => x.id)),
+  };
+};
 
 // ── 시범 2편: V2 셸 ──
 for (const [id, title, sentences] of V2) {
@@ -51,9 +81,11 @@ for (const [id, title, sentences] of V2) {
   // (bang/story/{id}/index.html 존재) 확인. null이면 disabled 앵커.
   const nav = (h.match(/<div class="reader-nav">([\s\S]*?)<\/div>/) || [])[1] || '';
   const built = id2 => fs.existsSync(path.join(OUT_DIR, id2, 'index.html'));
-  for (const [label, re] of [['이전', /←\s*이전 완결작/], ['다음', /다음 완결작\s*→/]]) {
+  const actual = {};
+  for (const label of ['이전', '다음']) {
     const linkM = nav.match(new RegExp(`<a href="/bang/story/([^/"]+)/">[^<]*${label === '이전' ? '←\\s*이전' : '다음'}[^<]*</a>`));
     const disabled = new RegExp(`<a class="disabled">[^<]*${label === '이전' ? '←\\s*이전' : '다음'}`).test(nav);
+    actual[label] = linkM ? linkM[1] : (disabled ? null : '__PARSE_FAIL__');
     if (linkM) {
       chk(`${label} 링크 → 이번 빌드에 실제 생성된 작품`, built(linkM[1]), `${linkM[1]}${built(linkM[1]) ? '' : ' (생성물 없음)'}`);
     } else if (disabled) {
@@ -61,6 +93,23 @@ for (const [id, title, sentences] of V2) {
     } else {
       chk(`${label} 링크 파싱`, false, nav.replace(/\s+/g, ' ').slice(0, 120));
     }
+  }
+
+  // 앱 책장 '최신순' 기준을 빌드 데이터에 적용한 기대 이전/다음과 자동 대조
+  const exp = expectedNeighbors(id);
+  if (!exp) {
+    chk('이전/다음 = 앱 책장 최신순 기대값과 일치', false,
+      '미검증 — reading-pilot-expected.json 없음(빌드 시 READING_PILOT_EXPECTED_OUT 미설정)');
+  } else if (exp.notInPool) {
+    chk('이전/다음 = 앱 책장 최신순 기대값과 일치', false, `${id}가 완결작 풀에 없음`);
+  } else {
+    const norm = v => v == null ? '(끝)' : v;
+    chk(`이전 링크 = 기대값(${norm(exp.prev)})`, actual['이전'] === exp.prev,
+      `실제=${norm(actual['이전'])}`);
+    chk(`다음 링크 = 기대값(${norm(exp.next)})`, actual['다음'] === exp.next,
+      `실제=${norm(actual['다음'])}`);
+    chk('빌드 정렬 == 검사 재정렬(동률 stable 포함)', exp.sameAsBuildDump !== false);
+    L(`  - (참고) 완결작 풀 ${exp.total}편, expected 생성 ${expected.generated_at}`);
   }
 
   const part = (h.match(/href="(\/bang\/story\/[^/"]+\/\?write=1)"/) || [])[1] || '';
@@ -128,10 +177,10 @@ for (const [id, title, sentences] of V2) {
 
 L('\n---\n');
 L(fail === 0
-  ? '**정적 검사 전부 통과.** 아티팩트의 index.html로 이전/다음 대상 작품명을 앱 책장 "최신순"과 육안 대조하세요.'
+  ? '**정적 검사 전부 통과.** 이전/다음 링크는 이번 빌드가 본 완결작 데이터에 앱 `_sortStories(\'latest\')` 기준을 재적용한 기대값과 자동 대조 완료(육안 비교 불필요).'
   : `**❌ ${fail}건 실패 — 위 항목 확인 필요.**`);
 L('');
-L('로컬에서 확인 불가(실서버 연결 필요, 별도 인프라 추가 안 함):');
+L('실서버 연결 필요 — 배포 직후 확인 항목(별도 인프라 추가 안 함):');
 L('- 참여 링크 → 앱 에디터 화면 실제 렌더');
 L('- 기여 문장 진입 시 해당 문장 스크롤·`mine-flash` 강조');
 L('- 앱 책장 카드 클릭이 실제로 `nav(\'story\', id)` 경로를 타는지');

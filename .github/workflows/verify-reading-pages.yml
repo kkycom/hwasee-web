@@ -38,6 +38,9 @@ jobs:
         run: node scripts/build-static-stories.js
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          # 검증 전용 사이드카: 이번 빌드가 본 완결작 데이터를 그대로 덤프.
+          # 운영 deploy.yml은 이 env가 없어 파일을 만들지 않는다(출력 불변).
+          READING_PILOT_EXPECTED_OUT: reading-pilot-expected.json
 
       - name: Verify static story pages
         run: node scripts/verify-static-stories.js
@@ -50,6 +53,8 @@ jobs:
       - name: Summarize pilot output
         if: always()
         run: node scripts/summarize-reading-pilot.js
+        env:
+          READING_PILOT_EXPECTED_OUT: reading-pilot-expected.json
 
       # 아티팩트에는 검증에 필요한 공개 산출물만. 작업 폴더 전체(node_modules·
       # scripts·시크릿 경유물)는 올리지 않는다. FIREBASE_SERVICE_ACCOUNT는 build
@@ -64,5 +69,6 @@ jobs:
             bang/story/0a400be4-cd2a-4e74-ba79-b677251c9487/index.html
             bang/sitemap.xml
             reading-pilot-summary.md
+            reading-pilot-expected.json
           if-no-files-found: warn
           retention-days: 7

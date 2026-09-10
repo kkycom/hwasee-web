@@ -1369,6 +1369,20 @@ async function main() {
   const completedByBookshelf = [...completedOnly].sort((a, b) =>
     new Date(b.completedAt || b.createdAt || 0) - new Date(a.completedAt || a.createdAt || 0));
 
+  // 검증 전용 사이드카(운영 배포엔 영향 없음): env가 있을 때만, 이번 빌드가
+  // 실제로 본 완결작 데이터를 그대로 덤프한다. verify-reading-pages.yml의
+  // summarize 단계가 이 데이터에 앱 _sortStories('latest') 기준을 독립적으로
+  // 재적용해 V2 이전/다음 링크와 자동 대조한다(라이브 목록 육안 비교 대신).
+  if (process.env.READING_PILOT_EXPECTED_OUT) {
+    fs.writeFileSync(process.env.READING_PILOT_EXPECTED_OUT, JSON.stringify({
+      generated_at: new Date().toISOString(),
+      v2_ids: [...V2_STORY_IDS],
+      completed: completedByBookshelf.map(p => ({
+        id: p.id, completedAt: p.completedAt || '', createdAt: p.createdAt || '',
+      })),
+    }, null, 2));
+  }
+
   // ⚠️ 분기 작품은 이번 V2 시범 대상이 아니다(V2_STORY_IDS에서 제외). 상속(갈린
   // 지점 이전 공통) 문장을 정적으로 정확히 재현하려면 fbGetStory의 parent_chain
   // 조립 + _buildForkPath 포팅이 필요해서(=구현 확대), 전체 확대의 필수 선행

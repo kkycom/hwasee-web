@@ -15,7 +15,10 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+const { V2_TARGET_IDS, V2_READER_IDS_DECL_RE } = require('./lib/v2-reader-ids.js');
+
 const ROOT = path.join(__dirname, '..');
+const INDEX_HTML_PATH = path.join(ROOT, 'bang', 'index.html');
 const STORY_DIR = path.join(ROOT, 'bang', 'story');
 const TODAY_DIR = path.join(ROOT, 'bang', 'today');
 const WORD_CHALLENGE_DIR = path.join(ROOT, 'bang', 'word-challenge');
@@ -65,6 +68,7 @@ function verifyStoryPages(sitemap) {
   const descOwners = new Map();
   const bodyHashOwners = new Map();
   const lineFreq = new Map(); // 줄(문자열) -> 등장한 페이지 수
+  const generatedV2Ids = []; // 실제 생성된 V2 독립 셸 페이지
 
   for (const id of ids) {
     const filePath = path.join(STORY_DIR, id, 'index.html');
@@ -100,6 +104,7 @@ function verifyStoryPages(sitemap) {
     // V2는 canonical/robots가 반드시 있어야 함(독립 셸이라 renderStoryPage의
     // clone 치환에 안 기대므로 자체 생성이 정상 동작하는지 여기서 재확인).
     if (isV2) {
+      generatedV2Ids.push(id);
       if (!/<meta name="robots" content="index,follow">/.test(html)) fail(`${id}: V2인데 robots index,follow가 없음`);
       if (html.includes('<main id="app">')) fail(`${id}: V2인데 <main id="app">(앱 셸)이 남아있음 — 템플릿 혼선`);
     }
@@ -119,6 +124,28 @@ function verifyStoryPages(sitemap) {
       }
     }
     for (const line of new Set(wholeLines)) lineFreq.set(line, (lineFreq.get(line) || 0) + 1);
+  }
+
+  // V2 적용 목록 — 앱(bang/index.html의 _V2_READER_IDS)에 주입된 값이
+  // (a) 마커 정확히 1개, (b) 이번 빌드에 실제 생성된 V2 셸 페이지 집합과 정확히 일치,
+  // (c) 설정 원천(v2-reader-ids.js)에서 하나도 누락되지 않았는지 확인.
+  // 앱이 없는 페이지로 라우팅하는 상태를 배포 전에 차단한다.
+  {
+    const appSrc = fs.existsSync(INDEX_HTML_PATH) ? fs.readFileSync(INDEX_HTML_PATH, 'utf8') : '';
+    const decls = appSrc.match(V2_READER_IDS_DECL_RE) || [];
+    if (decls.length !== 1) {
+      fail(`bang/index.html의 _V2_READER_IDS 주입 마커가 ${decls.length}개 — 정확히 1개여야 함`);
+    } else {
+      const appIds = (decls[0].match(/'([^']+)'/g) || []).map(s => s.slice(1, -1)).sort();
+      const genSorted = [...generatedV2Ids].sort();
+      if (JSON.stringify(appIds) !== JSON.stringify(genSorted)) {
+        fail(`앱 _V2_READER_IDS(${JSON.stringify(appIds)})가 실제 생성된 V2 페이지(${JSON.stringify(genSorted)})와 불일치 — injectV2ReaderIds 누락/오류`);
+      }
+      const targetMissing = V2_TARGET_IDS.filter(id => !generatedV2Ids.includes(id));
+      if (targetMissing.length) {
+        fail(`v2-reader-ids.js 설정 대상인데 V2 페이지가 생성 안 됨: ${targetMissing.join(', ')}`);
+      }
+    }
   }
 
   for (const [title, owners] of titleOwners) {

@@ -7,7 +7,7 @@ name: Verify reading pages (no deploy)
 
 on:
   push:
-    branches: [reading-page-redesign]
+    branches: [reading-page-redesign, reading-page-v2-expand]
   workflow_dispatch:
 
 permissions:

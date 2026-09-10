@@ -20,10 +20,17 @@ function sortLatest(list) {
     new Date(b.completedAt || b.createdAt) - new Date(a.completedAt || a.createdAt));
 }
 
-const V2 = [
-  ['078b460e-d9d0-4642-b75d-44571637f787', '이상한 계단', 2],
-  ['0a400be4-cd2a-4e74-ba79-b677251c9487', '우물 속 달', 11],
-];
+// V2 대상 id의 원천은 scripts/lib/v2-reader-ids.js 하나뿐. 제목·기대 문장수는
+// 사람이 읽는 리포트 라벨이라 여기 맵으로 두되, 없으면 생성된 HTML에서 읽는다.
+const { V2_TARGET_IDS } = require('./lib/v2-reader-ids.js');
+const V2_LABELS = {
+  '078b460e-d9d0-4642-b75d-44571637f787': { title: '이상한 계단', sentences: 2 },
+  '0a400be4-cd2a-4e74-ba79-b677251c9487': { title: '우물 속 달', sentences: 11 },
+};
+const V2 = V2_TARGET_IDS.map(id => {
+  const lbl = V2_LABELS[id] || {};
+  return [id, lbl.title || null, lbl.sentences || null];
+});
 const BRANCH = ['0fbdc14a-786d-4831-b4f6-4b3c5da52909', '거짓말의 꽃'];
 
 const out = [];
@@ -59,20 +66,26 @@ const expectedNeighbors = id => {
 
 // ── 시범 2편: V2 셸 ──
 for (const [id, title, sentences] of V2) {
-  L(`\n## ${title} (\`${id}\`) — V2 독립 셸\n`);
+  L(`\n## ${title || id} (\`${id}\`) — V2 독립 셸\n`);
   const h = read(id);
   if (!h) { chk('파일 생성됨', false, `${id}/index.html 없음`); continue; }
   chk('V2 독립 셸(h1.reader-title)', /<h1 class="reader-title">/.test(h));
   chk('앱 셸(main id="app") 잔존 없음', !h.includes('<main id="app">'));
   const t = (h.match(/<title>([^<]*)<\/title>/) || [])[1] || '';
-  chk('title = 실제 작품명', t === `${title} — 화씨.방`, t);
   const h1 = (h.match(/<h1 class="reader-title">([^<]*)<\/h1>/) || [])[1] || '';
-  chk('H1 = 실제 작품명', h1 === title, h1);
+  if (title) {
+    chk('title = 실제 작품명', t === `${title} — 화씨.방`, t);
+    chk('H1 = 실제 작품명', h1 === title, h1);
+  } else {
+    chk('title 형식 " … — 화씨.방"', / — 화씨\.방$/.test(t), t);
+    chk('H1 = title 본문과 일치', !!h1 && t.startsWith(h1), `H1=${h1}`);
+  }
   const canon = (h.match(/<link rel="canonical" href="([^"]*)">/) || [])[1] || '';
   chk('canonical = 쿼리 없는 원래 주소', canon === `https://hwasee.me/bang/story/${id}/`, canon);
   const sc = (h.match(/class="prose-sentence"/g) || []).length;
   const oc = (h.match(/class="prose-opening"/g) || []).length;
-  chk('본문 문장 수 일치', sc === sentences, `prose-sentence ${sc}개 + opening ${oc} (기대 ${sentences})`);
+  if (sentences != null) chk('본문 문장 수 일치', sc === sentences, `prose-sentence ${sc}개 + opening ${oc} (기대 ${sentences})`);
+  else chk('본문 문장 존재', sc > 0, `prose-sentence ${sc}개 + opening ${oc}`);
   chk('robots index,follow', /<meta name="robots" content="index,follow">/.test(h));
   chk('· 完 · (완결 표시)', /reader-theend/.test(h));
 

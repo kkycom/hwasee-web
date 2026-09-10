@@ -10725,10 +10725,11 @@ function timeAgo(dateStr) {
 // 해시 라우팅(location.hash)은 크롤러에 전송되지 않아 개별 이야기가 서버 경로
 // URL로 존재할 수 없었음. history.pushState 기반 경로 라우팅으로 전환.
 const BASE = '/bang/';
-// ⚠️ scripts/build-static-stories.js의 V2_STORY_IDS와 정확히 일치시킬 것.
-// (독립 독서 페이지로 발행된 완결작 — 앱은 이 URL로 전체 페이지 이동만 하고
-//  #app을 덮어쓰지 않는다. nav() 가드 참고. 시범: 일반 완결작 2편. 분기 작품은
-//  상속 문장 정적 재현 미완이라 제외. 확대 시 빌드 주입 방식으로 전환.)
+// ⚠️ 이 선언은 scripts/build-static-stories.js가 배포 직전 자동 주입한다
+// (injectV2ReaderIds — 유일한 원천은 scripts/lib/v2-reader-ids.js, 그중에서도
+//  이번 빌드에 실제 생성·검증된 ID만). 아래 값은 사람이 읽을 기본값일 뿐이니
+//  손으로 고치지 말 것. 독립 독서 페이지로 발행된 완결작 — 앱은 이 URL로 전체
+//  페이지 이동만 하고 #app을 덮어쓰지 않는다(nav() 가드 참고). 비면 기존 동작.
 const _V2_READER_IDS = new Set([
   '078b460e-d9d0-4642-b75d-44571637f787',
   '0a400be4-cd2a-4e74-ba79-b677251c9487',

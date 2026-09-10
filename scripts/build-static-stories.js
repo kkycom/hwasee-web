@@ -362,14 +362,41 @@ function storyPageBodyHtml({ opening, lines, meta, candidates, related }) {
 // CSS는 손으로 옮겨 적지 않고 bang/index.html의 <style>에서 잘라온다(EN 페이지의
 // ko-shared.css와 같은 원칙, extract-ko-css.js의 cutRule 재사용).
 
-// 시범 대상 — 온전하게 구현된 일반(분기 아님) 완결작만. 비우면 renderStoryPageV2가
-// 전혀 안 쓰임(전체 롤백). 분기 작품은 상속 문장 정적 재현이 아직 안 돼서(=구현
-// 확대 필요) 제외 — 전체 확대의 필수 선행 과제. bang/index.html의 _V2_READER_IDS와
-// 반드시 같은 집합.
-const V2_STORY_IDS = new Set([
-  '078b460e-d9d0-4642-b75d-44571637f787', // 짧은: "이상한 계단" (2문장)
-  '0a400be4-cd2a-4e74-ba79-b677251c9487', // 긴: "우물 속 달" (11문장)
-]);
+// 시범 대상 — 유일한 원천은 scripts/lib/v2-reader-ids.js. 여기서 목록을 읽어
+// 빌드에 쓰고, main() 끝에서 **이번 빌드에 실제 생성·검증된 ID만** bang/index.html의
+// _V2_READER_IDS 마커에 주입한다(수동 동기화 목록 없음). 비우면 전체 롤백.
+// 분기 작품은 상속 문장 정적 재현이 아직 안 돼서 제외 — 확대의 필수 선행 과제.
+const { V2_TARGET_IDS, V2_READER_IDS_DECL_RE, buildV2ReaderIdsDecl } = require('./lib/v2-reader-ids.js');
+const V2_STORY_IDS = new Set(V2_TARGET_IDS);
+
+// 이번 빌드에서 실제로 V2 셸 생성·검증에 성공한 작품 ID(순서 유지). main()의
+// 2차 패스가 채우고, 그 뒤 injectV2ReaderIds가 이 값으로 앱 마커를 치환한다.
+const _v2GeneratedIds = [];
+
+// 생성된 V2 HTML이 실제로 독립 셸인지 최소 검증 — 하나라도 실패하면 빌드 실패.
+function assertV2ShellOk(id, html) {
+  const problems = [];
+  if (!/<h1 class="reader-title">[^<]/.test(html)) problems.push('reader-title 없음/비어있음');
+  if (html.includes('<main id="app">')) problems.push('앱 셸(<main id="app">) 잔존');
+  if (!/<div class="story-prose">[\s\S]*?<span class="prose-sentence">/.test(html)) problems.push('본문(.prose-sentence) 없음');
+  if (!/<meta name="robots" content="index,follow">/.test(html)) problems.push('robots index,follow 없음');
+  if (!new RegExp(`<link rel="canonical" href="https://[^"]*/bang/story/${id}/">`).test(html)) problems.push('canonical 불일치');
+  if (problems.length) throw new Error(`V2 생성 검증 실패(${id}): ${problems.join(', ')}`);
+}
+
+// 이번 빌드에 실제 생성된 V2 ID로 bang/index.html의 _V2_READER_IDS 선언을 치환한다.
+// bang/index.html은 원본 겸 배포 산출물(별도 산출물 디렉토리가 없는 현재 구조) —
+// 루트 index.html의 미리보기 MARKER 치환과 같은 방식이다. 커밋본의 값은 사람이
+// 읽을 기본값일 뿐이고, 배포 직전 이 함수가 실제값으로 덮어쓴다.
+function injectV2ReaderIds(generatedIds) {
+  const src = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
+  const matches = src.match(V2_READER_IDS_DECL_RE) || [];
+  if (matches.length === 0) throw new Error('bang/index.html에서 _V2_READER_IDS 선언(주입 마커)을 못 찾음');
+  if (matches.length > 1) throw new Error(`bang/index.html에 _V2_READER_IDS 선언이 ${matches.length}개 — 마커 중복`);
+  const decl = buildV2ReaderIdsDecl(generatedIds);
+  fs.writeFileSync(INDEX_HTML_PATH, src.replace(V2_READER_IDS_DECL_RE, () => decl));
+  console.log(`_V2_READER_IDS 주입: ${generatedIds.length}편 [${generatedIds.join(', ')}]`);
+}
 
 // 독서 페이지에 필요한 CSS 규칙만 bang/index.html <style>에서 잘라온다.
 // 셀렉터가 사라지면(구조 변경) 조용히 빠지지 않게 못 찾은 건 목록으로 모아
@@ -1231,7 +1258,7 @@ async function main() {
   admin.initializeApp({ credential: admin.credential.cert(svcJson) });
   const db = admin.firestore();
 
-  const indexHtmlSrc = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
+  let indexHtmlSrc = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
 
   const storiesSnap = await db.collection('stories').where('status', '==', 'completed').get();
   const completedStories = storiesSnap.docs.map(d => ({ story_id: d.id, ...d.data(), isCompleted: true }));
@@ -1400,6 +1427,14 @@ async function main() {
     }
   }
 
+  // V2 대상 중 이번 빌드 풀에 실제로 있는 작품 = 이번에 발행할 계획인 목록.
+  // renderStoryPage가 클론하는 indexHtmlSrc의 _V2_READER_IDS를 지금 이 값으로
+  // 맞춰서, 비-V2 완결작 페이지 안의 앱도 올바른 목록을 갖게 한다(파일 쓰기는
+  // 2차 패스 뒤 injectV2ReaderIds가, 실제 생성 성공 목록으로). 둘이 어긋나면
+  // 2차 패스의 _v2Missing 검사가 빌드를 멈춘다.
+  const _v2PlannedIds = V2_TARGET_IDS.filter(id => processed.some(p => p.id === id));
+  indexHtmlSrc = indexHtmlSrc.replace(V2_READER_IDS_DECL_RE, () => buildV2ReaderIdsDecl(_v2PlannedIds));
+
   // 2차 패스: 관련 작품(완결작 풀에서 자기 다음 최신순 3편, 순환) 확정 후 실제 파일 생성
   const sitemapEntries = [];
   let ok = 0;
@@ -1443,12 +1478,27 @@ async function main() {
       });
     }
 
+    if (V2_STORY_IDS.has(item.id)) {
+      assertV2ShellOk(item.id, html);          // 실패 시 throw → 빌드 실패
+      if (!_v2GeneratedIds.includes(item.id)) _v2GeneratedIds.push(item.id);
+    }
+
     const dir = path.join(OUT_DIR, item.id);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'index.html'), html);
     sitemapEntries.push({ id: item.id, lastmod: item.lastmod, title: item.title, description: item.description, isCompleted: item.isCompleted });
     ok++;
   }
+
+  // V2 대상인데 이번 빌드에서 생성/검증 못 한 게 있으면 빌드 실패(앱을 없는
+  // 페이지로 보내지 않기 위해 — 주입 목록은 "설정 ID"가 아니라 "실제 생성된 ID").
+  const _v2Missing = [...V2_STORY_IDS].filter(id => !_v2GeneratedIds.includes(id));
+  if (_v2Missing.length) {
+    throw new Error(`V2 대상인데 페이지 생성/검증 실패: ${_v2Missing.join(', ')} `
+      + `(완결작 풀에 없거나 게이트 탈락). 앱에 죽은 링크를 주입하지 않도록 빌드를 멈춤.`);
+  }
+  // 실제 생성된 V2 ID를 앱 마커에 주입(수동 _V2_READER_IDS 목록 대체).
+  injectV2ReaderIds(_v2GeneratedIds);
 
   // 3차 패스: today/{slot} 역할 페이지 — 5개 슬롯 모두 항상 페이지가 존재함
   // (URL 안정성). current는 위에서 이미 만든 processed 항목 중 이 슬롯의

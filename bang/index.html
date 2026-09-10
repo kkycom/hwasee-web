@@ -10723,11 +10723,11 @@ function timeAgo(dateStr) {
 const BASE = '/bang/';
 // ⚠️ scripts/build-static-stories.js의 V2_STORY_IDS와 정확히 일치시킬 것.
 // (독립 독서 페이지로 발행된 완결작 — 앱은 이 URL로 전체 페이지 이동만 하고
-//  #app을 덮어쓰지 않는다. nav() 가드 참고. 시범 3편, 확대 시 빌드 주입 전환.)
+//  #app을 덮어쓰지 않는다. nav() 가드 참고. 시범: 일반 완결작 2편. 분기 작품은
+//  상속 문장 정적 재현 미완이라 제외. 확대 시 빌드 주입 방식으로 전환.)
 const _V2_READER_IDS = new Set([
   '078b460e-d9d0-4642-b75d-44571637f787',
   '0a400be4-cd2a-4e74-ba79-b677251c9487',
-  '0fbdc14a-786d-4831-b4f6-4b3c5da52909',
 ]);
 const _ROUTE_WHITELIST = ['home','seed','spotlight','free','popular','mine','done','story','episode','auth','profile','user','create','resetpw','wordchallenge','diary','yourstory','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','admin-wordchallenge','admin-fairytale','admin-hint','patchnotes'];
 // story는 완결작 정적 발행(SSG, 후속 단계) 파일 경로(/bang/story/{id}/index.html)와

@@ -362,11 +362,13 @@ function storyPageBodyHtml({ opening, lines, meta, candidates, related }) {
 // CSS는 손으로 옮겨 적지 않고 bang/index.html의 <style>에서 잘라온다(EN 페이지의
 // ko-shared.css와 같은 원칙, extract-ko-css.js의 cutRule 재사용).
 
-// 시범 대상 — 짧은/긴/분기 각 1편. 비우면 renderStoryPageV2가 전혀 안 쓰임(전체 롤백).
+// 시범 대상 — 온전하게 구현된 일반(분기 아님) 완결작만. 비우면 renderStoryPageV2가
+// 전혀 안 쓰임(전체 롤백). 분기 작품은 상속 문장 정적 재현이 아직 안 돼서(=구현
+// 확대 필요) 제외 — 전체 확대의 필수 선행 과제. bang/index.html의 _V2_READER_IDS와
+// 반드시 같은 집합.
 const V2_STORY_IDS = new Set([
   '078b460e-d9d0-4642-b75d-44571637f787', // 짧은: "이상한 계단" (2문장)
-  '0a400be4-cd2a-4e74-ba79-b677251c9487', // 긴: "우물 속 달" (11문장, 분기 아님)
-  '0fbdc14a-786d-4831-b4f6-4b3c5da52909', // 분기: "거짓말의 꽃" (f3279a4e에서 동률 분기)
+  '0a400be4-cd2a-4e74-ba79-b677251c9487', // 긴: "우물 속 달" (11문장)
 ]);
 
 // 독서 페이지에 필요한 CSS 규칙만 bang/index.html <style>에서 잘라온다.
@@ -1320,12 +1322,12 @@ async function main() {
     }
   }
 
-  // 정렬 — 앱 완결작 책장의 기본 정렬(_sortStories 'latest': completed_at ||
-  // created_at 내림차순, bang/index.html)과 같은 기준으로 맞춤. V2 독서 페이지의
-  // "이전/다음 완결작" 링크가 책장에서 넘기는 순서와 일치해야 해서(2026-09-10).
-  // 아카이브 목록·"관련 작품" 선정도 이 순서를 그대로 씀.
-  processed.sort((a, b) =>
-    new Date(b.completedAt || b.createdAt || b.lastmod || 0) - new Date(a.completedAt || a.createdAt || a.lastmod || 0));
+  // 최신순 정렬 — 아카이브 목록·홈 미리보기·"관련 작품" 선정이 쓰는 기존 기준
+  // (lastmod = 마지막 마감 시각). ⚠️ V2 이전/다음 링크를 앱 책장과 맞추려고
+  // 이 정렬 자체를 completed_at 기준으로 바꿨다가, 아카이브/홈 순서까지 딸려
+  // 바뀌는 의도치 않은 변경이라 되돌림(2026-09-10 사용자 지적). V2의 이전/다음은
+  // 아래에서 별도로 책장과 같은 기준(completed_at || created_at)으로 계산한다.
+  processed.sort((a, b) => (b.lastmod || '').localeCompare(a.lastmod || ''));
 
   // 서로 다른 완결작 두 편이 우연히 같은 오프닝 문장으로 시작하면 title이
   // (개설 초기 시절 같은 예시 씨앗 문장이 여러 번 쓰였던 경우 등) 완전히
@@ -1359,14 +1361,20 @@ async function main() {
   // 중 페이지에도 이 링크는 그대로 붙음(완결작 아카이브 발견 경로가 하나 늘어남).
   const completedOnly = processed.filter(p => p.isCompleted);
 
-  // V2 시범 대상 중 분기 작품이면 부모 제목만 가볍게 조회한다.
-  // ⚠️ 상속(갈린 지점 이전 공통) 문장을 정적 페이지에 그대로 재현하려면
-  // firebase-api.js fbGetStory의 parent_chain 조립 + _applyStoryData의
-  // _buildForkPath 로직을 포팅해야 함(여러 fallback·구형 데이터·B갈래 sub
-  // adopted 처리 등) = "구현 확대". 사용자 지시에 따라 시범 단계에서는 하지
-  // 않고, 분기 작품은 "자기 갈래 본문 + 원본 이야기 링크(처음부터 읽기)"로 둔다.
-  // 검수 후 상속 문장까지 필요하면 별도 과제로 진행. (라이브 앱 대조 결과
-  // 내 근사 컷 로직이 tie episode 문장 1개를 빠뜨려 앱과 불일치 — 03-verify.md)
+  // V2 "이전/다음 완결작"은 앱 완결작 책장 기본 정렬(_sortStories 'latest':
+  // completed_at || created_at 내림차순, bang/index.html)과 같은 순서로 넘겨야
+  // 한다. processed.sort는 아카이브/홈이 쓰는 lastmod 기준이라 별개로 정렬한
+  // 사본을 둔다(2026-09-10). completed_at 없는 옛날 데이터는 _sortStories와
+  // 동일하게 created_at으로 폴백.
+  const completedByBookshelf = [...completedOnly].sort((a, b) =>
+    new Date(b.completedAt || b.createdAt || 0) - new Date(a.completedAt || a.createdAt || 0));
+
+  // ⚠️ 분기 작품은 이번 V2 시범 대상이 아니다(V2_STORY_IDS에서 제외). 상속(갈린
+  // 지점 이전 공통) 문장을 정적으로 정확히 재현하려면 fbGetStory의 parent_chain
+  // 조립 + _buildForkPath 포팅이 필요해서(=구현 확대), 전체 확대의 필수 선행
+  // 과제로 남긴다. 그 전에 기존 SSG의 fetchStoryData(부모)+getEpisodeTree
+  // +buildCanonicalPath 경로를 재사용해 상속 문장을 조립할 수 있는지 먼저 확인할 것.
+  // (V2 대상에 분기가 없으므로 아래 루프는 지금은 아무것도 안 돎.)
   const v2ParentTitleByStory = {};
   for (const item of processed) {
     if (!V2_STORY_IDS.has(item.id) || !item.parentStoryId) continue;
@@ -1394,10 +1402,10 @@ async function main() {
 
     let html;
     if (V2_STORY_IDS.has(item.id)) {
-      // 독립 독서 페이지(시범). 이전/다음은 completedOnly(책장과 같은 정렬)에서.
-      const cIdx = completedOnly.indexOf(item);
-      const prevEntry = cIdx > 0 ? completedOnly[cIdx - 1] : null;               // 정렬상 앞 = 더 최신
-      const nextEntry = cIdx >= 0 && cIdx < completedOnly.length - 1 ? completedOnly[cIdx + 1] : null;
+      // 독립 독서 페이지(시범). 이전/다음은 책장 정렬(completedByBookshelf)에서.
+      const cIdx = completedByBookshelf.indexOf(item);
+      const prevEntry = cIdx > 0 ? completedByBookshelf[cIdx - 1] : null;         // 정렬상 앞 = 더 최신
+      const nextEntry = cIdx >= 0 && cIdx < completedByBookshelf.length - 1 ? completedByBookshelf[cIdx + 1] : null;
       html = renderStoryPageV2({
         indexHtmlSrc,
         id: item.id, storyTitle: item.storyTitle, description: item.description, url: item.url,

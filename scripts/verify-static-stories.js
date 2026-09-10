@@ -85,13 +85,24 @@ function verifyStoryPages(sitemap) {
     if (!canonical) fail(`${id}: canonical 태그를 못 찾음`);
     else if (canonical !== expectedCanonical) fail(`${id}: canonical이 자기 URL과 불일치 (${canonical} !== ${expectedCanonical})`);
 
-    // #app(이 스토리만의 고유 본문) — 비어있거나 로딩 상태로 멈춰있으면
-    // 실제로는 이 스토리의 본문 생성 자체가 실패한 것.
-    const appMatch = html.match(/<main id="app">([\s\S]*?)<\/main>/);
-    if (!appMatch) { fail(`${id}: <main id="app"> 마커를 못 찾음`); continue; }
+    // 본문 — 비어있거나 로딩 상태로 멈춰있으면 이 스토리의 본문 생성 자체가
+    // 실패한 것. 기존 renderStoryPage는 <main id="app">(앱 셸 복제), V2
+    // 독립 독서 페이지(renderStoryPageV2)는 <h1 class="reader-title">가 있는
+    // <main>. 둘 다 지원.
+    const isV2 = /<h1 class="reader-title">/.test(html);
+    const appMatch = isV2
+      ? html.match(/<main>([\s\S]*?)<\/main>/)
+      : html.match(/<main id="app">([\s\S]*?)<\/main>/);
+    if (!appMatch) { fail(`${id}: ${isV2 ? '<main>(V2)' : '<main id="app">'} 마커를 못 찾음`); continue; }
     const appVisible = visibleLines(`<div>${appMatch[1]}</div>`).join(' ');
-    if (!appVisible.trim()) fail(`${id}: 본문(#app) 영역이 비어있음`);
-    else if (appVisible.includes('불러오는 중')) fail(`${id}: 본문(#app) 영역이 로딩 상태로 멈춰있음(실제 이야기 내용이 아니라 "불러오는 중" 문구만 있음)`);
+    if (!appVisible.trim()) fail(`${id}: 본문 영역이 비어있음`);
+    else if (appVisible.includes('불러오는 중')) fail(`${id}: 본문 영역이 로딩 상태로 멈춰있음("불러오는 중" 문구만 있음)`);
+    // V2는 canonical/robots가 반드시 있어야 함(독립 셸이라 renderStoryPage의
+    // clone 치환에 안 기대므로 자체 생성이 정상 동작하는지 여기서 재확인).
+    if (isV2) {
+      if (!/<meta name="robots" content="index,follow">/.test(html)) fail(`${id}: V2인데 robots index,follow가 없음`);
+      if (html.includes('<main id="app">')) fail(`${id}: V2인데 <main id="app">(앱 셸)이 남아있음 — 템플릿 혼선`);
+    }
 
     const bodyHash = crypto.createHash('sha256').update(appVisible).digest('hex');
     if (!bodyHashOwners.has(bodyHash)) bodyHashOwners.set(bodyHash, []);

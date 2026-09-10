@@ -2146,6 +2146,17 @@ function _dhCloseFloatingOverlays() {
   document.getElementById('dh-rewind-modal')?.remove();
 }
 function nav(route, param) {
+  // V2 독립 독서 페이지로 발행된 완결작(AdSense 재심 대응 2026-09-10 시범)은
+  // 앱 안에서 #app만 다시 그리지 않고 그 정적 URL로 전체 페이지 이동한다 —
+  // 앱이 정적 본문/제목/canonical을 덮어써 어긋나던 문제를 근본적으로 없앰.
+  // 이 목록은 scripts/build-static-stories.js의 V2_STORY_IDS와 반드시 일치해야
+  // 함(시범 3편. 확대 시 빌드가 주입하는 방식으로 전환). "참여하러" 온 경우
+  // (?write=1)는 독서 페이지의 인라인 스크립트가 #story/{id} 해시로 넘겨서
+  // 여기 nav()가 아니라 부트스트랩 render()로 앱이 뜨므로 이 가드에 안 걸린다.
+  if (route === 'story' && _V2_READER_IDS.has(param)) {
+    location.assign(BASE + 'story/' + param + '/');
+    return;
+  }
   _dhCloseFloatingOverlays();
   if (_epUnsubscribe) { _epUnsubscribe(); _epUnsubscribe = null; }
   if (_hintUnsubscribe) { _hintUnsubscribe(); _hintUnsubscribe = null; }
@@ -10710,6 +10721,14 @@ function timeAgo(dateStr) {
 // 해시 라우팅(location.hash)은 크롤러에 전송되지 않아 개별 이야기가 서버 경로
 // URL로 존재할 수 없었음. history.pushState 기반 경로 라우팅으로 전환.
 const BASE = '/bang/';
+// ⚠️ scripts/build-static-stories.js의 V2_STORY_IDS와 정확히 일치시킬 것.
+// (독립 독서 페이지로 발행된 완결작 — 앱은 이 URL로 전체 페이지 이동만 하고
+//  #app을 덮어쓰지 않는다. nav() 가드 참고. 시범 3편, 확대 시 빌드 주입 전환.)
+const _V2_READER_IDS = new Set([
+  '078b460e-d9d0-4642-b75d-44571637f787',
+  '0a400be4-cd2a-4e74-ba79-b677251c9487',
+  '0fbdc14a-786d-4831-b4f6-4b3c5da52909',
+]);
 const _ROUTE_WHITELIST = ['home','seed','spotlight','free','popular','mine','done','story','episode','auth','profile','user','create','resetpw','wordchallenge','diary','yourstory','episode-votes','admin-stats','admin-ai','admin-edits','admin-reports','admin-bugs','admin-patchnotes','admin-wordchallenge','admin-fairytale','admin-hint','patchnotes'];
 // story는 완결작 정적 발행(SSG, 후속 단계) 파일 경로(/bang/story/{id}/index.html)와
 // canonical URL을 통일하기 위해 트레일링 슬래시를 씀 — 다른 라우트는 불필요.

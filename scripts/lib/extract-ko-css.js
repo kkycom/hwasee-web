@@ -184,4 +184,6 @@ function extract() {
   return { css: parts.join('\n\n') + '\n', missing };
 }
 
-module.exports = { extract, RULES, MEDIA_SNIPPETS, KO_HTML };
+// cutRule/styleBlock은 다른 정적 페이지(예: 한국어 독서 템플릿 renderStoryPageV2)도
+// 같은 "값 재타이핑 없이 원본에서 잘라오기" 원칙을 쓸 수 있게 함께 내보낸다.
+module.exports = { extract, RULES, MEDIA_SNIPPETS, KO_HTML, cutRule, styleBlock };

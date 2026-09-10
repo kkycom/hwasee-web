@@ -18,6 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 const admin = require('firebase-admin');
+const { cutRule, styleBlock } = require('./lib/extract-ko-css.js');
 
 const ROOT = path.join(__dirname, '..');
 const BANG_DIR = path.join(ROOT, 'bang');
@@ -344,6 +345,224 @@ function storyPageBodyHtml({ opening, lines, meta, candidates, related }) {
     ${relatedStoriesHtml(related)}
     <a href="/bang/" style="display:inline-block;margin-top:24px;padding:10px 20px;background:var(--accent2);color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:600">화씨.방에서 계속 둘러보기 →</a>
   </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// renderStoryPageV2 — 독립 독서 페이지 (AdSense 재심 대응, 2026-09-10 시범)
+//
+// 현재 renderStoryPage는 bang/index.html(앱 전체 ~600KB)을 복제하고 <main id=app>만
+// 치환한다. 그 결과 앱 JS가 로드되면 story()가 #app을 통째로 다시 그리며 정적
+// 본문을 지우고 getStory API에 의존한다(API 실패 시 본문이 에러로 대체됨).
+//
+// V2는 word-challenge/diary 페이지처럼 앱을 복제하지 않는 독립 셸이다. 제목·본문·
+// 작품 간 이동이 JS/Firebase 없이 완성되고, 참여 기능은 없애지 않고 기존 앱의
+// 해당 작품으로 링크한다. 시범은 V2_STORY_IDS 목록의 작품에만 적용(나머지는 기존
+// renderStoryPage 그대로) — 목록을 비우면 전체 롤백.
+//
+// CSS는 손으로 옮겨 적지 않고 bang/index.html의 <style>에서 잘라온다(EN 페이지의
+// ko-shared.css와 같은 원칙, extract-ko-css.js의 cutRule 재사용).
+
+// 시범 대상 — 온전하게 구현된 일반(분기 아님) 완결작만. 비우면 renderStoryPageV2가
+// 전혀 안 쓰임(전체 롤백). 분기 작품은 상속 문장 정적 재현이 아직 안 돼서(=구현
+// 확대 필요) 제외 — 전체 확대의 필수 선행 과제. bang/index.html의 _V2_READER_IDS와
+// 반드시 같은 집합.
+const V2_STORY_IDS = new Set([
+  '078b460e-d9d0-4642-b75d-44571637f787', // 짧은: "이상한 계단" (2문장)
+  '0a400be4-cd2a-4e74-ba79-b677251c9487', // 긴: "우물 속 달" (11문장)
+]);
+
+// 독서 페이지에 필요한 CSS 규칙만 bang/index.html <style>에서 잘라온다.
+// 셀렉터가 사라지면(구조 변경) 조용히 빠지지 않게 못 찾은 건 목록으로 모아
+// 호출부에서 throw 한다.
+const _READER_CSS_SELECTORS = [
+  ':root', '*', 'body',
+  '.story-prose', '.prose-opening', '.prose-line', '.prose-sentence',
+  '.prose-divider', '.prose-divider::before, .prose-divider::after',
+  '.prose-inherited', '.prose-inherited.prose-inherited-continuation',
+  '.step-pill', '.step-dot',
+  '.badge',
+  '.badge-seed', '.badge-seed1', '.badge-seed2',
+  '.badge-sprout', '.badge-sprout1', '.badge-sprout2',
+  '.badge-leaf', '.badge-leaf1', '.badge-leaf2',
+  '.badge-bud', '.badge-flower', '.badge-flower1',
+  '.badge-fruit', '.badge-treeguard',
+];
+let _readerCssCache = null;
+function readerCss(indexHtmlSrc) {
+  if (_readerCssCache) return _readerCssCache;
+  const css = styleBlock(indexHtmlSrc).replace(/\r\n/g, '\n');
+  const parts = [];
+  const missing = [];
+  for (const sel of _READER_CSS_SELECTORS) {
+    const found = cutRule(css, sel);
+    if (!found.length) { missing.push(sel); continue; }
+    parts.push(found.join('\n'));
+  }
+  if (missing.length) {
+    throw new Error(`renderStoryPageV2: bang/index.html에서 CSS 규칙을 못 찾음 — ${missing.join(', ')} (구조가 바뀌었을 수 있음)`);
+  }
+  // 독서 페이지 전용 보강 — 앱에서는 JS가 채우던 것들의 정적 대체.
+  parts.push(`
+  body { max-width: 680px; margin: 0 auto; padding: 0 16px 64px; }
+  .reader-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border); margin-bottom: 24px; font-size: 13px; }
+  .reader-header a { color: var(--muted); text-decoration: none; }
+  .reader-logo { font-family: var(--serif); font-size: 18px; color: var(--text); }
+  h1.reader-title { font-family: var(--serif); font-size: 23px; font-weight: 700; line-height: 1.4; margin: 8px 0 4px; color: var(--text); }
+  .reader-byline { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+  .reader-theend { text-align: center; font-family: var(--serif); font-size: 15px; color: var(--muted); letter-spacing: 3px; margin: 20px 0 0; }
+  .reader-nav { display: flex; gap: 10px; margin: 28px 0 0; }
+  .reader-nav a { flex: 1; text-align: center; padding: 12px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; text-decoration: none; color: var(--text); font-size: 13px; }
+  .reader-nav a.disabled { opacity: .45; pointer-events: none; }
+  .reader-participate { display: block; margin: 24px 0 0; padding: 14px 18px; background: var(--accent2); color: #fff; border-radius: 10px; text-decoration: none; font-size: 14px; font-weight: 600; text-align: center; }
+  .reader-share { display: flex; gap: 8px; margin: 16px 0 0; }
+  .reader-share button { flex: 1; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; font-size: 13px; color: var(--text); cursor: pointer; font-family: inherit; }
+  .reader-footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); text-align: center; }
+  .reader-footer a { color: var(--muted); }
+  .prose-inherited { opacity: .55; }
+  `);
+  _readerCssCache = parts.join('\n');
+  return _readerCssCache;
+}
+
+// 상속(부모 갈래) 문장 + 이 갈래 문장을 하나의 산문 블록으로. 분기 아니면 inherited는 빈 배열.
+function readerProseHtml(opening, inheritedLines, lines) {
+  const inheritedHtml = (inheritedLines || []).map(l =>
+    `<div class="prose-line"><span class="prose-sentence">${esc(l)}</span></div>`).join('\n      ');
+  const dividerHtml = (inheritedLines && inheritedLines.length)
+    ? `<div class="prose-divider">여기서 이야기가 갈라졌어요</div>` : '';
+  const lineHtml = lines.map(l =>
+    `<div class="prose-line"><span class="prose-sentence">${esc(l)}</span></div>`).join('\n      ');
+  return `<div class="story-prose">
+      <div class="prose-opening">${esc(opening)}</div>
+      ${inheritedHtml ? `<div class="prose-inherited">${inheritedHtml}</div>${dividerHtml}` : ''}
+      ${lineHtml}
+    </div>`;
+}
+
+function renderStoryPageV2(opts) {
+  const {
+    indexHtmlSrc, id, storyTitle, description, url, opening, creatorNickname,
+    inheritedLines, lines, meta, candidates, related, isCompleted, lastmod,
+    hasEn, prevEntry, nextEntry, parentTitle, parentStoryId,
+  } = opts;
+  const displayTitle = (storyTitle && storyTitle.trim())
+    || (opening.length > 30 ? opening.slice(0, 30) + '…' : opening);
+  const koUrl = url;
+  const enUrl = `${SITE_ORIGIN}/bang/en/story/${id}/`;
+
+  const jsonLd = JSON.stringify({
+    '@context': 'https://schema.org', '@type': 'CreativeWork',
+    headline: displayTitle, description,
+    author: { '@type': 'Person', name: creatorNickname || '익명' },
+    datePublished: lastmod || undefined,
+    publisher: { '@type': 'Organization', name: '화씨 (Hwasee)', url: SITE_ORIGIN },
+    url, inLanguage: 'ko',
+  }, null, 2).replace(/</g, '\\u003c');
+
+  const hreflang = hasEn
+    ? `<link rel="alternate" hreflang="ko" href="${koUrl}">\n`
+      + `<link rel="alternate" hreflang="en" href="${enUrl}">\n`
+      + `<link rel="alternate" hreflang="x-default" href="${koUrl}">\n`
+    : '';
+
+  const prevLink = prevEntry
+    ? `<a href="/bang/story/${prevEntry.id}/">← 이전 완결작</a>`
+    : `<a class="disabled">← 이전 완결작</a>`;
+  const nextLink = nextEntry
+    ? `<a href="/bang/story/${nextEntry.id}/">다음 완결작 →</a>`
+    : `<a class="disabled">다음 완결작 →</a>`;
+
+  const body = `<div class="reader-header">
+    <a class="reader-logo" href="/bang/">화씨.방</a>
+    <a href="/bang/story/">← 완결작 모음</a>
+  </div>
+  <main>
+    <h1 class="reader-title">${esc(displayTitle)}</h1>
+    <div class="reader-byline">${esc(creatorNickname || '익명')}님의 씨앗 문장에서 시작 · 여러 사람이 한 문장씩 이어 씀</div>
+    ${parentStoryId ? `<p style="font-size:12.5px;color:var(--muted);margin-bottom:14px;padding:10px 12px;background:var(--surface);border-radius:8px">⑂ 이 이야기는 <a href="/bang/story/${parentStoryId}/" style="color:var(--accent2);font-weight:600">${esc(parentTitle || '원본 이야기')}</a>에서 갈라져 나온 결말이에요. 처음부터 읽으려면 원본 이야기로 가세요.</p>` : ''}
+    ${readerProseHtml(opening, inheritedLines, lines)}
+    ${isCompleted ? `<p class="reader-theend">· 完 ·</p>` : ''}
+    ${storyMetaHtml(meta)}
+    ${candidatesHtml(candidates)}
+    ${relatedStoriesHtml(related || [])}
+    <div class="reader-nav">${prevLink}${nextLink}</div>
+    <a class="reader-participate" href="/bang/story/${id}/?write=1">이 작품에 참여하기 (화씨.방 앱)</a>
+    <div class="reader-share">
+      <label style="flex:1;display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted)">이 작품 링크
+        <input id="reader-url" type="text" readonly value="${url}" onclick="this.select()"
+          style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:12px;color:var(--text)">
+      </label>
+      <button id="reader-copy" type="button" style="align-self:flex-end">링크 복사</button>
+      ${hasEn ? `<a href="${enUrl}" style="align-self:flex-end;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:13px;color:var(--text);text-decoration:none">Read in English</a>` : ''}
+    </div>
+  </main>
+  <div class="reader-footer">
+    <a href="https://hwasee.me/">화씨 홈</a> · <a href="/bang/">화씨.방</a> · <a href="/bang/story/">완결작 모음</a> · <a href="/bang/guidelines.html">가이드라인</a> · <a href="/bang/privacy.html">개인정보처리방침</a>
+    <p style="margin-top:8px">&copy; 2026 화씨 (Hwasee). All rights reserved.</p>
+  </div>`;
+
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${esc(displayTitle)} — 화씨.방</title>
+<meta name="description" content="${esc(description)}">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="${url}">
+${hreflang}<link rel="icon" type="image/png" href="/bang/hwaseebang_sum.png">
+<meta name="theme-color" content="#f0ead8">
+<meta property="og:type" content="article">
+<meta property="og:url" content="${url}">
+<meta property="og:title" content="${esc(displayTitle)}">
+<meta property="og:description" content="${esc(description)}">
+<meta property="og:image" content="https://hwasee.me/bang/hwaseebang_og.png">
+<meta property="og:locale" content="ko_KR">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+${readerCss(indexHtmlSrc)}
+</style>
+<script type="application/ld+json">
+${jsonLd}
+</script>
+</head>
+<body>
+${body}
+<script>
+// 이 페이지는 서버 조회 없이 읽는 독립 독서 페이지다. 아래 JS는 "있으면 편한"
+// 것들뿐이고, 꺼도 제목·본문·이동 링크·URL 확인(입력창 클릭 선택)은 그대로 된다.
+(function () {
+  // (1) 참여 진입: "참여하기"는 /bang/story/{id}/?write=1 로 온다. 그 정적 URL을
+  // 그대로 두면 앱이 없어 참여를 못 하므로, 앱 홈의 해시 라우트로 한 번 넘긴다
+  // (앱이 #story/{id} 를 story 라우트로 전환 — bang/index.html 레거시 해시 처리).
+  // ?write=1 이 없으면(그냥 이 페이지를 새로고침) 아무 일도 안 한다 = 왕복 없음.
+  try {
+    if (new URLSearchParams(location.search).get('write')) {
+      location.replace('/bang/#story/' + ${JSON.stringify(id)});
+      return;
+    }
+  } catch (e) {}
+  // (2) 링크 복사: clipboard API 있으면 버튼으로, 없으면 입력창 클릭→선택으로 대체.
+  var btn = document.getElementById('reader-copy');
+  var input = document.getElementById('reader-url');
+  if (btn && input) {
+    btn.addEventListener('click', function () {
+      var done = function () { btn.textContent = '복사됨'; setTimeout(function () { btn.textContent = '링크 복사'; }, 1500); };
+      var fail = function () { input.focus(); input.select(); btn.textContent = '직접 복사하세요'; setTimeout(function () { btn.textContent = '링크 복사'; }, 1800); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(input.value).then(done, fail);
+      } else {
+        input.focus(); input.select();
+        try { document.execCommand('copy') ? done() : fail(); } catch (e) { fail(); }
+      }
+    });
+  }
+})();
+</script>
+</body>
+</html>
+`;
 }
 
 // English 에디션 — 영어판이 실제로 발행된 완결작 id 집합. build-en-pages.js가
@@ -1077,6 +1296,14 @@ async function main() {
         id: story.story_id, lastmod, title, description, url, isCompleted,
         opening: story.opening, lines,
         creatorNickname: story.creator_nickname,
+        // V2 독서 페이지용 — 실제 작품명(있으면), 책장 정렬 기준(completed_at
+        // 우선, 없으면 created_at), 분기 관계. 기존 renderStoryPage는 안 씀.
+        storyTitle: story.title || '',
+        completedAt: story.completed_at || '',
+        createdAt: story.created_at || '',
+        mode: story.mode || null,
+        parentStoryId: story.parent_story_id || null,
+        branchEpisodeId: story.branch_episode_id || null,
         // sectionKey: 이 완결작이 어느 역할 슬롯 출신인지("직전 완결본" 찾기용).
         // fromSlot: 이 story가 지금 그 슬롯의 현재(진행 중) 대상인지(today
         // 페이지의 "현재 진행 중" 링크 대상 찾기용) — 완결작은 항상 undefined.
@@ -1095,7 +1322,11 @@ async function main() {
     }
   }
 
-  // 최신순으로 정렬 — 아카이브 목록과 "관련 작품" 선정 둘 다 이 순서를 기준으로 씀
+  // 최신순 정렬 — 아카이브 목록·홈 미리보기·"관련 작품" 선정이 쓰는 기존 기준
+  // (lastmod = 마지막 마감 시각). ⚠️ V2 이전/다음 링크를 앱 책장과 맞추려고
+  // 이 정렬 자체를 completed_at 기준으로 바꿨다가, 아카이브/홈 순서까지 딸려
+  // 바뀌는 의도치 않은 변경이라 되돌림(2026-09-10 사용자 지적). V2의 이전/다음은
+  // 아래에서 별도로 책장과 같은 기준(completed_at || created_at)으로 계산한다.
   processed.sort((a, b) => (b.lastmod || '').localeCompare(a.lastmod || ''));
 
   // 서로 다른 완결작 두 편이 우연히 같은 오프닝 문장으로 시작하면 title이
@@ -1130,6 +1361,45 @@ async function main() {
   // 중 페이지에도 이 링크는 그대로 붙음(완결작 아카이브 발견 경로가 하나 늘어남).
   const completedOnly = processed.filter(p => p.isCompleted);
 
+  // V2 "이전/다음 완결작"은 앱 완결작 책장 기본 정렬(_sortStories 'latest':
+  // completed_at || created_at 내림차순, bang/index.html)과 같은 순서로 넘겨야
+  // 한다. processed.sort는 아카이브/홈이 쓰는 lastmod 기준이라 별개로 정렬한
+  // 사본을 둔다(2026-09-10). completed_at 없는 옛날 데이터는 _sortStories와
+  // 동일하게 created_at으로 폴백.
+  const completedByBookshelf = [...completedOnly].sort((a, b) =>
+    new Date(b.completedAt || b.createdAt || 0) - new Date(a.completedAt || a.createdAt || 0));
+
+  // 검증 전용 사이드카(운영 배포엔 영향 없음): env가 있을 때만, 이번 빌드가
+  // 실제로 본 완결작 데이터를 그대로 덤프한다. verify-reading-pages.yml의
+  // summarize 단계가 이 데이터에 앱 _sortStories('latest') 기준을 독립적으로
+  // 재적용해 V2 이전/다음 링크와 자동 대조한다(라이브 목록 육안 비교 대신).
+  if (process.env.READING_PILOT_EXPECTED_OUT) {
+    fs.writeFileSync(process.env.READING_PILOT_EXPECTED_OUT, JSON.stringify({
+      generated_at: new Date().toISOString(),
+      v2_ids: [...V2_STORY_IDS],
+      completed: completedByBookshelf.map(p => ({
+        id: p.id, completedAt: p.completedAt || '', createdAt: p.createdAt || '',
+      })),
+    }, null, 2));
+  }
+
+  // ⚠️ 분기 작품은 이번 V2 시범 대상이 아니다(V2_STORY_IDS에서 제외). 상속(갈린
+  // 지점 이전 공통) 문장을 정적으로 정확히 재현하려면 fbGetStory의 parent_chain
+  // 조립 + _buildForkPath 포팅이 필요해서(=구현 확대), 전체 확대의 필수 선행
+  // 과제로 남긴다. 그 전에 기존 SSG의 fetchStoryData(부모)+getEpisodeTree
+  // +buildCanonicalPath 경로를 재사용해 상속 문장을 조립할 수 있는지 먼저 확인할 것.
+  // (V2 대상에 분기가 없으므로 아래 루프는 지금은 아무것도 안 돎.)
+  const v2ParentTitleByStory = {};
+  for (const item of processed) {
+    if (!V2_STORY_IDS.has(item.id) || !item.parentStoryId) continue;
+    try {
+      const parentDoc = await db.collection('stories').doc(item.parentStoryId).get();
+      v2ParentTitleByStory[item.id] = (parentDoc.exists && parentDoc.data().title) || '원본 이야기';
+    } catch (e) {
+      console.error(`V2 분기 부모 제목 조회 실패(${item.id} ← ${item.parentStoryId}):`, e.message);
+    }
+  }
+
   // 2차 패스: 관련 작품(완결작 풀에서 자기 다음 최신순 3편, 순환) 확정 후 실제 파일 생성
   const sitemapEntries = [];
   let ok = 0;
@@ -1144,15 +1414,34 @@ async function main() {
       if (candidate !== item) related.push(candidate);
     }
 
-    const bodyHtml = storyPageBodyHtml({
-      opening: item.opening, lines: item.lines, meta: item.meta,
-      candidates: item.candidates, related,
-    });
-
-    const html = renderStoryPage(indexHtmlSrc, {
-      id: item.id, title: item.title, description: item.description, url: item.url,
-      bodyHtml, lastmod: item.lastmod, creatorNickname: item.creatorNickname,
-    });
+    let html;
+    if (V2_STORY_IDS.has(item.id)) {
+      // 독립 독서 페이지(시범). 이전/다음은 책장 정렬(completedByBookshelf)에서.
+      const cIdx = completedByBookshelf.indexOf(item);
+      const prevEntry = cIdx > 0 ? completedByBookshelf[cIdx - 1] : null;         // 정렬상 앞 = 더 최신
+      const nextEntry = cIdx >= 0 && cIdx < completedByBookshelf.length - 1 ? completedByBookshelf[cIdx + 1] : null;
+      html = renderStoryPageV2({
+        indexHtmlSrc,
+        id: item.id, storyTitle: item.storyTitle, description: item.description, url: item.url,
+        opening: item.opening, creatorNickname: item.creatorNickname,
+        inheritedLines: [], // 시범: 분기 상속 문장은 렌더 안 함(위 주석 참고)
+        parentTitle: v2ParentTitleByStory[item.id], parentStoryId: item.parentStoryId,
+        lines: item.lines, meta: item.meta, candidates: item.candidates, related,
+        isCompleted: item.isCompleted, lastmod: item.lastmod,
+        hasEn: EN_PUBLISHED_IDS.has(item.id),
+        prevEntry: prevEntry && { id: prevEntry.id },
+        nextEntry: nextEntry && { id: nextEntry.id },
+      });
+    } else {
+      const bodyHtml = storyPageBodyHtml({
+        opening: item.opening, lines: item.lines, meta: item.meta,
+        candidates: item.candidates, related,
+      });
+      html = renderStoryPage(indexHtmlSrc, {
+        id: item.id, title: item.title, description: item.description, url: item.url,
+        bodyHtml, lastmod: item.lastmod, creatorNickname: item.creatorNickname,
+      });
+    }
 
     const dir = path.join(OUT_DIR, item.id);
     fs.mkdirSync(dir, { recursive: true });
@@ -1268,6 +1557,7 @@ module.exports = {
   classifySection, todaySlotBodyHtml, renderTodaySlotPage,
   renderTodayHubPage, renderWordChallengePage, renderWordChallengeArchive,
   renderDiaryBookPage, renderDiaryHubPage,
+  renderStoryPageV2, readerCss, readerProseHtml, V2_STORY_IDS,
   SLOT_KEYS, SLOT_SLUG, SLOT_LABEL, DIARY_BOOK_COUNT,
 };
 

@@ -2150,10 +2150,14 @@ function nav(route, param) {
   // 앱 안에서 #app만 다시 그리지 않고 그 정적 URL로 전체 페이지 이동한다 —
   // 앱이 정적 본문/제목/canonical을 덮어써 어긋나던 문제를 근본적으로 없앰.
   // 이 목록은 scripts/build-static-stories.js의 V2_STORY_IDS와 반드시 일치해야
-  // 함(시범 3편. 확대 시 빌드가 주입하는 방식으로 전환). "참여하러" 온 경우
-  // (?write=1)는 독서 페이지의 인라인 스크립트가 #story/{id} 해시로 넘겨서
+  // 함(시범 일반 완결작 2편. 확대 시 빌드가 주입하는 방식으로 전환). "참여하러"
+  // 온 경우(?write=1)는 독서 페이지의 인라인 스크립트가 #story/{id} 해시로 넘겨서
   // 여기 nav()가 아니라 부트스트랩 render()로 앱이 뜨므로 이 가드에 안 걸린다.
-  if (route === 'story' && _V2_READER_IDS.has(param)) {
+  // 기여 문장 스크롤·강조 대상이 있는 진입(notifClick·writingItemHtml이
+  // _scrollToEpisodeId를 남긴 경우)은 정적 V2에 앵커가 없어 그 문장으로 못 가므로,
+  // 그 케이스만 기존 앱 story 렌더를 유지한다(일반 독서 진입만 V2로 이동).
+  // 향후 V2 확대 전에 앵커 기반 지원을 별도로 해결한다.
+  if (route === 'story' && _V2_READER_IDS.has(param) && !window._scrollToEpisodeId) {
     location.assign(BASE + 'story/' + param + '/');
     return;
   }

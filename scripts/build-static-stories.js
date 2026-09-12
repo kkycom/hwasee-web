@@ -1609,6 +1609,8 @@ module.exports = {
   renderDiaryBookPage, renderDiaryHubPage,
   renderStoryPageV2, readerCss, readerProseHtml, V2_STORY_IDS,
   SLOT_KEYS, SLOT_SLUG, SLOT_LABEL, DIARY_BOOK_COUNT,
+  // 테스트/스크래치 스크립트용 — 멱등성·롤백 검증에 필요(정상 빌드 흐름은 안 바뀜)
+  injectV2ReaderIds, assertV2ShellOk,
 };
 
 if (require.main === module) {

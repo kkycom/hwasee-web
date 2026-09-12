@@ -31,7 +31,11 @@ const V2 = V2_TARGET_IDS.map(id => {
   const lbl = V2_LABELS[id] || {};
   return [id, lbl.title || null, lbl.sentences || null];
 });
-const BRANCH = ['0fbdc14a-786d-4831-b4f6-4b3c5da52909', '거짓말의 꽃'];
+// 2026-09-12: 0fbdc14a는 V2_TARGET_IDS에 추가돼 이제 V2로 발행되므로(위 V2
+// 루프가 자동으로 검사), "기존 렌더러 유지" 예시는 실제로 여전히 폴백 대상인
+// 분기 작품(branch_sub_id/branch_episode_id가 story 문서에 없어 0순위 불가 —
+// computeBranchInheritance가 ok:false를 내는 구형 데이터)으로 교체.
+const BRANCH = ['ISI5Qj8fTXpBbBWW8cw4', '첫 파도'];
 
 const out = [];
 let fail = 0;

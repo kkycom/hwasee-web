@@ -74,7 +74,7 @@ jobs:
       # curl로 https://hwasee.me/node_modules/... 200 확인). 빌드 산출물이
       # 아닌 빌드 도구 자체는 배포 전에 제거.
       - name: Remove build-only files before deploy
-        run: rm -rf node_modules package.json package-lock.json scripts .en-manifest.json
+        run: rm -rf node_modules package.json package-lock.json scripts .en-manifest.json .story-build-manifest.json
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .

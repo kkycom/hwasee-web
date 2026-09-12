@@ -20,6 +20,7 @@ const { V2_TARGET_IDS, V2_READER_IDS_DECL_RE } = require('./lib/v2-reader-ids.js
 const ROOT = path.join(__dirname, '..');
 const INDEX_HTML_PATH = path.join(ROOT, 'bang', 'index.html');
 const STORY_DIR = path.join(ROOT, 'bang', 'story');
+const BUILD_MANIFEST_PATH = path.join(ROOT, '.story-build-manifest.json');
 const TODAY_DIR = path.join(ROOT, 'bang', 'today');
 const WORD_CHALLENGE_DIR = path.join(ROOT, 'bang', 'word-challenge');
 const DIARY_DIR = path.join(ROOT, 'bang', 'diary');
@@ -203,6 +204,48 @@ function verifyStoryPages(sitemap) {
 
   console.log(`검사 완료: ${ids.length}개 페이지`);
   return ids.length;
+}
+
+// "라이브 대비 몇 % 줄었나"(verifyNoMassRegression)는 몇 개가 조용히 빠지는
+// 걸 못 잡는 보조 경보다. 이 함수가 본 방어선 — build-static-stories.js가
+// 남긴 매니페스트(이번 빌드가 시도한 ID 전체 vs 성공한 ID vs 왜 스킵됐는지)를
+// ID 단위로 대조한다. 정상 게이트(마감 안 됨/채택 문장 없음)로 스킵된 건
+// 통과시키고, 예상 못 한 예외(kind:'exception')로 스킵된 게 하나라도 있으면
+// fail — 개별 작품이 코드 결함으로 조용히 사라지는 걸 잡기 위함
+// (2026-09-12, "특정 작품 몇 개 누락은 비율 경보로 못 잡는다"는 지적 반영).
+function verifyBuildManifest() {
+  if (!fs.existsSync(BUILD_MANIFEST_PATH)) {
+    warn('.story-build-manifest.json 없음 — build-static-stories.js가 이 버전 이전에 실행됐거나 빌드 스텝이 스킵된 것으로 보임. ID 단위 누락 대조를 못 함(라이브 대비 급감 검사만 적용됨).');
+    return;
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(BUILD_MANIFEST_PATH, 'utf8'));
+  } catch (e) {
+    fail(`.story-build-manifest.json 파싱 실패: ${e.message}`);
+    return;
+  }
+  const { attempted_ids = [], processed_ids = [], skipped = [] } = manifest;
+
+  const exceptions = skipped.filter(s => s.kind === 'exception');
+  if (exceptions.length) {
+    for (const s of exceptions) fail(`빌드 예외로 조용히 스킵됨(정상 게이트 아님): ${s.id} — ${s.reason}`);
+  }
+  const accounted = new Set([...processed_ids, ...skipped.map(s => s.id)]);
+  const unaccounted = attempted_ids.filter(id => !accounted.has(id));
+  if (unaccounted.length) {
+    fail(`시도한 ID인데 성공도 스킵 기록도 없음(매니페스트 정합성 깨짐): ${unaccounted.join(', ')}`);
+  }
+
+  // processed로 기록된 각 ID가 실제로 파일까지 생성됐는지 1:1 확인 — 1차 패스
+  // 통과 후 2차 패스(파일 쓰기)에서만 실패하는 경우까지 잡는다.
+  const missingFiles = processed_ids.filter(id => !fs.existsSync(path.join(STORY_DIR, id, 'index.html')));
+  if (missingFiles.length) {
+    fail(`1차 패스는 통과했는데 실제 페이지 파일이 없음: ${missingFiles.join(', ')}`);
+  }
+
+  const gateSkips = skipped.filter(s => s.kind === 'gate');
+  console.log(`빌드 매니페스트 대조: 시도 ${attempted_ids.length}건 = 성공 ${processed_ids.length}건 + 정상 게이트 스킵 ${gateSkips.length}건 + 예외 스킵 ${exceptions.length}건`);
 }
 
 // 독서 페이지가 이 사이트의 핵심 산출물이라, "필수 페이지가 누락된 빌드"가
@@ -459,6 +502,7 @@ async function main() {
   // 한쪽이 비어있거나(예: 역할 슬롯 아직 미도입) 실패해도 다른 쪽 검사는
   // 그대로 계속 진행 — early return으로 서로를 가리지 않게 별도 함수로 분리.
   const storyCount = verifyStoryPages(sitemap);
+  verifyBuildManifest();
   verifyTodayPages(sitemap);
   verifyTodayHub(sitemap);
   verifyWordChallengePages(sitemap);
@@ -479,4 +523,4 @@ if (require.main === module) {
 }
 
 // 테스트용 export(정상 CLI 실행 흐름은 안 바뀜 — require해도 위 가드 때문에 main()이 안 돎).
-module.exports = { verifyNoMassRegression };
+module.exports = { verifyNoMassRegression, verifyBuildManifest };

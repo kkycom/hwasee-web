@@ -12,3 +12,4 @@ bang/en/sitemap.xml
 .test-tmp/
 reading-pilot-summary.md
 reading-pilot-expected.json
+.story-build-manifest.json

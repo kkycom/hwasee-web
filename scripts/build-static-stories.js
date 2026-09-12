@@ -25,6 +25,11 @@ const BANG_DIR = path.join(ROOT, 'bang');
 const INDEX_HTML_PATH = path.join(BANG_DIR, 'index.html');
 const ROOT_INDEX_HTML_PATH = path.join(ROOT, 'index.html');
 const OUT_DIR = path.join(BANG_DIR, 'story');
+// 이번 빌드가 "시도한" story 목록과 "왜 안 만들어졌는지"를 verify-static-stories.js가
+// 대조할 수 있게 남기는 사이드카(운영 산출물 아님, deploy.yml이 배포 전 제거).
+// 라이브 대비 전체 개수 급감(verifyNoMassRegression)은 몇 개가 조용히 사라지는
+// 걸 못 잡는 보조 경보라, 이 매니페스트로 "예정 vs 실제"를 ID 단위로 맞춘다.
+const BUILD_MANIFEST_PATH = path.join(ROOT, '.story-build-manifest.json');
 const TODAY_OUT_DIR = path.join(BANG_DIR, 'today');
 const TODAY_HUB_PATH = path.join(TODAY_OUT_DIR, 'index.html');
 const WORD_CHALLENGE_OUT_DIR = path.join(BANG_DIR, 'word-challenge');
@@ -127,6 +132,21 @@ function collectSubs(node, choices) {
 // parentEpisodes/parentSubmissions: fetchStoryData(db, parent_story_id)로 얻은 원본(전체,
 //   status 무관) — 이 함수 안에서 closed만 걸러 쓴다.
 function computeBranchInheritance(story, parentEpisodes, parentSubmissions) {
+  // 손상된 데이터(예: parent_sub_id가 순환하는 에피소드 그래프)를 만나면
+  // getEpisodeTree의 재귀 순회가 "Maximum call stack size exceeded"로 죽을 수
+  // 있음을 실제로 재현 확인(2026-09-12, 테스트 fixture). 이건 assertV2ShellOk
+  // 이전 단계라 미포착 예외로 새면 호출부(main() 1차 패스)의 catch가 잡아
+  // skipped(kind:'exception')로 기록하긴 하지만, 이 함수 스스로도 예외를
+  // ok:false로 변환해 두면 어디서 호출되든("불완전 발행 금지" 원칙과 맞게)
+  // 안전하게 폴백된다.
+  try {
+    return _computeBranchInheritanceInner(story, parentEpisodes, parentSubmissions);
+  } catch (e) {
+    return { ok: false, reason: `예외 발생(데이터 손상 의심 — 순환 참조 등): ${e.message}` };
+  }
+}
+
+function _computeBranchInheritanceInner(story, parentEpisodes, parentSubmissions) {
   if (!story.parentStoryId) return { ok: true, before: [], tie: [] }; // 원본작 — 상속 없음
   if (story.isContinuation) {
     return { ok: false, reason: '연장(is_continuation) 이야기는 fork 지점 개념이 달라 별도 로직 필요 — 이번 범위 아님' };
@@ -1355,12 +1375,21 @@ async function main() {
   // 전체 완결작 목록이 먼저 확정돼 있어야 해서 두 단계로 나눔(2026-08-09,
   // 콘텐츠 밀도 보강 — [[project_hwasee_bang_adsense_content_gap]] 참고).
   const processed = [];
+  // 왜 스킵됐는지 구조화해 남긴다 — 'gate'(의도된 최소 콘텐츠 기준, 정상 운영)와
+  // 'exception'(예상 못 한 예외, 버그 의심)을 구분해야 verify가 "정상적인 소수
+  // 누락"과 "빌드 결함으로 조용히 사라진 것"을 가려낼 수 있다(2026-09-12,
+  // "50% 급감 감지는 몇 개 누락은 못 잡는 보조 경보"라는 지적 반영).
+  const skipped = [];
   for (const story of stories) {
     try {
       const { episodes, submissions } = await fetchStoryData(db, story.story_id);
       const closedEps = episodes.filter(e => e.status === 'closed');
       const tree = getEpisodeTree(closedEps, submissions);
-      if (!tree) { console.error(`스킵(마감된 에피소드 없음): ${story.story_id}`); continue; }
+      if (!tree) {
+        console.error(`스킵(마감된 에피소드 없음): ${story.story_id}`);
+        skipped.push({ id: story.story_id, kind: 'gate', reason: '마감된 에피소드 없음' });
+        continue;
+      }
 
       const canonicalPath = buildCanonicalPath(closedEps, submissions);
       const subs = collectSubs(tree, canonicalPath);
@@ -1368,7 +1397,11 @@ async function main() {
       // 실제 참여자가 채택한 문장이 최소 1개는 있어야 다른 페이지와 구별되는
       // 고유 콘텐츠가 생김("짧으면 저품질"이 아니라 "서로 구별 안 되면
       // 저품질"이라는 기준, 2026-08-20 설계 논의 결론).
-      if (!subs.length) { console.error(`스킵(채택 문장 없음): ${story.story_id}`); continue; }
+      if (!subs.length) {
+        console.error(`스킵(채택 문장 없음): ${story.story_id}`);
+        skipped.push({ id: story.story_id, kind: 'gate', reason: '채택 문장 없음' });
+        continue;
+      }
       const lines = subs.map(s => s.content);
 
       const lastmod = closedEps.reduce((max, e) => (e.closed_at && e.closed_at > max ? e.closed_at : max), '');
@@ -1409,8 +1442,21 @@ async function main() {
       });
     } catch (e) {
       console.error(`이야기 처리 실패(${story.story_id}):`, e.message);
+      skipped.push({ id: story.story_id, kind: 'exception', reason: e.message });
     }
   }
+
+  // "이번 빌드가 시도한 목록 vs 실제 성공한 목록"을 ID 단위로 남긴다. 라이브
+  // 대비 전체 개수 비교(verifyNoMassRegression)는 몇 개가 조용히 빠지는 걸
+  // 못 잡는 보조 경보이고, 이 매니페스트가 본 방어선 — verify가 kind:'exception'
+  // 스킵이 하나라도 있으면 fail 처리한다(정상 게이트가 아닌 예외로 페이지가
+  // 안 만들어진 것이므로).
+  fs.writeFileSync(BUILD_MANIFEST_PATH, JSON.stringify({
+    generated_at: new Date().toISOString(),
+    attempted_ids: stories.map(s => s.story_id),
+    processed_ids: processed.map(p => p.id),
+    skipped,
+  }, null, 2));
 
   // 최신순 정렬 — 아카이브 목록·홈 미리보기·"관련 작품" 선정이 쓰는 기존 기준
   // (lastmod = 마지막 마감 시각). ⚠️ V2 이전/다음 링크를 앱 책장과 맞추려고

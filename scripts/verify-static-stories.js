@@ -159,9 +159,23 @@ function verifyStoryPages(sitemap) {
       if (JSON.stringify(appIds) !== JSON.stringify(genSorted)) {
         fail(`앱 _V2_READER_IDS(${JSON.stringify(appIds)})가 실제 생성된 V2 페이지(${JSON.stringify(genSorted)})와 불일치 — injectV2ReaderIds 누락/오류`);
       }
-      const targetMissing = V2_TARGET_IDS.filter(id => !generatedV2Ids.includes(id));
+      // v2_fallback: 분기 상속 조립 실패로 build-static-stories.js가 스스로
+      // 기존 렌더러로 되돌린 것 — "불완전한 본문을 발행하지 않는다"는 의도된
+      // 동작이라 fail 대상이 아니다. 그 외의 누락만 진짜 결함으로 본다.
+      let fallbackIds = [];
+      try {
+        if (fs.existsSync(BUILD_MANIFEST_PATH)) {
+          const manifest = JSON.parse(fs.readFileSync(BUILD_MANIFEST_PATH, 'utf8'));
+          fallbackIds = (manifest.v2_fallback || []).map(f => f.id);
+        }
+      } catch (e) { /* 매니페스트 못 읽으면 폴백 목록 없이 보수적으로 검사(아래에서 걸림) */ }
+      const targetMissing = V2_TARGET_IDS.filter(id => !generatedV2Ids.includes(id) && !fallbackIds.includes(id));
       if (targetMissing.length) {
-        fail(`v2-reader-ids.js 설정 대상인데 V2 페이지가 생성 안 됨: ${targetMissing.join(', ')}`);
+        fail(`v2-reader-ids.js 설정 대상인데 V2 페이지가 생성 안 됨(폴백 사유도 없음): ${targetMissing.join(', ')}`);
+      }
+      for (const id of fallbackIds) {
+        if (generatedV2Ids.includes(id)) continue; // 폴백 목록에 있지만 실제로는 생성됐다면 정보 불일치, 무시(생성이 우선)
+        console.log(`(참고) V2 폴백 확인됨: ${id} — 기존 렌더러로 정상 발행됨`);
       }
     }
   }

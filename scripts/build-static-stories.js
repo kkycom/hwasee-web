@@ -1446,18 +1446,6 @@ async function main() {
     }
   }
 
-  // "이번 빌드가 시도한 목록 vs 실제 성공한 목록"을 ID 단위로 남긴다. 라이브
-  // 대비 전체 개수 비교(verifyNoMassRegression)는 몇 개가 조용히 빠지는 걸
-  // 못 잡는 보조 경보이고, 이 매니페스트가 본 방어선 — verify가 kind:'exception'
-  // 스킵이 하나라도 있으면 fail 처리한다(정상 게이트가 아닌 예외로 페이지가
-  // 안 만들어진 것이므로).
-  fs.writeFileSync(BUILD_MANIFEST_PATH, JSON.stringify({
-    generated_at: new Date().toISOString(),
-    attempted_ids: stories.map(s => s.story_id),
-    processed_ids: processed.map(p => p.id),
-    skipped,
-  }, null, 2));
-
   // 최신순 정렬 — 아카이브 목록·홈 미리보기·"관련 작품" 선정이 쓰는 기존 기준
   // (lastmod = 마지막 마감 시각). ⚠️ V2 이전/다음 링크를 앱 책장과 맞추려고
   // 이 정렬 자체를 completed_at 기준으로 바꿨다가, 아카이브/홈 순서까지 딸려
@@ -1519,13 +1507,14 @@ async function main() {
     }, null, 2));
   }
 
-  // ⚠️ 분기 작품은 이번 V2 시범 대상이 아니다(V2_STORY_IDS에서 제외). 상속(갈린
-  // 지점 이전 공통) 문장을 정적으로 정확히 재현하려면 fbGetStory의 parent_chain
-  // 조립 + _buildForkPath 포팅이 필요해서(=구현 확대), 전체 확대의 필수 선행
-  // 과제로 남긴다. 그 전에 기존 SSG의 fetchStoryData(부모)+getEpisodeTree
-  // +buildCanonicalPath 경로를 재사용해 상속 문장을 조립할 수 있는지 먼저 확인할 것.
-  // (V2 대상에 분기가 없으므로 아래 루프는 지금은 아무것도 안 돎.)
+  // V2 분기 작품 상속 조립 — computeBranchInheritance(0순위만 지원)를 실제 빌드
+  // 경로에 연결. 부모 조회 실패나 모호한 데이터(ok:false)면 "앞부분을 생략한
+  // V2를 발행하지 않는다" 원칙대로 그 작품을 V2 대상에서 조용히 제외하고
+  // 기존 renderStoryPage(+기존 URL)를 유지한다 — 이건 빌드 실패가 아니라
+  // 의도된 폴백이라 v2FallbackIds로 별도 추적(아래 _v2Missing 검사에서 구분).
   const v2ParentTitleByStory = {};
+  const v2InheritanceByStory = {}; // id -> { before, tie } (성공한 것만)
+  const v2Fallback = []; // { id, reason } — 의도된 폴백(기존 렌더러 유지)
   for (const item of processed) {
     if (!V2_STORY_IDS.has(item.id) || !item.parentStoryId) continue;
     try {
@@ -1534,14 +1523,44 @@ async function main() {
     } catch (e) {
       console.error(`V2 분기 부모 제목 조회 실패(${item.id} ← ${item.parentStoryId}):`, e.message);
     }
+    try {
+      const { episodes: parentEpisodes, submissions: parentSubmissions } = await fetchStoryData(db, item.parentStoryId);
+      const result = computeBranchInheritance(item, parentEpisodes, parentSubmissions);
+      if (result.ok) {
+        v2InheritanceByStory[item.id] = { before: result.before, tie: result.tie };
+      } else {
+        console.error(`V2 폴백(${item.id}, 기존 렌더러 유지): ${result.reason}`);
+        v2Fallback.push({ id: item.id, reason: result.reason });
+      }
+    } catch (e) {
+      console.error(`V2 폴백(${item.id}, 기존 렌더러 유지) — 부모 조회 예외: ${e.message}`);
+      v2Fallback.push({ id: item.id, reason: `부모 조회 예외: ${e.message}` });
+    }
   }
+  const v2FallbackIds = new Set(v2Fallback.map(f => f.id));
 
-  // V2 대상 중 이번 빌드 풀에 실제로 있는 작품 = 이번에 발행할 계획인 목록.
-  // renderStoryPage가 클론하는 indexHtmlSrc의 _V2_READER_IDS를 지금 이 값으로
-  // 맞춰서, 비-V2 완결작 페이지 안의 앱도 올바른 목록을 갖게 한다(파일 쓰기는
-  // 2차 패스 뒤 injectV2ReaderIds가, 실제 생성 성공 목록으로). 둘이 어긋나면
-  // 2차 패스의 _v2Missing 검사가 빌드를 멈춘다.
-  const _v2PlannedIds = V2_TARGET_IDS.filter(id => processed.some(p => p.id === id));
+  // "이번 빌드가 시도한 목록 vs 실제 성공한 목록 vs 스킵/폴백 사유"를 ID 단위로
+  // 남긴다(운영 산출물 아님, deploy.yml이 배포 전 제거). 라이브 대비 전체 개수
+  // 비교(verifyNoMassRegression)는 몇 개가 조용히 빠지는 걸 못 잡는 보조 경보이고,
+  // 이 매니페스트가 본 방어선 — verify가 kind:'exception' 스킵이 하나라도 있으면
+  // fail 처리한다(정상 게이트가 아닌 예외로 페이지가 안 만들어진 것이므로).
+  // v2_fallback은 1차 패스는 통과했지만 분기 상속 조립 실패로 기존 렌더러로
+  // 돌아간 것 — verify가 "V2 설정 대상인데 미생성"을 fail 처리할 때 이 목록에
+  // 있으면 의도된 것으로 봐야 한다.
+  fs.writeFileSync(BUILD_MANIFEST_PATH, JSON.stringify({
+    generated_at: new Date().toISOString(),
+    attempted_ids: stories.map(s => s.story_id),
+    processed_ids: processed.map(p => p.id),
+    skipped,
+    v2_fallback: v2Fallback,
+  }, null, 2));
+
+  // V2 대상 중 이번 빌드 풀에 실제로 있고, 분기 상속 조립도 실패하지 않은 작품만
+  // 이번에 발행할 계획. renderStoryPage가 클론하는 indexHtmlSrc의 _V2_READER_IDS를
+  // 지금 이 값으로 맞춰서, 비-V2 완결작 페이지 안의 앱도 올바른 목록을 갖게 한다
+  // (파일 쓰기는 2차 패스 뒤 injectV2ReaderIds가, 실제 생성 성공 목록으로). 둘이
+  // 어긋나면(폴백이 아닌 진짜 누락이면) 2차 패스의 _v2Missing 검사가 빌드를 멈춘다.
+  const _v2PlannedIds = V2_TARGET_IDS.filter(id => processed.some(p => p.id === id) && !v2FallbackIds.has(id));
   indexHtmlSrc = indexHtmlSrc.replace(V2_READER_IDS_DECL_RE, () => buildV2ReaderIdsDecl(_v2PlannedIds));
 
   // 2차 패스: 관련 작품(완결작 풀에서 자기 다음 최신순 3편, 순환) 확정 후 실제 파일 생성
@@ -1558,17 +1577,19 @@ async function main() {
       if (candidate !== item) related.push(candidate);
     }
 
+    const isV2Target = V2_STORY_IDS.has(item.id) && !v2FallbackIds.has(item.id);
     let html;
-    if (V2_STORY_IDS.has(item.id)) {
-      // 독립 독서 페이지(시범). 이전/다음은 책장 정렬(completedByBookshelf)에서.
+    if (isV2Target) {
+      // 독립 독서 페이지. 이전/다음은 책장 정렬(completedByBookshelf)에서.
       const cIdx = completedByBookshelf.indexOf(item);
       const prevEntry = cIdx > 0 ? completedByBookshelf[cIdx - 1] : null;         // 정렬상 앞 = 더 최신
       const nextEntry = cIdx >= 0 && cIdx < completedByBookshelf.length - 1 ? completedByBookshelf[cIdx + 1] : null;
+      const inh = v2InheritanceByStory[item.id] || { before: [], tie: [] };
       html = renderStoryPageV2({
         indexHtmlSrc,
         id: item.id, storyTitle: item.storyTitle, description: item.description, url: item.url,
         opening: item.opening, creatorNickname: item.creatorNickname,
-        inheritedLines: [], // 시범: 분기 상속 문장은 렌더 안 함(위 주석 참고)
+        inheritedLines: [...inh.before, ...inh.tie], // 분기면 실제 조립된 상속 문장, 원본작이면 빈 배열
         parentTitle: v2ParentTitleByStory[item.id], parentStoryId: item.parentStoryId,
         lines: item.lines, meta: item.meta, candidates: item.candidates, related,
         isCompleted: item.isCompleted, lastmod: item.lastmod,
@@ -1577,6 +1598,8 @@ async function main() {
         nextEntry: nextEntry && { id: nextEntry.id },
       });
     } else {
+      // V2 대상이 아니거나(비-V2 완결작), 분기 상속 조립 실패로 폴백된 작품 —
+      // 기존 URL·기존 렌더러 그대로 유지.
       const bodyHtml = storyPageBodyHtml({
         opening: item.opening, lines: item.lines, meta: item.meta,
         candidates: item.candidates, related,
@@ -1587,7 +1610,7 @@ async function main() {
       });
     }
 
-    if (V2_STORY_IDS.has(item.id)) {
+    if (isV2Target) {
       assertV2ShellOk(item.id, html);          // 실패 시 throw → 빌드 실패
       if (!_v2GeneratedIds.includes(item.id)) _v2GeneratedIds.push(item.id);
     }
@@ -1599,12 +1622,17 @@ async function main() {
     ok++;
   }
 
-  // V2 대상인데 이번 빌드에서 생성/검증 못 한 게 있으면 빌드 실패(앱을 없는
-  // 페이지로 보내지 않기 위해 — 주입 목록은 "설정 ID"가 아니라 "실제 생성된 ID").
-  const _v2Missing = [...V2_STORY_IDS].filter(id => !_v2GeneratedIds.includes(id));
+  // V2 대상인데 이번 빌드에서 생성/검증도 안 됐고 "의도된 폴백"으로도 설명 안 되는
+  // 게 있으면 빌드 실패(앱을 없는 페이지로 보내지 않기 위해 — 주입 목록은
+  // "설정 ID"가 아니라 "실제 생성된 ID"). 분기 상속 조립 실패로 인한 폴백은
+  // v2FallbackIds에 이유와 함께 이미 기록됐으므로 여기서 실패로 치지 않는다.
+  const _v2Missing = [...V2_STORY_IDS].filter(id => !_v2GeneratedIds.includes(id) && !v2FallbackIds.has(id));
   if (_v2Missing.length) {
     throw new Error(`V2 대상인데 페이지 생성/검증 실패: ${_v2Missing.join(', ')} `
       + `(완결작 풀에 없거나 게이트 탈락). 앱에 죽은 링크를 주입하지 않도록 빌드를 멈춤.`);
+  }
+  if (v2Fallback.length) {
+    console.log(`V2 폴백 ${v2Fallback.length}건(기존 렌더러 유지): ${v2Fallback.map(f => `${f.id}(${f.reason})`).join('; ')}`);
   }
   // 실제 생성된 V2 ID를 앱 마커에 주입(수동 _V2_READER_IDS 목록 대체).
   injectV2ReaderIds(_v2GeneratedIds);

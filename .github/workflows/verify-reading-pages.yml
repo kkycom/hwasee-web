@@ -3,11 +3,12 @@ name: Verify reading pages (no deploy)
 # 독립 독서 페이지(renderStoryPageV2) 시범을 운영 배포 없이 검증만 하기 위한
 # 워크플로우. deploy.yml의 빌드·검사 스텝만 재사용하고 Pages/Firebase 배포
 # 스텝(upload-pages-artifact / deploy-pages)은 넣지 않는다.
-# 자동 실행은 reading-page-redesign 브랜치로만 좁힌다.
+# 자동 실행은 이 개편 작업의 브랜치들로만 좁힌다(glob — 새 확대 브랜치를
+# 만들 때마다 이 파일을 고칠 필요 없게 2026-09-12에 패턴으로 전환).
 
 on:
   push:
-    branches: [reading-page-redesign, reading-page-v2-expand]
+    branches: ['reading-page-*']
   workflow_dispatch:
 
 permissions:

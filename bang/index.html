@@ -3228,7 +3228,7 @@ function _trackStoryOpenOnce(episode_id, content_type) {
   _trackFunnel('story_open', content_type);
 }
 
-function _applyStoryData(res, story_id) {
+function _applyStoryData(res, story_id, isFinal = true) {
   // 다른 이야기로 이동 시 _branchChoice 리셋 (이전 이야기 자동경로가 오염 방지)
   if (window._branchChoiceStoryId !== story_id) {
     window._branchChoice = {};
@@ -3531,17 +3531,29 @@ function _applyStoryData(res, story_id) {
   // 완결작에서 내 기여 찾기 — notifClick/writingItemHtml이 남겨둔 1회용 힌트를
   // 여기서 소비. 지금 렌더된 갈래에 그 회차의 문장이 실제로 있을 때만 동작
   // (분기로 다른 갈래에 있으면 조용히 무시 — 안 보이는 갈래로 강제 전환 안 함,
-  // 요청 명시). 다른 스토리로 넘어가도 안 남게 항상 즉시 비움.
+  // 요청 명시).
+  //
+  // story()는 캐시 있으면 캐시로 먼저 그리고(_applyStoryData(cached,...,false)),
+  // 최신 API 응답으로 다시 그린다(_applyStoryData(res,...,true)) — 예전엔 여기서
+  // 매번 즉시 힌트를 비웠기 때문에, 캐시 렌더 시점에 그 문장이 아직 캐시 데이터에
+  // 없거나(막 채택된 직후 등) DOM에 없으면 힌트가 조용히 사라지고 최신 렌더에선
+  // 다시 시도할 기회가 없어 "안내는 있는데 스크롤·강조가 전혀 안 됨" 상태가 됐음
+  // (2026-09-13 로그인 실기기 재현으로 발견 — 완결작 재방문 시 캐시가 있을 때만
+  // 나던 문제라 재현이 간헐적이었음). 이제 찾았을 때만 소비하고, 캐시 렌더에서
+  // 못 찾으면 힌트를 유지해 최신 렌더에서 다시 시도 — 최신 렌더(isFinal)에서도
+  // 못 찾을 때만 "이 갈래엔 없음"으로 확정해 비운다.
   if (window._scrollToEpisodeId) {
     const targetEpId = window._scrollToEpisodeId;
-    window._scrollToEpisodeId = null;
     const mineLine = document.querySelector(`.prose-line[data-episode-id="${targetEpId}"]`);
     if (mineLine) {
+      window._scrollToEpisodeId = null;
       requestAnimationFrame(() => {
         mineLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
         mineLine.classList.add('mine-flash');
         setTimeout(() => mineLine.classList.remove('mine-flash'), 2500);
       });
+    } else if (isFinal) {
+      window._scrollToEpisodeId = null;
     }
   }
 
@@ -3578,7 +3590,7 @@ async function story(preserveBranch = false) {
   if (!preserveBranch) window._branchChoice = {}; // 페이지 진입 시만 초기화
   const cached = _lsc.get('story_' + story_id);
   if (cached) {
-    _applyStoryData(cached, story_id);
+    _applyStoryData(cached, story_id, false);
   } else if (!preserveBranch) {
     // preserveBranch(투표/제출 후 새로고침)는 현재 스토리 화면 유지, 로딩 플래시 없음
     document.getElementById('app').innerHTML = `<div class="loading"></div>`;
@@ -3603,7 +3615,7 @@ async function story(preserveBranch = false) {
   // 사라져버리는 문제 방지 — 다시 그리기 전 상태를 저장했다가 복원
   const _savedSelMode  = window._proseSelMode;
   const _savedSelStory = window._proseSelStory;
-  _applyStoryData(res, story_id);
+  _applyStoryData(res, story_id, true);
   if (_savedSelMode && _savedSelStory === story_id) enterProseSelMode(_savedSelMode, _savedSelStory);
 }
 

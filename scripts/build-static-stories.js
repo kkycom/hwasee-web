@@ -112,6 +112,50 @@ function collectSubs(node, choices) {
   return [sub, ...collectSubs(child, choices)];
 }
 
+// 분기 작품의 상속 문장(부모 이야기의 "갈린 지점까지 + 갈린 지점 자체") 조립.
+// bang/index.html의 _buildForkPath·firebase-api.js의 parent_chain 조립을 통째로
+// 복제하지 않고, 그중 신뢰도가 가장 높은 0순위 경로(서버가 이미 계산해 Firestore
+// story 문서에 저장해 둔 branch_sub_id + branch_episode_id)만 기존 SSG 순수
+// 함수(getEpisodeTree/buildCanonicalPath/collectSubs — 위 세 함수, 앱 원본과
+// 동일 로직)로 재현한다. 나머지(구형 데이터의 역산 1~2순위, 연장 이야기, 다단계
+// 분기의 조부모 상속)는 앱도 매 상황 재계산하는 fragile한 로직이라 새로 복제하지
+// 않고, 그런 상황이면 ok:false를 반환해 "불완전한 본문을 발행하지 않는다"는
+// 원칙대로 호출부가 V2 발행을 건너뛰고 기존 renderStoryPage로 폴백하게 한다.
+//
+// story: processed 항목(또는 원본 Firestore 문서) — parent_story_id, branch_from_step,
+//   branch_sub_id, branch_episode_id, is_continuation 필드 필요.
+// parentEpisodes/parentSubmissions: fetchStoryData(db, parent_story_id)로 얻은 원본(전체,
+//   status 무관) — 이 함수 안에서 closed만 걸러 쓴다.
+function computeBranchInheritance(story, parentEpisodes, parentSubmissions) {
+  if (!story.parentStoryId) return { ok: true, before: [], tie: [] }; // 원본작 — 상속 없음
+  if (story.isContinuation) {
+    return { ok: false, reason: '연장(is_continuation) 이야기는 fork 지점 개념이 달라 별도 로직 필요 — 이번 범위 아님' };
+  }
+  if (!story.branchFromStep) return { ok: false, reason: 'branch_from_step 없음(분기 판정 불가)' };
+  if (!story.branchSubId || !story.branchEpisodeId) {
+    return { ok: false, reason: '서버 계산값(branch_sub_id/branch_episode_id)이 story 문서에 없음 — 역산 로직은 포팅하지 않음' };
+  }
+  const parentClosed = (parentEpisodes || []).filter(e => e.status === 'closed');
+  if (!parentClosed.length) return { ok: false, reason: '부모의 closed 에피소드가 없음' };
+  const tieEp = parentClosed.find(e => e.episode_id === story.branchEpisodeId);
+  if (!tieEp) return { ok: false, reason: 'branch_episode_id가 부모의 closed 에피소드 목록에 없음' };
+
+  const canonical = buildCanonicalPath(parentClosed, parentSubmissions);
+  const forkPath = { ...canonical, [story.branchEpisodeId]: story.branchSubId };
+
+  const beforeEps = parentClosed.filter(e => e.episode_id !== story.branchEpisodeId);
+  const beforeTree = beforeEps.length ? getEpisodeTree(beforeEps, parentSubmissions, forkPath) : null;
+  if (beforeEps.length && !beforeTree) return { ok: false, reason: 'beforeTree(갈리기 전 공통 구간) 조립 실패' };
+  const tieTree = getEpisodeTree([tieEp], parentSubmissions, forkPath);
+  if (!tieTree) return { ok: false, reason: 'tieTree(갈린 지점) 조립 실패' };
+
+  const beforeSubs = beforeTree ? collectSubs(beforeTree, forkPath) : [];
+  const tieSubs = collectSubs(tieTree, forkPath);
+  if (!tieSubs.length) return { ok: false, reason: '갈린 지점(tie)에서 이 갈래의 채택 문장을 못 찾음' };
+
+  return { ok: true, before: beforeSubs.map(s => s.content), tie: tieSubs.map(s => s.content) };
+}
+
 function _daysBetween(startIso, endIso) {
   if (!startIso || !endIso) return null;
   const ms = new Date(endIso) - new Date(startIso);
@@ -1331,6 +1375,9 @@ async function main() {
         mode: story.mode || null,
         parentStoryId: story.parent_story_id || null,
         branchEpisodeId: story.branch_episode_id || null,
+        branchSubId: story.branch_sub_id || null,
+        branchFromStep: story.branch_from_step || null,
+        isContinuation: !!story.is_continuation,
         // sectionKey: 이 완결작이 어느 역할 슬롯 출신인지("직전 완결본" 찾기용).
         // fromSlot: 이 story가 지금 그 슬롯의 현재(진행 중) 대상인지(today
         // 페이지의 "현재 진행 중" 링크 대상 찾기용) — 완결작은 항상 undefined.
@@ -1611,6 +1658,9 @@ module.exports = {
   SLOT_KEYS, SLOT_SLUG, SLOT_LABEL, DIARY_BOOK_COUNT,
   // 테스트/스크래치 스크립트용 — 멱등성·롤백 검증에 필요(정상 빌드 흐름은 안 바뀜)
   injectV2ReaderIds, assertV2ShellOk,
+  // 분기 작품 상속 문장 조립 — 아직 main()에는 배선 안 함(V2_TARGET_IDS에 분기
+  // 없음). 확대 승인 시 여기 연결. 지금은 검증 스크립트에서만 사용.
+  computeBranchInheritance,
 };
 
 if (require.main === module) {

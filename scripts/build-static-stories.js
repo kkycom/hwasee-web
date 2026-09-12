@@ -152,6 +152,16 @@ function computeBranchInheritance(story, parentEpisodes, parentSubmissions) {
   const beforeSubs = beforeTree ? collectSubs(beforeTree, forkPath) : [];
   const tieSubs = collectSubs(tieTree, forkPath);
   if (!tieSubs.length) return { ok: false, reason: '갈린 지점(tie)에서 이 갈래의 채택 문장을 못 찾음' };
+  // getEpisodeTree/collectSubs는 pinnedSubId(branch_sub_id)가 그 에피소드의 실제
+  // 제출물 중에 없으면(예: story 문서의 branch_sub_id가 잘못됐거나 삭제된 sub를
+  // 가리킴) 조용히 adoptedSubs[0](다른 문장, 보통 canonical A갈래)로 fallback해
+  // 버린다 — 이 상태로 ok:true를 반환하면 "이 갈래의 실제 채택 문장이 아닌 다른
+  // 문장"을 상속으로 발행하게 되므로, tie에서 뽑힌 sub_id가 정확히 story가
+  // 지정한 branch_sub_id인지 반드시 재확인한다(2026-09-12, Codex final 지적).
+  const tieSub = tieSubs[tieSubs.length - 1];
+  if (!tieSub || tieSub.sub_id !== story.branchSubId) {
+    return { ok: false, reason: `branch_sub_id(${story.branchSubId})가 갈린 지점의 실제 제출물이 아님 — 다른 문장으로 fallback될 뻔함(실제 선택된 sub_id: ${tieSub && tieSub.sub_id})` };
+  }
 
   return { ok: true, before: beforeSubs.map(s => s.content), tie: tieSubs.map(s => s.content) };
 }

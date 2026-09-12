@@ -57,11 +57,28 @@ function visibleLines(html) {
 
 function verifyStoryPages(sitemap) {
   if (!fs.existsSync(STORY_DIR)) {
-    console.log('bang/story/ 없음 — 이번 빌드에서 정적 스토리 페이지가 생성 안 된 것으로 보임(빌드 스텝이 continue-on-error로 스킵됐을 수 있음). 검사 대상 없어 통과 처리.');
+    // V2_TARGET_IDS가 설정돼 있다면(=운영 중인 독립 독서 페이지가 있다는 뜻)
+    // story 디렉터리 자체가 없는 건 "빌드 스텝 스킵" 허용 범위가 아니라 명백한
+    // 전체 누락이다 — 네트워크로 라이브 sitemap을 조회할 필요도 없이 여기서
+    // 바로 막는다(2026-09-12, Codex final 지적 — 네트워크 실패 시 대량감소
+    // 검사가 무력화되는 것과 별개로, "디렉터리 자체가 없는" 극단적 케이스는
+    // 로컬 정보만으로 이미 판정 가능).
+    if (V2_TARGET_IDS.length) {
+      fail(`bang/story/ 자체가 없음 — V2 대상(${V2_TARGET_IDS.join(', ')})이 설정돼 있는데 독서 페이지가 하나도 안 만들어짐. 빌드 실패로 판단해 배포를 막음.`);
+      return 0;
+    }
+    console.log('bang/story/ 없음 — 이번 빌드에서 정적 스토리 페이지가 생성 안 된 것으로 보임(빌드 스텝이 continue-on-error로 스킵됐을 수 있음). V2 대상도 없어 검사 대상 없음으로 통과 처리.');
     return 0;
   }
   const ids = fs.readdirSync(STORY_DIR, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
-  if (!ids.length) { console.log('완결작 정적 페이지 0개 — 검사할 게 없어 통과 처리.'); return 0; }
+  if (!ids.length) {
+    if (V2_TARGET_IDS.length) {
+      fail(`bang/story/ 안에 페이지가 0개 — V2 대상(${V2_TARGET_IDS.join(', ')})이 설정돼 있는데 독서 페이지가 하나도 안 만들어짐. 빌드 실패로 판단해 배포를 막음.`);
+      return 0;
+    }
+    console.log('완결작 정적 페이지 0개 — V2 대상도 없어 검사할 게 없어 통과 처리.');
+    return 0;
+  }
   console.log(`완결작 정적 페이지 ${ids.length}건 검사 시작...`);
 
   const titleOwners = new Map();
@@ -448,12 +465,17 @@ async function main() {
   verifyDiaryPages(sitemap);
   await verifyNoMassRegression(storyCount);
 
-  if (hasFatal) { console.error('\n🔴 치명적 문제 발견 — 배포를 중단합니다.'); process.exit(1); }
+  // fetch(verifyNoMassRegression의 AbortSignal.timeout)가 남긴 내부 타이머와
+  // process.exit()의 강제 종료가 겹치면 Windows에서 libuv assertion으로
+  // 비정상 종료하는 경우가 로컬 재현으로 확인됨(2026-09-12). exitCode만
+  // 설정하고 자연 종료를 기다리면(강제 exit 없음) 이 문제가 없음 — CI(Ubuntu)
+  // 무관하게 더 안전한 패턴이라 둘 다 이 방식으로 통일.
+  if (hasFatal) { console.error('\n🔴 치명적 문제 발견 — 배포를 중단합니다.'); process.exitCode = 1; return; }
   console.log(hasWarning ? '\n🟠 경고 있음 — 배포는 진행하되 확인 권장.' : '\n🟢 이상 없음.');
 }
 
 if (require.main === module) {
-  main().catch(e => { console.error('verify-static-stories 실행 중 예외:', e); process.exit(1); });
+  main().catch(e => { console.error('verify-static-stories 실행 중 예외:', e); process.exitCode = 1; });
 }
 
 // 테스트용 export(정상 CLI 실행 흐름은 안 바뀜 — require해도 위 가드 때문에 main()이 안 돎).

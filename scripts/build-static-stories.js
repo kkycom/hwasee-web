@@ -25,6 +25,11 @@ const BANG_DIR = path.join(ROOT, 'bang');
 const INDEX_HTML_PATH = path.join(BANG_DIR, 'index.html');
 const ROOT_INDEX_HTML_PATH = path.join(ROOT, 'index.html');
 const OUT_DIR = path.join(BANG_DIR, 'story');
+// 이번 빌드가 "시도한" story 목록과 "왜 안 만들어졌는지"를 verify-static-stories.js가
+// 대조할 수 있게 남기는 사이드카(운영 산출물 아님, deploy.yml이 배포 전 제거).
+// 라이브 대비 전체 개수 급감(verifyNoMassRegression)은 몇 개가 조용히 사라지는
+// 걸 못 잡는 보조 경보라, 이 매니페스트로 "예정 vs 실제"를 ID 단위로 맞춘다.
+const BUILD_MANIFEST_PATH = path.join(ROOT, '.story-build-manifest.json');
 const TODAY_OUT_DIR = path.join(BANG_DIR, 'today');
 const TODAY_HUB_PATH = path.join(TODAY_OUT_DIR, 'index.html');
 const WORD_CHALLENGE_OUT_DIR = path.join(BANG_DIR, 'word-challenge');
@@ -110,6 +115,75 @@ function collectSubs(node, choices) {
   const sub = (chosenId && node.adoptedSubs.find(s => s.sub_id === chosenId)) || node.adoptedSubs[0];
   const child = node.children.find(c => c.ep.parent_sub_id === sub.sub_id);
   return [sub, ...collectSubs(child, choices)];
+}
+
+// 분기 작품의 상속 문장(부모 이야기의 "갈린 지점까지 + 갈린 지점 자체") 조립.
+// bang/index.html의 _buildForkPath·firebase-api.js의 parent_chain 조립을 통째로
+// 복제하지 않고, 그중 신뢰도가 가장 높은 0순위 경로(서버가 이미 계산해 Firestore
+// story 문서에 저장해 둔 branch_sub_id + branch_episode_id)만 기존 SSG 순수
+// 함수(getEpisodeTree/buildCanonicalPath/collectSubs — 위 세 함수, 앱 원본과
+// 동일 로직)로 재현한다. 나머지(구형 데이터의 역산 1~2순위, 연장 이야기, 다단계
+// 분기의 조부모 상속)는 앱도 매 상황 재계산하는 fragile한 로직이라 새로 복제하지
+// 않고, 그런 상황이면 ok:false를 반환해 "불완전한 본문을 발행하지 않는다"는
+// 원칙대로 호출부가 V2 발행을 건너뛰고 기존 renderStoryPage로 폴백하게 한다.
+//
+// story: processed 항목(또는 원본 Firestore 문서) — parent_story_id, branch_from_step,
+//   branch_sub_id, branch_episode_id, is_continuation 필드 필요.
+// parentEpisodes/parentSubmissions: fetchStoryData(db, parent_story_id)로 얻은 원본(전체,
+//   status 무관) — 이 함수 안에서 closed만 걸러 쓴다.
+function computeBranchInheritance(story, parentEpisodes, parentSubmissions) {
+  // 손상된 데이터(예: parent_sub_id가 순환하는 에피소드 그래프)를 만나면
+  // getEpisodeTree의 재귀 순회가 "Maximum call stack size exceeded"로 죽을 수
+  // 있음을 실제로 재현 확인(2026-09-12, 테스트 fixture). 이건 assertV2ShellOk
+  // 이전 단계라 미포착 예외로 새면 호출부(main() 1차 패스)의 catch가 잡아
+  // skipped(kind:'exception')로 기록하긴 하지만, 이 함수 스스로도 예외를
+  // ok:false로 변환해 두면 어디서 호출되든("불완전 발행 금지" 원칙과 맞게)
+  // 안전하게 폴백된다.
+  try {
+    return _computeBranchInheritanceInner(story, parentEpisodes, parentSubmissions);
+  } catch (e) {
+    return { ok: false, reason: `예외 발생(데이터 손상 의심 — 순환 참조 등): ${e.message}` };
+  }
+}
+
+function _computeBranchInheritanceInner(story, parentEpisodes, parentSubmissions) {
+  if (!story.parentStoryId) return { ok: true, before: [], tie: [] }; // 원본작 — 상속 없음
+  if (story.isContinuation) {
+    return { ok: false, reason: '연장(is_continuation) 이야기는 fork 지점 개념이 달라 별도 로직 필요 — 이번 범위 아님' };
+  }
+  if (!story.branchFromStep) return { ok: false, reason: 'branch_from_step 없음(분기 판정 불가)' };
+  if (!story.branchSubId || !story.branchEpisodeId) {
+    return { ok: false, reason: '서버 계산값(branch_sub_id/branch_episode_id)이 story 문서에 없음 — 역산 로직은 포팅하지 않음' };
+  }
+  const parentClosed = (parentEpisodes || []).filter(e => e.status === 'closed');
+  if (!parentClosed.length) return { ok: false, reason: '부모의 closed 에피소드가 없음' };
+  const tieEp = parentClosed.find(e => e.episode_id === story.branchEpisodeId);
+  if (!tieEp) return { ok: false, reason: 'branch_episode_id가 부모의 closed 에피소드 목록에 없음' };
+
+  const canonical = buildCanonicalPath(parentClosed, parentSubmissions);
+  const forkPath = { ...canonical, [story.branchEpisodeId]: story.branchSubId };
+
+  const beforeEps = parentClosed.filter(e => e.episode_id !== story.branchEpisodeId);
+  const beforeTree = beforeEps.length ? getEpisodeTree(beforeEps, parentSubmissions, forkPath) : null;
+  if (beforeEps.length && !beforeTree) return { ok: false, reason: 'beforeTree(갈리기 전 공통 구간) 조립 실패' };
+  const tieTree = getEpisodeTree([tieEp], parentSubmissions, forkPath);
+  if (!tieTree) return { ok: false, reason: 'tieTree(갈린 지점) 조립 실패' };
+
+  const beforeSubs = beforeTree ? collectSubs(beforeTree, forkPath) : [];
+  const tieSubs = collectSubs(tieTree, forkPath);
+  if (!tieSubs.length) return { ok: false, reason: '갈린 지점(tie)에서 이 갈래의 채택 문장을 못 찾음' };
+  // getEpisodeTree/collectSubs는 pinnedSubId(branch_sub_id)가 그 에피소드의 실제
+  // 제출물 중에 없으면(예: story 문서의 branch_sub_id가 잘못됐거나 삭제된 sub를
+  // 가리킴) 조용히 adoptedSubs[0](다른 문장, 보통 canonical A갈래)로 fallback해
+  // 버린다 — 이 상태로 ok:true를 반환하면 "이 갈래의 실제 채택 문장이 아닌 다른
+  // 문장"을 상속으로 발행하게 되므로, tie에서 뽑힌 sub_id가 정확히 story가
+  // 지정한 branch_sub_id인지 반드시 재확인한다(2026-09-12, Codex final 지적).
+  const tieSub = tieSubs[tieSubs.length - 1];
+  if (!tieSub || tieSub.sub_id !== story.branchSubId) {
+    return { ok: false, reason: `branch_sub_id(${story.branchSubId})가 갈린 지점의 실제 제출물이 아님 — 다른 문장으로 fallback될 뻔함(실제 선택된 sub_id: ${tieSub && tieSub.sub_id})` };
+  }
+
+  return { ok: true, before: beforeSubs.map(s => s.content), tie: tieSubs.map(s => s.content) };
 }
 
 function _daysBetween(startIso, endIso) {
@@ -362,14 +436,41 @@ function storyPageBodyHtml({ opening, lines, meta, candidates, related }) {
 // CSS는 손으로 옮겨 적지 않고 bang/index.html의 <style>에서 잘라온다(EN 페이지의
 // ko-shared.css와 같은 원칙, extract-ko-css.js의 cutRule 재사용).
 
-// 시범 대상 — 온전하게 구현된 일반(분기 아님) 완결작만. 비우면 renderStoryPageV2가
-// 전혀 안 쓰임(전체 롤백). 분기 작품은 상속 문장 정적 재현이 아직 안 돼서(=구현
-// 확대 필요) 제외 — 전체 확대의 필수 선행 과제. bang/index.html의 _V2_READER_IDS와
-// 반드시 같은 집합.
-const V2_STORY_IDS = new Set([
-  '078b460e-d9d0-4642-b75d-44571637f787', // 짧은: "이상한 계단" (2문장)
-  '0a400be4-cd2a-4e74-ba79-b677251c9487', // 긴: "우물 속 달" (11문장)
-]);
+// 시범 대상 — 유일한 원천은 scripts/lib/v2-reader-ids.js. 여기서 목록을 읽어
+// 빌드에 쓰고, main() 끝에서 **이번 빌드에 실제 생성·검증된 ID만** bang/index.html의
+// _V2_READER_IDS 마커에 주입한다(수동 동기화 목록 없음). 비우면 전체 롤백.
+// 분기 작품은 상속 문장 정적 재현이 아직 안 돼서 제외 — 확대의 필수 선행 과제.
+const { V2_TARGET_IDS, V2_READER_IDS_DECL_RE, buildV2ReaderIdsDecl } = require('./lib/v2-reader-ids.js');
+const V2_STORY_IDS = new Set(V2_TARGET_IDS);
+
+// 이번 빌드에서 실제로 V2 셸 생성·검증에 성공한 작품 ID(순서 유지). main()의
+// 2차 패스가 채우고, 그 뒤 injectV2ReaderIds가 이 값으로 앱 마커를 치환한다.
+const _v2GeneratedIds = [];
+
+// 생성된 V2 HTML이 실제로 독립 셸인지 최소 검증 — 하나라도 실패하면 빌드 실패.
+function assertV2ShellOk(id, html) {
+  const problems = [];
+  if (!/<h1 class="reader-title">[^<]/.test(html)) problems.push('reader-title 없음/비어있음');
+  if (html.includes('<main id="app">')) problems.push('앱 셸(<main id="app">) 잔존');
+  if (!/<div class="story-prose">[\s\S]*?<span class="prose-sentence">/.test(html)) problems.push('본문(.prose-sentence) 없음');
+  if (!/<meta name="robots" content="index,follow">/.test(html)) problems.push('robots index,follow 없음');
+  if (!new RegExp(`<link rel="canonical" href="https://[^"]*/bang/story/${id}/">`).test(html)) problems.push('canonical 불일치');
+  if (problems.length) throw new Error(`V2 생성 검증 실패(${id}): ${problems.join(', ')}`);
+}
+
+// 이번 빌드에 실제 생성된 V2 ID로 bang/index.html의 _V2_READER_IDS 선언을 치환한다.
+// bang/index.html은 원본 겸 배포 산출물(별도 산출물 디렉토리가 없는 현재 구조) —
+// 루트 index.html의 미리보기 MARKER 치환과 같은 방식이다. 커밋본의 값은 사람이
+// 읽을 기본값일 뿐이고, 배포 직전 이 함수가 실제값으로 덮어쓴다.
+function injectV2ReaderIds(generatedIds) {
+  const src = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
+  const matches = src.match(V2_READER_IDS_DECL_RE) || [];
+  if (matches.length === 0) throw new Error('bang/index.html에서 _V2_READER_IDS 선언(주입 마커)을 못 찾음');
+  if (matches.length > 1) throw new Error(`bang/index.html에 _V2_READER_IDS 선언이 ${matches.length}개 — 마커 중복`);
+  const decl = buildV2ReaderIdsDecl(generatedIds);
+  fs.writeFileSync(INDEX_HTML_PATH, src.replace(V2_READER_IDS_DECL_RE, () => decl));
+  console.log(`_V2_READER_IDS 주입: ${generatedIds.length}편 [${generatedIds.join(', ')}]`);
+}
 
 // 독서 페이지에 필요한 CSS 규칙만 bang/index.html <style>에서 잘라온다.
 // 셀렉터가 사라지면(구조 변경) 조용히 빠지지 않게 못 찾은 건 목록으로 모아
@@ -1170,15 +1271,21 @@ function renderWordChallengeArchive(entries, indexable) {
 // 바로 도달 가능한 공개 URL), 인터랙티브하게 선택해가며 읽는 앱 본연의 재미도
 // 없앰 — start 노드는 어떤 선택을 하든 모두가 보는 공통 도입부라 스포일러가 될
 // 수 없음(2026-08-25 논의 결론).
-function diaryTeaserBodyHtml({ book }) {
+function diaryTeaserBodyHtml({ book, book_id }) {
   const startNode = (book.nodes || {})[book.startNodeId] || {};
   const paragraphsHtml = (startNode.paragraphs || []).map(p => `<p>${esc(p)}</p>`).join('');
+  // "이어 읽기"는 홈이 아니라 이 회차로 직접 연결한다(2026-09-12 수정 — 예전엔
+  // /bang/로 보내 유저가 책장부터 다시 찾아야 했음). /bang/diary/{book_id}는 이
+  // 정적 페이지 자신의 URL이라 그리로 링크하면 새로고침만 될 뿐 앱으로 못 가므로,
+  // bang/index.html의 범용 레거시 해시 리다이렉트(#route/param → routeToPath로
+  // 자동 전환, ?write=1 우회 없이도 diary가 _ROUTE_WHITELIST에 있어 이미 동작)를
+  // 그대로 이용한다. 앱이 뜨면 diaryHub()가 currentParam으로 이 회차를 자동 오픈.
   return `<a class="back" href="/bang/diary/">← 훔쳐본 일기장 모음</a>
     <h1>${esc(book.title)}</h1>
     ${startNode.dateLabel ? `<div class="hub-item-meta">${esc(startNode.dateLabel)}</div>` : ''}
     <div class="diary-page">${paragraphsHtml}</div>
     <p class="lead" style="margin-top:20px">이야기는 여기서 갈라져요. 선택에 따라 결말이 달라집니다.</p>
-    <a href="/bang/" class="back-cta">화씨.방에서 이어 읽기 →</a>`;
+    <a href="/bang/#diary/${book_id}" class="back-cta">화씨.방에서 이어 읽기 →</a>`;
 }
 
 function renderDiaryBookPage({ book_id, book }) {
@@ -1190,7 +1297,7 @@ function renderDiaryBookPage({ book_id, book }) {
     title: `${esc(book.title)} — 훔쳐본 일기장 — 화씨.방`,
     description, canonical: url, robots: 'index,follow',
     ogTitle: book.title,
-    bodyHtml: diaryTeaserBodyHtml({ book }),
+    bodyHtml: diaryTeaserBodyHtml({ book, book_id }),
   });
 }
 
@@ -1231,7 +1338,7 @@ async function main() {
   admin.initializeApp({ credential: admin.credential.cert(svcJson) });
   const db = admin.firestore();
 
-  const indexHtmlSrc = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
+  let indexHtmlSrc = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
 
   const storiesSnap = await db.collection('stories').where('status', '==', 'completed').get();
   const completedStories = storiesSnap.docs.map(d => ({ story_id: d.id, ...d.data(), isCompleted: true }));
@@ -1268,12 +1375,21 @@ async function main() {
   // 전체 완결작 목록이 먼저 확정돼 있어야 해서 두 단계로 나눔(2026-08-09,
   // 콘텐츠 밀도 보강 — [[project_hwasee_bang_adsense_content_gap]] 참고).
   const processed = [];
+  // 왜 스킵됐는지 구조화해 남긴다 — 'gate'(의도된 최소 콘텐츠 기준, 정상 운영)와
+  // 'exception'(예상 못 한 예외, 버그 의심)을 구분해야 verify가 "정상적인 소수
+  // 누락"과 "빌드 결함으로 조용히 사라진 것"을 가려낼 수 있다(2026-09-12,
+  // "50% 급감 감지는 몇 개 누락은 못 잡는 보조 경보"라는 지적 반영).
+  const skipped = [];
   for (const story of stories) {
     try {
       const { episodes, submissions } = await fetchStoryData(db, story.story_id);
       const closedEps = episodes.filter(e => e.status === 'closed');
       const tree = getEpisodeTree(closedEps, submissions);
-      if (!tree) { console.error(`스킵(마감된 에피소드 없음): ${story.story_id}`); continue; }
+      if (!tree) {
+        console.error(`스킵(마감된 에피소드 없음): ${story.story_id}`);
+        skipped.push({ id: story.story_id, kind: 'gate', reason: '마감된 에피소드 없음' });
+        continue;
+      }
 
       const canonicalPath = buildCanonicalPath(closedEps, submissions);
       const subs = collectSubs(tree, canonicalPath);
@@ -1281,7 +1397,11 @@ async function main() {
       // 실제 참여자가 채택한 문장이 최소 1개는 있어야 다른 페이지와 구별되는
       // 고유 콘텐츠가 생김("짧으면 저품질"이 아니라 "서로 구별 안 되면
       // 저품질"이라는 기준, 2026-08-20 설계 논의 결론).
-      if (!subs.length) { console.error(`스킵(채택 문장 없음): ${story.story_id}`); continue; }
+      if (!subs.length) {
+        console.error(`스킵(채택 문장 없음): ${story.story_id}`);
+        skipped.push({ id: story.story_id, kind: 'gate', reason: '채택 문장 없음' });
+        continue;
+      }
       const lines = subs.map(s => s.content);
 
       const lastmod = closedEps.reduce((max, e) => (e.closed_at && e.closed_at > max ? e.closed_at : max), '');
@@ -1304,6 +1424,9 @@ async function main() {
         mode: story.mode || null,
         parentStoryId: story.parent_story_id || null,
         branchEpisodeId: story.branch_episode_id || null,
+        branchSubId: story.branch_sub_id || null,
+        branchFromStep: story.branch_from_step || null,
+        isContinuation: !!story.is_continuation,
         // sectionKey: 이 완결작이 어느 역할 슬롯 출신인지("직전 완결본" 찾기용).
         // fromSlot: 이 story가 지금 그 슬롯의 현재(진행 중) 대상인지(today
         // 페이지의 "현재 진행 중" 링크 대상 찾기용) — 완결작은 항상 undefined.
@@ -1319,8 +1442,21 @@ async function main() {
       });
     } catch (e) {
       console.error(`이야기 처리 실패(${story.story_id}):`, e.message);
+      skipped.push({ id: story.story_id, kind: 'exception', reason: e.message });
     }
   }
+
+  // "이번 빌드가 시도한 목록 vs 실제 성공한 목록"을 ID 단위로 남긴다. 라이브
+  // 대비 전체 개수 비교(verifyNoMassRegression)는 몇 개가 조용히 빠지는 걸
+  // 못 잡는 보조 경보이고, 이 매니페스트가 본 방어선 — verify가 kind:'exception'
+  // 스킵이 하나라도 있으면 fail 처리한다(정상 게이트가 아닌 예외로 페이지가
+  // 안 만들어진 것이므로).
+  fs.writeFileSync(BUILD_MANIFEST_PATH, JSON.stringify({
+    generated_at: new Date().toISOString(),
+    attempted_ids: stories.map(s => s.story_id),
+    processed_ids: processed.map(p => p.id),
+    skipped,
+  }, null, 2));
 
   // 최신순 정렬 — 아카이브 목록·홈 미리보기·"관련 작품" 선정이 쓰는 기존 기준
   // (lastmod = 마지막 마감 시각). ⚠️ V2 이전/다음 링크를 앱 책장과 맞추려고
@@ -1400,6 +1536,14 @@ async function main() {
     }
   }
 
+  // V2 대상 중 이번 빌드 풀에 실제로 있는 작품 = 이번에 발행할 계획인 목록.
+  // renderStoryPage가 클론하는 indexHtmlSrc의 _V2_READER_IDS를 지금 이 값으로
+  // 맞춰서, 비-V2 완결작 페이지 안의 앱도 올바른 목록을 갖게 한다(파일 쓰기는
+  // 2차 패스 뒤 injectV2ReaderIds가, 실제 생성 성공 목록으로). 둘이 어긋나면
+  // 2차 패스의 _v2Missing 검사가 빌드를 멈춘다.
+  const _v2PlannedIds = V2_TARGET_IDS.filter(id => processed.some(p => p.id === id));
+  indexHtmlSrc = indexHtmlSrc.replace(V2_READER_IDS_DECL_RE, () => buildV2ReaderIdsDecl(_v2PlannedIds));
+
   // 2차 패스: 관련 작품(완결작 풀에서 자기 다음 최신순 3편, 순환) 확정 후 실제 파일 생성
   const sitemapEntries = [];
   let ok = 0;
@@ -1443,12 +1587,27 @@ async function main() {
       });
     }
 
+    if (V2_STORY_IDS.has(item.id)) {
+      assertV2ShellOk(item.id, html);          // 실패 시 throw → 빌드 실패
+      if (!_v2GeneratedIds.includes(item.id)) _v2GeneratedIds.push(item.id);
+    }
+
     const dir = path.join(OUT_DIR, item.id);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'index.html'), html);
     sitemapEntries.push({ id: item.id, lastmod: item.lastmod, title: item.title, description: item.description, isCompleted: item.isCompleted });
     ok++;
   }
+
+  // V2 대상인데 이번 빌드에서 생성/검증 못 한 게 있으면 빌드 실패(앱을 없는
+  // 페이지로 보내지 않기 위해 — 주입 목록은 "설정 ID"가 아니라 "실제 생성된 ID").
+  const _v2Missing = [...V2_STORY_IDS].filter(id => !_v2GeneratedIds.includes(id));
+  if (_v2Missing.length) {
+    throw new Error(`V2 대상인데 페이지 생성/검증 실패: ${_v2Missing.join(', ')} `
+      + `(완결작 풀에 없거나 게이트 탈락). 앱에 죽은 링크를 주입하지 않도록 빌드를 멈춤.`);
+  }
+  // 실제 생성된 V2 ID를 앱 마커에 주입(수동 _V2_READER_IDS 목록 대체).
+  injectV2ReaderIds(_v2GeneratedIds);
 
   // 3차 패스: today/{slot} 역할 페이지 — 5개 슬롯 모두 항상 페이지가 존재함
   // (URL 안정성). current는 위에서 이미 만든 processed 항목 중 이 슬롯의
@@ -1559,6 +1718,11 @@ module.exports = {
   renderDiaryBookPage, renderDiaryHubPage,
   renderStoryPageV2, readerCss, readerProseHtml, V2_STORY_IDS,
   SLOT_KEYS, SLOT_SLUG, SLOT_LABEL, DIARY_BOOK_COUNT,
+  // 테스트/스크래치 스크립트용 — 멱등성·롤백 검증에 필요(정상 빌드 흐름은 안 바뀜)
+  injectV2ReaderIds, assertV2ShellOk,
+  // 분기 작품 상속 문장 조립 — 아직 main()에는 배선 안 함(V2_TARGET_IDS에 분기
+  // 없음). 확대 승인 시 여기 연결. 지금은 검증 스크립트에서만 사용.
+  computeBranchInheritance,
 };
 
 if (require.main === module) {

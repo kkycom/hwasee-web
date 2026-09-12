@@ -15,8 +15,12 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+const { V2_TARGET_IDS, V2_READER_IDS_DECL_RE } = require('./lib/v2-reader-ids.js');
+
 const ROOT = path.join(__dirname, '..');
+const INDEX_HTML_PATH = path.join(ROOT, 'bang', 'index.html');
 const STORY_DIR = path.join(ROOT, 'bang', 'story');
+const BUILD_MANIFEST_PATH = path.join(ROOT, '.story-build-manifest.json');
 const TODAY_DIR = path.join(ROOT, 'bang', 'today');
 const WORD_CHALLENGE_DIR = path.join(ROOT, 'bang', 'word-challenge');
 const DIARY_DIR = path.join(ROOT, 'bang', 'diary');
@@ -54,17 +58,35 @@ function visibleLines(html) {
 
 function verifyStoryPages(sitemap) {
   if (!fs.existsSync(STORY_DIR)) {
-    console.log('bang/story/ 없음 — 이번 빌드에서 정적 스토리 페이지가 생성 안 된 것으로 보임(빌드 스텝이 continue-on-error로 스킵됐을 수 있음). 검사 대상 없어 통과 처리.');
-    return;
+    // V2_TARGET_IDS가 설정돼 있다면(=운영 중인 독립 독서 페이지가 있다는 뜻)
+    // story 디렉터리 자체가 없는 건 "빌드 스텝 스킵" 허용 범위가 아니라 명백한
+    // 전체 누락이다 — 네트워크로 라이브 sitemap을 조회할 필요도 없이 여기서
+    // 바로 막는다(2026-09-12, Codex final 지적 — 네트워크 실패 시 대량감소
+    // 검사가 무력화되는 것과 별개로, "디렉터리 자체가 없는" 극단적 케이스는
+    // 로컬 정보만으로 이미 판정 가능).
+    if (V2_TARGET_IDS.length) {
+      fail(`bang/story/ 자체가 없음 — V2 대상(${V2_TARGET_IDS.join(', ')})이 설정돼 있는데 독서 페이지가 하나도 안 만들어짐. 빌드 실패로 판단해 배포를 막음.`);
+      return 0;
+    }
+    console.log('bang/story/ 없음 — 이번 빌드에서 정적 스토리 페이지가 생성 안 된 것으로 보임(빌드 스텝이 continue-on-error로 스킵됐을 수 있음). V2 대상도 없어 검사 대상 없음으로 통과 처리.');
+    return 0;
   }
   const ids = fs.readdirSync(STORY_DIR, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
-  if (!ids.length) { console.log('완결작 정적 페이지 0개 — 검사할 게 없어 통과 처리.'); return; }
+  if (!ids.length) {
+    if (V2_TARGET_IDS.length) {
+      fail(`bang/story/ 안에 페이지가 0개 — V2 대상(${V2_TARGET_IDS.join(', ')})이 설정돼 있는데 독서 페이지가 하나도 안 만들어짐. 빌드 실패로 판단해 배포를 막음.`);
+      return 0;
+    }
+    console.log('완결작 정적 페이지 0개 — V2 대상도 없어 검사할 게 없어 통과 처리.');
+    return 0;
+  }
   console.log(`완결작 정적 페이지 ${ids.length}건 검사 시작...`);
 
   const titleOwners = new Map();
   const descOwners = new Map();
   const bodyHashOwners = new Map();
   const lineFreq = new Map(); // 줄(문자열) -> 등장한 페이지 수
+  const generatedV2Ids = []; // 실제 생성된 V2 독립 셸 페이지
 
   for (const id of ids) {
     const filePath = path.join(STORY_DIR, id, 'index.html');
@@ -100,6 +122,7 @@ function verifyStoryPages(sitemap) {
     // V2는 canonical/robots가 반드시 있어야 함(독립 셸이라 renderStoryPage의
     // clone 치환에 안 기대므로 자체 생성이 정상 동작하는지 여기서 재확인).
     if (isV2) {
+      generatedV2Ids.push(id);
       if (!/<meta name="robots" content="index,follow">/.test(html)) fail(`${id}: V2인데 robots index,follow가 없음`);
       if (html.includes('<main id="app">')) fail(`${id}: V2인데 <main id="app">(앱 셸)이 남아있음 — 템플릿 혼선`);
     }
@@ -119,6 +142,28 @@ function verifyStoryPages(sitemap) {
       }
     }
     for (const line of new Set(wholeLines)) lineFreq.set(line, (lineFreq.get(line) || 0) + 1);
+  }
+
+  // V2 적용 목록 — 앱(bang/index.html의 _V2_READER_IDS)에 주입된 값이
+  // (a) 마커 정확히 1개, (b) 이번 빌드에 실제 생성된 V2 셸 페이지 집합과 정확히 일치,
+  // (c) 설정 원천(v2-reader-ids.js)에서 하나도 누락되지 않았는지 확인.
+  // 앱이 없는 페이지로 라우팅하는 상태를 배포 전에 차단한다.
+  {
+    const appSrc = fs.existsSync(INDEX_HTML_PATH) ? fs.readFileSync(INDEX_HTML_PATH, 'utf8') : '';
+    const decls = appSrc.match(V2_READER_IDS_DECL_RE) || [];
+    if (decls.length !== 1) {
+      fail(`bang/index.html의 _V2_READER_IDS 주입 마커가 ${decls.length}개 — 정확히 1개여야 함`);
+    } else {
+      const appIds = (decls[0].match(/'([^']+)'/g) || []).map(s => s.slice(1, -1)).sort();
+      const genSorted = [...generatedV2Ids].sort();
+      if (JSON.stringify(appIds) !== JSON.stringify(genSorted)) {
+        fail(`앱 _V2_READER_IDS(${JSON.stringify(appIds)})가 실제 생성된 V2 페이지(${JSON.stringify(genSorted)})와 불일치 — injectV2ReaderIds 누락/오류`);
+      }
+      const targetMissing = V2_TARGET_IDS.filter(id => !generatedV2Ids.includes(id));
+      if (targetMissing.length) {
+        fail(`v2-reader-ids.js 설정 대상인데 V2 페이지가 생성 안 됨: ${targetMissing.join(', ')}`);
+      }
+    }
   }
 
   for (const [title, owners] of titleOwners) {
@@ -158,6 +203,84 @@ function verifyStoryPages(sitemap) {
   }
 
   console.log(`검사 완료: ${ids.length}개 페이지`);
+  return ids.length;
+}
+
+// "라이브 대비 몇 % 줄었나"(verifyNoMassRegression)는 몇 개가 조용히 빠지는
+// 걸 못 잡는 보조 경보다. 이 함수가 본 방어선 — build-static-stories.js가
+// 남긴 매니페스트(이번 빌드가 시도한 ID 전체 vs 성공한 ID vs 왜 스킵됐는지)를
+// ID 단위로 대조한다. 정상 게이트(마감 안 됨/채택 문장 없음)로 스킵된 건
+// 통과시키고, 예상 못 한 예외(kind:'exception')로 스킵된 게 하나라도 있으면
+// fail — 개별 작품이 코드 결함으로 조용히 사라지는 걸 잡기 위함
+// (2026-09-12, "특정 작품 몇 개 누락은 비율 경보로 못 잡는다"는 지적 반영).
+function verifyBuildManifest() {
+  if (!fs.existsSync(BUILD_MANIFEST_PATH)) {
+    warn('.story-build-manifest.json 없음 — build-static-stories.js가 이 버전 이전에 실행됐거나 빌드 스텝이 스킵된 것으로 보임. ID 단위 누락 대조를 못 함(라이브 대비 급감 검사만 적용됨).');
+    return;
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(BUILD_MANIFEST_PATH, 'utf8'));
+  } catch (e) {
+    fail(`.story-build-manifest.json 파싱 실패: ${e.message}`);
+    return;
+  }
+  const { attempted_ids = [], processed_ids = [], skipped = [] } = manifest;
+
+  const exceptions = skipped.filter(s => s.kind === 'exception');
+  if (exceptions.length) {
+    for (const s of exceptions) fail(`빌드 예외로 조용히 스킵됨(정상 게이트 아님): ${s.id} — ${s.reason}`);
+  }
+  const accounted = new Set([...processed_ids, ...skipped.map(s => s.id)]);
+  const unaccounted = attempted_ids.filter(id => !accounted.has(id));
+  if (unaccounted.length) {
+    fail(`시도한 ID인데 성공도 스킵 기록도 없음(매니페스트 정합성 깨짐): ${unaccounted.join(', ')}`);
+  }
+
+  // processed로 기록된 각 ID가 실제로 파일까지 생성됐는지 1:1 확인 — 1차 패스
+  // 통과 후 2차 패스(파일 쓰기)에서만 실패하는 경우까지 잡는다.
+  const missingFiles = processed_ids.filter(id => !fs.existsSync(path.join(STORY_DIR, id, 'index.html')));
+  if (missingFiles.length) {
+    fail(`1차 패스는 통과했는데 실제 페이지 파일이 없음: ${missingFiles.join(', ')}`);
+  }
+
+  const gateSkips = skipped.filter(s => s.kind === 'gate');
+  console.log(`빌드 매니페스트 대조: 시도 ${attempted_ids.length}건 = 성공 ${processed_ids.length}건 + 정상 게이트 스킵 ${gateSkips.length}건 + 예외 스킵 ${exceptions.length}건`);
+}
+
+// 독서 페이지가 이 사이트의 핵심 산출물이라, "필수 페이지가 누락된 빌드"가
+// 조용히 정상 배포되면 안 된다. 개별 작품 하나가 관리자 판단으로 비공개·삭제
+// 되는 건 정상 운영(sitemap에서 하나씩 빠짐)이지만, Firestore 조회 실패 등으로
+// story 페이지 전체가 왕창 안 만들어지는 건 버그다 — 이 둘을 "몇 개나 줄었나"로
+// 구분한다. 라이브 sitemap.xml을 fetch해서 비교(네트워크 실패 시엔 이 검사만
+// 건너뛰고 warn — 다른 fail-closed 검사는 그대로 유지되므로 전체가 통과 처리로
+// 새지 않음). 이 검사가 fail하면 verify가 exit 1 → deploy.yml이 upload/deploy
+// 단계에 도달 못 해 배포가 중단되고, GitHub Pages는 마지막 성공 배포를 그대로
+// 서빙한다(별도 롤백 로직 불필요 — Pages 배포 모델 자체가 그렇게 동작함).
+async function verifyNoMassRegression(currentStoryCount) {
+  let liveSitemap;
+  try {
+    const res = await fetch(`${SITE_ORIGIN}/bang/sitemap.xml`, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    liveSitemap = await res.text();
+  } catch (e) {
+    warn(`라이브 sitemap.xml 조회 실패(${e.message}) — 완결작 수 급감 여부를 못 봄. 이 검사만 건너뛰고 나머지 검사는 그대로 fail-closed.`);
+    return;
+  }
+  const liveCount = (liveSitemap.match(/<loc>https:\/\/hwasee\.me\/bang\/story\/[^/<]+\/<\/loc>/g) || []).length;
+  if (liveCount === 0) { console.log('(참고) 라이브 sitemap에 story 페이지가 0개 — 최초 배포로 보여 급감 비교 생략.'); return; }
+  if (currentStoryCount === 0) {
+    fail(`이번 빌드는 story 페이지가 0개인데 라이브는 ${liveCount}개 — 전체 누락으로 의심돼 배포를 막음(의도된 전체 비공개라면 이 검사를 알고 조정할 것).`);
+    return;
+  }
+  const dropRatio = (liveCount - currentStoryCount) / liveCount;
+  if (dropRatio >= 0.5) {
+    fail(`story 페이지가 라이브 대비 ${Math.round(dropRatio * 100)}% 감소(${liveCount} → ${currentStoryCount}) — 개별 비공개/삭제로는 이 폭까지 잘 안 줄어서 데이터 조회 실패 등 빌드 결함 가능성이 큼. 배포를 막음.`);
+  } else if (dropRatio > 0) {
+    console.log(`(참고) story 페이지 수 소폭 감소: 라이브 ${liveCount} → 이번 빌드 ${currentStoryCount}(개별 비공개/삭제로 추정, 통과)`);
+  } else {
+    console.log(`(참고) story 페이지 수: 라이브 ${liveCount} → 이번 빌드 ${currentStoryCount}`);
+  }
 }
 
 // bang/today/{slug}/index.html — 역할(role) 페이지 전수 검사. story 페이지와
@@ -372,20 +495,32 @@ function verifyDiaryPages(sitemap) {
   console.log('diary 허브 검사 완료');
 }
 
-function main() {
+async function main() {
   const sitemap = fs.existsSync(SITEMAP_PATH) ? fs.readFileSync(SITEMAP_PATH, 'utf8') : null;
   if (!sitemap) warn('sitemap.xml을 못 찾음');
   // 완결작/진행중 story 검사와 역할 슬롯 검사는 서로 독립된 빌드 산출물이라,
   // 한쪽이 비어있거나(예: 역할 슬롯 아직 미도입) 실패해도 다른 쪽 검사는
   // 그대로 계속 진행 — early return으로 서로를 가리지 않게 별도 함수로 분리.
-  verifyStoryPages(sitemap);
+  const storyCount = verifyStoryPages(sitemap);
+  verifyBuildManifest();
   verifyTodayPages(sitemap);
   verifyTodayHub(sitemap);
   verifyWordChallengePages(sitemap);
   verifyDiaryPages(sitemap);
+  await verifyNoMassRegression(storyCount);
 
-  if (hasFatal) { console.error('\n🔴 치명적 문제 발견 — 배포를 중단합니다.'); process.exit(1); }
+  // fetch(verifyNoMassRegression의 AbortSignal.timeout)가 남긴 내부 타이머와
+  // process.exit()의 강제 종료가 겹치면 Windows에서 libuv assertion으로
+  // 비정상 종료하는 경우가 로컬 재현으로 확인됨(2026-09-12). exitCode만
+  // 설정하고 자연 종료를 기다리면(강제 exit 없음) 이 문제가 없음 — CI(Ubuntu)
+  // 무관하게 더 안전한 패턴이라 둘 다 이 방식으로 통일.
+  if (hasFatal) { console.error('\n🔴 치명적 문제 발견 — 배포를 중단합니다.'); process.exitCode = 1; return; }
   console.log(hasWarning ? '\n🟠 경고 있음 — 배포는 진행하되 확인 권장.' : '\n🟢 이상 없음.');
 }
 
-main();
+if (require.main === module) {
+  main().catch(e => { console.error('verify-static-stories 실행 중 예외:', e); process.exitCode = 1; });
+}
+
+// 테스트용 export(정상 CLI 실행 흐름은 안 바뀜 — require해도 위 가드 때문에 main()이 안 돎).
+module.exports = { verifyNoMassRegression, verifyBuildManifest };

@@ -251,12 +251,16 @@ ${enFooterAdHtml()}
 `;
 }
 
-// "참여 준비 중" 안내 — 클릭 가능한 버튼·입력·폼 요소를 절대 넣지 않는다.
-// 실제 참여 기능처럼 보이는 요소가 있으면 안 된다는 것이 명시적 요구사항이다.
-const COMING_SOON_NOTICE = `  <div class="notice">
-    <strong>Multilingual relay writing is being prepared.</strong><br>
-    For now this page is read-only. Participation happens on the Korean site, where each
-    sentence is written and voted on by a different person.
+// 이 정적 페이지들은 이미 완결된 한국어 원작의 영어 "번역본"이라 그 자체는
+// 이어쓸 수 없다 — 하지만 화씨.방 영어판(bang/en/, 별도 컬렉션 stories_en)은
+// 실제로 진행 중인 릴레이 이야기를 운영하고 있다(2026-09 기준 active 다수).
+// "참여가 준비 중"이라고 쓰면 이미 열려 있는 참여를 없는 것처럼 보이게 하는
+// 잘못된 안내라 삭제하고, 실제 진행 중인 이야기 목록(홈)으로 안내만 한다.
+// 클릭 가능한 버튼·입력·폼 요소는 넣지 않는다(정적 페이지 원칙 유지, 링크만).
+const JOIN_ACTIVE_RELAY_NOTICE = `  <div class="notice">
+    <strong>This is a finished translation and can't be continued here.</strong><br>
+    Hwasee.bang's English edition runs its own separate relay stories that are being
+    written right now — <a href="/bang/en/">visit the English edition</a> to read or join one.
   </div>`;
 
 function renderEnStoryPage(item) {
@@ -275,8 +279,8 @@ function renderEnStoryPage(item) {
     Showing an outdated translation would misrepresent what the authors actually wrote.
     The Korean original is always the source of truth.
     <br><a class="origin-link" href="${koUrl}">Read the Korean original &rarr;</a>
+    <br><a href="/bang/en/stories/">Back to all translated stories &rarr;</a>
   </div>
-${COMING_SOON_NOTICE}
 </main>`;
     return enPageShell({
       title: 'Translation under review — Hwasee.bang',
@@ -306,7 +310,8 @@ ${COMING_SOON_NOTICE}
   <h1>${esc(item.title_en)}</h1>
   <p class="lead">${esc(item.description_en)}</p>
   <div class="notice">
-    <strong>This story was written one sentence at a time, by many different people.</strong><br>
+    <strong>This is an English translation of a story originally written in Korean by the
+    Hwasee.bang community, one sentence at a time.</strong><br>
     Each sentence was submitted separately and chosen by community vote before the next one
     could be written. Nobody knew how it would end.
     <br><a class="origin-link" href="${koUrl}">Read the Korean original &rarr;</a>
@@ -318,7 +323,7 @@ ${paragraphs}
     <span>${item.lines_en.length} sentences</span>
     <span>Translated from Korean</span>
   </div>
-${COMING_SOON_NOTICE}
+${JOIN_ACTIVE_RELAY_NOTICE}
 </main>`;
 
   return enPageShell({
@@ -368,7 +373,7 @@ function renderEnIndex(items) {
   <h2>Translated stories</h2>
 ${list}
 
-${COMING_SOON_NOTICE}
+${JOIN_ACTIVE_RELAY_NOTICE}
 </main>`;
 
   return enPageShell({

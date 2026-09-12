@@ -41,6 +41,11 @@ jobs:
           # 검증 전용 사이드카: 이번 빌드가 본 완결작 데이터를 그대로 덤프.
           # 운영 deploy.yml은 이 env가 없어 파일을 만들지 않는다(출력 불변).
           READING_PILOT_EXPECTED_OUT: reading-pilot-expected.json
+          # TEMP-VERIFY-ONLY: deploy.yml에서 continue-on-error를 제거한 뒤
+          # "생성 실패 → 배포 미도달"을 실제 GitHub Actions에서 확인하기 위한
+          # 임시 강제 실패 스위치. 확인 직후 이 줄과 함께 되돌린다(운영 미배포
+          # 워크플로우에서만 실행, 절대 deploy.yml에는 넣지 않음).
+          FORCE_BUILD_FAIL_TEST: '1'
 
       - name: Verify static story pages
         run: node scripts/verify-static-stories.js

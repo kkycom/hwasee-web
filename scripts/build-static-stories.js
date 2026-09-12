@@ -1332,6 +1332,7 @@ function renderDiaryHubPage(entries, indexable) {
 // ── 메인 ──
 
 async function main() {
+  if (process.env.FORCE_BUILD_FAIL_TEST) throw new Error('임시 강제 실패 주입(deploy.yml continue-on-error 제거 검증용, 확인 후 즉시 되돌림)');
   const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!serviceAccountRaw) throw new Error('FIREBASE_SERVICE_ACCOUNT 환경변수가 없습니다.');
   const svcJson = JSON.parse(serviceAccountRaw);

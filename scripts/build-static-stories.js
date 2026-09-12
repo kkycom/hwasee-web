@@ -1241,15 +1241,21 @@ function renderWordChallengeArchive(entries, indexable) {
 // 바로 도달 가능한 공개 URL), 인터랙티브하게 선택해가며 읽는 앱 본연의 재미도
 // 없앰 — start 노드는 어떤 선택을 하든 모두가 보는 공통 도입부라 스포일러가 될
 // 수 없음(2026-08-25 논의 결론).
-function diaryTeaserBodyHtml({ book }) {
+function diaryTeaserBodyHtml({ book, book_id }) {
   const startNode = (book.nodes || {})[book.startNodeId] || {};
   const paragraphsHtml = (startNode.paragraphs || []).map(p => `<p>${esc(p)}</p>`).join('');
+  // "이어 읽기"는 홈이 아니라 이 회차로 직접 연결한다(2026-09-12 수정 — 예전엔
+  // /bang/로 보내 유저가 책장부터 다시 찾아야 했음). /bang/diary/{book_id}는 이
+  // 정적 페이지 자신의 URL이라 그리로 링크하면 새로고침만 될 뿐 앱으로 못 가므로,
+  // bang/index.html의 범용 레거시 해시 리다이렉트(#route/param → routeToPath로
+  // 자동 전환, ?write=1 우회 없이도 diary가 _ROUTE_WHITELIST에 있어 이미 동작)를
+  // 그대로 이용한다. 앱이 뜨면 diaryHub()가 currentParam으로 이 회차를 자동 오픈.
   return `<a class="back" href="/bang/diary/">← 훔쳐본 일기장 모음</a>
     <h1>${esc(book.title)}</h1>
     ${startNode.dateLabel ? `<div class="hub-item-meta">${esc(startNode.dateLabel)}</div>` : ''}
     <div class="diary-page">${paragraphsHtml}</div>
     <p class="lead" style="margin-top:20px">이야기는 여기서 갈라져요. 선택에 따라 결말이 달라집니다.</p>
-    <a href="/bang/" class="back-cta">화씨.방에서 이어 읽기 →</a>`;
+    <a href="/bang/#diary/${book_id}" class="back-cta">화씨.방에서 이어 읽기 →</a>`;
 }
 
 function renderDiaryBookPage({ book_id, book }) {
@@ -1261,7 +1267,7 @@ function renderDiaryBookPage({ book_id, book }) {
     title: `${esc(book.title)} — 훔쳐본 일기장 — 화씨.방`,
     description, canonical: url, robots: 'index,follow',
     ogTitle: book.title,
-    bodyHtml: diaryTeaserBodyHtml({ book }),
+    bodyHtml: diaryTeaserBodyHtml({ book, book_id }),
   });
 }
 

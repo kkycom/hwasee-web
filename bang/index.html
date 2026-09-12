@@ -4694,12 +4694,23 @@ function _dhVisitedCountForStory() {
   return [..._dhGetVisited()].filter(k => k.startsWith(prefix)).length;
 }
 
+// /bang/diary/{book_id} 로 직접 들어오면(정적 티저 페이지의 "이어 읽기" 링크 —
+// 예전엔 홈으로만 보냈음, 2026-09-12 수정) 책장을 거치지 않고 바로 그 책
+// 표지로 진입한다. 공개 안 된(잠긴) 회차거나 잘못된 값이면 조용히 책장으로
+// 폴백 — 미공개 내용을 노출하거나 존재하지 않는 화면으로 보내지 않는다.
 async function diaryHub() {
   document.getElementById('app').innerHTML = `
     <div style="display:flex;align-items:center;margin-bottom:20px">
       <button class="btn btn-ghost btn-sm" style="border:none;font-weight:600;position:relative;z-index:301" onclick="nav('spotlight')">← 오늘의 이야기로</button>
     </div>
     <div id="dh-root"></div>`;
+  const targetId = Number(currentParam);
+  const target = targetId && DIARY_HUB_BOOKS.find(b => b.id === targetId);
+  if (target && _dhIsUnlocked(target)) {
+    _dhIntroShown = true; // 책장 인트로 블러 연출을 건너뛰고 바로 표지로
+    _dhSelectBook(target.id);
+    return;
+  }
   _dhBookId = null;
   _dhRenderShelf();
 }

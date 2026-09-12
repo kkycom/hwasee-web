@@ -58,10 +58,10 @@ function visibleLines(html) {
 function verifyStoryPages(sitemap) {
   if (!fs.existsSync(STORY_DIR)) {
     console.log('bang/story/ 없음 — 이번 빌드에서 정적 스토리 페이지가 생성 안 된 것으로 보임(빌드 스텝이 continue-on-error로 스킵됐을 수 있음). 검사 대상 없어 통과 처리.');
-    return;
+    return 0;
   }
   const ids = fs.readdirSync(STORY_DIR, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
-  if (!ids.length) { console.log('완결작 정적 페이지 0개 — 검사할 게 없어 통과 처리.'); return; }
+  if (!ids.length) { console.log('완결작 정적 페이지 0개 — 검사할 게 없어 통과 처리.'); return 0; }
   console.log(`완결작 정적 페이지 ${ids.length}건 검사 시작...`);
 
   const titleOwners = new Map();
@@ -185,6 +185,42 @@ function verifyStoryPages(sitemap) {
   }
 
   console.log(`검사 완료: ${ids.length}개 페이지`);
+  return ids.length;
+}
+
+// 독서 페이지가 이 사이트의 핵심 산출물이라, "필수 페이지가 누락된 빌드"가
+// 조용히 정상 배포되면 안 된다. 개별 작품 하나가 관리자 판단으로 비공개·삭제
+// 되는 건 정상 운영(sitemap에서 하나씩 빠짐)이지만, Firestore 조회 실패 등으로
+// story 페이지 전체가 왕창 안 만들어지는 건 버그다 — 이 둘을 "몇 개나 줄었나"로
+// 구분한다. 라이브 sitemap.xml을 fetch해서 비교(네트워크 실패 시엔 이 검사만
+// 건너뛰고 warn — 다른 fail-closed 검사는 그대로 유지되므로 전체가 통과 처리로
+// 새지 않음). 이 검사가 fail하면 verify가 exit 1 → deploy.yml이 upload/deploy
+// 단계에 도달 못 해 배포가 중단되고, GitHub Pages는 마지막 성공 배포를 그대로
+// 서빙한다(별도 롤백 로직 불필요 — Pages 배포 모델 자체가 그렇게 동작함).
+async function verifyNoMassRegression(currentStoryCount) {
+  let liveSitemap;
+  try {
+    const res = await fetch(`${SITE_ORIGIN}/bang/sitemap.xml`, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    liveSitemap = await res.text();
+  } catch (e) {
+    warn(`라이브 sitemap.xml 조회 실패(${e.message}) — 완결작 수 급감 여부를 못 봄. 이 검사만 건너뛰고 나머지 검사는 그대로 fail-closed.`);
+    return;
+  }
+  const liveCount = (liveSitemap.match(/<loc>https:\/\/hwasee\.me\/bang\/story\/[^/<]+\/<\/loc>/g) || []).length;
+  if (liveCount === 0) { console.log('(참고) 라이브 sitemap에 story 페이지가 0개 — 최초 배포로 보여 급감 비교 생략.'); return; }
+  if (currentStoryCount === 0) {
+    fail(`이번 빌드는 story 페이지가 0개인데 라이브는 ${liveCount}개 — 전체 누락으로 의심돼 배포를 막음(의도된 전체 비공개라면 이 검사를 알고 조정할 것).`);
+    return;
+  }
+  const dropRatio = (liveCount - currentStoryCount) / liveCount;
+  if (dropRatio >= 0.5) {
+    fail(`story 페이지가 라이브 대비 ${Math.round(dropRatio * 100)}% 감소(${liveCount} → ${currentStoryCount}) — 개별 비공개/삭제로는 이 폭까지 잘 안 줄어서 데이터 조회 실패 등 빌드 결함 가능성이 큼. 배포를 막음.`);
+  } else if (dropRatio > 0) {
+    console.log(`(참고) story 페이지 수 소폭 감소: 라이브 ${liveCount} → 이번 빌드 ${currentStoryCount}(개별 비공개/삭제로 추정, 통과)`);
+  } else {
+    console.log(`(참고) story 페이지 수: 라이브 ${liveCount} → 이번 빌드 ${currentStoryCount}`);
+  }
 }
 
 // bang/today/{slug}/index.html — 역할(role) 페이지 전수 검사. story 페이지와
@@ -399,20 +435,26 @@ function verifyDiaryPages(sitemap) {
   console.log('diary 허브 검사 완료');
 }
 
-function main() {
+async function main() {
   const sitemap = fs.existsSync(SITEMAP_PATH) ? fs.readFileSync(SITEMAP_PATH, 'utf8') : null;
   if (!sitemap) warn('sitemap.xml을 못 찾음');
   // 완결작/진행중 story 검사와 역할 슬롯 검사는 서로 독립된 빌드 산출물이라,
   // 한쪽이 비어있거나(예: 역할 슬롯 아직 미도입) 실패해도 다른 쪽 검사는
   // 그대로 계속 진행 — early return으로 서로를 가리지 않게 별도 함수로 분리.
-  verifyStoryPages(sitemap);
+  const storyCount = verifyStoryPages(sitemap);
   verifyTodayPages(sitemap);
   verifyTodayHub(sitemap);
   verifyWordChallengePages(sitemap);
   verifyDiaryPages(sitemap);
+  await verifyNoMassRegression(storyCount);
 
   if (hasFatal) { console.error('\n🔴 치명적 문제 발견 — 배포를 중단합니다.'); process.exit(1); }
   console.log(hasWarning ? '\n🟠 경고 있음 — 배포는 진행하되 확인 권장.' : '\n🟢 이상 없음.');
 }
 
-main();
+if (require.main === module) {
+  main().catch(e => { console.error('verify-static-stories 실행 중 예외:', e); process.exit(1); });
+}
+
+// 테스트용 export(정상 CLI 실행 흐름은 안 바뀜 — require해도 위 가드 때문에 main()이 안 돎).
+module.exports = { verifyNoMassRegression };

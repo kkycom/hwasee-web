@@ -1,23 +1,41 @@
 // V2 독립 독서 페이지(renderStoryPageV2) 적용 대상 — 유일한 원천(single source).
 //
-// build-static-stories.js가 이 목록을 읽어 빌드에 쓰고, **이번 빌드에서 실제
-// V2 페이지 생성·검증에 성공한 ID만** bang/index.html의 _V2_READER_IDS 마커에
-// 주입한다. 앱에는 수동 목록이 없다(주입 전 커밋본의 값은 사람이 읽을 기본값일 뿐).
+// 2026-09-13(4번 확대)부터 정적 화이트리스트 배열을 폐지하고 "완결작 기본 포함 +
+// 명시적 제외" 규칙으로 바꿨다. build-static-stories.js가 완결작 1차 패스(processed)를
+// 계산한 뒤 computeV2TargetIds(processed)를 호출해 이번 빌드의 V2 목표 집합을 구하고,
+// 그 결과를 .story-build-manifest.json의 v2_ids에 기록한 뒤 **실제 생성·검증에 성공한
+// ID만** bang/index.html의 _V2_READER_IDS 마커에 주입한다. 앱에는 수동 목록이 없다
+// (주입 전 커밋본의 값은 사람이 읽을 기본값일 뿐).
 //
-// 이 배열을 비우면: renderStoryPageV2가 전혀 안 쓰이고(전량 기존 renderStoryPage),
-// 앱에 주입되는 목록도 빈 Set이라 nav() 가드가 기존 동작으로 복귀한다.
+// verify-static-stories.js는 Firestore 접근이 없는 순수 파일 검사라 completedStories를
+// 다시 계산할 수 없다 — 그래서 "이번 빌드가 실제로 무엇을 목표로 삼았는가"를 담은
+// 매니페스트의 v2_ids를 설정 원천으로 대조한다. V2_EXCLUDED_IDS는 정적이라 verify가
+// "제외 대상인데 생성됐는지"를 직접 재확인할 수 있다.
 //
-// 운영 적용 대상 확대는 별도 승인 사항.
-// 2026-09-12: 분기 작품 1편(0fbdc14a) 제한적 확대 승인 — computeBranchInheritance가
-// 0순위(서버 계산값)로 완전히 재현 가능함을 라이브 hydrate와 대조해 확인한 대상.
-// build-static-stories.js가 부모 조회·조립에 실패하면(ok:false) 이 목록에 있어도
-// 조용히 기존 renderStoryPage로 폴백한다(설정 대상 미생성 fail이 아님 — 의도된 동작).
+// 운영 적용 대상 확대(이 규칙 자체를 넓히거나 좁히는 것)는 별도 승인 사항.
+const V2_EXCLUDED_IDS = new Set([
+  // H: 버그 제보성 완결작(24b38dfc) — 본문이 "초스피드 버그 확인 중 실수로 쓴 글,
+  // 관리자가 지웠다"는 운영 메타 발언이라 noindex 처리를 검토 중(사용자 승인 대기,
+  // 08-ads-and-content-policy.md 참고, 미실행). 재분류 전까지 V2 페이지 발행 보류
+  // (삭제·비공개가 아니라 기존 renderStoryPage로 그대로 발행 유지).
+  '24b38dfc-3df5-4ab9-b47d-dae97c15e737',
+]);
+
+// 완결작(status:'completed')이 기본 대상. 초스피드(mode:'speedrun')는 렌더 방식이
+// 근본적으로 달라(step순+삭제문장 표시+포인트 태그, getEpisodeTree 재현 불가) 자동
+// 제외 — 완결 0편이라 지금 당장 영향은 없음(bang/build-static-stories.js 4-B 조사
+// 참고). 분기(branch_*)·연장(is_continuation) 관계는 여기서 걸러내지 않는다 —
+// computeBranchInheritance가 개별 실패(ok:false)시 build-static-stories.js가
+// 자동으로 기존 렌더러 폴백(v2Fallback)으로 돌리므로 이중 게이트가 불필요하다.
+function computeV2TargetIds(processedStories) {
+  return processedStories
+    .filter(p => p.isCompleted && p.mode !== 'speedrun' && !V2_EXCLUDED_IDS.has(p.id))
+    .map(p => p.id);
+}
+
 module.exports = {
-  V2_TARGET_IDS: [
-    '078b460e-d9d0-4642-b75d-44571637f787', // 짧은: "이상한 계단" (2문장)
-    '0a400be4-cd2a-4e74-ba79-b677251c9487', // 긴: "우물 속 달" (11문장)
-    '0fbdc14a-786d-4831-b4f6-4b3c5da52909', // 분기: "거짓말의 꽃" (부모 f3279a4e에서 분기)
-  ],
+  V2_EXCLUDED_IDS,
+  computeV2TargetIds,
 
   // bang/index.html 인라인 스크립트에서 이 정규식에 매치되는 선언 하나를
   // 통째로 치환한다. 매치가 0개거나 2개 이상이면 빌드 실패로 처리한다.

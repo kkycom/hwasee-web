@@ -117,6 +117,13 @@ function collectSubs(node, choices) {
   return [sub, ...collectSubs(child, choices)];
 }
 
+// 반환하는 before/tie 각 항목은 { content, author_id } — 2026-09-13(3항목
+// 보완 승인)부터 author_id도 같이 내려준다. content만 쓰던 기존 소비처
+// (렌더링)는 호출부에서 .map(x => x.content)로 그대로 뽑아 쓰면 되므로 화면
+// 출력은 바뀌지 않는다. author_id를 추가한 이유는 V2 참여 집계를 "이 갈래에서
+// 새로 채택된 것만"이 아니라 "화면에 실제로 보이는 전체 본문(상속 구간+현재
+// 갈래)" 기준으로 통일하기 위함(호출부 main()에서 사용).
+//
 // 분기 작품의 상속 문장(부모 이야기의 "갈린 지점까지 + 갈린 지점 자체") 조립.
 // bang/index.html의 _buildForkPath·firebase-api.js의 parent_chain 조립을 통째로
 // 복제하지 않고, 그중 신뢰도가 가장 높은 0순위 경로(서버가 이미 계산해 Firestore
@@ -183,7 +190,11 @@ function _computeBranchInheritanceInner(story, parentEpisodes, parentSubmissions
     return { ok: false, reason: `branch_sub_id(${story.branchSubId})가 갈린 지점의 실제 제출물이 아님 — 다른 문장으로 fallback될 뻔함(실제 선택된 sub_id: ${tieSub && tieSub.sub_id})` };
   }
 
-  return { ok: true, before: beforeSubs.map(s => s.content), tie: tieSubs.map(s => s.content) };
+  return {
+    ok: true,
+    before: beforeSubs.map(s => ({ content: s.content, author_id: s.author_id || null })),
+    tie: tieSubs.map(s => ({ content: s.content, author_id: s.author_id || null })),
+  };
 }
 
 function _daysBetween(startIso, endIso) {
@@ -380,18 +391,18 @@ function proseHtml(opening, lines) {
 // 2026-09-13(3항목 확정): "참여자 N명" → "채택 작성 계정 N개" — participantCount가
 // 관리자·AI 자동참여 계정도 포함하는 계정(account) 수라 "사람 명"이라는 단위가
 // 더는 정확하지 않음(전체 제출 이력이 아니라 "채택된 문장을 쓴 계정" 모집단이라는
-// 것도 이 라벨로 명시). branchScoped는 분기 작품 V2 페이지 전용 — 화면엔 상속된
-// 앞부분(다른 계정이 쓴 문장)까지 보이는데 이 집계는 이 갈래에서 새로 채택된
-// 것만 세므로(computeBranchInheritance가 content만 반환해 상속 구간 작성자를
-// 아직 못 셈), 표시 범위와 집계 범위가 다르다는 걸 짧게 밝힌다.
-function storyMetaHtml({ participantCount, sentenceCount, days, isCompleted, branchScoped }) {
+// 것도 이 라벨로 명시). 분기 작품은 처음엔 이 집계가 "이 갈래에서 새로 채택된
+// 것만"이라 화면(상속 구간 포함 전체 본문)과 범위가 달랐는데, 3항목 보완
+// (2026-09-13, computeBranchInheritance가 author_id도 반환하도록 확장 후
+// main()에서 상속 구간 작성자까지 합산)으로 통일돼 별도 안내 문구가 더 이상
+// 필요 없어짐 — participantCount 자체가 이미 "화면에 보이는 전체 본문" 기준.
+function storyMetaHtml({ participantCount, sentenceCount, days, isCompleted }) {
   const parts = [`채택 작성 계정 ${participantCount}개`, `${sentenceCount}문장`];
   parts.push(isCompleted
     ? (days != null ? `${days}일 만에 완결` : '완결')
     : (days != null ? `${days}일째 진행 중` : '진행 중'));
   return `<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--muted)">
     <strong style="color:var(--text);font-size:13px">${isCompleted ? '이 이야기가 만들어진 과정' : '지금까지의 이야기'}</strong><br>${esc(parts.join(' · '))}
-    ${branchScoped ? '<div style="margin-top:6px;font-size:12px;color:var(--muted)">위 집계는 이 갈래에서 새로 채택된 것만 셉니다(상속된 앞부분 제외).</div>' : ''}
     ${isCompleted ? '' : '<div style="margin-top:8px;font-size:12.5px;color:var(--accent2)">✍️ 아직 진행 중인 이야기예요. 화씨.방에서 다음 문장을 이어써 보세요.</div>'}
   </div>`;
 }
@@ -595,7 +606,7 @@ function renderStoryPageV2(opts) {
     ${parentStoryId ? `<p style="font-size:12.5px;color:var(--muted);margin-bottom:14px;padding:10px 12px;background:var(--surface);border-radius:8px">⑂ 이 이야기는 <a href="/bang/story/${parentStoryId}/" style="color:var(--accent2);font-weight:600">${esc(parentTitle || '원본 이야기')}</a>에서 갈라진 이야기입니다.</p>` : ''}
     ${readerProseHtml(opening, inheritedLines, lines)}
     ${isCompleted ? `<p class="reader-theend">· 完 ·</p>` : ''}
-    ${storyMetaHtml({ ...meta, branchScoped: !!parentStoryId })}
+    ${storyMetaHtml(meta)}
     ${candidatesHtml(candidates)}
     ${relatedStoriesHtml(related || [])}
     <div class="reader-nav">${prevLink}${nextLink}</div>
@@ -1483,6 +1494,12 @@ async function main() {
           sentenceCount: lines.length,
           days: _daysBetween(story.created_at, lastmod),
           isCompleted,
+          // 2026-09-13(3항목 보완) — 이 갈래(자기 story) 캐노니컬 경로의 채택
+          // 작성자 ID 목록. V2 렌더 단계에서 분기 작품의 상속 구간 작성자와
+          // 합쳐 "화면에 보이는 전체 본문" 기준 집계를 만드는 데만 쓰인다
+          // (participantCount 자체는 그대로 이 이야기 자기 갈래 기준이라 무변화 —
+          // 비-V2/원본작 소비처는 이 필드를 안 읽으므로 영향 없음).
+          authorIds: [...new Set(subs.map(s => s.author_id).filter(Boolean))],
         },
         candidates: pickRejectedCandidates(subs, submissions, 4),
       });
@@ -1648,13 +1665,33 @@ async function main() {
       const prevEntry = cIdx > 0 ? completedByBookshelf[cIdx - 1] : null;         // 정렬상 앞 = 더 최신
       const nextEntry = cIdx >= 0 && cIdx < completedByBookshelf.length - 1 ? completedByBookshelf[cIdx + 1] : null;
       const inh = v2InheritanceByStory[item.id] || { before: [], tie: [] };
+      const inheritedSubs = [...inh.before, ...inh.tie]; // { content, author_id }[] — 원본작이면 빈 배열
+      const inheritedLines = inheritedSubs.map(x => x.content); // 렌더 출력은 기존과 동일(문자열만)
+
+      // 2026-09-13(3항목 보완, 사용자 승인): 참여 집계를 "이 갈래에서 새로 채택된
+      // 것만"이 아니라 "화면에 실제로 보이는 전체 본문(상속 구간+현재 갈래)" 기준
+      // 으로 통일 — 부모 쪽과 이 갈래에 같은 계정이 있으면 한 번만, 관리자·AI
+      // 자동참여 계정도 포함(둘 다 위 item.meta.authorIds 계산 시 이미 반영됨).
+      // author_id가 없는 상속 문장은 임의로 추정하지 않고 집계에서 제외만 하고
+      // 경고로 남긴다(실제로 이런 데이터가 있는지는 이 로그로 확인).
+      const inheritedAuthorIds = inheritedSubs.map(x => x.author_id).filter(Boolean);
+      if (inheritedSubs.some(x => !x.author_id)) {
+        console.warn(`참여 집계 한계(${item.id}): 상속 구간 문장 중 author_id가 없는 것이 있어 그 문장은 참여 집계에서 제외됨(임의 추정 안 함).`);
+      }
+      const mergedAuthorIds = new Set([...(item.meta.authorIds || []), ...inheritedAuthorIds]);
+      // 원본작(상속 없음)은 병합할 게 없어 item.meta 그대로 — participantCount가
+      // 기존과 완전히 같은 값임을 보장(불필요한 객체 복제도 피함).
+      const v2Meta = inheritedSubs.length
+        ? { ...item.meta, participantCount: mergedAuthorIds.size }
+        : item.meta;
+
       html = renderStoryPageV2({
         indexHtmlSrc,
         id: item.id, storyTitle: item.v2DisplayTitle, description: item.description, url: item.url,
         opening: item.opening, creatorNickname: item.creatorNickname,
-        inheritedLines: [...inh.before, ...inh.tie], // 분기면 실제 조립된 상속 문장, 원본작이면 빈 배열
+        inheritedLines,
         parentTitle: v2ParentTitleByStory[item.id], parentStoryId: item.parentStoryId,
-        lines: item.lines, meta: item.meta, candidates: item.candidates, related,
+        lines: item.lines, meta: v2Meta, candidates: item.candidates, related,
         isCompleted: item.isCompleted, lastmod: item.lastmod,
         hasEn: EN_PUBLISHED_IDS.has(item.id),
         prevEntry: prevEntry && { id: prevEntry.id },

@@ -377,13 +377,21 @@ function proseHtml(opening, lines) {
     </div>`;
 }
 
-function storyMetaHtml({ participantCount, sentenceCount, days, isCompleted }) {
-  const parts = [`참여자 ${participantCount}명`, `${sentenceCount}문장`];
+// 2026-09-13(3항목 확정): "참여자 N명" → "채택 작성 계정 N개" — participantCount가
+// 관리자·AI 자동참여 계정도 포함하는 계정(account) 수라 "사람 명"이라는 단위가
+// 더는 정확하지 않음(전체 제출 이력이 아니라 "채택된 문장을 쓴 계정" 모집단이라는
+// 것도 이 라벨로 명시). branchScoped는 분기 작품 V2 페이지 전용 — 화면엔 상속된
+// 앞부분(다른 계정이 쓴 문장)까지 보이는데 이 집계는 이 갈래에서 새로 채택된
+// 것만 세므로(computeBranchInheritance가 content만 반환해 상속 구간 작성자를
+// 아직 못 셈), 표시 범위와 집계 범위가 다르다는 걸 짧게 밝힌다.
+function storyMetaHtml({ participantCount, sentenceCount, days, isCompleted, branchScoped }) {
+  const parts = [`채택 작성 계정 ${participantCount}개`, `${sentenceCount}문장`];
   parts.push(isCompleted
     ? (days != null ? `${days}일 만에 완결` : '완결')
     : (days != null ? `${days}일째 진행 중` : '진행 중'));
   return `<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--muted)">
     <strong style="color:var(--text);font-size:13px">${isCompleted ? '이 이야기가 만들어진 과정' : '지금까지의 이야기'}</strong><br>${esc(parts.join(' · '))}
+    ${branchScoped ? '<div style="margin-top:6px;font-size:12px;color:var(--muted)">위 집계는 이 갈래에서 새로 채택된 것만 셉니다(상속된 앞부분 제외).</div>' : ''}
     ${isCompleted ? '' : '<div style="margin-top:8px;font-size:12.5px;color:var(--accent2)">✍️ 아직 진행 중인 이야기예요. 화씨.방에서 다음 문장을 이어써 보세요.</div>'}
   </div>`;
 }
@@ -402,8 +410,10 @@ function candidatesHtml(candidates) {
 
 function relatedStoriesHtml(related) {
   if (!related.length) return '';
+  // 2026-09-13(1항목): 관련작은 한 줄뿐이라 제목만 실제 작품명으로 교체(새 줄
+  // 추가 없음) — listTitle이 없는 옛 호출부(있을 리 없지만 방어) 대비 title 폴백.
   const items = related.map(r =>
-    `<li style="margin-top:6px"><a href="/bang/story/${r.id}/" style="color:var(--accent2);text-decoration:none">${esc(r.title)}</a></li>`
+    `<li style="margin-top:6px"><a href="/bang/story/${r.id}/" style="color:var(--accent2);text-decoration:none">${esc(r.listTitle || r.title)}</a></li>`
   ).join('');
   return `<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
     <strong style="color:var(--text);font-size:13px">다른 완결작</strong>
@@ -582,14 +592,14 @@ function renderStoryPageV2(opts) {
   <main>
     <h1 class="reader-title">${esc(displayTitle)}</h1>
     <div class="reader-byline">${esc(creatorNickname || '익명')}님의 씨앗 문장에서 시작 · 여러 사람이 한 문장씩 이어 씀</div>
-    ${parentStoryId ? `<p style="font-size:12.5px;color:var(--muted);margin-bottom:14px;padding:10px 12px;background:var(--surface);border-radius:8px">⑂ 이 이야기는 <a href="/bang/story/${parentStoryId}/" style="color:var(--accent2);font-weight:600">${esc(parentTitle || '원본 이야기')}</a>에서 갈라져 나온 결말이에요. 처음부터 읽으려면 원본 이야기로 가세요.</p>` : ''}
+    ${parentStoryId ? `<p style="font-size:12.5px;color:var(--muted);margin-bottom:14px;padding:10px 12px;background:var(--surface);border-radius:8px">⑂ 이 이야기는 <a href="/bang/story/${parentStoryId}/" style="color:var(--accent2);font-weight:600">${esc(parentTitle || '원본 이야기')}</a>에서 갈라진 이야기입니다.</p>` : ''}
     ${readerProseHtml(opening, inheritedLines, lines)}
     ${isCompleted ? `<p class="reader-theend">· 完 ·</p>` : ''}
-    ${storyMetaHtml(meta)}
+    ${storyMetaHtml({ ...meta, branchScoped: !!parentStoryId })}
     ${candidatesHtml(candidates)}
     ${relatedStoriesHtml(related || [])}
     <div class="reader-nav">${prevLink}${nextLink}</div>
-    <a class="reader-participate" href="/bang/story/${id}/?write=1">이 작품에 참여하기 (화씨.방 앱)</a>
+    <a class="reader-participate" href="/bang/story/${id}/?write=1">작성 과정·감상 보기 (화씨.방 앱)</a>
     <div class="reader-share">
       <label style="flex:1;display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted)">이 작품 링크
         <input id="reader-url" type="text" readonly value="${url}" onclick="this.select()"
@@ -822,10 +832,13 @@ function renderSitemap(entries, extraStaticPages) {
 // 가벼운 자체 템플릿 사용. 개별 이야기 정적 페이지로 가는 실제 <a> 링크를
 // 모아둬서, sitemap 없이도 크롤러가 내부 링크를 따라 전부 발견할 수 있게 함.
 function renderArchiveIndex(entries) {
+  // 2026-09-13(1항목): 제목 자리는 실제 작품명 우선(listTitle), 미리보기 자리는
+  // 씨앗 문장(listPreview) — 제목이 없어 씨앗 문장을 제목으로 쓴 작품은
+  // listPreview가 기존 첫 채택 문장(description)이라 중복 안 됨(계산부 참고).
   const items = entries.map(e => `
     <a class="story-card" href="/bang/story/${e.id}/">
-      <div class="story-title">${esc(e.title)}</div>
-      <div class="story-desc">${esc(e.description)}</div>
+      <div class="story-title">${esc(e.listTitle || e.title)}</div>
+      <div class="story-desc">${esc(e.listPreview || e.description)}</div>
       ${e.lastmod ? `<div class="story-date">완결 ${esc(e.lastmod.slice(0, 10))}</div>` : ''}
     </a>`).join('\n');
 
@@ -919,11 +932,12 @@ function renderArchiveIndex(entries) {
 // 보여주고 전문은 반드시 작품 URL에만 존재하게 함.
 function renderRootArchivePreview(entries) {
   if (!entries.length) return '';
+  // renderArchiveIndex와 동일 원칙(listTitle/listPreview) — 위 주석 참고.
   const items = entries.map(e => {
     return `
     <a class="archive-item" href="/bang/story/${e.id}/">
-      <div class="archive-title">${esc(e.title)}</div>
-      <div class="archive-preview">${esc(e.description)}</div>
+      <div class="archive-title">${esc(e.listTitle || e.title)}</div>
+      <div class="archive-preview">${esc(e.listPreview || e.description)}</div>
       ${e.lastmod ? `<div class="archive-date">완결 ${esc(e.lastmod.slice(0, 10))}</div>` : ''}
     </a>`;
   }).join('');
@@ -1411,7 +1425,12 @@ async function main() {
       const description = (lines[0] || '').length > 80 ? lines[0].slice(0, 80) + '…' : (lines[0] || '화씨.방에서 함께 완성한 이야기');
       const url = `${SITE_ORIGIN}/bang/story/${story.story_id}/`;
 
-      const participantCount = new Set(subs.map(s => s.author_id).filter(_isRealAuthor)).size;
+      // 2026-09-13(3항목 확정): 관리자·AI 자동참여 계정도 실제로 채택된 문장을
+      // 썼다면 집계에 포함한다(_isRealAuthor 제외 폐지) — 화면엔 그 계정의
+      // 닉네임(예: "익명")이 다른 실제 유저와 똑같이 보이는데 집계에서만 조용히
+      // 빠지는 불일치를 없애려는 목적. author_id가 없는(손상된) 데이터만 걸러낸다.
+      // pickRejectedCandidates(위, 갈림길 후보 노출용)는 이 결정과 무관해 그대로 둠.
+      const participantCount = new Set(subs.map(s => s.author_id).filter(Boolean)).size;
       const isCompleted = story.isCompleted === true;
 
       // V2의 <title>/H1/OG/JSON-LD는 storyTitle(실제 작품명)이 있으면 그걸 그대로
@@ -1423,6 +1442,20 @@ async function main() {
       const v2DisplayTitle = (story.title && story.title.trim())
         || (story.opening.length > 30 ? story.opening.slice(0, 30) + '…' : story.opening);
 
+      // 목록용 실제 제목(2026-09-13, 1항목 확정) — 완결작 아카이브/브랜드 홈
+      // 미리보기/관련작 링크 전용. 이 세 곳은 원래 opening 기반 title(위, 40자
+      // 슬라이스)을 그대로 "제목"처럼 보여줬는데, 같은 씨앗에서 갈라진 작품끼리
+      // (예: "버스를 기다리며"/"밤새 기다린 버스") 목록에서 구별이 안 됐음.
+      // 진행 중 이야기·today 슬롯은 이 필드를 안 쓰므로(각자 title을 그대로
+      // 참조) isCompleted가 아니면 title과 완전히 동일하게 둬서 무변화를 보장한다.
+      // 제목이 있으면 미리보기 자리는 opening(위 title과 동일한 40자 계산,
+      // 재사용)으로 바뀐다 — "제목+씨앗 문장" 두 줄 구성. 제목이 없어 opening을
+      // 제목으로 쓰는 경우엔 opening을 미리보기에 또 넣으면 같은 문장이 중복
+      // 표시되므로 기존 description(첫 채택 문장)을 그대로 유지한다.
+      const hasRealTitle = isCompleted && !!(story.title && story.title.trim());
+      const listTitle = hasRealTitle ? story.title.trim() : title;
+      const listPreview = hasRealTitle ? title : description;
+
       processed.push({
         id: story.story_id, lastmod, title, description, url, isCompleted,
         opening: story.opening, lines,
@@ -1430,6 +1463,8 @@ async function main() {
         // V2 독서 페이지용 — 실제 작품명(있으면), 책장 정렬 기준(completed_at
         // 우선, 없으면 created_at), 분기 관계. 기존 renderStoryPage는 안 씀.
         storyTitle: story.title || '', v2DisplayTitle,
+        // 목록(아카이브/홈 미리보기/관련작)용 — 위 주석 참고.
+        listTitle, listPreview,
         completedAt: story.completed_at || '',
         createdAt: story.created_at || '',
         mode: story.mode || null,
@@ -1494,6 +1529,11 @@ async function main() {
   // (실제 작품명 우선) — 별도로 dedupe해야 renderStoryPageV2 렌더링 시 충돌이
   // 안 생긴다(위 v2DisplayTitle 계산부 주석 참고).
   _dedupe(processed, 'v2DisplayTitle');
+  // listTitle도 실제 작품명 우선이라 v2DisplayTitle과 같은 충돌 위험(같은 제목을
+  // 쓴 완결작 여러 편)이 있음 — 별도로 dedupe. listPreview는 그대로 둔다(같은
+  // 씨앗에서 갈라진 작품끼리 같은 문장이 보이는 건 사실이라 중복 처리 대상이
+  // 아님 — 오히려 "같은 씨앗에서 시작했다"는 정보 그 자체).
+  _dedupe(processed, 'listTitle');
 
   // V2 대상 계산 — "완결작 기본 포함 + 명시적 제외"(scripts/lib/v2-reader-ids.js).
   // processed가 확정된 뒤에야 계산 가능(mode/isCompleted가 이 배열에만 있음).
@@ -1641,7 +1681,11 @@ async function main() {
     const dir = path.join(OUT_DIR, item.id);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'index.html'), html);
-    sitemapEntries.push({ id: item.id, lastmod: item.lastmod, title: item.title, description: item.description, isCompleted: item.isCompleted });
+    sitemapEntries.push({
+      id: item.id, lastmod: item.lastmod, title: item.title, description: item.description, isCompleted: item.isCompleted,
+      // 아카이브 인덱스/브랜드 홈 미리보기 전용(위 listTitle/listPreview 계산부 참고).
+      listTitle: item.listTitle, listPreview: item.listPreview,
+    });
     ok++;
   }
 

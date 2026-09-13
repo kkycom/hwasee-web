@@ -1843,7 +1843,7 @@ function _renderDoneCover(content) {
     <button type="button" class="dshelf-back" onclick="doneCloseCover()">‹ 책장으로</button>
     <button type="button" class="dcover-card" style="--g:${_doneGenreColor(s)}" onclick="nav('story','${esc(s.story_id)}')">
       ${cardStickersHtml(s)}
-      <div class="dcover-status">${_doneStepCount(s)}단계 완결<br>${_doneParticipantCount(s)}명 참여${Number(s.like_count) ? `<br>♥ 추천 ${Number(s.like_count)}` : ''}</div>
+      <div class="dcover-status">${_doneStepCount(s)}단계 완결<br>참여 계정 ${_doneParticipantCount(s)}개${Number(s.like_count) ? `<br>♥ 추천 ${Number(s.like_count)}` : ''}</div>
       <div class="dcover-title">${esc(_doneTitle(s))}</div>
       <div class="dcover-excerpt">"${esc(s.opening || '')}"</div>
     </button>`;

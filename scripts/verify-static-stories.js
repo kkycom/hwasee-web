@@ -15,7 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const { V2_TARGET_IDS, V2_READER_IDS_DECL_RE } = require('./lib/v2-reader-ids.js');
+const { V2_EXCLUDED_IDS, V2_READER_IDS_DECL_RE } = require('./lib/v2-reader-ids.js');
 
 const ROOT = path.join(__dirname, '..');
 const INDEX_HTML_PATH = path.join(ROOT, 'bang', 'index.html');
@@ -56,16 +56,31 @@ function visibleLines(html) {
   return h.replace(/<[^>]+>/g, '\n').split('\n').map(l => l.trim()).filter(Boolean);
 }
 
+// 이번 빌드의 V2 목표 집합 — v2-reader-ids.js는 이제 정적 배열이 아니라
+// completedStories 계산 결과에 의존하는 함수라(Firestore 접근이 필요) 이 순수
+// 파일 검사 스크립트는 재계산할 수 없다. 대신 build-static-stories.js가 자기
+// 계산 결과를 매니페스트에 남기므로 그걸 설정 원천으로 읽는다(2026-09-13 4번 확대).
+function _readManifestV2Ids() {
+  try {
+    if (fs.existsSync(BUILD_MANIFEST_PATH)) {
+      const manifest = JSON.parse(fs.readFileSync(BUILD_MANIFEST_PATH, 'utf8'));
+      return { v2Ids: manifest.v2_ids || [], fallbackIds: (manifest.v2_fallback || []).map(f => f.id) };
+    }
+  } catch (e) { /* 매니페스트 못 읽으면 빈 목록으로 보수적으로 검사(아래에서 걸림) */ }
+  return { v2Ids: [], fallbackIds: [] };
+}
+
 function verifyStoryPages(sitemap) {
+  const { v2Ids: manifestV2Ids, fallbackIds } = _readManifestV2Ids();
   if (!fs.existsSync(STORY_DIR)) {
-    // V2_TARGET_IDS가 설정돼 있다면(=운영 중인 독립 독서 페이지가 있다는 뜻)
+    // 매니페스트에 V2 목표가 있다면(=운영 중인 독립 독서 페이지가 있다는 뜻)
     // story 디렉터리 자체가 없는 건 "빌드 스텝 스킵" 허용 범위가 아니라 명백한
     // 전체 누락이다 — 네트워크로 라이브 sitemap을 조회할 필요도 없이 여기서
     // 바로 막는다(2026-09-12, Codex final 지적 — 네트워크 실패 시 대량감소
     // 검사가 무력화되는 것과 별개로, "디렉터리 자체가 없는" 극단적 케이스는
     // 로컬 정보만으로 이미 판정 가능).
-    if (V2_TARGET_IDS.length) {
-      fail(`bang/story/ 자체가 없음 — V2 대상(${V2_TARGET_IDS.join(', ')})이 설정돼 있는데 독서 페이지가 하나도 안 만들어짐. 빌드 실패로 판단해 배포를 막음.`);
+    if (manifestV2Ids.length) {
+      fail(`bang/story/ 자체가 없음 — V2 대상(매니페스트 기준 ${manifestV2Ids.length}건)이 설정돼 있는데 독서 페이지가 하나도 안 만들어짐. 빌드 실패로 판단해 배포를 막음.`);
       return 0;
     }
     console.log('bang/story/ 없음 — 이번 빌드에서 정적 스토리 페이지가 생성 안 된 것으로 보임(빌드 스텝이 continue-on-error로 스킵됐을 수 있음). V2 대상도 없어 검사 대상 없음으로 통과 처리.');
@@ -73,8 +88,8 @@ function verifyStoryPages(sitemap) {
   }
   const ids = fs.readdirSync(STORY_DIR, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
   if (!ids.length) {
-    if (V2_TARGET_IDS.length) {
-      fail(`bang/story/ 안에 페이지가 0개 — V2 대상(${V2_TARGET_IDS.join(', ')})이 설정돼 있는데 독서 페이지가 하나도 안 만들어짐. 빌드 실패로 판단해 배포를 막음.`);
+    if (manifestV2Ids.length) {
+      fail(`bang/story/ 안에 페이지가 0개 — V2 대상(매니페스트 기준 ${manifestV2Ids.length}건)이 설정돼 있는데 독서 페이지가 하나도 안 만들어짐. 빌드 실패로 판단해 배포를 막음.`);
       return 0;
     }
     console.log('완결작 정적 페이지 0개 — V2 대상도 없어 검사할 게 없어 통과 처리.');
@@ -146,8 +161,8 @@ function verifyStoryPages(sitemap) {
 
   // V2 적용 목록 — 앱(bang/index.html의 _V2_READER_IDS)에 주입된 값이
   // (a) 마커 정확히 1개, (b) 이번 빌드에 실제 생성된 V2 셸 페이지 집합과 정확히 일치,
-  // (c) 설정 원천(v2-reader-ids.js)에서 하나도 누락되지 않았는지 확인.
-  // 앱이 없는 페이지로 라우팅하는 상태를 배포 전에 차단한다.
+  // (c) 설정 원천(매니페스트의 v2_ids — computeV2TargetIds 계산 결과)에서 하나도
+  // 누락되지 않았는지 확인. 앱이 없는 페이지로 라우팅하는 상태를 배포 전에 차단한다.
   {
     const appSrc = fs.existsSync(INDEX_HTML_PATH) ? fs.readFileSync(INDEX_HTML_PATH, 'utf8') : '';
     const decls = appSrc.match(V2_READER_IDS_DECL_RE) || [];
@@ -162,16 +177,15 @@ function verifyStoryPages(sitemap) {
       // v2_fallback: 분기 상속 조립 실패로 build-static-stories.js가 스스로
       // 기존 렌더러로 되돌린 것 — "불완전한 본문을 발행하지 않는다"는 의도된
       // 동작이라 fail 대상이 아니다. 그 외의 누락만 진짜 결함으로 본다.
-      let fallbackIds = [];
-      try {
-        if (fs.existsSync(BUILD_MANIFEST_PATH)) {
-          const manifest = JSON.parse(fs.readFileSync(BUILD_MANIFEST_PATH, 'utf8'));
-          fallbackIds = (manifest.v2_fallback || []).map(f => f.id);
-        }
-      } catch (e) { /* 매니페스트 못 읽으면 폴백 목록 없이 보수적으로 검사(아래에서 걸림) */ }
-      const targetMissing = V2_TARGET_IDS.filter(id => !generatedV2Ids.includes(id) && !fallbackIds.includes(id));
+      const targetMissing = manifestV2Ids.filter(id => !generatedV2Ids.includes(id) && !fallbackIds.includes(id));
       if (targetMissing.length) {
-        fail(`v2-reader-ids.js 설정 대상인데 V2 페이지가 생성 안 됨(폴백 사유도 없음): ${targetMissing.join(', ')}`);
+        fail(`매니페스트 v2_ids 설정 대상인데 V2 페이지가 생성 안 됨(폴백 사유도 없음): ${targetMissing.join(', ')}`);
+      }
+      // V2_EXCLUDED_IDS(정적, 사람이 검토한 명시적 제외)가 실수로 V2 생성됐는지도
+      // 재확인 — computeV2TargetIds 로직이 바뀌어도 이 목록만은 절대 새면 안 됨.
+      const excludedButGenerated = [...V2_EXCLUDED_IDS].filter(id => generatedV2Ids.includes(id));
+      if (excludedButGenerated.length) {
+        fail(`V2_EXCLUDED_IDS(명시적 제외 대상)인데 V2 페이지로 생성됨: ${excludedButGenerated.join(', ')}`);
       }
       for (const id of fallbackIds) {
         if (generatedV2Ids.includes(id)) continue; // 폴백 목록에 있지만 실제로는 생성됐다면 정보 불일치, 무시(생성이 우선)

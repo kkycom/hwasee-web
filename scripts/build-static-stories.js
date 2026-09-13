@@ -430,18 +430,20 @@ function storyPageBodyHtml({ opening, lines, meta, candidates, related }) {
 //
 // V2는 word-challenge/diary 페이지처럼 앱을 복제하지 않는 독립 셸이다. 제목·본문·
 // 작품 간 이동이 JS/Firebase 없이 완성되고, 참여 기능은 없애지 않고 기존 앱의
-// 해당 작품으로 링크한다. 시범은 V2_STORY_IDS 목록의 작품에만 적용(나머지는 기존
-// renderStoryPage 그대로) — 목록을 비우면 전체 롤백.
+// 해당 작품으로 링크한다. 적용은 V2_STORY_IDS(완결작 기본 포함 + 명시적 제외,
+// computeV2TargetIds) 대상에만 — 그 집합이 비면 전체 기존 renderStoryPage로 롤백.
 //
 // CSS는 손으로 옮겨 적지 않고 bang/index.html의 <style>에서 잘라온다(EN 페이지의
 // ko-shared.css와 같은 원칙, extract-ko-css.js의 cutRule 재사용).
 
-// 시범 대상 — 유일한 원천은 scripts/lib/v2-reader-ids.js. 여기서 목록을 읽어
-// 빌드에 쓰고, main() 끝에서 **이번 빌드에 실제 생성·검증된 ID만** bang/index.html의
-// _V2_READER_IDS 마커에 주입한다(수동 동기화 목록 없음). 비우면 전체 롤백.
-// 분기 작품은 상속 문장 정적 재현이 아직 안 돼서 제외 — 확대의 필수 선행 과제.
-const { V2_TARGET_IDS, V2_READER_IDS_DECL_RE, buildV2ReaderIdsDecl } = require('./lib/v2-reader-ids.js');
-const V2_STORY_IDS = new Set(V2_TARGET_IDS);
+// 적용 대상 규칙의 유일한 원천은 scripts/lib/v2-reader-ids.js(computeV2TargetIds —
+// "완결작 기본 포함 + 명시적 제외", 2026-09-13 4번 확대). completedStories 1차 패스
+// (processed)가 확정된 뒤에야 대상 집합을 계산할 수 있어서, V2_TARGET_IDS/V2_STORY_IDS는
+// main() 안에서 processed 직후에 지역 변수로 계산한다(아래 "V2 대상 계산" 참고).
+// main() 끝에서 **이번 빌드에 실제 생성·검증된 ID만** bang/index.html의 _V2_READER_IDS
+// 마커에 주입한다(수동 동기화 목록 없음). 분기 작품 상속 조립 실패(ok:false)나
+// V2_EXCLUDED_IDS 등록으로 대상이 0개가 되면 전체 기존 renderStoryPage로 자동 복귀.
+const { V2_EXCLUDED_IDS, computeV2TargetIds, V2_READER_IDS_DECL_RE, buildV2ReaderIdsDecl } = require('./lib/v2-reader-ids.js');
 
 // 이번 빌드에서 실제로 V2 셸 생성·검증에 성공한 작품 ID(순서 유지). main()의
 // 2차 패스가 채우고, 그 뒤 injectV2ReaderIds가 이 값으로 앱 마커를 치환한다.
@@ -1412,13 +1414,22 @@ async function main() {
       const participantCount = new Set(subs.map(s => s.author_id).filter(_isRealAuthor)).size;
       const isCompleted = story.isCompleted === true;
 
+      // V2의 <title>/H1/OG/JSON-LD는 storyTitle(실제 작품명)이 있으면 그걸 그대로
+      // 쓰고 opening 기반 title(위 40자 슬라이스)에는 아예 안 기댄다(renderStoryPageV2
+      // 551행 fallback과 동일 계산을 여기서도 미리 해둔다) — 그래서 title 필드
+      // dedupe만으로는 V2 title 충돌을 못 잡는다. 확대 실빌드(2026-09-13)에서
+      // 실제로 같은 작품 제목("아버지의 열쇠" 등)을 쓴 완결작 여러 편이 있어
+      // V2 title 4중 충돌이 실제로 발생 — v2DisplayTitle을 별도로 dedupe한다.
+      const v2DisplayTitle = (story.title && story.title.trim())
+        || (story.opening.length > 30 ? story.opening.slice(0, 30) + '…' : story.opening);
+
       processed.push({
         id: story.story_id, lastmod, title, description, url, isCompleted,
         opening: story.opening, lines,
         creatorNickname: story.creator_nickname,
         // V2 독서 페이지용 — 실제 작품명(있으면), 책장 정렬 기준(completed_at
         // 우선, 없으면 created_at), 분기 관계. 기존 renderStoryPage는 안 씀.
-        storyTitle: story.title || '',
+        storyTitle: story.title || '', v2DisplayTitle,
         completedAt: story.completed_at || '',
         createdAt: story.created_at || '',
         mode: story.mode || null,
@@ -1479,6 +1490,17 @@ async function main() {
   }
   _dedupe(processed, 'title');
   _dedupe(processed, 'description');
+  // V2가 실제로 <title>/H1/OG/JSON-LD에 쓰는 값은 title이 아니라 v2DisplayTitle
+  // (실제 작품명 우선) — 별도로 dedupe해야 renderStoryPageV2 렌더링 시 충돌이
+  // 안 생긴다(위 v2DisplayTitle 계산부 주석 참고).
+  _dedupe(processed, 'v2DisplayTitle');
+
+  // V2 대상 계산 — "완결작 기본 포함 + 명시적 제외"(scripts/lib/v2-reader-ids.js).
+  // processed가 확정된 뒤에야 계산 가능(mode/isCompleted가 이 배열에만 있음).
+  const V2_TARGET_IDS = computeV2TargetIds(processed);
+  const V2_STORY_IDS = new Set(V2_TARGET_IDS);
+  console.log(`V2 목표 집합: 완결작 ${processed.filter(p => p.isCompleted).length}건 중 `
+    + `${V2_TARGET_IDS.length}건(초스피드·명시적 제외 ${V2_EXCLUDED_IDS.size}건 제외분 반영)`);
 
   // "다른 완결작" 관련 링크는 완결작 풀에서만 골라야 함 — 진행 중인 이야기를
   // "완결작"이라고 링크 걸면 거짓 정보가 됨(2026-08-20 설계 논의 결론). 진행
@@ -1552,6 +1574,7 @@ async function main() {
     attempted_ids: stories.map(s => s.story_id),
     processed_ids: processed.map(p => p.id),
     skipped,
+    v2_ids: V2_TARGET_IDS,
     v2_fallback: v2Fallback,
   }, null, 2));
 
@@ -1587,7 +1610,7 @@ async function main() {
       const inh = v2InheritanceByStory[item.id] || { before: [], tie: [] };
       html = renderStoryPageV2({
         indexHtmlSrc,
-        id: item.id, storyTitle: item.storyTitle, description: item.description, url: item.url,
+        id: item.id, storyTitle: item.v2DisplayTitle, description: item.description, url: item.url,
         opening: item.opening, creatorNickname: item.creatorNickname,
         inheritedLines: [...inh.before, ...inh.tie], // 분기면 실제 조립된 상속 문장, 원본작이면 빈 배열
         parentTitle: v2ParentTitleByStory[item.id], parentStoryId: item.parentStoryId,
@@ -1744,12 +1767,13 @@ module.exports = {
   classifySection, todaySlotBodyHtml, renderTodaySlotPage,
   renderTodayHubPage, renderWordChallengePage, renderWordChallengeArchive,
   renderDiaryBookPage, renderDiaryHubPage,
-  renderStoryPageV2, readerCss, readerProseHtml, V2_STORY_IDS,
+  renderStoryPageV2, readerCss, readerProseHtml,
   SLOT_KEYS, SLOT_SLUG, SLOT_LABEL, DIARY_BOOK_COUNT,
   // 테스트/스크래치 스크립트용 — 멱등성·롤백 검증에 필요(정상 빌드 흐름은 안 바뀜)
   injectV2ReaderIds, assertV2ShellOk,
-  // 분기 작품 상속 문장 조립 — 아직 main()에는 배선 안 함(V2_TARGET_IDS에 분기
-  // 없음). 확대 승인 시 여기 연결. 지금은 검증 스크립트에서만 사용.
+  // 분기 작품 상속 문장 조립 — main()의 1차 패스 후~2차 패스 전에서 실행돼
+  // V2_TARGET_IDS(computeV2TargetIds 계산분) 전체에 적용됨. export는 검증
+  // 스크립트가 개별 케이스를 재현할 때 계속 사용.
   computeBranchInheritance,
 };
 

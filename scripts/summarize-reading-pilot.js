@@ -1,5 +1,7 @@
-// 실데이터 빌드(build-static-stories.js) 후, 생성된 공개 HTML만 정적 검사해서
-// 2편 시범 배포 승인 판단용 요약을 reading-pilot-summary.md로 남긴다.
+// 실데이터 빌드(build-static-stories.js) 후, 생성된 공개 HTML 중 대표 샘플만 상세
+// 정적 검사해서 사람이 읽는 요약을 reading-pilot-summary.md로 남긴다(2026-09-13
+// 4번 확대 이후 V2 대상이 245건 안팎이라 전수 상세 검사는 이 리포트의 역할이
+// 아님 — 전수 구조 검사는 verify-static-stories.js가 담당).
 // Firestore 재조회 없음 — 이미 만들어진 bang/story/{id}/index.html만 읽는다.
 // 제출·투표·댓글·포인트 변경 없음(순수 읽기).
 const fs = require('fs');
@@ -20,22 +22,29 @@ function sortLatest(list) {
     new Date(b.completedAt || b.createdAt) - new Date(a.completedAt || a.createdAt));
 }
 
-// V2 대상 id의 원천은 scripts/lib/v2-reader-ids.js 하나뿐. 제목·기대 문장수는
-// 사람이 읽는 리포트 라벨이라 여기 맵으로 두되, 없으면 생성된 HTML에서 읽는다.
-const { V2_TARGET_IDS } = require('./lib/v2-reader-ids.js');
+// 2026-09-13(4번 확대)부터 V2 적용 대상은 정적 배열이 아니라 완결작 기본 포함 +
+// 명시적 제외(computeV2TargetIds, scripts/lib/v2-reader-ids.js)로 계산되고
+// 245건 안팎 규모라, 이 리포트에서 전수를 상세 검사하는 건 실용적이지 않다.
+// 대신 대표 샘플만 상세 검사하고(과거 시범 2편 + 분기 1편), 매니페스트의
+// v2_ids/v2_fallback으로 전체 규모·폴백 현황을 요약한다. 전수 구조 검사(제목/
+// description 중복, canonical, robots, 본문 비어있음 등)는 verify-static-stories.js가
+// bang/story/ 산출물 전체를 대상으로 이미 수행한다 — 이 리포트와 역할이 겹치지 않는다.
 const V2_LABELS = {
   '078b460e-d9d0-4642-b75d-44571637f787': { title: '이상한 계단', sentences: 2 },
   '0a400be4-cd2a-4e74-ba79-b677251c9487': { title: '우물 속 달', sentences: 11 },
 };
-const V2 = V2_TARGET_IDS.map(id => {
-  const lbl = V2_LABELS[id] || {};
-  return [id, lbl.title || null, lbl.sentences || null];
-});
-// 2026-09-12: 0fbdc14a는 V2_TARGET_IDS에 추가돼 이제 V2로 발행되므로(위 V2
-// 루프가 자동으로 검사), "기존 렌더러 유지" 예시는 실제로 여전히 폴백 대상인
-// 분기 작품(branch_sub_id/branch_episode_id가 story 문서에 없어 0순위 불가 —
-// computeBranchInheritance가 ok:false를 내는 구형 데이터)으로 교체.
-const BRANCH = ['ISI5Qj8fTXpBbBWW8cw4', '첫 파도'];
+// 분기 대표 샘플: 0fbdc14a(거짓말의 꽃)는 상속 문장 조립이 성공해 V2로 발행됨
+// (before5+tie0+자기8=13문장, 2026-09-13 라이브 curl로 이미 확인된 값). 아래 V2
+// 루프에 같이 포함시켜 공통 셸 체크를 그대로 받고, 루프 안에서 분기 전용 체크
+// (구분선·원본 링크)만 추가로 확인한다.
+const BRANCH_V2 = { id: '0fbdc14a-786d-4831-b4f6-4b3c5da52909', title: '거짓말의 꽃', sentences: 13 };
+const V2 = [
+  ...Object.entries(V2_LABELS).map(([id, lbl]) => [id, lbl.title, lbl.sentences]),
+  [BRANCH_V2.id, BRANCH_V2.title, BRANCH_V2.sentences],
+];
+// 폴백 대표 샘플: 구형 데이터(branch_sub_id/branch_episode_id가 story 문서에
+// 없어 0순위 불가 — computeBranchInheritance가 ok:false)라 기존 렌더러 유지.
+const BRANCH_FALLBACK = ['ISI5Qj8fTXpBbBWW8cw4', '첫 파도'];
 
 const out = [];
 let fail = 0;
@@ -46,9 +55,33 @@ const read = id => {
   return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null;
 };
 
-L('# 독립 독서 페이지 시범 — 실데이터 빌드 결과 요약');
+L('# 독립 독서 페이지 — 실데이터 빌드 결과 요약');
 L('');
 L(`빌드 검사 시각: ${new Date().toISOString()}`);
+
+// ── 매니페스트 기반 전체 규모 요약 — 전수 상세 검사는 verify-static-stories.js가
+// bang/story/ 산출물 전체를 대상으로 수행하므로, 여기서는 build-static-stories.js가
+// 스스로 기록한 목표/폴백 건수만 요약한다.
+try {
+  const manifestPath = path.join(__dirname, '..', '.story-build-manifest.json');
+  if (fs.existsSync(manifestPath)) {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const v2Ids = manifest.v2_ids || [];
+    const v2Fallback = manifest.v2_fallback || [];
+    L('');
+    L(`## 전체 V2 목표 규모 (매니페스트 기준)`);
+    L('');
+    L(`- 이번 빌드 V2 목표: ${v2Ids.length}건`);
+    L(`- 그중 분기 상속 조립 실패로 기존 렌더러 폴백: ${v2Fallback.length}건`
+      + (v2Fallback.length ? ` (${v2Fallback.map(f => `${f.id}: ${f.reason}`).join('; ')})` : ''));
+  } else {
+    L('');
+    L('(참고) .story-build-manifest.json 없음 — 전체 규모 요약 생략, 아래 대표 샘플만 검사.');
+  }
+} catch (e) {
+  L('');
+  L(`(참고) 매니페스트 읽기 실패(${e.message}) — 전체 규모 요약 생략, 아래 대표 샘플만 검사.`);
+}
 
 // ── 빌드가 덤프한 completed 데이터에 앱 정렬 기준 적용 → 기대 이전/다음 ──
 let expected = null;
@@ -68,9 +101,10 @@ const expectedNeighbors = id => {
   };
 };
 
-// ── 시범 2편: V2 셸 ──
+// ── V2 대표 샘플(일반 완결작 2편 + 분기 1편): V2 셸 ──
 for (const [id, title, sentences] of V2) {
-  L(`\n## ${title || id} (\`${id}\`) — V2 독립 셸\n`);
+  const isBranchSample = id === BRANCH_V2.id;
+  L(`\n## ${title || id} (\`${id}\`) — V2 독립 셸${isBranchSample ? '(분기, 상속 문장 포함)' : ''}\n`);
   const h = read(id);
   if (!h) { chk('파일 생성됨', false, `${id}/index.html 없음`); continue; }
   chk('V2 독립 셸(h1.reader-title)', /<h1 class="reader-title">/.test(h));
@@ -92,6 +126,10 @@ for (const [id, title, sentences] of V2) {
   else chk('본문 문장 존재', sc > 0, `prose-sentence ${sc}개 + opening ${oc}`);
   chk('robots index,follow', /<meta name="robots" content="index,follow">/.test(h));
   chk('· 完 · (완결 표시)', /reader-theend/.test(h));
+  if (isBranchSample) {
+    chk('상속 구분선("여기서 이야기가 갈라졌어요") 존재', h.includes('여기서 이야기가 갈라졌어요'));
+    chk('원본 이야기 링크 존재', /갈라져 나온 결말이에요/.test(h) && /<a href="\/bang\/story\/[^/"]+\/"[^>]*>[^<]*<\/a>에서 갈라져/.test(h));
+  }
 
   // 이전/다음 링크 — ID 형식은 제한하지 않고(이 사이트에 UUID 외 Firestore
   // auto-id도 있음), href에서 뽑은 대상이 실제로 이번 빌드에서 생성됐는지
@@ -146,13 +184,16 @@ for (const [id, title, sentences] of V2) {
   L('</details>');
 }
 
-// ── 분기 작품: 기존 renderStoryPage 계약 유지 확인 ──
-// 기존 renderStoryPage의 <title>은 실제 작품명이 아니라 도입문 앞부분(story.opening
-// slice 40) + " — 화씨.방" 이다. 그래서 '작품명 포함'을 요구하면 안 되고, 같은
-// 빌드의 다른 비시범·비분기 완결작(참조 R)과 동일한 출력 계약인지로 판정한다.
+// ── 폴백 분기 작품: 기존 renderStoryPage 계약 유지 확인 ──
+// 구형 데이터(0순위 없음)라 computeBranchInheritance가 ok:false를 내고
+// build-static-stories.js가 스스로 기존 렌더러로 되돌린 경우 — "불완전한
+// 본문을 발행하지 않는다" 원칙이 실제로 지켜지는지 확인. 기존 renderStoryPage의
+// <title>은 실제 작품명이 아니라 도입문 앞부분(story.opening slice 40) + " — 화씨.방"
+// 이다. 그래서 '작품명 포함'을 요구하면 안 되고, 같은 빌드의 다른 비V2 완결작
+// (참조 R)과 동일한 출력 계약인지로 판정한다.
 {
-  const [id, title] = BRANCH;
-  L(`\n## ${title} (\`${id}\`) — 분기, 기존 렌더러 계약 유지 확인\n`);
+  const [id, title] = BRANCH_FALLBACK;
+  L(`\n## ${title} (\`${id}\`) — 폴백 분기, 기존 렌더러 계약 유지 확인\n`);
   const h = read(id);
   if (!h) {
     chk('파일 생성됨', false, `${id}/index.html 없음 — 완결작 풀에 없을 수 있음(확인 필요)`);

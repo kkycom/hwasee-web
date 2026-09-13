@@ -1414,13 +1414,22 @@ async function main() {
       const participantCount = new Set(subs.map(s => s.author_id).filter(_isRealAuthor)).size;
       const isCompleted = story.isCompleted === true;
 
+      // V2의 <title>/H1/OG/JSON-LD는 storyTitle(실제 작품명)이 있으면 그걸 그대로
+      // 쓰고 opening 기반 title(위 40자 슬라이스)에는 아예 안 기댄다(renderStoryPageV2
+      // 551행 fallback과 동일 계산을 여기서도 미리 해둔다) — 그래서 title 필드
+      // dedupe만으로는 V2 title 충돌을 못 잡는다. 확대 실빌드(2026-09-13)에서
+      // 실제로 같은 작품 제목("아버지의 열쇠" 등)을 쓴 완결작 여러 편이 있어
+      // V2 title 4중 충돌이 실제로 발생 — v2DisplayTitle을 별도로 dedupe한다.
+      const v2DisplayTitle = (story.title && story.title.trim())
+        || (story.opening.length > 30 ? story.opening.slice(0, 30) + '…' : story.opening);
+
       processed.push({
         id: story.story_id, lastmod, title, description, url, isCompleted,
         opening: story.opening, lines,
         creatorNickname: story.creator_nickname,
         // V2 독서 페이지용 — 실제 작품명(있으면), 책장 정렬 기준(completed_at
         // 우선, 없으면 created_at), 분기 관계. 기존 renderStoryPage는 안 씀.
-        storyTitle: story.title || '',
+        storyTitle: story.title || '', v2DisplayTitle,
         completedAt: story.completed_at || '',
         createdAt: story.created_at || '',
         mode: story.mode || null,
@@ -1481,6 +1490,10 @@ async function main() {
   }
   _dedupe(processed, 'title');
   _dedupe(processed, 'description');
+  // V2가 실제로 <title>/H1/OG/JSON-LD에 쓰는 값은 title이 아니라 v2DisplayTitle
+  // (실제 작품명 우선) — 별도로 dedupe해야 renderStoryPageV2 렌더링 시 충돌이
+  // 안 생긴다(위 v2DisplayTitle 계산부 주석 참고).
+  _dedupe(processed, 'v2DisplayTitle');
 
   // V2 대상 계산 — "완결작 기본 포함 + 명시적 제외"(scripts/lib/v2-reader-ids.js).
   // processed가 확정된 뒤에야 계산 가능(mode/isCompleted가 이 배열에만 있음).
@@ -1597,7 +1610,7 @@ async function main() {
       const inh = v2InheritanceByStory[item.id] || { before: [], tie: [] };
       html = renderStoryPageV2({
         indexHtmlSrc,
-        id: item.id, storyTitle: item.storyTitle, description: item.description, url: item.url,
+        id: item.id, storyTitle: item.v2DisplayTitle, description: item.description, url: item.url,
         opening: item.opening, creatorNickname: item.creatorNickname,
         inheritedLines: [...inh.before, ...inh.tie], // 분기면 실제 조립된 상속 문장, 원본작이면 빈 배열
         parentTitle: v2ParentTitleByStory[item.id], parentStoryId: item.parentStoryId,
